@@ -79,11 +79,11 @@ function input(ctx: PlanContext) {
 describe("MarkItDown runtime", () => {
   it("pins the published MIT converter release and only ordinary local document extras", () => {
     expect(MARKITDOWN_RUNTIME_PIN).toEqual({
-      version: "0.1.7",
-      package: "markitdown[docx,outlook,pdf,pptx,xls,xlsx]==0.1.7",
-      sourceTag: "v0.1.7",
-      sourceCommit: "fd239d5d2be43d9b68329730206b9312c7d5a388",
-      wheelSha256: "4eca912c87c6aa6897284a7f4bf6769a23bccf8544530f5d8b175fbe3797c916",
+      version: "0.1.8",
+      package: "markitdown[docx,outlook,pdf,pptx,xls,xlsx]==0.1.8",
+      sourceTag: "v0.1.8",
+      sourceCommit: "b8f79c57ebc0044be41323d89b2a45d3fda8460e",
+      wheelSha256: "de7375a50578a39bcbbf13b48c67d99033d988e0ae8ad25af46ed432dbe4cbab",
       license: "MIT",
     });
   });
@@ -117,7 +117,7 @@ describe("MarkItDown runtime", () => {
       changed: true,
       ownedPaths: [],
     });
-    expect(result.detail).toContain("MarkItDown CLI 0.1.7");
+    expect(result.detail).toContain("MarkItDown CLI 0.1.8");
     expect(result.detail).toContain("official CLI and");
     expect(result.detail).toContain("<input-file>");
     const sync = calls.find((call) => call.argv.includes("sync"));

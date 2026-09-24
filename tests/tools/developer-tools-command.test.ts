@@ -278,7 +278,7 @@ describe("developer-tools command", () => {
               path: join(ctx.root, "unused-memory-runtime"),
               sha256: "b".repeat(64),
               size: 1,
-              version: "0.10.8",
+              version: "0.11.0",
               changed: false,
               reused: true,
               archiveName: "fixture.zip",

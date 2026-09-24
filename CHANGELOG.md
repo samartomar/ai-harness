@@ -72,6 +72,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   anchored there (including a self-consistent one with recomputed hashes) refuses with
   `framework-profile-recovery-unanchored` and writes nothing; repair, rollback and uninstall
   report an unanchored active identity with the same typed refusal.
+- Move the developer-tool pins to their latest releases, each bound to its exact version,
+  full source commit and registry integrity re-observed on 2026-09-24:
+  - Chrome DevTools MCP 1.10.1. Everything aih emits for it now sets
+    `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`,
+    so its usage statistics, including the new MCP client name report, and its per-launch
+    registry update check never run. It also passes `--no-performance-crux`, so the
+    performance tools never send page URLs to the Google CrUX API. The Codex ECC install now also refuses, with
+    `mcp.telemetry-opt-out-missing`, when an entry in the user or project Codex config
+    launches `chrome-devtools-mcp` without both variables set to `"1"`. The refusal names the
+    entry and the missing variable. aih never rewrites that entry: remove it so aih manages
+    chrome-devtools, or add both variables.
+  - Token Optimizer v5.13.21 (159 manifest records). Its licence is still PolyForm
+    Noncommercial 1.0.0, now with an added `LICENSE-SMALL-BUSINESS.md` permission for
+    internal use by organisations with fewer than 5 people and under US$20,000 per month
+    in revenue.
+  - Code Review Graph 2.3.9 and Codebase Memory MCP 0.11.0 in the guarded native default
+    runtime (hash-locked closure re-exported with the matching resolution cutoff). Codebase
+    Memory 0.11.0 answers `list_projects` and `index_status` with a compact table by default,
+    so aih and the repository helper now request JSON explicitly.
+  - Codebase Memory MCP 0.11.0 for the raw fallback. The raw Code Review Graph fallback stays
+    on 2.3.7 because 2.3.8 and 2.3.9 turn ambient `CRG_OPENAI_*` variables into implicit
+    network egress.
+  - Playwright MCP 0.0.82, MarkItDown 0.1.8 (the CLI runtime and the converter the MCP adapter installs) and the GitHub MCP
+    self-host image v1.12.2.
 - **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
   The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
   to prove that a plugin entry resolves inside its own install tree. `aih doctor` and

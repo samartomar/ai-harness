@@ -326,7 +326,7 @@ describe("aih init — command surface", () => {
           expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
           "code-review-graph",
           "--package",
-          "code-review-graph==2.3.8",
+          "code-review-graph==2.3.9",
         ]),
       }),
     );

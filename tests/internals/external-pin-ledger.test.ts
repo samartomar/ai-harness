@@ -182,13 +182,13 @@ describe("active external-pin ledger", () => {
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
     );
     expect(entry("code-review-graph").reason).toMatch(
-      /raw repository-agnostic fallback only.*2\.3\.8 raw candidate.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
+      /raw repository-agnostic fallback only.*2\.3\.8 and 2\.3\.9 raw candidates.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
     );
     expect(entry("codebase-memory-mcp").version).toBe(
       versionFromSpec(stdioArg(servers, "codebase-memory-mcp", "codebase-memory-mcp@")),
     );
     expect(entry("codebase-memory-mcp").reason).toMatch(
-      /raw repository-agnostic fallback only.*0\.10\.5.*native.*0\.10\.8.*separate/i,
+      /raw repository-agnostic fallback only.*0\.11\.0 uv route.*native 0\.11\.0 default.*separately/i,
     );
     expect(entry("sequential-thinking").version).toBe(
       versionFromSpec(
@@ -206,20 +206,29 @@ describe("active external-pin ledger", () => {
       versionFromSpec(stdioArg(servers, "playwright", "@playwright/mcp@")),
     );
     expect(entry("playwright-mcp").reason).toMatch(
-      /Initialize.*isolated headless.*serverInfo reports Playwright 1\.64\.0-alpha-2026-09-14/i,
+      /Initialize.*isolated headless.*serverInfo reports Playwright 1\.64\.0-alpha-1789764292000/i,
     );
     expect(entry("ecc-codex-chrome-devtools-mcp")).toMatchObject({
       identity: "chrome-devtools-mcp",
-      version: "1.7.0",
+      version: "1.10.1",
+      commit: "e52c6b59b476c5e04d8dd9fd4bd017ba3b3d65df",
       integrity:
-        "sha512-6xFW7oiUxTxZuHcfyYBkKQtmttjCbfifKZMSEk5CV8H2FucvKweYiJr8CblddYHtYjA4C14K9VAs1r49906RBA==",
+        "sha512-Klw6HWDqHC/XS1JwZldd2r49aUhbUJN9m9Mvcx4SEueIPXtzuQX+QelxAViobv8YUkDZ7HWDrmViR6LeYK0wAw==",
       disposition: "active",
     });
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
+      /CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1.*CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1.*client name/i,
+    );
     const chromeDevtools = coreOwnedEccCodexMcpServers()["chrome-devtools"];
     if (chromeDevtools?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP");
     expect(entry("ecc-codex-chrome-devtools-mcp").version).toBe(
       versionFromSpec(chromeDevtools.args[1] ?? ""),
     );
+    expect(chromeDevtools.args).toContain("--no-performance-crux");
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
+      /emits --no-performance-crux.*performanceCrux.*CrUX/i,
+    );
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).not.toMatch(/does not add that flag/i);
     expect(entry("ecc-codex-chrome-devtools-mcp-candidate")).toMatchObject({
       version: "1.9.0",
       commit: "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
@@ -237,12 +246,12 @@ describe("active external-pin ledger", () => {
     expect(githubImage).toBeDefined();
     expect(entry("github-mcp-container").integrity).toBe(githubImage?.split("@")[1]);
     expect(entry("github-mcp-container")).toMatchObject({
-      version: "v1.12.1",
-      commit: "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+      version: "v1.12.2",
+      commit: "85598ba6e1256f7ebf4867b95d63b833c4549264",
       disposition: "active",
     });
     expect(entry("github-mcp-container").reason).toMatch(
-      /Optional self-host.*44 default tool names are identical.*Docker was unavailable/i,
+      /Optional self-host.*container wrapper.*linux\/amd64.*45 default tool names.*update_issue_comment/i,
     );
 
     const plan = toolingPlan();
@@ -271,7 +280,7 @@ describe("active external-pin ledger", () => {
       expect(graph.reason).toContain(`sha256:${lock}`);
     }
     expect(graph.reason).toMatch(
-      /guarded native default.*installed Linux Node 20.*five guarded operations.*per-host.*macOS.*unverified/i,
+      /guarded native default.*installed-package proof on Windows x64.*five guarded operations.*Linux Node 20.*not re-run.*per-host.*macOS.*unverified/i,
     );
 
     const memory = entry("codebase-memory-mcp-native-default");
@@ -295,8 +304,9 @@ describe("active external-pin ledger", () => {
       expect(memory.reason).toContain(`${archive.name} sha256:${archive.sha256}`);
     }
     expect(memory.reason).toMatch(
-      /guarded native default.*selected platform archive.*installed Linux Node 20.*A-B-A.*per-host.*macOS.*unverified/i,
+      /guarded native default.*selected platform archive.*format json.*installed-package proof on Windows x64.*A-B-A.*not re-run.*per-host.*macOS.*unverified/i,
     );
+    expect(memory.reason).toMatch(/admission barrier did not refuse.*distinct per-worktree/i);
   });
 
   it("binds the explicitly activated Headroom MCP runtime to its hash-locked closure", () => {
@@ -333,7 +343,11 @@ describe("active external-pin ledger", () => {
     });
     expect(active.reason).toContain(`tree ${TOKEN_OPTIMIZER_PIN.tree}`);
     expect(active.reason).toContain(`manifest sha256:${TOKEN_OPTIMIZER_PIN.manifestSha256}`);
-    expect(active.reason).toMatch(/all 158.*canonical Git blobs/i);
+    expect(active.reason).toContain(`all ${TOKEN_OPTIMIZER_PIN.manifestRecords} manifest records`);
+    expect(active.reason).toMatch(/canonical Git blobs/i);
+    expect(active.reason).toMatch(
+      /PolyForm Noncommercial 1\.0\.0.*LICENSE-SMALL-BUSINESS\.md.*fewer than 5 people.*US\$20,000 per month.*internal/i,
+    );
     expect(active.reason).toMatch(/quiet and balanced.*receipt ownership.*policy exclusions/i);
     expect(toolingPlan().pins.tokenOptimizer).toMatchObject({
       tag: TOKEN_OPTIMIZER_PIN.tag,

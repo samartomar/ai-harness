@@ -2,6 +2,7 @@ import "../core-invocation.js";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -21,6 +22,7 @@ import {
   registrationLedgerPath,
 } from "../../../../src/ecc/registration.js";
 import { registeredExecStdinPayload } from "../../../../src/internals/exec-stdin.js";
+import { executePlan } from "../../../../src/internals/execute.js";
 import type {
   Action,
   DigestAction,
@@ -28,8 +30,10 @@ import type {
   PlanContext,
   WriteAction,
 } from "../../../../src/internals/plan.js";
+import { plan } from "../../../../src/internals/plan.js";
 import { fakeRunner } from "../../../../src/internals/proc.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
+import { codexChromeDevtoolsOptOutActions } from "../../src/ecc/codex.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
 import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
 import { buildEccRegistrationRequest } from "../../src/ecc/pipeline.js";
@@ -1022,7 +1026,11 @@ describe("verifiedEccInstallPlan", () => {
         "chrome-devtools": {
           type: "stdio",
           command: "npx",
-          args: ["-y", "chrome-devtools-mcp@1.7.0"],
+          args: ["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"],
+          env: {
+            CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+            CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+          },
           startupTimeoutSec: 30,
         },
         "sequential-thinking": {
@@ -1099,8 +1107,9 @@ describe("verifiedEccInstallPlan", () => {
     if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
     const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
 
-    expect(rendered).toContain("chrome-devtools-mcp@1.7.0");
-    expect(rendered).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
+    expect(rendered).toContain('"chrome-devtools-mcp@1.10.1","--no-performance-crux"');
+    expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS":"1"');
+    expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS":"1"');
     expect(rendered).toContain('"startupTimeoutSec":30');
     expect(rendered).not.toContain("@latest");
   });
@@ -1157,6 +1166,62 @@ describe("verifiedEccInstallPlan", () => {
           expect.objectContaining({ code: "mcp.config-invalid", verdict: "fail" }),
         ]),
       );
+    },
+  );
+
+  it.each([
+    ["project", "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS"],
+    ["user", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"],
+  ] as const)(
+    "refuses a verified Codex install when a %s entry launches chrome-devtools-mcp without an opt-out",
+    async (scope, present) => {
+      const home = join(root, "opt-out-home");
+      const target =
+        scope === "project"
+          ? join(root, ".codex", "config.toml")
+          : join(home, ".codex", "config.toml");
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(
+        target,
+        `[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n[mcp_servers.chrome-devtools.env]\n${present} = "1"\n`,
+        "utf8",
+      );
+      const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+      const selected = selection();
+
+      const plan = verifiedEccInstallPlan(
+        context,
+        join(root, "quarantine", "tree"),
+        { clis: ["codex"], profile: "minimal", packs: [], selection: selected },
+        authorizationsForSelection("codex", selected),
+      );
+
+      expect(
+        driverSteps(plan.actions).some((step) =>
+          step.argv.join(" ").includes("codex-install-merge"),
+        ),
+      ).toBe(false);
+      const checks = await Promise.all(
+        plan.actions
+          .filter((action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe")
+          .map((action) => action.run(context)),
+      );
+      const missing =
+        present === "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS"
+          ? "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"
+          : "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
+      expect(checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "mcp.telemetry-opt-out-missing",
+            verdict: "fail",
+            detail: expect.stringContaining(`${scope} Codex config entry "chrome-devtools"`),
+          }),
+        ]),
+      );
+      const detail = checks.find((check) => check.code === "mcp.telemetry-opt-out-missing")?.detail;
+      expect(detail).toContain(`${missing}="1"`);
+      expect(detail).not.toContain(`${present}="1"`);
     },
   );
 
@@ -1327,11 +1392,7 @@ describe("verifiedEccInstallPlan", () => {
     ).toBe(false);
   });
 
-  it("materializes selected Codex skills into the real on-demand skill directory", () => {
-    const sourceRoot = join(root, "ecc-source");
-    const home = join(root, "home");
-    mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\r\n", "utf8");
+  function prepareVerifiedCodexSource(sourceRoot: string): void {
     put(
       join(sourceRoot, "scripts", "lib", "install-executor.js"),
       `exports.createManifestInstallPlan = ({ homeDir }) => ({
@@ -1391,7 +1452,13 @@ describe("verifiedEccInstallPlan", () => {
       ].join("\n"),
     );
     put(join(sourceRoot, "skills", "coding-standards", "SKILL.md"), "# Coding standards\n");
+  }
 
+  function verifiedCodexInstallStep(
+    sourceRoot: string,
+    home: string,
+    request: { governance?: true } = {},
+  ) {
     const selected: EccComponentSelection = {
       scope: "scoped",
       components: ["skill:coding-standards"],
@@ -1410,13 +1477,23 @@ describe("verifiedEccInstallPlan", () => {
     const built = verifiedEccInstallPlan(
       context,
       sourceRoot,
-      { clis: ["codex"], profile: "core", packs: [], selection: selected },
+      { clis: ["codex"], profile: "core", packs: [], selection: selected, ...request },
       authorizationsForSelection("codex", selected),
     );
     const step = driverSteps(built.actions)[1];
     if (step === undefined) throw new Error("missing Codex install step");
     const executable = step.argv[0];
     if (executable === undefined) throw new Error("missing Codex install executable");
+    return { step, executable };
+  }
+
+  it("materializes selected Codex skills into the real on-demand skill directory", () => {
+    const sourceRoot = join(root, "ecc-source");
+    const home = join(root, "home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\r\n", "utf8");
+    prepareVerifiedCodexSource(sourceRoot);
+    const { step, executable } = verifiedCodexInstallStep(sourceRoot, home);
 
     const result = spawnSync(executable, step.argv.slice(1), {
       cwd: step.cwd,
@@ -1429,8 +1506,12 @@ describe("verifiedEccInstallPlan", () => {
       readFileSync(join(home, ".codex", "skills", "coding-standards", "SKILL.md"), "utf8"),
     ).toBe("# Coding standards\n");
     const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
-    expect(config).toContain("chrome-devtools-mcp@1.7.0");
-    expect(config).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
+    expect(config).toContain(
+      'args = ["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"]',
+    );
+    expect(config).toContain('[mcp_servers."chrome-devtools".env]');
+    expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS" = "1"');
+    expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS" = "1"');
     expect(config).toContain("startup_timeout_sec = 30");
     expect(config).not.toContain("@latest");
     expect(config).toContain("\r\n");
@@ -1451,6 +1532,362 @@ describe("verifiedEccInstallPlan", () => {
     });
     expect(rerun.status, rerun.stderr).toBe(0);
     expect(readFileSync(statePath, "utf8")).toBe(firstState);
+  });
+
+  describe("apply-time Chrome DevTools MCP opt-out revalidation", () => {
+    const unsafeLaunch =
+      '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+    const compliantLaunch = `${unsafeLaunch}[mcp_servers.browser.env]\nCHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1"\nCHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"\n`;
+
+    function runVerifiedCodexStep(
+      label: string,
+      after: {
+        project?: string;
+        user?: string;
+        mergeHelper?: string;
+        sourceFiles?: Record<string, string>;
+      },
+      request: { governance?: true } = {},
+    ) {
+      const sourceRoot = join(root, `${label}-source`);
+      const home = join(root, `${label}-home`);
+      const userConfig = join(home, ".codex", "config.toml");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(userConfig, "# operator-owned\n", "utf8");
+      prepareVerifiedCodexSource(sourceRoot);
+      if (after.mergeHelper !== undefined)
+        put(join(sourceRoot, "scripts", "codex", "merge-codex-config.js"), after.mergeHelper);
+      for (const [relative, contents] of Object.entries(after.sourceFiles ?? {}))
+        put(join(sourceRoot, relative), contents);
+      const { step, executable } = verifiedCodexInstallStep(sourceRoot, home, request);
+      const projectConfig = join(root, ".codex", "config.toml");
+      if (after.project !== undefined) {
+        mkdirSync(join(root, ".codex"), { recursive: true });
+        writeFileSync(projectConfig, after.project, "utf8");
+      }
+      if (after.user !== undefined) writeFileSync(userConfig, after.user, "utf8");
+      const beforeUser = readFileSync(userConfig, "utf8");
+      const result = spawnSync(executable, step.argv.slice(1), {
+        cwd: step.cwd,
+        env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
+        encoding: "utf8",
+      });
+      return {
+        result,
+        beforeUser,
+        user: readFileSync(userConfig, "utf8"),
+        aihState: existsSync(join(home, ".codex", "ecc-aih-install-state.json")),
+      };
+    }
+
+    it("refuses a project entry added after planning", () => {
+      const run = runVerifiedCodexStep("late-project", { project: unsafeLaunch });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain('"browser"');
+      expect(run.result.stderr).toContain("CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS");
+      expect(run.user).toBe(run.beforeUser);
+      expect(run.aihState).toBe(false);
+    });
+
+    /**
+     * Applies the verified driver through the real executor. The runner stands in for
+     * the driver program: it runs the Codex merge step itself (or fails an earlier
+     * step), and the executor scrubs its output as it does for any bounded-stdin child.
+     */
+    async function applyVerifiedDriver(
+      label: string,
+      options: {
+        project?: string;
+        earlierStepStatus?: number;
+        beforeChild?: (recordPath: string) => void;
+        afterChild?: () => void;
+      },
+    ) {
+      const home = join(root, `${label}-home`);
+      const sourceRoot = join(root, `${label}-source`);
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\n", "utf8");
+      prepareVerifiedCodexSource(sourceRoot);
+      const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+      const selected = selection();
+      const built = verifiedEccInstallPlan(
+        context,
+        sourceRoot,
+        { clis: ["codex"], profile: "core", packs: [], selection: selected },
+        authorizationsForSelection("codex", selected),
+      );
+      const driver = execs(built.actions).find((action) =>
+        action.describe.startsWith("Install from the evidence-verified"),
+      );
+      if (driver === undefined) throw new Error("missing verified driver");
+      if (options.project !== undefined) {
+        mkdirSync(join(root, ".codex"), { recursive: true });
+        writeFileSync(join(root, ".codex", "config.toml"), options.project, "utf8");
+      }
+      const planTime = await Promise.all(
+        codexChromeDevtoolsOptOutActions(context, [])
+          .filter((action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe")
+          .map((action) => action.run(context)),
+      );
+      let recordPath: string | undefined;
+      let recordExistedDuringRun = false;
+      const run: PlanContext["run"] = async (_argv, opts) => {
+        const steps = JSON.parse(opts?.input ?? "[]") as Array<{
+          argv: string[];
+          cwd: string;
+          env?: Record<string, string>;
+        }>;
+        const codexStep = steps.find((step) =>
+          codexInstallProgram(step).includes("codex-install-merge"),
+        );
+        if (codexStep === undefined) throw new Error("missing Codex merge step");
+        recordPath = codexStep.argv.find((arg) =>
+          /aih-codex-opt-out-refusal-[0-9a-f]{32}[\\/]refusal\.json$/.test(arg),
+        );
+        recordExistedDuringRun = recordPath !== undefined && existsSync(recordPath);
+        if (options.earlierStepStatus !== undefined)
+          return { code: options.earlierStepStatus, stdout: "", stderr: "npm ci failed" };
+        if (recordPath !== undefined) options.beforeChild?.(recordPath);
+        const result = spawnSync(codexStep.argv[0] ?? "", codexStep.argv.slice(1), {
+          cwd: codexStep.cwd,
+          env: { ...process.env, ...codexStep.env, HOME: home, USERPROFILE: home },
+          encoding: "utf8",
+        });
+        options.afterChild?.();
+        return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+      };
+      const applied = await executePlan(plan("verified driver", driver), { ...context, run });
+      return {
+        applied,
+        planTime,
+        checks: applied.report?.checks ?? [],
+        recordPath,
+        recordExistedDuringRun,
+      };
+    }
+
+    it("reports the step's recorded refusal through the scrubbing executor as the plan-time check", async () => {
+      const run = await applyVerifiedDriver("typed", { project: unsafeLaunch });
+
+      expect(run.applied.execs[0]).toMatchObject({
+        code: 78,
+        stderr: "bounded-stdin child failed",
+      });
+      expect(run.planTime).toHaveLength(1);
+      const typed = run.checks.filter((check) => check.code === "mcp.telemetry-opt-out-missing");
+      expect(typed).toEqual(run.planTime);
+      expect(typed[0]?.detail).toContain(
+        `project Codex config entry "browser" (${join(root, ".codex", "config.toml")})`,
+      );
+      expect(run.recordExistedDuringRun).toBe(true);
+      expect(run.recordPath !== undefined && existsSync(run.recordPath)).toBe(false);
+    });
+
+    it("writes nothing through a hard link planted on the record path", async () => {
+      const decoy = join(root, "verified-decoy.json");
+      const run = await applyVerifiedDriver("hard-link", {
+        project: unsafeLaunch,
+        beforeChild: (recordPath) => {
+          writeFileSync(decoy, "", "utf8");
+          rmSync(recordPath, { force: true });
+          linkSync(decoy, recordPath);
+        },
+      });
+
+      expect(run.applied.execs[0]).toMatchObject({ code: 78 });
+      expect(run.checks.some((check) => check.code === "mcp.telemetry-opt-out-missing")).toBe(
+        false,
+      );
+      expect(readFileSync(decoy, "utf8")).toBe("");
+    });
+
+    it("keeps another step's exit 78 untyped when the configs are clean", async () => {
+      const run = await applyVerifiedDriver("other-step", { earlierStepStatus: 78 });
+
+      expect(run.applied.execs[0]).toMatchObject({ code: 78 });
+      expect(run.checks.some((check) => check.code === "mcp.telemetry-opt-out-missing")).toBe(
+        false,
+      );
+      expect(run.checks).toContainEqual(
+        expect.objectContaining({
+          name: "verified ECC install",
+          detail: "verified ECC install step failed (exit 78)",
+        }),
+      );
+      expect(run.recordPath !== undefined && existsSync(run.recordPath)).toBe(false);
+    });
+
+    it("keeps another step's exit 78 untyped even when a live config would be refused", async () => {
+      const run = await applyVerifiedDriver("other-step-unsafe", {
+        project: unsafeLaunch,
+        earlierStepStatus: 78,
+      });
+
+      expect(run.planTime).toHaveLength(1);
+      expect(run.checks.some((check) => check.code === "mcp.telemetry-opt-out-missing")).toBe(
+        false,
+      );
+    });
+
+    it.each([
+      ["repaired", (path: string) => writeFileSync(path, compliantLaunch, "utf8")],
+      ["deleted", (path: string) => rmSync(path, { force: true })],
+      [
+        "replaced by another entry",
+        (path: string) =>
+          writeFileSync(
+            path,
+            '[mcp_servers.other]\ncommand = "npx"\nargs = ["chrome-devtools-mcp"]\n',
+            "utf8",
+          ),
+      ],
+    ])(
+      "reports what the step recorded when the project config is %s after it refused",
+      async (label, change) => {
+        const project = join(root, ".codex", "config.toml");
+        const run = await applyVerifiedDriver(`changed-${label.replace(/\W+/g, "-")}`, {
+          project: unsafeLaunch,
+          afterChild: () => change(project),
+        });
+
+        const typed = run.checks.filter((check) => check.code === "mcp.telemetry-opt-out-missing");
+        expect(typed).toEqual(run.planTime);
+        expect(typed[0]?.detail).toContain(`project Codex config entry "browser" (${project})`);
+        expect(typed[0]?.detail).not.toContain('"other"');
+      },
+    );
+
+    it("exits with the refusal status the driver maps to the typed check", () => {
+      const run = runVerifiedCodexStep("status-project", { project: unsafeLaunch });
+
+      expect(run.result.status).toBe(78);
+    });
+
+    describe("governed installs", () => {
+      const staleManaged = [
+        "# operator-owned",
+        "",
+        "# >>> aih managed (mcp) >>>",
+        "[mcp_servers.chrome-devtools]",
+        'command = "npx"',
+        'args = ["chrome-devtools-mcp@latest"]',
+        "startup_timeout_sec = 30",
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n");
+      const claimingState = `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      })}\n`;
+
+      it.each([
+        ["user", "user", unsafeLaunch, "browser"],
+        ["project", "project", unsafeLaunch, "browser"],
+        ["stale aih-managed", "user", staleManaged, "chrome-devtools"],
+      ] as const)(
+        "refuses a %s launch without the opt-outs at plan time",
+        async (_label, scope, config, entry) => {
+          const home = join(root, "governed-plan-home");
+          const target =
+            scope === "project"
+              ? join(root, ".codex", "config.toml")
+              : join(home, ".codex", "config.toml");
+          mkdirSync(join(target, ".."), { recursive: true });
+          mkdirSync(join(home, ".codex"), { recursive: true });
+          writeFileSync(target, config, "utf8");
+          writeFileSync(join(home, ".codex", "ecc-aih-install-state.json"), claimingState, "utf8");
+          const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+          const selected = selection();
+
+          const plan = verifiedEccInstallPlan(
+            context,
+            join(root, "quarantine", "tree"),
+            {
+              clis: ["codex"],
+              profile: "minimal",
+              packs: [],
+              selection: selected,
+              governance: true,
+            },
+            authorizationsForSelection("codex", selected),
+          );
+
+          expect(
+            driverSteps(plan.actions).some((step) =>
+              codexInstallProgram(step).includes("codex-install-merge"),
+            ),
+          ).toBe(false);
+          const checks = await Promise.all(
+            plan.actions
+              .filter(
+                (action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe",
+              )
+              .map((action) => action.run(context)),
+          );
+          const refusal = checks.find((check) => check.code === "mcp.telemetry-opt-out-missing");
+          expect(refusal?.detail).toContain(`${scope} Codex config entry "${entry}"`);
+          expect(readFileSync(target, "utf8")).toBe(config);
+        },
+      );
+
+      it.each([
+        ["user", { user: unsafeLaunch }],
+        ["project", { project: unsafeLaunch }],
+        ["stale aih-managed", { user: staleManaged }],
+      ] as const)("refuses a %s launch added after planning at apply time", (label, after) => {
+        const run = runVerifiedCodexStep(`governed-${label.replace(/\W+/g, "-")}`, after, {
+          governance: true,
+        });
+
+        expect(run.result.status, run.result.stderr).toBe(78);
+        expect(run.user).toBe(run.beforeUser);
+        expect(run.aihState).toBe(false);
+      });
+
+      it("keeps a governed install working when every launch carries both opt-outs", () => {
+        const run = runVerifiedCodexStep(
+          "governed-compliant",
+          {
+            user: `${unsafeLaunch}[mcp_servers.browser.env]\nCHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1"\nCHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"\n`,
+          },
+          { governance: true },
+        );
+
+        expect(run.result.status, run.result.stderr).toBe(0);
+        expect(run.user).toBe(run.beforeUser);
+      });
+
+      it("includes the user config in governed change detection", () => {
+        const home = join(root, "governed-race-home");
+        // Governed installs skip the merge helper; ECC's install-state module loads mid-apply.
+        const installState = [
+          `require("node:fs").appendFileSync(${JSON.stringify(join(home, ".codex", "config.toml"))}, "# edited mid-apply");`,
+          'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");',
+          "",
+        ].join("\n");
+        const run = runVerifiedCodexStep(
+          "governed-race",
+          { sourceFiles: { "scripts/lib/install-state.js": installState } },
+          { governance: true },
+        );
+
+        expect(run.result.status).not.toBe(0);
+        expect(run.result.stderr).toContain("changed during apply");
+      });
+    });
+
+    it("includes the project config in apply-time change detection", () => {
+      const projectDir = join(root, ".codex");
+      const mergeHelper = `require("node:fs").mkdirSync(${JSON.stringify(projectDir)}, { recursive: true }); require("node:fs").writeFileSync(${JSON.stringify(join(projectDir, "config.toml"))}, "# edited mid-apply\\n");\n`;
+      const run = runVerifiedCodexStep("racing-project", { mergeHelper });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain("changed during apply");
+      expect(run.user).toBe(run.beforeUser);
+    });
   });
 
   it("registers only the current project's validated MCPs in project-local config", () => {

@@ -21,6 +21,7 @@
   },
   "files": [
     "dist",
+    "src/ecc/chrome-devtools-opt-out.cjs",
     "README.md",
     "LICENSE"
   ],

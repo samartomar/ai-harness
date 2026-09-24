@@ -39,7 +39,7 @@ function context(): PlanContext {
 }
 
 describe("qualified native MCP routes", () => {
-  it("emits 2.3.8 and native Memory 0.10.8 only through the root-aware guarded catalog", () => {
+  it("emits Graph 2.3.9 and native Memory 0.11.0 only through the root-aware guarded catalog", () => {
     const legacy = coreLocalMcpServers();
     const graphLegacy = legacy["code-review-graph"];
     const memoryLegacy = legacy["codebase-memory-mcp"];
@@ -47,18 +47,18 @@ describe("qualified native MCP routes", () => {
       "code-review-graph@2.3.7",
     );
     expect(graphLegacy?.type === "stdio" ? graphLegacy.args : []).not.toContain(
-      "code-review-graph@2.3.8",
+      "code-review-graph@2.3.9",
     );
     expect(memoryLegacy?.type === "stdio" ? memoryLegacy.args : []).toContain(
-      "codebase-memory-mcp@0.10.5",
+      "codebase-memory-mcp@0.11.0",
     );
     expect(memoryLegacy?.type === "stdio" ? memoryLegacy.args : []).not.toContain(
-      "codebase-memory-mcp@0.10.8",
+      "codebase-memory-mcp==0.11.0",
     );
 
     const managed = defaultNativeMcpServers(context());
-    expect(JSON.stringify(managed["code-review-graph"])).toContain("code-review-graph==2.3.8");
-    expect(JSON.stringify(managed["codebase-memory-mcp"])).toContain("codebase-memory-mcp==0.10.8");
+    expect(JSON.stringify(managed["code-review-graph"])).toContain("code-review-graph==2.3.9");
+    expect(JSON.stringify(managed["codebase-memory-mcp"])).toContain("codebase-memory-mcp==0.11.0");
     expect(
       managed["code-review-graph"]?.type === "stdio"
         ? managed["code-review-graph"].command

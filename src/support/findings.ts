@@ -335,6 +335,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Run `aih mcp --apply` to re-project the repo's MCP config onto the current catalog pins — after an aih upgrade this re-projection is the second half of a pin refresh. If the local pin was changed deliberately, keep it and record why.",
   },
+  "mcp.telemetry-opt-out-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "Chrome DevTools MCP launch lacks mandatory telemetry opt-outs",
+    action:
+      'Remove the named entry so aih manages chrome-devtools (aih always writes both opt-outs), or add CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1" and CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1" to its env table, then rerun the install. aih never rewrites a user-owned entry.',
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",

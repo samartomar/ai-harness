@@ -153,6 +153,11 @@ function structuredProbeCheckOptions(
   return { ...structured, name: structured.name ?? describe };
 }
 
+export interface ExecSidecar {
+  open(): void;
+  close(): void;
+}
+
 /**
  * A LOCAL helper command run after writes under `--apply` (e.g. icacls/chmod to
  * lock down a PEM, `mklink /J` for a VDI junction, `update-ca-certificates`, or
@@ -177,6 +182,12 @@ export interface ExecAction {
   timeoutMs?: number;
   /** Optional verification check to emit when the command exits non-zero. */
   failureCheck?: Check | ((result: RunResult) => Check);
+  /**
+   * Apply-only side channel the command reports through: `open` runs just
+   * before the command is spawned and `close` after its result and failureCheck
+   * are collected, whatever the outcome. Never runs on a dry run or a skipped exec.
+   */
+  sidecar?: ExecSidecar;
   /** Skip follow-on probes when this command fails. */
   blockProbesOnFailure?: boolean;
   /** Do not run this command when an earlier non-allowed exec failed. */
@@ -649,6 +660,7 @@ export function exec(
     stdin?: { data: string; maxBytes: number };
     timeoutMs?: number;
     failureCheck?: ExecAction["failureCheck"];
+    sidecar?: ExecSidecar;
     blockProbesOnFailure?: boolean;
     requiresPriorExecSuccess?: boolean;
     expect?: ExecAction["expect"];
@@ -664,6 +676,7 @@ export function exec(
     ...(opts.stdin === undefined ? {} : { stdin: { maxBytes: opts.stdin.maxBytes } }),
     timeoutMs: opts.timeoutMs,
     failureCheck: opts.failureCheck,
+    ...(opts.sidecar === undefined ? {} : { sidecar: opts.sidecar }),
     blockProbesOnFailure: opts.blockProbesOnFailure,
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     allowFailure: opts.allowFailure,

@@ -191,7 +191,9 @@ After its normal phases complete, `aih init` also runs the ordinary developer-to
 preview reports the effective selection without reconciling a tool. With `--apply`, it reconciles all
 seven existing runtime tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
 unchanged receipt-owned integration. During apply, Token Optimizer remains `blocked` until its
-license is explicitly accepted with `--accept-token-optimizer-license`; `--token-optimizer-profile
+license is explicitly accepted with `--accept-token-optimizer-license` (PolyForm Noncommercial 1.0.0;
+since v5.13.21 upstream also permits internal use by organizations with fewer than 5 people and under
+US$20,000 monthly revenue, which aih does not assess for you); `--token-optimizer-profile
 quiet|balanced` selects its setup profile. A blocked prerequisite is reported for that tool while
 independent selected tools continue. Headroom is also default-selected, but it stays
 `selected-pending` with a skipped check, with or without `--apply`, until it is explicitly activated.
@@ -360,7 +362,7 @@ readiness follows the primary: with Codebase Memory as primary it checks the exa
 registration and makes real MCP calls through it (`list_projects`, `index_status`, indexing an
 unindexed project locally once), and it never downloads the native payload.
 
-MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.7 with the PDF,
+MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.8 with the PDF,
 Word, PowerPoint, Excel and Outlook converters into an external runtime keyed by its dependency
 lock using an existing Python 3.10–3.13 interpreter, verifies an actual conversion, and reports the installed CLI command. It does not change
 global PATH or replace a user-installed CLI. Azure services, YouTube and audio-transcription extras
@@ -368,14 +370,14 @@ are not installed by default. Add `markitdown` to `developerTools.excluded` to o
 and worktree changes preserve the policy choice.
 
 MarkItDown MCP is a separate optional integration. Add `markitdown-mcp` to `mcp.allowedServers`
-to select the pinned official adapter (0.0.1a7 with converter 0.1.7); `mcp.disabledServers` overrides
+to select the pinned official adapter (0.0.1a7 with converter 0.1.8); `mcp.disabledServers` overrides
 that selection. This adapter can access user-selected files and URLs with the current user's
 permissions, and its first launch acquires its dependencies. Selecting the default CLI does not
 enable the MCP adapter. GitHub MCP also requires an explicit choice through `mcp.allowedServers`,
 a configured policy GitHub host, `--github-auth token`, or `--self-host`; it is absent from an
 unconfigured project's default MCP set.
 
-Playwright MCP uses the pinned `@playwright/mcp@0.0.81` runtime. It is selected by default for
+Playwright MCP uses the pinned `@playwright/mcp@0.0.82` runtime. It is selected by default for
 all project types. Add `playwright` to `developerTools.excluded` to opt out; an explicit subset or
 empty selection also omits it. MCP policy restrictions still apply. Its browser can access websites
 with the current user's permissions; a local MCP process does not confine browser network access.
@@ -751,6 +753,16 @@ consult-only — and the summary emits only the claims true for the selected tar
 target defaults to consult, so a newly registered CLI installs nothing rather than inheriting a claim
 that is false for it. No mechanism replaces already-installed content, so a rerun cannot re-scope an
 existing install.
+
+Every `chrome-devtools-mcp` launch aih can read in the user (`~/.codex/config.toml`) or project
+(`.codex/config.toml`) Codex config must set `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1"` and
+`CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"` in its `env` table, whatever the entry is called. aih
+checks this at plan time and again just before apply, on governed installs too and for its own stale
+managed entries. It refuses with `mcp.telemetry-opt-out-missing`, naming the scope, entry, config
+path, missing variables and next step, and never rewrites the entry. aih sees only launches written
+literally in the config: an entry whose command is a wrapper script that starts
+`chrome-devtools-mcp` without naming it is outside what aih can verify, so set both variables inside
+that script yourself.
 
 Kiro installs are ownership-tracked so a stale copy is visible. Because ECC's own installer writes
 the bytes, aih attributes ownership by what a run CREATES: it snapshots `.kiro/` before the

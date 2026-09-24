@@ -53,6 +53,9 @@ export type CheckCode =
   // (the post-upgrade re-projection half of the double lag).
   | "mcp.pin-stale"
   | "mcp.projection-stale"
+  // A Chrome DevTools MCP launch aih emits, merges or accepts lacks one of the
+  // mandatory CHROME_DEVTOOLS_MCP_NO_* opt-outs; aih refuses and never rewrites it.
+  | "mcp.telemetry-opt-out-missing"
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.config-only"

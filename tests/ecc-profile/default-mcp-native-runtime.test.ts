@@ -173,7 +173,7 @@ describe("generated default MCP native launchers", () => {
       [
         "code-review-graph",
         "--package",
-        "code-review-graph==2.3.8",
+        "code-review-graph==2.3.9",
         "--dependency-lock-sha256",
         DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
         "--lock-root",
@@ -265,7 +265,7 @@ describe("generated default MCP native launchers", () => {
       [
         "codebase-memory-mcp",
         "--package",
-        "codebase-memory-mcp==0.10.8",
+        "codebase-memory-mcp==0.11.0",
         "--dependency-lock-sha256",
         DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
         "--lock-root",
@@ -294,7 +294,7 @@ describe("generated default MCP native launchers", () => {
             path: payloadPath,
             sha256: "a".repeat(64),
             size: 1,
-            version: "0.10.8",
+            version: "0.11.0",
           };
         },
       },
@@ -329,7 +329,7 @@ describe("generated default MCP native launchers", () => {
         [
           "codebase-memory-mcp",
           "--package",
-          "codebase-memory-mcp==0.10.8",
+          "codebase-memory-mcp==0.11.0",
           "--dependency-lock-sha256",
           DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
           "--lock-root",
@@ -380,7 +380,7 @@ describe("generated default MCP native launchers", () => {
         [
           "codebase-memory-mcp",
           "--package",
-          "codebase-memory-mcp==0.10.8",
+          "codebase-memory-mcp==0.11.0",
           "--dependency-lock-sha256",
           DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
           "--lock-root",

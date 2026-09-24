@@ -20,7 +20,9 @@ import {
   serializeRegistrationLedger,
 } from "@aihq/core/framework-host";
 import {
+  ChromeDevtoolsOptOutRefusalRecord,
   type CodexScopedMcpServers,
+  codexChromeDevtoolsOptOutActions,
   codexMcpCollisionActions,
   coreOwnedEccCodexMcpServers,
 } from "./codex.js";
@@ -396,7 +398,10 @@ function requireAuthorizedRuntime(
   }
 }
 
-function driverAction(steps: readonly VerifiedInstallStep[]): Action {
+function driverAction(
+  steps: readonly VerifiedInstallStep[],
+  codexRefusalRecord?: ChromeDevtoolsOptOutRefusalRecord,
+): Action {
   // Steps stay in memory until apply and ride bounded stdin, never argv or a
   // shared temp file. They embed registration/materialization payloads that can
   // exceed Windows' 32,767-character command-line limit.
@@ -414,11 +419,15 @@ function driverAction(steps: readonly VerifiedInstallStep[]): Action {
     {
       stdin: { data: serialized, maxBytes: MAX_VERIFIED_ECC_INSTALL_STDIN_BYTES },
       timeoutMs: 180_000,
-      failureCheck: (result) => ({
-        name: "verified ECC install",
-        verdict: "fail",
-        detail: `verified ECC install step failed (exit ${result.code ?? "signal"})`,
-      }),
+      // The executor scrubs this bounded-stdin driver's output, so the Codex step's
+      // refusal reaches aih only through the record the step writes for its nonce.
+      ...(codexRefusalRecord === undefined ? {} : { sidecar: codexRefusalRecord }),
+      failureCheck: (result) =>
+        codexRefusalRecord?.check(result) ?? {
+          name: "verified ECC install",
+          verdict: "fail",
+          detail: `verified ECC install step failed (exit ${result.code ?? "signal"})`,
+        },
     },
   );
 }
@@ -475,6 +484,7 @@ export function verifiedEccInstallPlan(
   const post: Action[] = [];
   const steps: VerifiedInstallStep[] = [];
   const installedClis: Cli[] = [];
+  let codexRefusalRecord: ChromeDevtoolsOptOutRefusalRecord | undefined;
   if (needsNodeRuntime) {
     steps.push({
       argv: execArgv(ctx.host.platform, [
@@ -509,7 +519,12 @@ export function verifiedEccInstallPlan(
       const plannedTransports = new Map(
         Object.entries(scopedMcps).map(([name, server]) => [name, server.type] as const),
       );
-      const blockers = codexMcpCollisionActions(ctx, plannedTransports);
+      // Governed installs emit no MCP entries, but every chrome-devtools-mcp launch
+      // aih can read — including its own stale managed entries — is still checked.
+      const blockers = [
+        ...codexMcpCollisionActions(ctx, plannedTransports),
+        ...codexChromeDevtoolsOptOutActions(ctx, Object.keys(scopedMcps)),
+      ];
       if (blockers.length > 0) {
         pre.push(...blockers);
         continue;
@@ -525,6 +540,8 @@ export function verifiedEccInstallPlan(
         if (action.kind === "exec") {
           if (!action.describe.includes("Node dependencies")) {
             const codexStep = step(action, sourceRoot);
+            if (action.sidecar instanceof ChromeDevtoolsOptOutRefusalRecord)
+              codexRefusalRecord = action.sidecar;
             if (selection !== undefined) {
               codexStep.env = {
                 ECC_DISABLED_MCPS: disabledUpstreamMcps(selection),
@@ -593,7 +610,7 @@ export function verifiedEccInstallPlan(
   return plan(
     "ecc: verified install",
     ...pre,
-    ...(steps.length > 0 ? [driverAction(steps)] : []),
+    ...(steps.length > 0 ? [driverAction(steps, codexRefusalRecord)] : []),
     ...post,
     doc(
       "ECC verified source",

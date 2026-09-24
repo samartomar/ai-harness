@@ -1,15 +1,24 @@
-import { createHash } from "node:crypto";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type Action,
+  AihError,
+  type Check,
   doc,
+  type ExecSidecar,
   exec,
   lines,
   type PlanContext,
+  parseToml,
   probe,
+  type RunResult,
   readIfExists,
   stripManagedBlock,
+  tomlParserModulePath,
   type WriteAction,
   writeText,
 } from "@aihq/core/framework-host";
@@ -41,13 +50,21 @@ export interface CodexMcpCollision {
  * Core owns this one ECC default because the vendor helper currently launches it
  * through a floating npm tag. Its exact package identity is bound to the active
  * external-pin ledger; optional ECC MCPs remain on their scoped policy path.
+ * Both opt-outs are mandatory: usage statistics (which also report the MCP client's
+ * name) default on, and every launch otherwise spawns a registry update check.
+ * `--no-performance-crux` stops the performance tools sending page URLs to the
+ * Google CrUX API, which they do by default.
  */
 export function coreOwnedEccCodexMcpServers(): CodexScopedMcpServers {
   return {
     "chrome-devtools": {
       type: "stdio",
       command: "npx",
-      args: ["-y", "chrome-devtools-mcp@1.7.0"],
+      args: ["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"],
+      env: {
+        CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+        CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+      },
       startupTimeoutSec: 30,
     },
   };
@@ -948,6 +965,361 @@ export function codexMcpCollisionActions(
       code: "mcp.config-invalid",
       detail: summary,
     })),
+  ];
+}
+
+/** Owner decision: every chrome-devtools-mcp launch aih emits, merges, repairs or accepts sets both. */
+export const CHROME_DEVTOOLS_MCP_OPT_OUTS = [
+  "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS",
+  "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS",
+] as const;
+export type ChromeDevtoolsMcpOptOut = (typeof CHROME_DEVTOOLS_MCP_OPT_OUTS)[number];
+
+export interface ChromeDevtoolsOptOutRefusal {
+  scope: "user" | "project";
+  configPath: string;
+  entry: string;
+  missing: ChromeDevtoolsMcpOptOut[];
+  unparseable?: true;
+}
+
+interface ChromeDevtoolsOptOutPredicate {
+  missing(server: unknown): ChromeDevtoolsMcpOptOut[] | undefined;
+  refusals(
+    configs: ReadonlyArray<{
+      scope: ChromeDevtoolsOptOutRefusal["scope"];
+      configPath: string;
+      raw: string | undefined;
+    }>,
+    parse: (raw: string) => unknown,
+    exempt: (scope: ChromeDevtoolsOptOutRefusal["scope"], entry: string) => boolean,
+  ): ChromeDevtoolsOptOutRefusal[];
+}
+
+/**
+ * The absolute path of the shipped opt-out predicate module in the installed
+ * ECC plugin package: `src/ecc/` beside this module from source, or the
+ * packaged `src/ecc/` beside the plugin's `dist/` from the bundle. Config input
+ * never selects it.
+ */
+export function chromeDevtoolsOptOutPredicatePath(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  return basename(moduleDirectory) === "dist"
+    ? resolve(moduleDirectory, "../src/ecc/chrome-devtools-opt-out.cjs")
+    : resolve(moduleDirectory, "chrome-devtools-opt-out.cjs");
+}
+
+let loadedChromeDevtoolsOptOutPredicate: ChromeDevtoolsOptOutPredicate | undefined;
+
+/** Plan time loads the same file, by the same path, as the apply-time merge child. */
+function chromeDevtoolsOptOutPredicate(): ChromeDevtoolsOptOutPredicate {
+  if (loadedChromeDevtoolsOptOutPredicate !== undefined) return loadedChromeDevtoolsOptOutPredicate;
+  const path = chromeDevtoolsOptOutPredicatePath();
+  const loaded = createRequire(import.meta.url)(path) as Record<string, unknown> | undefined;
+  const missing = loaded?.chromeDevtoolsOptOutMissing;
+  const refusals = loaded?.chromeDevtoolsOptOutRefusals;
+  if (typeof missing !== "function" || typeof refusals !== "function")
+    throw new AihError(
+      `Chrome DevTools MCP opt-out predicate is unavailable: ${path}`,
+      "AIH_CONFIG",
+    );
+  loadedChromeDevtoolsOptOutPredicate = {
+    missing: missing as ChromeDevtoolsOptOutPredicate["missing"],
+    refusals: refusals as ChromeDevtoolsOptOutPredicate["refusals"],
+  };
+  return loadedChromeDevtoolsOptOutPredicate;
+}
+
+function describeMissingOptOuts(missing: readonly ChromeDevtoolsMcpOptOut[]): string {
+  return missing.map((name) => `${name}="1"`).join(" and ");
+}
+
+/** Refuses to emit a scoped chrome-devtools-mcp launch that lacks either opt-out. */
+export function assertChromeDevtoolsOptOuts(servers: CodexScopedMcpServers): void {
+  for (const [name, server] of Object.entries(servers)) {
+    if (server.type !== "stdio") continue;
+    const missing = chromeDevtoolsOptOutPredicate().missing(server);
+    if (missing !== undefined && missing.length > 0)
+      throw new AihError(
+        `refusing to emit Codex MCP server "${name}": it launches chrome-devtools-mcp without ${describeMissingOptOuts(missing)}`,
+        "AIH_CONFIG",
+      );
+  }
+}
+
+function aihClaimedCodexMcpServers(ctx: PlanContext): Set<string> {
+  const raw = readIfExists(codexInstallStatePath(ctx));
+  if (raw === undefined) return new Set();
+  try {
+    const state = JSON.parse(raw) as { managedBy?: unknown; codexToml?: { mcpServers?: unknown } };
+    const claimed = state?.codexToml?.mcpServers;
+    if (state?.managedBy !== "aih" || !Array.isArray(claimed)) return new Set();
+    return new Set(claimed.filter((name): name is string => typeof name === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Validates every chrome-devtools-mcp launch in the user and project Codex configs.
+ * Only aih-claimed user entries that this install re-renders are exempt; aih never
+ * rewrites a user-owned entry, so anything else missing an opt-out is refused.
+ */
+export function codexChromeDevtoolsOptOutRefusals(
+  ctx: PlanContext,
+  plannedServers: Iterable<string>,
+): ChromeDevtoolsOptOutRefusal[] {
+  const planned = new Set(plannedServers);
+  const claimed = aihClaimedCodexMcpServers(ctx);
+  const projectConfig = codexProjectConfigPath(ctx);
+  const userConfig = join(codexHomeDir(ctx), "config.toml");
+  return chromeDevtoolsOptOutPredicate().refusals(
+    [
+      { scope: "project", configPath: projectConfig, raw: readIfExists(projectConfig) },
+      { scope: "user", configPath: userConfig, raw: readIfExists(userConfig) },
+    ],
+    parseToml,
+    (scope, entry) => scope === "user" && planned.has(entry) && claimed.has(entry),
+  );
+}
+
+export function codexProjectConfigPath(ctx: PlanContext): string {
+  return join(ctx.root, ".codex", "config.toml");
+}
+
+/**
+ * The CommonJS entry of the TOML parser the apply-time merge script loads: the
+ * installed Core's own smol-toml, the same parser as plan time's `parseToml`.
+ */
+export function codexTomlParserPath(): string {
+  return tomlParserModulePath();
+}
+
+/** Exit status of the Codex merge script's apply-time opt-out refusal (sysexits EX_CONFIG). */
+export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT = 78;
+/** Format of the refusal record the Codex merge script writes for aih to read back. */
+export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT = "aih-codex-opt-out-refusal";
+/** Upper bound on that record; the script writes none rather than a larger one. */
+export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES = 64 * 1024;
+
+function chromeDevtoolsOptOutSummary(refusals: readonly ChromeDevtoolsOptOutRefusal[]): string {
+  return refusals
+    .map(
+      (refusal) =>
+        `${refusal.scope} Codex config entry "${refusal.entry}" (${refusal.configPath}) ` +
+        `${refusal.unparseable ? "mentions chrome-devtools-mcp but cannot be parsed to verify" : "launches chrome-devtools-mcp without"} ` +
+        describeMissingOptOuts(refusal.missing),
+    )
+    .join("; ");
+}
+
+function firstRefusedEntry(refusals: readonly ChromeDevtoolsOptOutRefusal[]): string {
+  return refusals.find((refusal) => !refusal.unparseable)?.entry ?? "<name>";
+}
+
+/** The one structured refusal, shared by the plan-time probe and the apply-time failure. */
+function chromeDevtoolsOptOutCheck(refusals: readonly ChromeDevtoolsOptOutRefusal[]): Check {
+  return {
+    name: "Chrome DevTools MCP telemetry opt-outs",
+    verdict: "fail",
+    code: "mcp.telemetry-opt-out-missing",
+    detail:
+      `${chromeDevtoolsOptOutSummary(refusals)}. Next: remove the entry (aih-managed ` +
+      "chrome-devtools always carries both opt-outs) or add the missing variables under " +
+      `[mcp_servers.${firstRefusedEntry(refusals)}.env], then rerun the ECC Codex install; ` +
+      "aih never rewrites a user-owned entry.",
+  };
+}
+
+function isOptOutRefusal(value: unknown): value is ChromeDevtoolsOptOutRefusal {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const allowed = new Set(["scope", "configPath", "entry", "missing", "unparseable"]);
+  const missing = record.missing;
+  return (
+    Object.keys(record).every((key) => allowed.has(key)) &&
+    (record.scope === "user" || record.scope === "project") &&
+    typeof record.configPath === "string" &&
+    record.configPath.length > 0 &&
+    typeof record.entry === "string" &&
+    record.entry.length > 0 &&
+    Array.isArray(missing) &&
+    missing.length > 0 &&
+    new Set(missing).size === missing.length &&
+    missing.every((name) => (CHROME_DEVTOOLS_MCP_OPT_OUTS as readonly unknown[]).includes(name)) &&
+    (record.unparseable === undefined || record.unparseable === true)
+  );
+}
+
+const REFUSAL_RECORD_KEYS = ["code", "format", "nonce", "refusals", "version"];
+
+/**
+ * The apply-time refusal evidence of one Codex merge step. The executor scrubs a
+ * bounded-stdin child's output (the verified driver), so the refusal travels as a
+ * record file, not a stderr line. Just before the step runs, aih creates a private
+ * directory (0700 on POSIX; on Windows it inherits the temp directory's ACL, which is
+ * per-user by default) and, inside it, the record file exclusively, and keeps that file's
+ * descriptor. The merge script writes one bounded record carrying this step's nonce
+ * into the empty, singly linked regular file it finds there; aih reads it back through
+ * its own descriptor, then removes both. Only exit 78 with a valid record for this step
+ * is the typed refusal; aih never reconstructs it from the live configs.
+ * Same-user limit: a process running as the same user is outside this record's threat
+ * model, since it can already edit the configs aih reads and a forged record can only
+ * change which failure code a failing step reports, never turn a failure into success.
+ * The same bound covers Windows when TEMP is redirected to a directory other users can
+ * write: another user could then interfere with the record, which again only changes
+ * which failure code a failing step reports.
+ */
+export class ChromeDevtoolsOptOutRefusalRecord implements ExecSidecar {
+  readonly path = join(
+    tmpdir(),
+    `aih-codex-opt-out-refusal-${randomBytes(16).toString("hex")}`,
+    "refusal.json",
+  );
+  readonly nonce = randomBytes(16).toString("hex");
+  private state: "planned" | "open" | "closed" = "planned";
+  private file: { descriptor: number; dev: bigint; ino: bigint } | undefined;
+
+  constructor(
+    private readonly configPaths: Readonly<Record<ChromeDevtoolsOptOutRefusal["scope"], string>>,
+  ) {}
+
+  open(): void {
+    const refuse = (reason: string) =>
+      new AihError(
+        `refusing to run the ECC Codex install: cannot create its refusal record ${this.path}: ${reason}`,
+        "AIH_TRUST",
+      );
+    if (this.state !== "planned")
+      throw refuse(`the record is single-use and already ${this.state}`);
+    this.state = "open";
+    try {
+      mkdirSync(dirname(this.path), { mode: 0o700 });
+    } catch (error) {
+      throw refuse((error as Error).message);
+    }
+    let descriptor: number | undefined;
+    try {
+      descriptor = openSync(
+        this.path,
+        constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
+        0o600,
+      );
+      const stats = fstatSync(descriptor, { bigint: true });
+      if (!stats.isFile()) throw new Error("it is not a regular file");
+      this.file = { descriptor, dev: stats.dev, ino: stats.ino };
+    } catch (error) {
+      if (descriptor !== undefined) closeSync(descriptor);
+      rmSync(dirname(this.path), { recursive: true, force: true });
+      throw refuse((error as Error).message);
+    }
+  }
+
+  close(): void {
+    this.state = "closed";
+    const file = this.file;
+    this.file = undefined;
+    if (file !== undefined) closeSync(file.descriptor);
+    rmSync(dirname(this.path), { recursive: true, force: true });
+  }
+
+  /**
+   * The typed check for this step's refusal; undefined for any other failure.
+   * Refused after close(): the record is gone and a later call must not read anything.
+   */
+  check(result: RunResult): Check | undefined {
+    if (this.state === "closed")
+      throw new AihError(
+        `the ECC Codex refusal record ${this.path} is closed; its check must run before the step's record is removed`,
+        "AIH_TRUST",
+      );
+    if (result.code !== CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT) return undefined;
+    const refusals = this.refusals();
+    return refusals === undefined ? undefined : chromeDevtoolsOptOutCheck(refusals);
+  }
+
+  private refusals(): ChromeDevtoolsOptOutRefusal[] | undefined {
+    const bytes = this.read();
+    if (bytes === undefined) return undefined;
+    let record: unknown;
+    try {
+      record = JSON.parse(bytes.toString("utf8"));
+    } catch {
+      return undefined;
+    }
+    if (record === null || typeof record !== "object" || Array.isArray(record)) return undefined;
+    const fields = record as Record<string, unknown>;
+    const refusals = fields.refusals;
+    const valid =
+      Object.keys(fields).sort().join("\n") === REFUSAL_RECORD_KEYS.join("\n") &&
+      fields.format === CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT &&
+      fields.version === 1 &&
+      fields.nonce === this.nonce &&
+      fields.code === "mcp.telemetry-opt-out-missing" &&
+      Array.isArray(refusals) &&
+      refusals.length > 0 &&
+      refusals.every(
+        (refusal) =>
+          isOptOutRefusal(refusal) && refusal.configPath === this.configPaths[refusal.scope],
+      );
+    return valid ? (refusals as ChromeDevtoolsOptOutRefusal[]) : undefined;
+  }
+
+  /**
+   * The bytes of the file aih created, read through its own descriptor while it is
+   * still that regular file within the cap; undefined on any filesystem failure.
+   */
+  private read(): Buffer | undefined {
+    const file = this.file;
+    if (file === undefined) return undefined;
+    try {
+      const stats = fstatSync(file.descriptor, { bigint: true });
+      if (
+        !stats.isFile() ||
+        stats.dev !== file.dev ||
+        stats.ino !== file.ino ||
+        stats.size > BigInt(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES)
+      )
+        return undefined;
+      const buffer = Buffer.alloc(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES + 1);
+      let length = 0;
+      for (;;) {
+        const read = readSync(file.descriptor, buffer, length, buffer.length - length, length);
+        if (read === 0) break;
+        length += read;
+        if (length > CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES) return undefined;
+      }
+      return buffer.subarray(0, length);
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+export function codexChromeDevtoolsOptOutActions(
+  ctx: PlanContext,
+  plannedServers: Iterable<string>,
+): Action[] {
+  const refusals = codexChromeDevtoolsOptOutRefusals(ctx, plannedServers);
+  if (refusals.length === 0) return [];
+  const summary = chromeDevtoolsOptOutSummary(refusals);
+  const firstEntry = firstRefusedEntry(refusals);
+  return [
+    doc(
+      "Chrome DevTools MCP telemetry opt-outs missing — fix before running ECC",
+      lines(
+        "Every chrome-devtools-mcp launch aih emits, merges or accepts must set",
+        'CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1" and CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1".',
+        "aih never rewrites a user-owned entry, so it refuses the Codex install instead.",
+        "",
+        `Refused: ${summary}.`,
+        "",
+        "Next: remove the entry and let aih manage chrome-devtools (aih always writes both",
+        `opt-outs), or add both variables under [mcp_servers.${firstEntry}.env];`,
+        "then rerun `aih ecc --cli codex --apply`.",
+      ),
+    ),
+    probe("Chrome DevTools MCP telemetry opt-outs", () => chromeDevtoolsOptOutCheck(refusals)),
   ];
 }
 

@@ -1,20 +1,23 @@
 import "../core-invocation.js";
 import { Buffer } from "node:buffer";
-import { spawnSync } from "node:child_process";
+import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import {
   existsSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -36,10 +39,15 @@ import type {
   WriteAction,
 } from "../../../../src/internals/plan.js";
 import { fakeRunner } from "../../../../src/internals/proc.js";
+import type { Check } from "../../../../src/internals/verify.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import type { RepoStack } from "../../../../src/profile/scan.js";
 import {
+  ChromeDevtoolsOptOutRefusalRecord,
+  chromeDevtoolsOptOutPredicatePath,
   codexAgentsBlockRemovalAction,
+  codexChromeDevtoolsOptOutActions,
+  codexChromeDevtoolsOptOutRefusals,
   codexConfigRemovalAction,
   codexInstallStateCleanupAction,
   codexPruneRemovalActions,
@@ -391,10 +399,42 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     if (chrome === undefined) throw new Error("missing Core-owned Chrome DevTools MCP server");
 
     expect(chrome.command).toBe("npx");
-    expect(chrome.args).toEqual(["-y", "chrome-devtools-mcp@1.7.0"]);
-    expect(chrome.env).toBeUndefined();
+    expect(chrome.args).toEqual(["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"]);
+    expect(chrome.env).toEqual({
+      CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+      CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+    });
     expect(chrome.args.join(" ")).not.toContain("@latest");
     expect(codexInstallState(actions).codexToml.mcpServers).toContain("chrome-devtools");
+  });
+
+  it("always disables Chrome DevTools MCP usage statistics and update checks", () => {
+    const chrome = coreOwnedEccCodexMcpServers()["chrome-devtools"];
+    if (chrome?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP server");
+    // Performance tools otherwise send page URLs to the Google CrUX API.
+    expect(chrome.args).toContain("--no-performance-crux");
+    expect(chrome.env).toEqual({
+      CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+      CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+    });
+
+    // Every Chrome DevTools MCP launch AIH emits comes from this one projection; a second
+    // literal launch elsewhere in Core's or a plugin's src could omit the mandatory opt-outs.
+    const launches = spawnSync(
+      "git",
+      ["grep", "-l", "-E", "chrome-devtools-mcp@[0-9]", "--", "src", "packages/*/src/*"],
+      {
+        cwd: join(import.meta.dirname, "../../../.."),
+        encoding: "utf8",
+      },
+    );
+    expect(launches.status).toBe(0);
+    expect(
+      launches.stdout
+        .trim()
+        .split("\n")
+        .filter((path) => path !== "src/internals/external-pin-ledger.json"),
+    ).toEqual(["packages/framework-ecc/src/ecc/codex.ts"]);
   });
 
   it("defaults a direct non-governed Codex action to Core's exact Chrome DevTools pin", () => {
@@ -411,8 +451,9 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     if (mcpB64 === undefined) throw new Error("missing default Codex MCP payload");
     const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
 
-    expect(rendered).toContain("chrome-devtools-mcp@1.7.0");
-    expect(rendered).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
+    expect(rendered).toContain('"chrome-devtools-mcp@1.10.1","--no-performance-crux"');
+    expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS":"1"');
+    expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS":"1"');
     expect(rendered).not.toContain("@latest");
   });
 
@@ -440,7 +481,9 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       if (mcpB64 === undefined) throw new Error("missing Core-owned Codex MCP payload");
 
       expect(state.codexToml.mcpServers).not.toContain("chrome-devtools");
-      expect(Buffer.from(mcpB64, "base64").toString("utf8")).toContain("chrome-devtools-mcp@1.7.0");
+      expect(Buffer.from(mcpB64, "base64").toString("utf8")).toContain(
+        "chrome-devtools-mcp@1.10.1",
+      );
     },
   );
 
@@ -1075,6 +1118,195 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     expect(
       execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
     ).toBe(true);
+  });
+});
+
+describe("ecc.plan — Chrome DevTools MCP telemetry opt-outs", () => {
+  const NO_STATS = "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
+  const NO_UPDATES = "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS";
+  const launch = (name: string, env?: string) =>
+    [
+      `[mcp_servers.${name}]`,
+      'command = "npx"',
+      'args = ["-y", "chrome-devtools-mcp@1.10.1"]',
+      ...(env === undefined ? [] : [`[mcp_servers.${name}.env]`, env]),
+      "",
+    ].join("\n");
+
+  async function planWith(
+    projectConfig: string | undefined,
+    globalConfig: string | undefined,
+    state?: string[],
+  ): Promise<{ actions: Action[]; checks: Awaited<ReturnType<ProbeAction["run"]>>[] }> {
+    const home = join(tmp, "home");
+    const root = join(tmp, "repo");
+    mkdirSync(join(root, ".codex"), { recursive: true });
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    if (projectConfig !== undefined)
+      writeFileSync(join(root, ".codex", "config.toml"), projectConfig);
+    if (globalConfig !== undefined)
+      writeFileSync(join(home, ".codex", "config.toml"), globalConfig);
+    if (state !== undefined) {
+      writeFileSync(
+        join(home, ".codex", "ecc-aih-install-state.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: state },
+          agentsBlock: true,
+        })}\n`,
+      );
+    }
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const actions = (await command.plan(ctx)).actions;
+    const checks = await Promise.all(
+      actions
+        .filter((action): action is ProbeAction => action.kind === "probe")
+        .map((action) => action.run(ctx)),
+    );
+    return { actions, checks };
+  }
+
+  const installPlanned = (actions: Action[]) =>
+    execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex"));
+  const optOutRefusals = (checks: Awaited<ReturnType<ProbeAction["run"]>>[]) =>
+    checks.filter((check) => check.code === "mcp.telemetry-opt-out-missing");
+
+  it("refuses a user-owned same-name entry that launches chrome-devtools-mcp without the opt-outs", async () => {
+    const { actions, checks } = await planWith(undefined, launch("chrome-devtools"));
+
+    expect(installPlanned(actions)).toBe(false);
+    const [refusal, ...rest] = optOutRefusals(checks);
+    expect(rest).toEqual([]);
+    expect(refusal?.verdict).toBe("fail");
+    expect(refusal?.detail).toContain('user Codex config entry "chrome-devtools"');
+    expect(refusal?.detail).toContain(`${NO_STATS}="1"`);
+    expect(refusal?.detail).toContain(`${NO_UPDATES}="1"`);
+    const guidance = docs(actions).find((action) =>
+      action.describe.includes("Chrome DevTools MCP telemetry opt-outs missing"),
+    );
+    expect(guidance?.text).toContain("let aih manage");
+    expect(guidance?.text).toContain("[mcp_servers.chrome-devtools.env]");
+    expect(guidance?.text).toContain("aih never rewrites");
+  });
+
+  it("names only the missing variable and rejects values other than the exact string 1", async () => {
+    const onlyUpdates = await planWith(undefined, launch("chrome-devtools", `${NO_UPDATES} = "1"`));
+    expect(installPlanned(onlyUpdates.actions)).toBe(false);
+    const detail = optOutRefusals(onlyUpdates.checks)[0]?.detail ?? "";
+    expect(detail).toContain(`${NO_STATS}="1"`);
+    expect(detail).not.toContain(`${NO_UPDATES}="1"`);
+
+    const wrongValues = await planWith(
+      undefined,
+      launch("chrome-devtools", `${NO_UPDATES} = "true"\n${NO_STATS} = "0"`),
+    );
+    expect(installPlanned(wrongValues.actions)).toBe(false);
+    const wrongDetail = optOutRefusals(wrongValues.checks)[0]?.detail ?? "";
+    expect(wrongDetail).toContain(`${NO_STATS}="1"`);
+    expect(wrongDetail).toContain(`${NO_UPDATES}="1"`);
+  });
+
+  it("refuses any differently named user entry that launches chrome-devtools-mcp", async () => {
+    const { actions, checks } = await planWith(undefined, launch("browser"));
+    expect(installPlanned(actions)).toBe(false);
+    expect(optOutRefusals(checks)[0]?.detail).toContain('user Codex config entry "browser"');
+  });
+
+  it("refuses a project override that launches chrome-devtools-mcp without the opt-outs", async () => {
+    const { actions, checks } = await planWith(
+      launch("chrome-devtools", `${NO_UPDATES} = "1"`),
+      undefined,
+    );
+    expect(installPlanned(actions)).toBe(false);
+    const detail = optOutRefusals(checks)[0]?.detail ?? "";
+    expect(detail).toContain('project Codex config entry "chrome-devtools"');
+    expect(detail).toContain(`${NO_STATS}="1"`);
+  });
+
+  it("refuses an unparseable config that mentions chrome-devtools-mcp", async () => {
+    const { actions, checks } = await planWith(
+      undefined,
+      `${launch("chrome-devtools")}[mcp_servers.chrome-devtools]\ncommand = "npx"\n`,
+    );
+    expect(installPlanned(actions)).toBe(false);
+    expect(optOutRefusals(checks).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["env tables", launch("chrome-devtools", `${NO_STATS} = "1"\n${NO_UPDATES} = "1"`)],
+    [
+      "inline env",
+      `[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\nenv = { ${NO_STATS} = "1", ${NO_UPDATES} = '1' }\n`,
+    ],
+  ])("accepts user and project entries carrying both opt-outs (%s)", async (_kind, config) => {
+    const { actions, checks } = await planWith(
+      config,
+      config.replace(/mcp_servers\.chrome-devtools/g, "mcp_servers.cdt"),
+    );
+    expect(optOutRefusals(checks)).toEqual([]);
+    expect(installPlanned(actions)).toBe(true);
+  });
+
+  it("does not refuse aih-managed entries that the install re-renders with the opt-outs", async () => {
+    const managed = [
+      "# >>> aih managed (mcp) >>>",
+      '[mcp_servers."chrome-devtools"]',
+      'command = "npx"',
+      'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+      "startup_timeout_sec = 30",
+      "# <<< aih managed (mcp) <<<",
+      "",
+    ].join("\n");
+    const update = await planWith(undefined, managed, ["chrome-devtools"]);
+    expect(optOutRefusals(update.checks)).toEqual([]);
+    expect(installPlanned(update.actions)).toBe(true);
+
+    const legacy =
+      '[mcp_servers."chrome-devtools"]\ncommand = "npx"\nargs = ["chrome-devtools-mcp@latest"]\nstartup_timeout_sec = 30\n';
+    const repair = await planWith(undefined, legacy, ["chrome-devtools"]);
+    expect(optOutRefusals(repair.checks)).toEqual([]);
+    expect(installPlanned(repair.actions)).toBe(true);
+
+    const unclaimed = await planWith(undefined, legacy, []);
+    expect(installPlanned(unclaimed.actions)).toBe(false);
+    expect(optOutRefusals(unclaimed.checks).length).toBe(1);
+  });
+
+  it("keeps preserving an operator-owned chrome-devtools name that does not launch chrome-devtools-mcp", async () => {
+    const { actions, checks } = await planWith(
+      undefined,
+      '[mcp_servers.chrome-devtools]\ncommand = "operator-devtools"\nargs = ["--local"]\n',
+    );
+    expect(optOutRefusals(checks)).toEqual([]);
+    expect(installPlanned(actions)).toBe(true);
+  });
+
+  it("refuses to emit a scoped chrome-devtools-mcp launch without both opt-outs", () => {
+    const emit = (env: Record<string, string> | undefined) =>
+      codexEccActions(
+        makeCtx({ cli: "codex" }),
+        { dir: tmp, posix: tmp.replace(/\\/g, "/"), explicit: true, hasCache: false },
+        "minimal",
+        undefined,
+        {
+          browser: {
+            type: "stdio",
+            command: "npx",
+            args: ["-y", "chrome-devtools-mcp@1.10.1"],
+            ...(env === undefined ? {} : { env }),
+          },
+        },
+      );
+    expect(() => emit(undefined)).toThrow(
+      expect.objectContaining({
+        code: "AIH_CONFIG",
+        message: expect.stringContaining(`"browser"`),
+      }),
+    );
+    expect(() => emit({ [NO_UPDATES]: "1" })).toThrow(new RegExp(`${NO_STATS}="1"`));
+    expect(() => emit({ [NO_UPDATES]: "1", [NO_STATS]: "1" })).not.toThrow();
   });
 });
 
@@ -1774,7 +2006,7 @@ describe("Codex managed destination safety", () => {
       const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
       if (encodedOperatorRootHeader !== undefined) {
         expect(config).toContain(encodedOperatorRootHeader);
-        expect(config).not.toContain("chrome-devtools-mcp@1.7.0");
+        expect(config).not.toContain("chrome-devtools-mcp@1.10.1");
         expect(config).toContain("@modelcontextprotocol/server-sequential-thinking@2025.7.1");
         expect(config.match(/mcp_servers\..*chrome/gi)).toHaveLength(1);
         const outputState = JSON.parse(
@@ -1784,9 +2016,10 @@ describe("Codex managed destination safety", () => {
         expect(outputState.codexToml.mcpServers).toContain("sequential-thinking");
         return;
       }
-      expect(config).toContain("chrome-devtools-mcp@1.7.0");
+      expect(config).toContain("chrome-devtools-mcp@1.10.1");
       expect(config).toContain("startup_timeout_sec = 30");
-      expect(config).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
+      expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS" = "1"');
+      expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS" = "1"');
       expect(config).not.toContain("@latest");
       if (
         legacyPosition === "vanished" ||
@@ -1968,7 +2201,7 @@ describe("Codex managed destination safety", () => {
     expect(result.status, result.stderr).toBe(0);
     const config = readFileSync(configPath, "utf8");
     expect(config).toContain(operatorRoot.trim());
-    expect(config).not.toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).not.toContain("chrome-devtools-mcp@1.10.1");
     expect(config).toContain("@modelcontextprotocol/server-sequential-thinking@2025.7.1");
     const parsed = parse(config) as {
       mcp_servers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
@@ -1983,6 +2216,641 @@ describe("Codex managed destination safety", () => {
     };
     expect(outputState.codexToml.mcpServers).not.toContain("chrome-devtools");
     expect(outputState.codexToml.mcpServers).toContain("sequential-thinking");
+  });
+
+  describe("direct apply keeps Chrome DevTools MCP opt-outs mandatory", () => {
+    const NO_STATS = "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
+    const NO_UPDATES = "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS";
+
+    const projectConfigPath = () => join(tmp, ".codex", "config.toml");
+
+    function runDirectApply(
+      label: string,
+      config: string,
+      options: {
+        projectAfterPlan?: string;
+        mergeHelper?: string;
+        beforeChild?: (recordPath: string) => void;
+        afterChild?: () => void;
+        rewriteArgv?: (argv: string[]) => string[];
+      } = {},
+    ) {
+      const home = join(tmp, `${label}-home`);
+      const repo = join(tmp, "ecc");
+      const configPath = join(home, ".codex", "config.toml");
+      const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      prepareCodexRepo(home);
+      writeFileSync(
+        join(repo, "scripts", "lib", "install-state.js"),
+        'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+      );
+      if (options.mergeHelper !== undefined)
+        writeFileSync(join(repo, "scripts", "codex", "merge-codex-config.js"), options.mergeHelper);
+      writeFileSync(configPath, config, "utf8");
+      writeFileSync(
+        statePath,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: [] },
+          agentsBlock: true,
+        })}\n`,
+        "utf8",
+      );
+      const beforeState = readFileSync(statePath, "utf8");
+      const base = makeCtx({ cli: "codex" });
+      const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
+      const action = codexEccActions(
+        ctx,
+        { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+        "minimal",
+      ).find(
+        (candidate): candidate is ExecAction =>
+          candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+      );
+      if (action === undefined) throw new Error("missing direct Codex merge action");
+      if (options.projectAfterPlan !== undefined) {
+        mkdirSync(join(tmp, ".codex"), { recursive: true });
+        writeFileSync(projectConfigPath(), options.projectAfterPlan, "utf8");
+      }
+      const record = action.sidecar;
+      if (!(record instanceof ChromeDevtoolsOptOutRefusalRecord))
+        throw new Error("missing Codex refusal record");
+      const failureCheck = action.failureCheck;
+      if (typeof failureCheck !== "function") throw new Error("missing Codex merge failure check");
+      // What the executor does around the exec: open the record, run, check, close.
+      record.open();
+      let result: SpawnSyncReturns<string>;
+      let check: Check | undefined;
+      try {
+        const argv = options.rewriteArgv?.(action.argv) ?? action.argv;
+        options.beforeChild?.(record.path);
+        result = spawnSync(process.execPath, argv.slice(1), {
+          cwd: repo,
+          encoding: "utf8",
+        });
+        options.afterChild?.();
+        check =
+          result.status === 0
+            ? undefined
+            : failureCheck({ code: result.status, stdout: result.stdout, stderr: result.stderr });
+      } finally {
+        record.close();
+      }
+      return {
+        result,
+        check,
+        record,
+        action,
+        ctx,
+        configPath,
+        config: readFileSync(configPath, "utf8"),
+        state: readFileSync(statePath, "utf8"),
+        beforeState,
+        agents: existsSync(join(home, ".codex", "AGENTS.md")),
+      };
+    }
+
+    const failureCheckOf = (run: ReturnType<typeof runDirectApply>): Check => {
+      if (run.check === undefined) throw new Error("the Codex merge step did not fail");
+      return run.check;
+    };
+    const planTimeCheck = async (ctx: PlanContext, planned: string[]) => {
+      const probeAction = codexChromeDevtoolsOptOutActions(ctx, planned).find(
+        (candidate): candidate is ProbeAction => candidate.kind === "probe",
+      );
+      if (probeAction === undefined) throw new Error("missing plan-time opt-out refusal");
+      return probeAction.run(ctx);
+    };
+
+    it("reports an apply-time user refusal as the same typed check plan time emits", async () => {
+      const config =
+        '[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+      const run = runDirectApply("opt-out-typed-user", config);
+
+      expect(run.result.status).toBe(78);
+      const check = failureCheckOf(run);
+      expect(check).toEqual(await planTimeCheck(run.ctx, []));
+      expect(check).toMatchObject({ code: "mcp.telemetry-opt-out-missing", verdict: "fail" });
+      expect(check.detail).toContain(
+        `user Codex config entry "chrome-devtools" (${run.configPath})`,
+      );
+      expect(check.detail).toContain(`${NO_STATS}="1" and ${NO_UPDATES}="1"`);
+      expect(check.detail).toContain("Next: remove the entry");
+      expect(check.detail).toContain("[mcp_servers.chrome-devtools.env]");
+    });
+
+    it("reports an apply-time project refusal with its scope and config path", async () => {
+      const run = runDirectApply("opt-out-typed-project", "", {
+        projectAfterPlan: `${unsafeProject}[mcp_servers.browser.env]\n${NO_UPDATES} = "1"\n`,
+      });
+
+      expect(run.result.status).toBe(78);
+      const check = failureCheckOf(run);
+      expect(check).toEqual(await planTimeCheck(run.ctx, []));
+      expect(check.code).toBe("mcp.telemetry-opt-out-missing");
+      expect(check.detail).toContain(
+        `project Codex config entry "browser" (${projectConfigPath()})`,
+      );
+      expect(check.detail).toContain(`${NO_STATS}="1"`);
+      expect(check.detail).not.toContain(`${NO_UPDATES}="1"`);
+      expect(check.detail).toContain("[mcp_servers.browser.env]");
+    });
+
+    it("keeps unrelated merge failures untyped", () => {
+      const run = runDirectApply("opt-out-untyped", "", { mergeHelper: "process.exit(3);\n" });
+
+      expect(run.result.status).not.toBe(0);
+      expect(failureCheckOf(run).code).toBeUndefined();
+    });
+
+    it("removes the refusal record after the step", () => {
+      const run = runDirectApply("opt-out-record-removed", "", {
+        projectAfterPlan: unsafeProject,
+      });
+
+      expect(run.result.status).toBe(78);
+      expect(failureCheckOf(run).code).toBe("mcp.telemetry-opt-out-missing");
+      expect(existsSync(run.record.path)).toBe(false);
+    });
+
+    it.each([
+      ["repaired", (path: string) => writeFileSync(path, compliantProject, "utf8")],
+      ["deleted", (path: string) => rmSync(path, { force: true })],
+      [
+        "replaced by another entry",
+        (path: string) =>
+          writeFileSync(
+            path,
+            '[mcp_servers.other]\ncommand = "npx"\nargs = ["chrome-devtools-mcp"]\n',
+            "utf8",
+          ),
+      ],
+    ])(
+      "reports what the step recorded when the project config is %s after it refused",
+      async (_label, change) => {
+        const run = runDirectApply(`opt-out-changed-${_label.replace(/\W+/g, "-")}`, "", {
+          projectAfterPlan: `${unsafeProject}[mcp_servers.browser.env]\n${NO_UPDATES} = "1"\n`,
+          afterChild: () => change(projectConfigPath()),
+        });
+
+        expect(run.result.status).toBe(78);
+        const check = failureCheckOf(run);
+        expect(check.code).toBe("mcp.telemetry-opt-out-missing");
+        expect(check.detail).toContain(
+          `project Codex config entry "browser" (${projectConfigPath()}) launches chrome-devtools-mcp without ${NO_STATS}="1".`,
+        );
+        expect(check.detail).not.toContain(`${NO_UPDATES}="1"`);
+        expect(check.detail).not.toContain('"other"');
+      },
+    );
+
+    describe("accepts the typed check only with this step's record and exit 78", () => {
+      function recordedStep() {
+        const base = makeCtx({ cli: "codex" });
+        const home = join(tmp, "record-home");
+        const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
+        const repo = join(tmp, "ecc");
+        const action = codexEccActions(
+          ctx,
+          { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+          "minimal",
+        ).find(
+          (candidate): candidate is ExecAction =>
+            candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+        );
+        const record = action?.sidecar;
+        const failureCheck = action?.failureCheck;
+        if (
+          !(record instanceof ChromeDevtoolsOptOutRefusalRecord) ||
+          typeof failureCheck !== "function"
+        )
+          throw new Error("missing Codex refusal record");
+        const userConfig = join(home, ".codex", "config.toml");
+        const refusal = {
+          scope: "user",
+          configPath: userConfig,
+          entry: "browser",
+          missing: [NO_STATS],
+        };
+        const valid = {
+          format: "aih-codex-opt-out-refusal",
+          version: 1,
+          nonce: record.nonce,
+          code: "mcp.telemetry-opt-out-missing",
+          refusals: [refusal],
+        };
+        const checkWith = (contents: string | undefined, code: number) => {
+          record.open();
+          try {
+            if (contents !== undefined) writeFileSync(record.path, contents, "utf8");
+            return failureCheck({ code, stdout: "", stderr: "" });
+          } finally {
+            record.close();
+          }
+        };
+        return { record, valid, refusal, userConfig, checkWith };
+      }
+
+      it("types a valid record with exit 78 exactly as recorded", () => {
+        const { valid, userConfig, checkWith, record } = recordedStep();
+
+        const check = checkWith(JSON.stringify(valid), 78);
+
+        expect(check.code).toBe("mcp.telemetry-opt-out-missing");
+        expect(check.detail).toContain(
+          `user Codex config entry "browser" (${userConfig}) launches chrome-devtools-mcp without ${NO_STATS}="1".`,
+        );
+        expect(existsSync(record.path)).toBe(false);
+      });
+
+      it.each<[string, (step: ReturnType<typeof recordedStep>) => [string | undefined, number]]>([
+        ["no record", () => [undefined, 78]],
+        ["an empty record", () => ["", 78]],
+        ["a malformed record", () => ["{not json", 78]],
+        [
+          "a record from another nonce",
+          ({ valid }) => [JSON.stringify({ ...valid, nonce: "f".repeat(32) }), 78],
+        ],
+        [
+          "a record with another format",
+          ({ valid }) => [JSON.stringify({ ...valid, format: "other" }), 78],
+        ],
+        [
+          "a record with another code",
+          ({ valid }) => [JSON.stringify({ ...valid, code: "mcp.config-invalid" }), 78],
+        ],
+        [
+          "a record with an extra field",
+          ({ valid }) => [JSON.stringify({ ...valid, extra: true }), 78],
+        ],
+        [
+          "a record with no refusals",
+          ({ valid }) => [JSON.stringify({ ...valid, refusals: [] }), 78],
+        ],
+        [
+          "a record naming another config path",
+          ({ valid, refusal }) => [
+            JSON.stringify({
+              ...valid,
+              refusals: [{ ...refusal, configPath: join(tmp, "elsewhere.toml") }],
+            }),
+            78,
+          ],
+        ],
+        [
+          "a record naming an unknown variable",
+          ({ valid, refusal }) => [
+            JSON.stringify({ ...valid, refusals: [{ ...refusal, missing: ["PATH"] }] }),
+            78,
+          ],
+        ],
+        [
+          "an oversized record",
+          ({ valid, refusal }) => [
+            JSON.stringify({ ...valid, refusals: [{ ...refusal, entry: "x".repeat(70 * 1024) }] }),
+            78,
+          ],
+        ],
+        ["a valid record without exit 78", ({ valid }) => [JSON.stringify(valid), 1]],
+      ])("keeps %s untyped", (_label, arrange) => {
+        const step = recordedStep();
+        const [contents, code] = arrange(step);
+
+        const check = step.checkWith(contents, code);
+
+        expect(check.code).toBeUndefined();
+        expect(check.detail).toContain(`exit ${code}`);
+        expect(existsSync(step.record.path)).toBe(false);
+      });
+
+      it("refuses to run over an existing record directory", () => {
+        const { record } = recordedStep();
+        mkdirSync(dirname(record.path));
+        writeFileSync(record.path, "planted", "utf8");
+        try {
+          expect(() => record.open()).toThrow(/refusal record/);
+          expect(readFileSync(record.path, "utf8")).toBe("planted");
+        } finally {
+          rmSync(dirname(record.path), { recursive: true, force: true });
+        }
+      });
+
+      it("keeps the record in a private directory it creates and removes", () => {
+        const { record } = recordedStep();
+        const directory = dirname(record.path);
+
+        record.open();
+        try {
+          expect(directory).not.toBe(tmpdir());
+          expect(dirname(directory)).toBe(tmpdir());
+          const stats = lstatSync(directory);
+          expect(stats.isDirectory()).toBe(true);
+          if (process.platform !== "win32") expect(stats.mode & 0o777).toBe(0o700);
+          expect(lstatSync(record.path).isFile()).toBe(true);
+        } finally {
+          record.close();
+        }
+        expect(existsSync(directory)).toBe(false);
+      });
+
+      it("refuses a check after close", () => {
+        const { record, valid } = recordedStep();
+        record.open();
+        writeFileSync(record.path, JSON.stringify(valid), "utf8");
+        record.close();
+
+        expect(() => record.check({ code: 78, stdout: "", stderr: "" })).toThrow(/closed/);
+        expect(() => record.check({ code: 1, stdout: "", stderr: "" })).toThrow(/closed/);
+      });
+
+      it("refuses a second open", () => {
+        const { record } = recordedStep();
+        record.open();
+        record.close();
+
+        expect(() => record.open()).toThrow(/single-use/);
+        expect(existsSync(dirname(record.path))).toBe(false);
+      });
+
+      it("keeps the check generic when the record is gone before it is read", () => {
+        const { record, valid } = recordedStep();
+        record.open();
+        try {
+          writeFileSync(record.path, JSON.stringify(valid), "utf8");
+          rmSync(record.path, { force: true });
+          expect(() => record.check({ code: 78, stdout: "", stderr: "" })).not.toThrow();
+        } finally {
+          record.close();
+        }
+      });
+    });
+
+    describe("the record path cannot redirect the record", () => {
+      const decoyPath = () => join(tmp, "decoy.json");
+
+      it("writes nothing through a hard link planted on the record path", () => {
+        const run = runDirectApply("record-hard-link", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (recordPath) => {
+            writeFileSync(decoyPath(), "", "utf8");
+            rmSync(recordPath, { force: true });
+            linkSync(decoyPath(), recordPath);
+          },
+        });
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBeUndefined();
+        expect(readFileSync(decoyPath(), "utf8")).toBe("");
+      });
+
+      it("writes nothing through a symbolic link planted on the record path", (context) => {
+        let planted = true;
+        const run = runDirectApply("record-symlink", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (recordPath) => {
+            writeFileSync(decoyPath(), "", "utf8");
+            rmSync(recordPath, { force: true });
+            try {
+              symlinkSync(decoyPath(), recordPath, "file");
+            } catch {
+              planted = false;
+            }
+          },
+        });
+        if (!planted) context.skip();
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBeUndefined();
+        expect(readFileSync(decoyPath(), "utf8")).toBe("");
+      });
+
+      it("keeps the check generic when the record path is removed before the step", () => {
+        const run = runDirectApply("record-removed-early", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (recordPath) => rmSync(recordPath, { force: true }),
+        });
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBeUndefined();
+        expect(existsSync(dirname(run.record.path))).toBe(false);
+      });
+
+      it("reads the step's record from the file aih created, not whatever the path names later", () => {
+        let recordPath = "";
+        const run = runDirectApply("record-swapped-late", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (path) => {
+            recordPath = path;
+          },
+          afterChild: () => {
+            renameSync(recordPath, `${recordPath}.moved`);
+            writeFileSync(recordPath, "", "utf8");
+          },
+        });
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBe("mcp.telemetry-opt-out-missing");
+        expect(existsSync(dirname(run.record.path))).toBe(false);
+      });
+    });
+
+    const shippedPredicate = fileURLToPath(
+      new URL("../../src/ecc/chrome-devtools-opt-out.cjs", import.meta.url),
+    );
+
+    it("loads the opt-out predicate from the shipped module at plan and apply time", () => {
+      const run = runDirectApply("predicate-module", "");
+
+      expect(run.result.status, run.result.stderr).toBe(0);
+      expect(chromeDevtoolsOptOutPredicatePath()).toBe(shippedPredicate);
+      expect(run.action.argv).toContain(shippedPredicate);
+      expect(execBlob([run.action])).not.toContain("function chromeDevtoolsOptOutMissing");
+      expect(
+        readFileSync(fileURLToPath(new URL("../../src/ecc/codex.ts", import.meta.url)), "utf8"),
+      ).not.toContain("new Function(");
+      const manifest = JSON.parse(
+        readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"),
+      ) as { files: string[] };
+      expect(manifest.files).toContain("src/ecc/chrome-devtools-opt-out.cjs");
+    });
+
+    it("fails closed when the predicate module is not the opt-out predicate", () => {
+      const impostor = join(tmp, "impostor-predicate.cjs");
+      writeFileSync(impostor, "module.exports = {};\n", "utf8");
+      const run = runDirectApply("predicate-impostor", "", {
+        projectAfterPlan: unsafeProject,
+        rewriteArgv: (argv) => argv.map((arg) => (arg === shippedPredicate ? impostor : arg)),
+      });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.status).not.toBe(78);
+      expect(run.result.stderr).toContain("opt-out predicate is unavailable");
+      expect(failureCheckOf(run).code).toBeUndefined();
+      expect(run.config).toBe("");
+    });
+
+    describe("gives the same verdict at plan and apply time for every TOML spelling", () => {
+      const header =
+        '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+      const spellings: Array<[string, string, boolean]> = [
+        [
+          "quoted inline env key",
+          `${header}"env" = { ${NO_STATS} = "1", ${NO_UPDATES} = "1" }\n`,
+          true,
+        ],
+        [
+          "quoted dotted env key",
+          `${header}"env".${NO_STATS} = "1"\n'env'."${NO_UPDATES}" = "1"\n`,
+          true,
+        ],
+        [
+          "escaped variable keys",
+          `${header}[mcp_servers.browser.env]\n"CHROME\\u005FDEVTOOLS_MCP_NO_USAGE_STATISTICS" = "1"\n"CHROME_DEVTOOLS_MCP_NO_UPDATE\\u005FCHECKS" = "1"\n`,
+          true,
+        ],
+        [
+          "inline server table",
+          `[mcp_servers]\nbrowser = { command = "npx", args = ["chrome-devtools-mcp@1.10.1"], env = { ${NO_STATS} = "1", ${NO_UPDATES} = "1" } }\n`,
+          true,
+        ],
+        [
+          "escaped and multi-line values",
+          `${header}[mcp_servers.browser.env]\n${NO_STATS} = "\\u0031"\n${NO_UPDATES} = """1"""\n`,
+          true,
+        ],
+        ["quoted inline env missing one", `${header}"env" = { ${NO_STATS} = "1" }\n`, false],
+        [
+          "escaped launch without opt-outs",
+          '[mcp_servers.browser]\ncommand = "npx"\nargs = ["chrome\\u002Ddevtools-mcp"]\n',
+          false,
+        ],
+        [
+          "inline server table missing one",
+          `[mcp_servers]\nbrowser = { command = "npx", args = ["chrome-devtools-mcp"], env = { ${NO_UPDATES} = "1" } }\n`,
+          false,
+        ],
+        [
+          "padded value",
+          `${header}[mcp_servers.browser.env]\n${NO_STATS} = "1 "\n${NO_UPDATES} = "1"\n`,
+          false,
+        ],
+      ];
+
+      it.each(spellings)("%s in the user config", async (label, config, compliant) => {
+        const run = runDirectApply(`spelling-user-${label.replace(/\W+/g, "-")}`, config);
+        const planRefusals = codexChromeDevtoolsOptOutRefusals(run.ctx, []);
+
+        expect(planRefusals.length === 0).toBe(compliant);
+        expect(run.result.status, run.result.stderr).toBe(compliant ? 0 : 78);
+        if (!compliant) expect(failureCheckOf(run)).toEqual(await planTimeCheck(run.ctx, []));
+      });
+
+      it.each(spellings)("%s in the project config", async (label, config, compliant) => {
+        const run = runDirectApply(`spelling-project-${label.replace(/\W+/g, "-")}`, "", {
+          projectAfterPlan: config,
+        });
+        const planRefusals = codexChromeDevtoolsOptOutRefusals(run.ctx, []);
+
+        expect(planRefusals.length === 0).toBe(compliant);
+        expect(run.result.status, run.result.stderr).toBe(compliant ? 0 : 78);
+        if (!compliant) expect(failureCheckOf(run)).toEqual(await planTimeCheck(run.ctx, []));
+      });
+    });
+
+    const unsafeProject =
+      '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+    const compliantProject = `${unsafeProject}[mcp_servers.browser.env]\n${NO_STATS} = "1"\n${NO_UPDATES} = "1"\n`;
+
+    it("revalidates the project config at apply time and refuses an entry added after planning", () => {
+      const run = runDirectApply("opt-out-project-late", "", { projectAfterPlan: unsafeProject });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain('"browser"');
+      expect(run.result.stderr).toContain("project");
+      expect(run.result.stderr).toContain(`${NO_STATS}="1"`);
+      expect(run.result.stderr).toContain(`${NO_UPDATES}="1"`);
+      expect(run.config).toBe("");
+      expect(run.state).toBe(run.beforeState);
+      expect(run.agents).toBe(false);
+      expect(readFileSync(projectConfigPath(), "utf8")).toBe(unsafeProject);
+    });
+
+    it("accepts a compliant project entry at apply time", () => {
+      const run = runDirectApply("opt-out-project-ok", "", { projectAfterPlan: compliantProject });
+
+      expect(run.result.status, run.result.stderr).toBe(0);
+      expect(readFileSync(projectConfigPath(), "utf8")).toBe(compliantProject);
+    });
+
+    it("includes the project config in apply-time change detection", () => {
+      const mergeHelper = `require("node:fs").mkdirSync(${JSON.stringify(join(tmp, ".codex"))}, { recursive: true }); require("node:fs").writeFileSync(${JSON.stringify(projectConfigPath())}, ${JSON.stringify(compliantProject)});\n`;
+      const run = runDirectApply("opt-out-project-race", "", { mergeHelper });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain("changed during apply");
+      expect(run.config).toBe("");
+      expect(run.state).toBe(run.beforeState);
+    });
+
+    it.each([
+      [
+        "same-name",
+        "chrome-devtools",
+        '[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n',
+        [NO_STATS, NO_UPDATES],
+      ],
+      [
+        "other-name",
+        "browser",
+        `[mcp_servers.browser]\ncommand = "npx"\nargs = [\n  "-y",\n  "chrome-devtools-mcp@1.10.1",\n]\n[mcp_servers.browser.env]\n${NO_UPDATES} = "1"\n`,
+        [NO_STATS],
+      ],
+      [
+        "wrong-value",
+        "chrome-devtools",
+        `[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["chrome-devtools-mcp@latest"]\nenv = { ${NO_STATS} = "1", ${NO_UPDATES} = "0" }\n`,
+        [NO_UPDATES],
+      ],
+    ] as const)(
+      "refuses without writing when a user-owned %s entry lacks an opt-out",
+      (label, entry, config, missing) => {
+        const run = runDirectApply(`opt-out-${label}`, config);
+
+        expect(run.result.status).not.toBe(0);
+        expect(run.result.stderr).toContain(`"${entry}"`);
+        for (const variable of missing) expect(run.result.stderr).toContain(`${variable}="1"`);
+        expect(run.config).toBe(config);
+        expect(run.state).toBe(run.beforeState);
+        expect(run.agents).toBe(false);
+      },
+    );
+
+    it("preserves a compliant user-owned same-name entry byte for byte", () => {
+      const config = [
+        "[mcp_servers.chrome-devtools]",
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@1.10.1", "--isolated"]',
+        "[mcp_servers.chrome-devtools.env]",
+        `${NO_STATS} = "1"`,
+        `${NO_UPDATES} = "1" # mandatory`,
+        "",
+      ].join("\n");
+      const run = runDirectApply("opt-out-compliant", config);
+
+      expect(run.result.status, run.result.stderr).toBe(0);
+      expect(run.config).toContain(config.trim());
+      expect((parse(run.config) as { mcp_servers: Record<string, unknown> }).mcp_servers).toEqual({
+        "chrome-devtools": {
+          command: "npx",
+          args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated"],
+          env: { [NO_STATS]: "1", [NO_UPDATES]: "1" },
+        },
+      });
+      const outputState = JSON.parse(run.state) as { codexToml: { mcpServers: string[] } };
+      expect(outputState.codexToml.mcpServers).not.toContain("chrome-devtools");
+    });
   });
 
   it("renders a candidate stdio environment in TOML and keeps an owned update stable on repeat", () => {
@@ -2148,7 +3016,11 @@ describe("Codex managed destination safety", () => {
             type: "stdio",
             command: "npx",
             args: ["-y", "chrome-devtools-mcp@1.9.0"],
-            env,
+            env: {
+              CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+              CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+              ...env,
+            },
           },
         },
       ).find(

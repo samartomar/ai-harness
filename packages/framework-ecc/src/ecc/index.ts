@@ -26,12 +26,21 @@ import {
 } from "@aihq/core/framework-host";
 import { assertOrgPolicyMutationSource, verifiedOrgPolicyTargets } from "../core-runtime.js";
 import {
+  assertChromeDevtoolsOptOuts,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES,
+  ChromeDevtoolsOptOutRefusalRecord,
   CODEX_AGENTS_BLOCK_MARKER,
   type CodexScopedMcpServers,
+  chromeDevtoolsOptOutPredicatePath,
+  codexChromeDevtoolsOptOutActions,
   codexHomeDir,
   codexInstallStateContents,
   codexInstallStatePath,
   codexMcpCollisionActions,
+  codexProjectConfigPath,
+  codexTomlParserPath,
   coreOwnedEccCodexMcpServers,
 } from "./codex.js";
 import { ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE } from "./hook-consent.js";
@@ -476,8 +485,13 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   'const fs = require("fs");',
   'const path = require("path");',
   ...ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE.trim().split("\n"),
-  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
-  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, projectConfigPath, tomlParserPath, optOutPredicatePath, refusalRecordPath, refusalNonce, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !projectConfigPath || !tomlParserPath || !optOutPredicatePath || !refusalRecordPath || !/^[0-9a-f]{32}$/.test(refusalNonce || "") || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <project-config> <toml-parser> <opt-out-predicate> <refusal-record> <refusal-nonce> <state-b64>"); process.exit(1); }',
+  // The same TOML parser and opt-out predicate the plan used (see ./codex.ts).
+  "const parseToml = require(path.resolve(tomlParserPath)).parse;",
+  'if (typeof parseToml !== "function") throw new Error("Codex merge TOML parser is unavailable: " + tomlParserPath);',
+  "const { chromeDevtoolsOptOutMissing, chromeDevtoolsOptOutRefusals } = require(path.resolve(optOutPredicatePath));",
+  'if (typeof chromeDevtoolsOptOutMissing !== "function" || typeof chromeDevtoolsOptOutRefusals !== "function") throw new Error("Chrome DevTools MCP opt-out predicate is unavailable: " + optOutPredicatePath);',
   'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
   "const declaredHome = path.resolve(homeDir);",
   "const trustedHome = fs.realpathSync(declaredHome);",
@@ -683,6 +697,11 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "  return next;",
   "}",
   "const liveConfigRaw = governed ? undefined : readSafeOptional(configPath);",
+  "const liveProjectConfigRaw = readProjectConfig();",
+  // A governed install emits no MCP entries, yet every launch it can read must still carry both opt-outs.
+  "const governedUserConfigRaw = governed ? readConfigForCheck(configPath) : undefined;",
+  'if (governed) refuseChromeOptOuts([{ scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }, { scope: "user", configPath, raw: governedUserConfigRaw }]);',
+  'function stableGovernedConfigs() { if (readConfigForCheck(configPath) !== governedUserConfigRaw || readProjectConfig() !== liveProjectConfigRaw) throw new Error("Codex MCP config changed during apply"); }',
   "const initialScopedPlan = governed ? undefined : planScopedMcps(undefined, false, undefined, false);",
   'const candidateConfig = governed ? undefined : mergeCodexConfigCandidate(liveConfigRaw || "");',
   'if (!governed) actualCurrentRunState = actualBaselineEffects(liveConfigRaw || "", candidateConfig, state);',
@@ -712,6 +731,9 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "return { existed, existing, next };",
   "}",
   'function restoreCodexAgents(change) { if (readSafeOptional(targetAgents) !== change.next) throw new Error("Codex AGENTS changed during apply"); if (change.existed) fs.writeFileSync(prepareDestination(targetAgents), change.existing, "utf8"); else fs.rmSync(prepareDestination(targetAgents), { force: true }); }',
+  // Configs that are only validated, never written, are read as plan time reads them.
+  'function readConfigForCheck(target) { try { return fs.readFileSync(path.resolve(target), "utf8"); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; } }',
+  "function readProjectConfig() { return readConfigForCheck(projectConfigPath); }",
   "function readSafeOptional(target) {",
   "  const location = assertInsideHome(target);",
   '  let stats; try { stats = fs.lstatSync(location.absolute); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; }',
@@ -901,6 +923,33 @@ function legacyDescendantHeader(line) {
   const body = bodyOf(line, false);
   return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
 }`,
+  String.raw`// Refuses with the typed refusal plan time emits: one readable line per entry,
+// one bounded refusal record (with the nonce aih gave this step) in the empty, singly
+// linked regular file aih created for it (checked on the opened descriptor against the
+// file the path named, so a swapped or hard-linked path gets no record), then the refusal
+// exit status. aih types the failure only from that record, read through its own descriptor.
+function refuseChromeOptOuts(configs) {
+  const refusals = chromeDevtoolsOptOutRefusals(configs, parseToml, () => false);
+  if (refusals.length === 0) return;
+  for (const refusal of refusals) process.stderr.write("refusing " + refusal.scope + " Codex MCP entry \"" + refusal.entry + "\" (" + refusal.configPath + "): it launches chrome-devtools-mcp without " + refusal.missing.map((name) => name + "=\"1\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table\n");
+  const record = JSON.stringify({ format: ${JSON.stringify(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT)}, version: 1, nonce: refusalNonce, code: "mcp.telemetry-opt-out-missing", refusals });
+  try {
+    if (Buffer.byteLength(record, "utf8") > ${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES}) throw new Error("it exceeds its byte limit");
+    const named = fs.lstatSync(refusalRecordPath, { bigint: true });
+    if (named.isSymbolicLink() || !named.isFile()) throw new Error("it is not the empty file aih created");
+    const descriptor = fs.openSync(refusalRecordPath, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0));
+    try {
+      const opened = fs.fstatSync(descriptor, { bigint: true });
+      if (!opened.isFile() || opened.dev !== named.dev || opened.ino !== named.ino || opened.nlink !== 1n || opened.size !== 0n) throw new Error("it is not the empty file aih created");
+      fs.writeSync(descriptor, record, 0, "utf8");
+    } finally {
+      fs.closeSync(descriptor);
+    }
+  } catch (error) {
+    process.stderr.write("could not write the refusal record: " + (error && error.message) + "\n");
+  }
+  process.exit(${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT});
+}`,
   "function renderScopedSection(name, server) {",
   '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
   '  const quote = (value) => { const text = String(value); for (let index = 0; index < text.length; index += 1) { const code = text.charCodeAt(index); if (code >= 0xD800 && code <= 0xDBFF) { const next = text.charCodeAt(index + 1); if (!(next >= 0xDC00 && next <= 0xDFFF)) throw new Error("invalid scoped Codex MCP string: " + name); index += 1; continue; } if (code >= 0xDC00 && code <= 0xDFFF) throw new Error("invalid scoped Codex MCP string: " + name); } return JSON.stringify(text).replace(/\\u007f/g, "\\\\u007f"); }; const section = ["[mcp_servers." + quote(name) + "]"];',
@@ -934,12 +983,13 @@ function legacyDescendantHeader(line) {
   '  const block = "# >>> aih managed (mcp) >>>\\n" + sections.map((section) => section.text).join("\\n\\n") + "\\n# <<< aih managed (mcp) <<<";',
   '  let mergedLines; if (parsed.fence) { const before = beforeFence.slice(); const after = afterFence.slice(); if (claimsChrome && chrome.length === 1) { if (legacyBefore.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); else after.splice(legacyAfter[0].begin, legacyAfter[0].end - legacyAfter[0].begin); } mergedLines = [...before, block, ...after]; } else { const before = beforeFence.slice(); if (claimsChrome && chrome.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); mergedLines = before.join("\\n").replace(/\\n+$/, "").split("\\n"); if (mergedLines.length === 1 && mergedLines[0] === "") mergedLines = []; mergedLines.push(...(mergedLines.length > 0 ? ["", block] : [block])); }',
   '  let merged = mergedLines.join("\\n").replace(/^\\n+/, "").replace(/\\n+$/, "") + "\\n"; if (/\\r\\n/.test(existingConfig)) merged = merged.replace(/\\n/g, "\\r\\n");',
-  "  return { liveConfigRaw, liveStateRaw, liveState, merged, installed, retained: retained.map((section) => section.name) };",
+  '  refuseChromeOptOuts([{ scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }, { scope: "user", configPath, raw: merged }]);',
+  "  return { liveConfigRaw, liveStateRaw, liveState, liveProjectConfigRaw, merged, installed, retained: retained.map((section) => section.name) };",
   "}",
   "function unionStrings(...lists) { return [...new Set(lists.flat())].sort(); }",
   'function mergeLiveAihState(live, delta) { const tableKeys = {}; for (const key of unionStrings(Object.keys(live.codexToml.tableKeys), Object.keys(delta.codexToml.tableKeys))) tableKeys[key] = unionStrings(live.codexToml.tableKeys[key] || [], delta.codexToml.tableKeys[key] || []); return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: unionStrings(live.codexToml.rootKeys, delta.codexToml.rootKeys), tables: unionStrings(live.codexToml.tables, delta.codexToml.tables), tableKeys, mcpServers: live.codexToml.mcpServers.slice() }, agentsBlock: true }; }',
   'function scopedState(plan) { const delta = exactAihState(JSON.stringify(actualCurrentRunState)); const next = plan.liveState ? mergeLiveAihState(plan.liveState, delta) : { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.slice(), tables: delta.codexToml.tables.slice(), tableKeys: Object.fromEntries(Object.entries(delta.codexToml.tableKeys).map(([key, values]) => [key, values.slice()])), mcpServers: [] }, agentsBlock: true }; next.codexToml.mcpServers = unionStrings(next.codexToml.mcpServers || [], plan.retained, plan.installed); return next; }',
-  "function stableScopedPlan(plan) { return readSafeOptional(configPath) === plan.liveConfigRaw && readSafeOptional(expectedAihStatePath) === plan.liveStateRaw; }",
+  "function stableScopedPlan(plan) { return readSafeOptional(configPath) === plan.liveConfigRaw && readSafeOptional(expectedAihStatePath) === plan.liveStateRaw && readProjectConfig() === plan.liveProjectConfigRaw; }",
   'function restoreLiveConfig(plan) { if (readSafeOptional(configPath) !== plan.merged) throw new Error("Codex config changed during rollback"); if (plan.liveConfigRaw === undefined) fs.rmSync(prepareDestination(configPath), { force: true }); else fs.writeFileSync(prepareDestination(configPath), plan.liveConfigRaw, "utf8"); }',
   'function installScopedMcps(plan, nextState) { if (!stableScopedPlan(plan)) throw new Error("Codex MCP config or state changed during apply"); fs.writeFileSync(prepareDestination(configPath), plan.merged, "utf8"); try { fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(nextState, null, 2) + "\\n", "utf8"); } catch (error) { restoreLiveConfig(plan); throw error; } state = nextState; return plan.installed; }',
   "installCodexManagedFiles();",
@@ -947,7 +997,7 @@ function legacyDescendantHeader(line) {
   "const scopedStateNext = scopedPlan ? scopedState(scopedPlan) : state;",
   "effectiveMcpNames = governed ? [] : (scopedStateNext.codexToml.mcpServers || []);",
   "const agentsChange = installCodexAgents();",
-  'try { if (scopedPlan) installScopedMcps(scopedPlan, scopedStateNext); else fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(state, null, 2) + "\\n", "utf8"); } catch (error) { restoreCodexAgents(agentsChange); throw error; }',
+  'try { if (scopedPlan) installScopedMcps(scopedPlan, scopedStateNext); else { stableGovernedConfigs(); fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(state, null, 2) + "\\n", "utf8"); } } catch (error) { restoreCodexAgents(agentsChange); throw error; }',
 ].join("\n");
 
 // Windows includes `node -e` source in its command-length limit. Keep the
@@ -966,12 +1016,17 @@ export function codexEccActions(
   governed = false,
 ): Action[] {
   const effectiveScopedMcps = governed ? {} : (scopedMcps ?? coreOwnedEccCodexMcpServers());
+  assertChromeDevtoolsOptOuts(effectiveScopedMcps);
   const codexDir = codexHomeDir(ctx);
   const codexConfig = join(codexDir, "config.toml");
   const codexAgents = join(codexDir, "AGENTS.md");
   const mergeCodexConfig = join(repo.dir, "scripts", "codex", "merge-codex-config.js");
   const sourceAgents = join(repo.dir, ".codex", "AGENTS.md");
   const statePath = codexInstallStatePath(ctx);
+  const refusalRecord = new ChromeDevtoolsOptOutRefusalRecord({
+    user: codexConfig,
+    project: codexProjectConfigPath(ctx),
+  });
   const plannedMcpServers = materialization ? [] : Object.keys(effectiveScopedMcps);
   const stateB64 = Buffer.from(
     codexInstallStateContents(ctx, plannedMcpServers, governed),
@@ -1010,12 +1065,26 @@ export function codexEccActions(
         sourceAgents,
         codexAgents,
         statePath,
+        codexProjectConfigPath(ctx),
+        codexTomlParserPath(),
+        chromeDevtoolsOptOutPredicatePath(),
+        refusalRecord.path,
+        refusalRecord.nonce,
         governed ? "1" : "0",
         materializationB64 ?? "",
         mcpB64 ?? "",
         stateB64,
       ],
-      { cwd: repo.dir },
+      {
+        cwd: repo.dir,
+        sidecar: refusalRecord,
+        failureCheck: (result) =>
+          refusalRecord.check(result) ?? {
+            name: "ECC Codex install",
+            verdict: "fail",
+            detail: `ECC Codex install failed (exit ${result.code ?? "signal"})`,
+          },
+      },
     ),
     doc(
       "ECC Codex install (safe merge path)",
@@ -1096,7 +1165,12 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
 
   const actions: Action[] = [];
   const hasKiro = clis.includes("kiro");
-  const codexBlockers = clis.includes("codex") ? codexMcpCollisionActions(ctx) : [];
+  const codexBlockers = clis.includes("codex")
+    ? [
+        ...codexMcpCollisionActions(ctx),
+        ...codexChromeDevtoolsOptOutActions(ctx, Object.keys(coreOwnedEccCodexMcpServers())),
+      ]
+    : [];
   const codexInstallPlanned = clis.includes("codex") && codexBlockers.length === 0;
   const needsEccRepo = hasKiro || codexInstallPlanned;
   const repo = needsEccRepo ? eccRepoCheckout(ctx) : undefined;

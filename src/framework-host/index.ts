@@ -319,6 +319,7 @@ export {
 export {
   type CommandSpec,
   type ExecAction,
+  type ExecSidecar,
   exec,
   type FileAssertion,
   type PlanContext,
@@ -328,10 +329,16 @@ export {
   remove,
   writeJson,
 } from "../internals/plan.js";
+export type { RunResult } from "../internals/proc.js";
 export {
   beginMarker,
   endMarker,
 } from "../internals/render.js";
+/**
+ * The installed Core's own smol-toml CommonJS entry, so a plugin's child script
+ * parses TOML with the same parser as `parseToml`; a plugin never ships a copy.
+ */
+export { tomlParserModulePath } from "../internals/toml-parser.js";
 /**
  * Core's own native ECC runtime script (`dist/ecc-runtime.js` of the installed
  * Core). Native ECC registration executes it; a plugin never ships a copy.
