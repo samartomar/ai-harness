@@ -10,65 +10,8 @@ import {
 } from "../../src/org-policy/ecc-hook-controls.js";
 import { ECC_SKILL_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-skill-catalog.js";
 import { POLICY_ENGINE_FIELD_CONSUMERS } from "../../src/org-policy/effective.js";
-import { parseOrgPolicy } from "../../src/org-policy/schema.js";
-
-function policy(eccHookControls?: Record<string, unknown>): Record<string, unknown> {
-  return {
-    schemaVersion: 2,
-    minimumPosture: "vibe",
-    references: { repoContract: "ai-coding/project.json" },
-    governance: {
-      policyVersion: "2026.08",
-      supportedClis: ["claude"],
-      catalog: { reviewed: [], custom: [] },
-      activations: [],
-      authority: { approvals: [] },
-      ...(eccHookControls === undefined ? {} : { eccHookControls }),
-    },
-  };
-}
 
 describe("source-locked ECC hook controls", () => {
-  it("canonicalizes disable ids in pinned source order for the selected profile", () => {
-    expect(
-      parseOrgPolicy(
-        policy({
-          profile: "standard",
-          disabledIds: ["post:quality-gate", "pre:observe"],
-        }),
-      ).governance?.eccHookControls,
-    ).toEqual({
-      profile: "standard",
-      disabledIds: ["pre:observe", "post:quality-gate"],
-    });
-    expect(parseOrgPolicy(policy({ profile: "minimal" })).governance?.eccHookControls).toEqual({
-      profile: "minimal",
-    });
-    expect(parseOrgPolicy(policy()).governance?.eccHookControls).toBeUndefined();
-  });
-
-  it("rejects duplicate, unknown, wrapper, and profile-ineligible disable ids", () => {
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:observe", "pre:observe"] })),
-    ).toThrowError(/unique/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["unknown:hook"] })),
-    ).toThrowError(/expected one of/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:bash:dispatcher"] })),
-    ).toThrowError(/expected one of/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:bash:tmux-reminder"] })),
-    ).toThrowError(/not eligible under the standard profile/i);
-    expect(
-      parseOrgPolicy(policy({ profile: "strict", disabledIds: ["pre:bash:tmux-reminder"] }))
-        .governance?.eccHookControls,
-    ).toEqual({
-      profile: "strict",
-      disabledIds: ["pre:bash:tmux-reminder"],
-    });
-  });
-
   it("binds all reviewed source files and the exact 43-row, 42-gated active-pin inventory", () => {
     for (const provenance of [
       ECC_CONTENT_METADATA_PROVENANCE,
@@ -148,11 +91,11 @@ describe("source-locked ECC hook controls", () => {
         eligibleIds: ECC_DISABLE_ELIGIBLE_HOOK_IDS,
       },
     });
-    expect(POLICY_ENGINE_FIELD_CONSUMERS["governance.eccHookControls.profile"]).toContain(
+    expect(POLICY_ENGINE_FIELD_CONSUMERS["governance.frameworkHookControls.ecc.profile"]).toContain(
       "receipt-backed",
     );
-    expect(POLICY_ENGINE_FIELD_CONSUMERS["governance.eccHookControls.disabledIds.*"]).toContain(
-      "ECC_DISABLED_HOOKS",
-    );
+    expect(
+      POLICY_ENGINE_FIELD_CONSUMERS["governance.frameworkHookControls.ecc.disabledHookIds.*"],
+    ).toContain("hook-control plan");
   });
 });

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import { type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -23,6 +23,32 @@ import { usageRecorderScript } from "../../src/usage/capture.js";
 import { usageRecorderCheck } from "../../src/usage/hook-health.js";
 import { claudeUsageHookCommand } from "../../src/usage/hooks.js";
 import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
+
+// Framework hook controls reach the ECC plugin through Core's loader; serve the
+// plugin from this repository's package source and Catalog's exact ECC bytes.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/framework-plugin/load-framework-plugin.js")>();
+  const { sourcePluginAccess } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkPluginV1: (
+      id: Parameters<typeof actual.loadFrameworkPluginV1>[0],
+      options: Parameters<typeof actual.loadFrameworkPluginV1>[1] = {},
+    ) => actual.loadFrameworkPluginV1(id, { ...options, access: sourcePluginAccess(id) }),
+  };
+});
+vi.mock("../../src/catalog-package/framework-descriptors.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/catalog-package/framework-descriptors.js")>();
+  const { eccDescriptorLoad } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkDescriptorBytesV1: async (
+      id: Parameters<typeof actual.loadFrameworkDescriptorBytesV1>[0],
+    ) => (id === "ecc" ? eccDescriptorLoad() : actual.loadFrameworkDescriptorBytesV1(id)),
+  };
+});
 
 let dir: string;
 
@@ -97,7 +123,6 @@ function adoptedUsageRegistration(): HookRegistration {
 function usageAndRegistrationsPolicy(
   registrations: readonly HookRegistration[] = eccStopRegistrations(),
   usageState: "active" | "disabled" = "active",
-  eccHookControls?: { profile: "minimal" | "standard" | "strict" },
 ) {
   const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
   return parseOrgPolicy({
@@ -124,7 +149,6 @@ function usageAndRegistrationsPolicy(
       },
       activations: [{ candidate: "usage-metering", state: usageState, targets: ["claude"] }],
       hookRegistrations: [...registrations],
-      ...(eccHookControls === undefined ? {} : { eccHookControls }),
     },
   });
 }
@@ -202,12 +226,19 @@ describe("G4 — the registrar is reachable end to end through the verified proj
   });
 
   it("refuses usage-hook and controls-only writes into the same destination", async () => {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        frameworkHookControls: { ecc: { profile: "minimal", disabledHookIds: [] } },
+      })}
+`,
+    );
     await expect(
-      verifiedOrgPolicyProjectionActions(
-        ctx(),
-        usageAndRegistrationsPolicy([], "active", { profile: "minimal" }),
-      ),
-    ).rejects.toThrow(/usage-hook projector and ECC hook controls cannot both own it/);
+      verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy([], "active")),
+    ).rejects.toThrow(/usage-hook projector and framework hook controls cannot both own it/);
+    rmSync(join(dir, ".aih-config.json"));
     await expect(
       verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy([], "active")),
     ).resolves.toBeDefined();
@@ -339,5 +370,48 @@ describe("registrar-owned PostToolUse vs the usage projector's legacy scan (6.0.
     });
     for (const write of result.writes) expect(paths).toContain(write.path);
     for (const removed of result.removed) expect(paths).toContain(removed.path);
+  });
+});
+
+describe("framework hook controls through the verified projector", () => {
+  it("composes enterprise frameworkHookControls and registrations into one guarded write", async () => {
+    const policy = parseOrgPolicy({
+      schemaVersion: 3,
+      minimumCoreVersion: "0.7.0",
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      authoringSelections: {
+        selectionVersion: "workbench-selection/v1",
+        roots: [],
+        exclusions: [],
+        requests: [],
+        drafts: [],
+      },
+      governance: {
+        policyVersion: "2026-09-24.1",
+        supportedClis: ["claude"],
+        catalog: { reviewed: [], custom: [] },
+        hookRegistrations: eccStopRegistrations(),
+        frameworkHookControls: {
+          ecc: { profile: "strict", disabledHookIds: ["pre:bash:tmux-reminder"] },
+        },
+      },
+    });
+    const actions = await verifiedOrgPolicyProjectionActions(ctx(), policy);
+    expect(
+      actions.filter((action) => "path" in action && action.path === ".claude/settings.json"),
+    ).toHaveLength(1);
+    await executePlan(plan("policy project", ...actions), ctx({ apply: true }), {
+      skipWorktreeGate: true,
+    });
+    const settings = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
+    expect(settings.env).toEqual({
+      ECC_HOOK_PROFILE: "strict",
+      ECC_DISABLED_HOOKS: "pre:bash:tmux-reminder",
+    });
+    expect(JSON.stringify(settings)).toContain("run-with-flags.js");
+    expect(existsSync(join(dir, ".aih", "org-policy-framework-hook-controls-receipt.json"))).toBe(
+      true,
+    );
   });
 });

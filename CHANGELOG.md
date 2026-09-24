@@ -8,6 +8,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **Breaking:** `governance.eccHookControls` is removed and replaced by the generic
+  `governance.frameworkHookControls`, keyed by framework id (`ecc`, `superpowers`), each
+  entry `{ "profile"?: string, "disabledHookIds": string[] }`. It requires schemaVersion 3
+  and `minimumCoreVersion` 0.7.0. A policy that still declares `eccHookControls` is
+  refused with the migration. Migration: move
+  `governance.eccHookControls: { "profile": P, "disabledIds": [...] }` to
+  `governance.frameworkHookControls: { "ecc": { "profile": P, "disabledHookIds": [...] } }`,
+  set schemaVersion 3 and `minimumCoreVersion` "0.7.0". A project that projected the old
+  controls has `.aih/org-policy-ecc-hook-controls-receipt.json`; projection refuses while
+  it exists: remove `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` from
+  `.claude/settings.json` `env` and delete that receipt, then project again. The new
+  receipt is `.aih/org-policy-framework-hook-controls-receipt.json`. Hook ids and profiles
+  are validated by the framework plugin against its own inventory, not by Core's schema.
+
 - Remove the pre-release Policy Workbench browser/HTML/server bundle and its
   `aih --ui` and `aih policy generate` command registrations. They have no
   compatibility stubs or `aih-ui` replacement. Core retains policy validation,
@@ -53,6 +67,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   native-detector reports are unchanged and need a new scan to carry the current identity.
 
 ### Added
+
+- A user-level framework hook-control list, `frameworkHookControls` in the project's
+  `.aih-config.json` (same shape as the policy field). It may only add disables; a user
+  profile applies only where enterprise policy sets none, and a conflicting one is
+  refused. A malformed list fails closed. Framework plugin commands receive the merged
+  request in their policy view, and `aih policy project` applies the plugin's plan.
 
 - Add Headroom as default-selected developer-tool intent in CLI previews. Applying
   it reports activation unavailable as a skipped, pending outcome; it

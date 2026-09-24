@@ -1039,6 +1039,54 @@
         "targets"
       ],
       "additionalProperties": false
+    },
+    "frameworkHookControls": {
+      "type": "object",
+      "properties": {
+        "ecc": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,39}$"
+            },
+            "disabledHookIds": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9:-]{0,99}$"
+              }
+            }
+          },
+          "required": [
+            "disabledHookIds"
+          ],
+          "additionalProperties": false
+        },
+        "superpowers": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,39}$"
+            },
+            "disabledHookIds": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9:-]{0,99}$"
+              }
+            }
+          },
+          "required": [
+            "disabledHookIds"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

@@ -30,6 +30,12 @@ export function planHookControls(
   request: FrameworkHookControlRequestV1,
 ): FrameworkHookControlPlanV1 {
   const inventory = hookInventory(ctx);
+  if (request.profile !== undefined) {
+    throw new AihError(
+      `obra/Superpowers has no hook profiles; the ${request.profile.authority} hook profile ${request.profile.id} is refused`,
+      "AIH_CONFIG",
+    );
+  }
   const known = new Set(inventory.hooks.map((hook) => hook.id));
   const unknown = [
     ...new Set(request.disabled.map((entry) => entry.hookId).filter((id) => !known.has(id))),

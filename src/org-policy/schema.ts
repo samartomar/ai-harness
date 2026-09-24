@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseNativeStrictJsonObjectV1 } from "../contract/native-strict-json-object-v1.js";
 import { AihError } from "../errors.js";
+import { FrameworkHookControlsSchema } from "../framework-plugin/hook-controls-schema.js";
 import { GOVERNED_MCP_TARGETS } from "../internals/cli-registry.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -13,11 +14,6 @@ import { DEFAULT_DEVELOPER_TOOL_IDS } from "../tools/default-tool-selection.js";
 import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { isSupportedDeveloperToolPolicyFloorV1 } from "./developer-tool-policy.js";
-import {
-  canonicalEccDisabledHookIds,
-  ECC_DISABLE_ELIGIBLE_HOOK_IDS,
-  type EccHookProfile,
-} from "./ecc-hook-controls.js";
 import {
   ECC_EXTERNAL_MCP_APPROVAL_IDS,
   POLICY_APPROVER_EMAIL_PATTERN,
@@ -317,36 +313,6 @@ const PolicyApproverIdentitySchema = z.union([
   SafePolicyIdentifierSchema,
 ]);
 
-const EccHookProfileSchema = z.enum(["minimal", "standard", "strict"]);
-const EccHookControlsSchema = z
-  .object({
-    profile: EccHookProfileSchema,
-    disabledIds: z
-      .array(z.enum([...ECC_DISABLE_ELIGIBLE_HOOK_IDS] as [string, ...string[]]))
-      .max(40)
-      .optional(),
-  })
-  .strict()
-  .transform((value, ctx) => {
-    let disabledIds: string[];
-    try {
-      disabledIds = canonicalEccDisabledHookIds(
-        value.disabledIds ?? [],
-        value.profile as EccHookProfile,
-      );
-    } catch (error) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["disabledIds"],
-        message: error instanceof Error ? error.message : "invalid ECC disabled hook ids",
-      });
-      return z.NEVER;
-    }
-    return {
-      profile: value.profile,
-      ...(disabledIds.length === 0 ? {} : { disabledIds }),
-    };
-  });
 export const SupportedCliSchema = z.enum(SUPPORTED_CLIS);
 const SupportedCliListSchema = z
   .array(SupportedCliSchema)
@@ -1234,8 +1200,13 @@ const GovernedPolicyGovernanceSchema = z
      * side effect and deliberately creates no candidate or activation.
      */
     eccMcpApprovals: z.array(EccMcpApprovalSchema).default([]),
-    /** ECC-owned runtime controls projected only through receipt-owned Claude env keys. */
-    eccHookControls: EccHookControlsSchema.optional(),
+    /**
+     * Framework hook controls keyed by framework id (schema 3, Core 0.7.0). Each
+     * framework plugin validates the ids and profile against its own hook
+     * inventory and returns the plan; Core applies it through the hook
+     * registrar's receipt-owned Claude settings environment keys.
+     */
+    frameworkHookControls: FrameworkHookControlsSchema.optional(),
     /**
      * Organization-sanctioned AI CLIs. This is a governance boundary, not the
      * projector target set: every value comes from AIH's supported CLI registry,
@@ -1660,6 +1631,19 @@ const OrgPolicyBaseSchema = z
 const refineOrgPolicy = (rawPolicy: unknown, ctx: z.RefinementCtx) => {
   const policy = rawPolicy as z.infer<typeof OrgPolicyBaseSchema>;
   if (
+    policy.governance !== undefined &&
+    "frameworkHookControls" in policy.governance &&
+    policy.governance.frameworkHookControls !== undefined &&
+    ((rawPolicy as { schemaVersion?: unknown }).schemaVersion !== 3 ||
+      (rawPolicy as { minimumCoreVersion?: unknown }).minimumCoreVersion !==
+        HEADROOM_MINIMUM_CORE_VERSION)
+  )
+    ctx.addIssue({
+      code: "custom",
+      path: ["governance", "frameworkHookControls"],
+      message: `governance.frameworkHookControls requires schemaVersion 3 and minimumCoreVersion ${HEADROOM_MINIMUM_CORE_VERSION}.`,
+    });
+  if (
     (rawPolicy as { schemaVersion?: unknown }).schemaVersion === 3 &&
     !isSupportedDeveloperToolPolicyFloorV1(
       (rawPolicy as { minimumCoreVersion?: unknown }).minimumCoreVersion,
@@ -1855,6 +1839,20 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
   ) {
     throw new OrgPolicyError(
       "org-policy minimumPosture team was removed; replace team with vibe or enterprise (the administrator chooses)",
+    );
+  }
+  const governance =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as { governance?: unknown }).governance
+      : undefined;
+  if (
+    governance !== null &&
+    typeof governance === "object" &&
+    !Array.isArray(governance) &&
+    "eccHookControls" in governance
+  ) {
+    throw new OrgPolicyError(
+      `org-policy governance.eccHookControls was replaced by governance.frameworkHookControls.ecc: set schemaVersion 3 and minimumCoreVersion ${HEADROOM_MINIMUM_CORE_VERSION}, and move { profile, disabledIds } to { profile, disabledHookIds }`,
     );
   }
   try {

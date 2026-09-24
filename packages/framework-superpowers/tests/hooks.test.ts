@@ -104,4 +104,13 @@ describe("planHookControls", () => {
     expect((caught as Error).message).toContain("hook:post-tool-use");
     expect((caught as Error).message).toContain("hook:session-start");
   });
+
+  it("accepts Core's hook-control carrier but refuses a profile, which Superpowers lacks", () => {
+    expect(() =>
+      planHookControls(operationContext(), {
+        profile: { id: "standard", authority: "user" },
+        disabled: [],
+      }),
+    ).toThrow(/obra\/Superpowers has no hook profiles; the user hook profile standard is refused/);
+  });
 });

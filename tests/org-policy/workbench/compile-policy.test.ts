@@ -70,26 +70,26 @@ describe("pure policy compilation", () => {
     expect(input).toEqual(before);
     expect(result.policy.schemaVersion).toBe(3);
   });
-  it("preserves ordinary ECC hook controls while replacing managed projections", () => {
+  it("preserves framework hook controls, at the Core 0.7.0 floor, while replacing managed projections", () => {
     const { bundle, bindings, policy, select } = fixture();
-    const eccHookControls = {
-      profile: "standard",
-      disabledIds: ["pre:observe", "post:quality-gate"],
+    const frameworkHookControls = {
+      ecc: { profile: "standard", disabledHookIds: ["pre:observe", "post:quality-gate"] },
     };
     const input = {
       ...policy,
       governance: {
         ...((policy as Record<string, unknown>).governance as Record<string, unknown>),
-        eccHookControls,
+        frameworkHookControls,
       },
     };
 
     const result = projectWorkbenchPolicy(input, select("tool"), bundle, bindings);
 
     expect(result.accepted).toBe(true);
-    expect((result.policy.governance as Record<string, unknown>).eccHookControls).toEqual(
-      eccHookControls,
+    expect((result.policy.governance as Record<string, unknown>).frameworkHookControls).toEqual(
+      frameworkHookControls,
     );
+    expect(result.policy.minimumCoreVersion).toBe("0.7.0");
   });
   it("separates pinned requests from controls and rejects stale request identities", () => {
     const { bundle, bindings, policy } = fixture();

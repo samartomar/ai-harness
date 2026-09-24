@@ -11,9 +11,11 @@ import type { PlanContext } from "../internals/plan.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import type {
   FrameworkCommandPathV1,
+  FrameworkHostServicesV1,
   FrameworkIdV1,
   FrameworkOperationContextV1,
 } from "./contract-v1.js";
+import { frameworkHookControlRequestV1 } from "./hook-controls.js";
 import { type FrameworkTransactionPinsV1, frameworkHostServicesV1 } from "./host-services.js";
 import {
   type FrameworkPluginLoadV1,
@@ -63,6 +65,47 @@ function environmentFor(
 }
 
 /**
+ * The operation context Core builds for one plugin operation: the framework
+ * descriptor bytes loaded from Catalog (C1), Core's decisions for the
+ * invocation, the merged hook-control request, and the host services given.
+ */
+export async function frameworkOperationContextV1(
+  loaded: LoadedFrameworkPluginV1,
+  ctx: PlanContext & { readonly targets: NonNullable<PlanContext["targets"]> },
+  input: {
+    readonly policy: OrgPolicy | undefined;
+    readonly options: Readonly<Record<string, unknown>>;
+    readonly host: FrameworkHostServicesV1;
+  },
+  deps: Pick<FrameworkCommandDepsV1, "loadDescriptor"> = {},
+): Promise<FrameworkOperationContextV1> {
+  const frameworkId = loaded.frameworkId;
+  const descriptor = await (deps.loadDescriptor ?? loadFrameworkDescriptorBytesV1)(frameworkId);
+  if (!descriptor.ok) throw new CatalogPackageRefusalError(descriptor.refusal);
+  return Object.freeze({
+    frameworkId,
+    root: ctx.root,
+    targets: Object.freeze([...ctx.targets]),
+    mode: Object.freeze({ apply: ctx.apply, verify: ctx.verify }),
+    descriptor: Object.freeze({
+      frameworkId,
+      bytes: Uint8Array.from(descriptor.bytes),
+      sha256: descriptor.sha256,
+      ...(descriptor.catalogVersion === undefined
+        ? {}
+        : { catalogVersion: descriptor.catalogVersion }),
+    }),
+    policy: Object.freeze({
+      posture: postureFromContext(ctx),
+      hookControls: frameworkHookControlRequestV1(frameworkId, input.policy, ctx.root),
+    }),
+    options: Object.freeze({ ...input.options }),
+    env: environmentFor(loaded.description.environment, ctx.env),
+    host: input.host,
+  });
+}
+
+/**
  * Run one plugin command: load the framework descriptor bytes from Catalog
  * (C1), build the operation context from Core's decisions, execute, and accept
  * only a result Core's own host services produced for this invocation.
@@ -81,38 +124,24 @@ export async function executeFrameworkCommandV1(
       "AIH_FRAMEWORK_PLUGIN",
     );
   }
-  const descriptor = await (deps.loadDescriptor ?? loadFrameworkDescriptorBytesV1)(frameworkId);
-  if (!descriptor.ok) throw new CatalogPackageRefusalError(descriptor.refusal);
   const produced = new WeakSet<object>();
-  const context: FrameworkOperationContextV1 = Object.freeze({
-    frameworkId,
-    root: ctx.root,
-    targets: Object.freeze([...ctx.targets]),
-    mode: Object.freeze({ apply: ctx.apply, verify: ctx.verify }),
-    descriptor: Object.freeze({
-      frameworkId,
-      bytes: Uint8Array.from(descriptor.bytes),
-      sha256: descriptor.sha256,
-      ...(descriptor.catalogVersion === undefined
-        ? {}
-        : { catalogVersion: descriptor.catalogVersion }),
-    }),
-    // No policy grammar carries framework hook disables yet; see the W3 report.
-    policy: Object.freeze({
-      posture: postureFromContext(ctx),
-      hookControls: Object.freeze({ disabled: Object.freeze([]) }),
-    }),
-    options: Object.freeze({ ...invocation.options }),
-    env: environmentFor(loaded.description.environment, ctx.env),
-    host: frameworkHostServicesV1({
-      frameworkId,
-      ctx,
+  const context = await frameworkOperationContextV1(
+    loaded,
+    { ...ctx, targets: ctx.targets },
+    {
       policy: invocation.policy,
-      transactionPins: invocation.transactionPins,
-      produced,
-      ...(deps.pipelineDeps === undefined ? {} : { pipelineDeps: deps.pipelineDeps }),
-    }),
-  });
+      options: invocation.options,
+      host: frameworkHostServicesV1({
+        frameworkId,
+        ctx,
+        policy: invocation.policy,
+        transactionPins: invocation.transactionPins,
+        produced,
+        ...(deps.pipelineDeps === undefined ? {} : { pipelineDeps: deps.pipelineDeps }),
+      }),
+    },
+    deps,
+  );
   const command = loaded.plugin.commands[commandPath];
   if (command === undefined) {
     throw new AihError(

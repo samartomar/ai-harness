@@ -5,6 +5,8 @@ import {
   type McpProjectionDecisionBindings,
   McpProjectionDecisionBindingsSchema,
 } from "../config/marker.js";
+import { frameworkHookEnvironmentPlansV1 } from "../framework-plugin/hook-control-plans.js";
+import { readUserFrameworkHookControlsV1 } from "../framework-plugin/hook-controls.js";
 import { resolveTargets, type TargetResolution } from "../internals/cli-detect.js";
 import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
 import {
@@ -65,7 +67,6 @@ import {
 } from "./authority.js";
 import { projectCommandPermissions } from "./command-permissions.js";
 import { composeOrgPolicy } from "./compose.js";
-import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js";
 import {
   candidateIdentityDigest,
   type EffectiveOrgPolicy,
@@ -73,6 +74,10 @@ import {
   resolveEffectiveOrgPolicy,
   stableJson,
 } from "./effective.js";
+import {
+  type FrameworkHookEnvironmentPlans,
+  planFrameworkHookControlsProjection,
+} from "./framework-hook-controls-projection.js";
 import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
 import { expectedHooksFromReceipt, readHookRegistrarReceipt } from "./hook-registrar-receipt.js";
 import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
@@ -1791,6 +1796,7 @@ function projectionActionsFromRuntime(
   ctx: PlanContext,
   policy: OrgPolicy,
   runtime: RuntimeOrgPolicyResolution,
+  hookEnvironment: FrameworkHookEnvironmentPlans,
 ): Action[] {
   const posture = ctx.posture ?? policy.minimumPosture;
   const targets = ctx.targets ?? ["claude"];
@@ -1976,7 +1982,7 @@ function projectionActionsFromRuntime(
       // G4: the hook registrar is reachable through the verified projector. A
       // policy declaring registrations gets the registrar's projection; one
       // declaring none gets its revocation (a no-op without a receipt).
-      const controls = planEccHookControlsProjection(ctx, policy.governance.eccHookControls);
+      const controls = planFrameworkHookControlsProjection(ctx, hookEnvironment);
       const registrar = hookRegistrarProjectionActions(ctx, policy.governance.hookRegistrations, {
         policyVersion: policy.governance.policyVersion,
         envPatch: controls.envPatch,
@@ -2003,8 +2009,8 @@ function projectionActionsFromRuntime(
       if ((usageOwnsDestination || touchesDestination(usage)) && controlsWriteStandalone) {
         throw new OrgPolicyError(
           `policy project refuses two hook writers into ${HOOK_REGISTRAR_DESTINATION}: the ` +
-            "usage-hook projector and ECC hook controls cannot both own it; deactivate the " +
-            "usage-hook selection or remove eccHookControls before projecting",
+            "usage-hook projector and framework hook controls cannot both own it; deactivate the " +
+            "usage-hook selection or remove the framework hook controls before projecting",
         );
       }
       if ((usageOwnsDestination || touchesDestination(usage)) && registrarTouchesDestination) {
@@ -2154,7 +2160,14 @@ export async function verifiedOrgPolicyProjection(
   const initialAuthority = initialVerification.authority;
   const verifiedPolicy = source.policy;
   const runtime = await resolveRuntimeOrgPolicy(ctx, verifiedPolicy, initialVerification);
-  const actions = projectionActionsFromRuntime(ctx, verifiedPolicy, runtime);
+  // Framework plugins plan their hook controls before the synchronous
+  // projection; only the Claude settings environment carries them.
+  const hookEnvironment: FrameworkHookEnvironmentPlans = (ctx.targets ?? ["claude"]).includes(
+    "claude",
+  )
+    ? await frameworkHookEnvironmentPlansV1(ctx, verifiedPolicy)
+    : new Map();
+  const actions = projectionActionsFromRuntime(ctx, verifiedPolicy, runtime, hookEnvironment);
   if (!runtime.effective.authority.verified) {
     return { policy: verifiedPolicy, actions };
   }
@@ -2233,8 +2246,15 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
       ]),
     ),
   });
-  return projectionActionsFromRuntime(ctx, policy, {
-    catalog: catalog as Record<string, McpServer>,
-    effective,
-  });
+  if (readUserFrameworkHookControlsV1(ctx.root) !== undefined) {
+    throw new OrgPolicyError(
+      "framework hook controls in .aih-config.json require the verified policy projector",
+    );
+  }
+  return projectionActionsFromRuntime(
+    ctx,
+    policy,
+    { catalog: catalog as Record<string, McpServer>, effective },
+    new Map(),
+  );
 }

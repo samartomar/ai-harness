@@ -3,6 +3,7 @@ import { join, posix, win32 } from "node:path";
 import { z } from "zod";
 import { type BindingDeclaration, BindingDeclarationSchema } from "../binding/schema.js";
 import { SettingsError } from "../errors.js";
+import { FrameworkHookControlsSchema } from "../framework-plugin/hook-controls-schema.js";
 import {
   type BaselineSourceId,
   BaselineSourceIdSchema,
@@ -441,6 +442,12 @@ export const AihConfigSchema = z.object({
   binding: BindingDeclarationSchema.optional(),
   /** Durable, root-bound organization policy assignment. */
   policyBinding: PolicyBindingSchema.optional(),
+  /**
+   * The user's framework hook controls, keyed by framework id. They may only
+   * add disables to enterprise policy's `governance.frameworkHookControls`;
+   * read strictly by `readUserFrameworkHookControlsV1`.
+   */
+  frameworkHookControls: FrameworkHookControlsSchema.optional(),
 });
 
 export type AihConfig = z.infer<typeof AihConfigSchema>;
