@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type * as CatalogPackage from "@aihq/catalog";
 import { AihError } from "../errors.js";
 
@@ -217,18 +217,49 @@ function exportIsFunction(namespace: object, name: string): boolean {
   }
 }
 
-function packageVersion(access: CatalogPackageAccessV1, manifestPath?: string): string | undefined {
+function packageManifest(access: CatalogPackageAccessV1, manifestPath: string): unknown {
   try {
-    const manifest: unknown = JSON.parse(
-      Buffer.from(
-        access.readFile(manifestPath ?? access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`)),
-      ).toString("utf8"),
-    );
-    const version = (manifest as { version?: unknown } | null)?.version;
-    return typeof version === "string" ? bounded(version) : undefined;
+    return JSON.parse(Buffer.from(access.readFile(manifestPath)).toString("utf8"));
   } catch {
     return undefined;
   }
+}
+
+function packageVersion(manifest: unknown): string | undefined {
+  const version = (manifest as { version?: unknown } | null)?.version;
+  return typeof version === "string" ? bounded(version) : undefined;
+}
+
+/**
+ * A candidate Catalog keeps the release name, version and exports, and marks itself only
+ * with `CANDIDATE.json` and `package.json#aihCandidate` (Catalog `npm run build:candidate`).
+ * Ordinary loading refuses either marker, however the package was installed or its tarball
+ * named: a candidate is used only through the explicit, digest-checked preparation
+ * activation (`activateCandidateCatalogV1`), whose reads never come here unchecked.
+ */
+function candidateRefusal(
+  access: CatalogPackageAccessV1,
+  manifestPath: string,
+  manifest: unknown,
+): CatalogPackageRefusalV1 | undefined {
+  if (access === installedCatalogAccess && candidateAccess !== undefined) return undefined;
+  const markers: string[] = [];
+  try {
+    access.readFile(join(dirname(manifestPath), "CANDIDATE.json"));
+    markers.push("CANDIDATE.json");
+  } catch (error) {
+    if (codeOf(error) !== "ENOENT")
+      return incompatible(
+        `${installed()} could not be checked for a candidate marker (${messageOf(error)})`,
+      );
+  }
+  if (manifest !== null && typeof manifest === "object" && Object.hasOwn(manifest, "aihCandidate"))
+    markers.push("package.json#aihCandidate");
+  return markers.length === 0
+    ? undefined
+    : incompatible(
+        `${installed()} carries ${markers.join(", ")}: a candidate Catalog is not a release`,
+      );
 }
 
 function compatibleVersion(version: string | undefined): version is string {
@@ -273,13 +304,16 @@ export async function loadCatalogPackageV1<
   }
   const root = dirname(manifestPath);
   const files = {} as Record<S, CatalogPackageFileV1>;
-  const version = packageVersion(access, manifestPath);
+  const manifest = packageManifest(access, manifestPath);
+  const version = packageVersion(manifest);
   if (!compatibleVersion(version)) {
     return {
       ok: false,
       refusal: incompatible(`${installed()} version ${version ?? "is unreadable"}`),
     };
   }
+  const candidate = candidateRefusal(access, manifestPath, manifest);
+  if (candidate !== undefined) return { ok: false, refusal: candidate };
   for (const subpath of subpaths) {
     const specifier = `${CATALOG_PACKAGE_NAME}/${subpath.slice("./".length)}`;
     let path: string;
@@ -331,13 +365,16 @@ export function loadCatalogPackageFileV1<S extends CatalogPackageSubpathV1>(
     return { ok: false, refusal: resolutionFailure(error) };
   }
   const root = dirname(manifestPath);
-  const version = packageVersion(access, manifestPath);
+  const manifest = packageManifest(access, manifestPath);
+  const version = packageVersion(manifest);
   if (!compatibleVersion(version)) {
     return {
       ok: false,
       refusal: incompatible(`${installed()} version ${version ?? "is unreadable"}`),
     };
   }
+  const candidate = candidateRefusal(access, manifestPath, manifest);
+  if (candidate !== undefined) return { ok: false, refusal: candidate };
   const specifier = `${CATALOG_PACKAGE_NAME}/${subpath.slice("./".length)}`;
   let path: string;
   try {

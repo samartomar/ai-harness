@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 
@@ -118,4 +118,31 @@ export function packageEntries(
   files: Record<string, Buffer | string>,
 ): (readonly [string, Buffer | string])[] {
   return Object.entries(files).map(([path, bytes]) => [`package/${path}`, bytes] as const);
+}
+
+/**
+ * A candidate package as Catalog's `npm run build:candidate` marks it: the release name,
+ * version and exports, plus `CANDIDATE.json` and `package.json#aihCandidate`.
+ */
+export function markedCandidatePackageFiles(): Record<string, Buffer | string> {
+  const files = candidatePackageFiles();
+  const marker = { format: "aih-catalog-candidate", version: 1, inputsSha256: "0".repeat(64) };
+  return {
+    ...files,
+    "package.json": JSON.stringify({
+      ...JSON.parse(files["package.json"] as string),
+      private: true,
+      aihCandidate: marker,
+    }),
+    "CANDIDATE.json": JSON.stringify({ ...marker, catalogCommit: "0".repeat(40) }),
+  };
+}
+
+/** A test double's file read on a release: `CANDIDATE.json` is absent (ENOENT), as on disk. */
+export function withoutCandidateMarker<T>(read: (path: string) => T): (path: string) => T {
+  return (path) => {
+    if (basename(path) === "CANDIDATE.json")
+      throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
+    return read(path);
+  };
 }

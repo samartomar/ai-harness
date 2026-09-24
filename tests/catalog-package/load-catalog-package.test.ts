@@ -8,6 +8,7 @@ import {
   CATALOG_PACKAGE_PROJECT_INSTALL_COMMAND,
   type CatalogPackageAccessV1,
   catalogPackageRefusalMessage,
+  loadCatalogPackageFileV1,
   loadCatalogPackageV1,
 } from "../../src/catalog-package/load-catalog-package.js";
 
@@ -234,5 +235,76 @@ describe("load-catalog-package", () => {
     });
     if (loaded.ok) return;
     expect(loaded.refusal.detail).toContain("./catalog-index.json could not be read");
+  });
+
+  describe("an installed candidate Catalog", () => {
+    const manifestPath = join(installedRoot, "package.json");
+    const markerPath = join(installedRoot, "CANDIDATE.json");
+    const marker = { format: "aih-catalog-candidate", version: 1, inputsSha256: "0".repeat(64) };
+    /** The installed release, marked the way the Catalog candidate build marks a candidate. */
+    function marked(field: boolean, file: boolean): CatalogPackageAccessV1 {
+      return access({
+        readFile: (path) => {
+          if (path === manifestPath && field)
+            return Buffer.from(
+              JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), aihCandidate: marker }),
+            );
+          if (path === markerPath && file) return Buffer.from(JSON.stringify(marker));
+          return readFileSync(path);
+        },
+      });
+    }
+
+    it.each([
+      ["both markers", true, true, "CANDIDATE.json, package.json#aihCandidate"],
+      ["CANDIDATE.json alone", false, true, "CANDIDATE.json"],
+      ["package.json#aihCandidate alone", true, false, "package.json#aihCandidate"],
+    ])(
+      "refuses one carrying %s on every ordinary load path",
+      async (_label, field, file, named) => {
+        const detail = `the installed @aihq/catalog carries ${named}: a candidate Catalog is not a release`;
+        const loaded = await loadCatalogPackageV1(READERS, SUBPATHS, marked(field, file));
+        expect(loaded).toMatchObject({
+          ok: false,
+          refusal: {
+            reason: "catalog-package-incompatible",
+            detail: expect.stringContaining(detail),
+          },
+        });
+        expect(loadCatalogPackageFileV1("./catalog-index.json", marked(field, file))).toMatchObject(
+          {
+            ok: false,
+            refusal: {
+              reason: "catalog-package-incompatible",
+              detail: expect.stringContaining(detail),
+            },
+          },
+        );
+      },
+    );
+
+    it("refuses when the candidate marker cannot be checked", () => {
+      const loaded = loadCatalogPackageFileV1(
+        "./catalog-index.json",
+        access({
+          readFile: (path) => {
+            if (path === markerPath) throw Object.assign(new Error("EACCES"), { code: "EACCES" });
+            return readFileSync(path);
+          },
+        }),
+      );
+      expect(loaded).toMatchObject({
+        ok: false,
+        refusal: {
+          reason: "catalog-package-incompatible",
+          detail: expect.stringContaining("could not be checked for a candidate marker"),
+        },
+      });
+    });
+
+    it("leaves a release without either marker unaffected", async () => {
+      expect((await loadCatalogPackageV1(READERS, SUBPATHS, marked(false, false))).ok).toBe(true);
+      expect(loadCatalogPackageFileV1("./catalog-index.json", marked(false, false)).ok).toBe(true);
+    });
   });
 });

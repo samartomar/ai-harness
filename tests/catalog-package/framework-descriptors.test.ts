@@ -7,6 +7,7 @@ import {
   loadFrameworkDescriptorBytesV1,
 } from "../../src/catalog-package/framework-descriptors.js";
 import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
+import { withoutCandidateMarker } from "./candidate-catalog-fixture.js";
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -61,8 +62,9 @@ describe("loadFrameworkDescriptorBytesV1", () => {
           specifier.endsWith("package.json")
             ? "C:/fixture/package.json"
             : "C:/fixture/catalog-framework-superpowers-v1.json",
-        readFile: (path) =>
+        readFile: withoutCandidateMarker((path) =>
           path.endsWith("package.json") ? Buffer.from('{"version":"0.3.0"}') : bytes,
+        ),
       }),
     );
     expect(result).toMatchObject({

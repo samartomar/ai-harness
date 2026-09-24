@@ -29,6 +29,7 @@ import { sealedSingleSourceBundle } from "../baseline-evidence/candidate-bundle-
 import {
   candidateListingDigest,
   candidatePackageFiles,
+  markedCandidatePackageFiles,
 } from "../catalog-package/candidate-catalog-fixture.js";
 
 const PIN = "c".repeat(40);
@@ -335,6 +336,22 @@ describe("prepare-packaged-workbench-source-data with a candidate Catalog", () =
     });
     const loader = await import("../../src/catalog-package/load-catalog-package.js");
     expect(loader.candidateCatalogActiveV1()).toBe(true);
+  });
+
+  it("prepares through an activated candidate that carries both candidate markers", async () => {
+    // Ordinary loads refuse a marked package; the named, digest-checked activation is the
+    // one route a candidate is used by, and it reads neither marker.
+    const { directory, digest } = candidate(markedCandidatePackageFiles());
+    args.push("--candidate-catalog", directory, "--candidate-catalog-sha256", digest);
+    const run = await command();
+    expect(await run(args)).toContain(
+      `candidate Catalog 0.3.0 sha256:${digest} (directory-listing)`,
+    );
+    const used = JSON.parse(readFileSync(record(), "utf8")).candidateCatalog.files.map(
+      (file: { path: string }) => file.path,
+    );
+    expect(used).toContain("package.json");
+    expect(used).not.toContain("CANDIDATE.json");
   });
 
   it("refuses a candidate whose digest does not match before reading any input", async () => {
