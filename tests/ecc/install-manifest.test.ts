@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -13,8 +13,6 @@ import {
   evaluateEccInstallDrift,
   hashManagedFile,
   readEccInstallManifest,
-  upsertEccInstall,
-  writeEccInstallManifestAtomic,
 } from "../../src/ecc/install-manifest.js";
 
 let root: string;
@@ -102,6 +100,12 @@ function manifest(installs: EccManifestInstall[] = [install()]): EccInstallManif
   return { schemaVersion: ECC_INSTALL_MANIFEST_SCHEMA_VERSION, installs };
 }
 
+/** Fixture: the manifest an earlier ECC install recorded under `root`. */
+function recordManifest(value: unknown): void {
+  mkdirSync(join(root, ".aih", "ecc"), { recursive: true });
+  writeFileSync(eccInstallManifestPath(root), `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
 /** Classify one target against an in-memory picture of its destination tree. */
 function drift(
   disk: Record<string, string>,
@@ -125,8 +129,8 @@ describe("ECC install manifest — repo-local state", () => {
     expect(eccInstallManifestPath(root)).toBe(join(root, ".aih", "ecc", "install-manifest.json"));
   });
 
-  it("round-trips a written manifest", () => {
-    writeEccInstallManifestAtomic(root, manifest());
+  it("reads a recorded manifest", () => {
+    recordManifest(manifest());
     const read = readEccInstallManifest(root);
     expect(read.present).toBe(true);
     if (!read.present) return;
@@ -159,42 +163,15 @@ describe("ECC install manifest — repo-local state", () => {
   });
 
   it("refuses a recorded file path that escapes the managed root", () => {
-    expect(() =>
-      writeEccInstallManifestAtomic(
-        root,
-        manifest([install({ files: [{ path: "../../evil.md", sha256: sha256("x") }] })]),
-      ),
-    ).toThrow(EccInstallManifestError);
+    recordManifest(
+      manifest([install({ files: [{ path: "../../evil.md", sha256: sha256("x") }] })]),
+    );
+    expect(() => readEccInstallManifest(root)).toThrow(EccInstallManifestError);
   });
 
   it("refuses an absolute recorded file path", () => {
-    expect(() =>
-      writeEccInstallManifestAtomic(
-        root,
-        manifest([install({ files: [{ path: "/etc/passwd", sha256: sha256("x") }] })]),
-      ),
-    ).toThrow(EccInstallManifestError);
-  });
-
-  it("writes a trailing-newline JSON document", () => {
-    writeEccInstallManifestAtomic(root, manifest());
-    expect(readFileSync(eccInstallManifestPath(root), "utf8")).toMatch(/\n$/);
-  });
-
-  it("replaces only the matching (target, root) entry on rerun", () => {
-    const codex = install({
-      target: "codex",
-      mechanism: "checkout-merge",
-      root: join(root, ".codex"),
-    });
-    const next = upsertEccInstall(manifest([install(), codex]), install({ source: sourceB() }));
-    expect(next.installs).toHaveLength(2);
-    expect(next.installs.find((entry) => entry.target === "kiro")?.source.commit).toBe(
-      "b".repeat(40),
-    );
-    expect(next.installs.find((entry) => entry.target === "codex")?.source.commit).toBe(
-      "a".repeat(40),
-    );
+    recordManifest(manifest([install({ files: [{ path: "/etc/passwd", sha256: sha256("x") }] })]));
+    expect(() => readEccInstallManifest(root)).toThrow(EccInstallManifestError);
   });
 });
 
@@ -363,7 +340,7 @@ describe("ECC install manifest — installs predating the manifest", () => {
 
 describe("ECC install manifest — acceptance: installed at source A, re-run at source B", () => {
   it("surfaces an actionable drift finding instead of silently reporting success", () => {
-    writeEccInstallManifestAtomic(root, manifest());
+    recordManifest(manifest());
     const read = readEccInstallManifest(root);
     expect(read.present).toBe(true);
     if (!read.present) return;

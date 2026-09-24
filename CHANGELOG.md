@@ -62,6 +62,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Remove Core's Catalog producer tools `tools/build-catalog-preassembly.ts`,
   `tools/copy-policy-data.mjs` and `tools/update-ecc-content-metadata.mjs`. Catalog's build
   regenerates that data.
+- Remove Core's unreachable copies of ECC framework code that now lives in
+  `@aihq/framework-ecc`. The removed modules are:
+  - `src/ecc/{components,evidence,select,selection-closure,materialization-selection,materialization-types,materialization-target-kiro}.ts`
+  - `src/ecc-profile/{index,render,source-closure,projection-policy}.ts`
+  - the never-wired internal `src/ecc-profile/{token-savior,plan-canvas,opt-in-hooks}.ts` slices
+
+  Dead functions are also removed from the ECC modules Core keeps, including the manifest,
+  ledger and destination writers no command called and the Kiro and governed target
+  materializers. Reachable behavior is unchanged: Core keeps the destination inspection that
+  historical runtime descriptors are checked against, the native runtime, and the receipts and
+  ledgers aih writes. It also keeps the install-preview modules that the Catalog producer tooling
+  (`check:baseline-installable`, `baseline:*`) still uses. Control matrix rows CM-40, CM-42 and
+  CM-43, which described the removed internal slices, are withdrawn.
 
 ### Changed
 

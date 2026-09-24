@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { entry } from "../internals/cli-registry.js";
-import type { EccComponentId } from "./components.js";
 import { applyEccUpstreamHookConsent } from "./hook-consent.js";
 import {
   type ContingentEccInstallOperation,
@@ -9,6 +8,7 @@ import {
   parseEccInstallPreview,
 } from "./install-preview.js";
 import { ECC_INSTALL_TARGETS } from "./install-targets.js";
+import type { EccComponentId } from "./materialize.js";
 import { eccMaterializationSpec, filterEccManifestPlan } from "./materialize.js";
 
 const HOME_FIXTURE = "/home/aih";

@@ -141,6 +141,19 @@ describe("ECC framework boundary (phase 2)", () => {
     expect(eccFrameworkModules().filter((file) => !pinned.has(file))).toEqual([]);
   });
 
+  it("carries no other copy of the plugin's ECC framework code", () => {
+    // Each remaining module is reached from Core's entry points or the W1
+    // Catalog producer tooling; everything else lives only in @aihq/framework-ecc.
+    expect(eccFrameworkModules()).toEqual([
+      "src/ecc/hook-consent.ts",
+      "src/ecc/install-preview.ts",
+      "src/ecc/install-targets.ts",
+      "src/ecc/materialization-target.ts",
+      "src/ecc/materialize.ts",
+      "src/ecc/runtime-adapter-compatibility.ts",
+    ]);
+  });
+
   it("classifies generic ecc-profile runtime modules as outside the framework boundary", () => {
     expect(isEccFrameworkModule(join(src, "ecc-profile", "native-runtime-cli.js"))).toBe(false);
     expect(isEccFrameworkModule(join(src, "ecc-profile", "default-mcp-runtime-lock.js"))).toBe(

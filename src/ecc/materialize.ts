@@ -1,11 +1,17 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
-import {
-  type EccComponentId,
-  type EccComponentSelection,
-  type EccMcpComponentId,
-  UPSTREAM_CORE_ECC_MODULE_IDS,
-} from "./components.js";
+
+export type EccComponentId = `${string}:${string}`;
+export type EccMcpComponentId = `mcp:${string}`;
+
+export interface EccComponentSelection {
+  scope: "scoped" | "full";
+  components: EccComponentId[];
+  mcps: EccMcpComponentId[];
+  recommendations: EccComponentId[];
+  /** Exact upstream modules selected by an upstream profile such as Core. */
+  moduleIds?: string[];
+}
 
 export interface EccComponentInstallDescriptor {
   evidenceComponentId: string;
@@ -191,47 +197,6 @@ function loadedSkillModulesV1(): Readonly<Record<string, string>> {
 }
 
 /** Skills that have a second, source-controlled `.agents/skills` copy at the v2.1.0 pin. */
-const AGENT_SKILL_COPIES = new Set([
-  "agent-introspection-debugging",
-  "agent-sort",
-  "api-design",
-  "article-writing",
-  "backend-patterns",
-  "benchmark-methodology",
-  "brand-discovery",
-  "brand-voice",
-  "bun-runtime",
-  "coding-standards",
-  "competitive-platform-analysis",
-  "competitive-report-structure",
-  "content-engine",
-  "crosspost",
-  "deep-research",
-  "dmux-workflows",
-  "documentation-lookup",
-  "e2e-testing",
-  "eval-harness",
-  "everything-claude-code",
-  "exa-search",
-  "fal-ai-media",
-  "frontend-patterns",
-  "frontend-slides",
-  "investor-materials",
-  "investor-outreach",
-  "market-research",
-  "mcp-server-patterns",
-  "mle-workflow",
-  "nextjs-turbopack",
-  "plan-canvas",
-  "product-capability",
-  "security-review",
-  "strategic-compact",
-  "tdd-workflow",
-  "unified-memory",
-  "verification-loop",
-  "video-editing",
-  "x-api",
-]);
 
 function leafName(componentId: string, family: string): string | undefined {
   const prefix = `${family}:`;
@@ -323,52 +288,6 @@ export function eccComponentInstallDescriptor(
 }
 
 /** Whole upstream modules selected by one semantic component, before dependency expansion. */
-export function eccComponentWholeModuleIds(
-  componentId: EccComponentId | EccMcpComponentId,
-): string[] {
-  return [...(eccComponentInstallDescriptor(componentId).wholeModules ?? [])];
-}
-
-/**
- * Module roots that must be selected beside one semantic component. Languages
- * are additive only after ECC Core; whole-module semantic components retain
- * their existing exact containing-module requirement.
- */
-export function eccComponentRequiredModuleRootIds(
-  componentId: EccComponentId | EccMcpComponentId,
-): string[] {
-  return [
-    ...new Set([
-      ...eccComponentWholeModuleIds(componentId),
-      ...(componentId.startsWith("lang:") ? UPSTREAM_CORE_ECC_MODULE_IDS : []),
-    ]),
-  ];
-}
-
-const SELECTABLE_MODULE_MEMBER_KINDS = new Set(["agent", "baseline", "skill"]);
-
-/**
- * Individually selectable artifacts materially contained by one module.
- * MCP, language, framework, capability, runtime, and module identities are
- * deliberately excluded: selecting a source module must not manufacture an
- * activation or a broader semantic choice.
- */
-export function eccModuleSelectableMemberIds(
-  moduleId: string,
-  componentIds: readonly string[],
-): string[] {
-  if (!modulePaths().has(moduleId)) {
-    throw new Error(`pinned ECC module snapshot is missing ${moduleId}`);
-  }
-  return componentIds.filter((componentId) => {
-    const separator = componentId.indexOf(":");
-    const kind = separator === -1 ? "" : componentId.slice(0, separator);
-    return (
-      SELECTABLE_MODULE_MEMBER_KINDS.has(kind) &&
-      eccComponentInstallDescriptor(componentId as EccComponentId).containingModuleId === moduleId
-    );
-  });
-}
 
 function normalizedPath(value: string): string {
   return value.replace(/\\/g, "/");
@@ -482,27 +401,6 @@ function selectedOperation(
   if (agent !== undefined && surface.agents.has(agent)) return true;
   const skill = /^(?:skills|\.agents\/skills)\/([^/]+)\//.exec(source)?.[1];
   return skill !== undefined && surface.skills.has(skill);
-}
-
-export function eccComponentSourcePaths(componentId: EccComponentId | EccMcpComponentId): string[] {
-  const descriptor = eccComponentInstallDescriptor(componentId);
-  const paths = new Set<string>(descriptor.sourceRoots ?? []);
-  for (const moduleId of descriptor.wholeModules ?? []) {
-    const moduleSourcePaths = modulePaths().get(moduleId);
-    if (moduleSourcePaths === undefined)
-      throw new Error(`pinned ECC module snapshot is missing ${moduleId}`);
-    for (const path of moduleSourcePaths) paths.add(path);
-  }
-  for (const skill of descriptor.skills ?? []) {
-    paths.add(`skills/${skill}`);
-    if (AGENT_SKILL_COPIES.has(skill)) paths.add(`.agents/skills/${skill}`);
-  }
-  for (const agent of descriptor.agents ?? []) paths.add(`agents/${agent}.md`);
-  if (componentId.startsWith("mcp:")) {
-    paths.add(".mcp.json");
-    paths.add("mcp-configs/mcp-servers.json");
-  }
-  return [...paths].sort((left, right) => left.localeCompare(right));
 }
 
 export function eccManifestOperationSelected(
@@ -816,17 +714,4 @@ export function filterEccManifestPlan<Operation extends EccManifestOperation>(
   });
   plan.operations = operations;
   plan.statePreview.operations = operations;
-}
-
-/**
- * Apply normal component selection first, then remove only the explicitly
- * classified AIH-owned surfaces. This is intentionally operation-level even
- * for Core/platform and full scope, whose modules contain mixed ownership.
- */
-export function filterGovernedEccManifestPlan<Operation extends EccManifestOperation>(
-  plan: EccManifestPlan<Operation>,
-  selection: EccComponentSelection,
-  roots?: GovernedEccDestinationRoots,
-): void {
-  filterEccManifestPlan(plan, selection, { governance: true, roots });
 }

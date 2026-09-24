@@ -18,10 +18,7 @@ import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashComponentTree } from "../../../../src/baseline-evidence/hash.js";
 import type { BaselineAuthorization } from "../../../../src/baseline-evidence/verify.js";
-import {
-  MAX_MATERIALIZED_FILE_BYTES,
-  writeDestinationAtomic,
-} from "../../../../src/ecc/materialization-fs.js";
+import { MAX_MATERIALIZED_FILE_BYTES } from "../../../../src/ecc/materialization-fs.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
   MAX_MATERIALIZATION_RECEIPT_BYTES,
@@ -1696,13 +1693,6 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     // Without this the rollback restores at the engine's default and silently
     // widens an operator's permissions; the type is what keeps it plumbed.
     expect(step?.priorMode).toBeGreaterThan(0);
-  });
-
-  it("refuses a reserved directory it would have to create", () => {
-    expect(() =>
-      writeDestinationAtomic(root, ".git/hooks/pre-commit", Buffer.from("payload\n"), 0o644),
-    ).toThrow(/git/i);
-    expect(existsSync(join(root, ".git", "hooks", "pre-commit"))).toBe(false);
   });
 
   it("refuses a destination root that is not an absolute real directory", () => {
