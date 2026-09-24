@@ -23,6 +23,16 @@ describe("Node runtime floor", () => {
     expect(nodeVersionMeetsFloor("")).toBe(false);
     expect(nodeVersionMeetsFloor("node")).toBe(false);
     expect(nodeVersionMeetsFloor("v20")).toBe(false);
+    expect(nodeVersionMeetsFloor("v20.6.")).toBe(false);
+    expect(nodeVersionMeetsFloor("garbage20.6.invalid")).toBe(false);
+    expect(nodeVersionMeetsFloor("v22.3.0 extra")).toBe(false);
+    expect(nodeVersionMeetsFloor("v22.3.0\nv18.0.0")).toBe(false);
+  });
+
+  it("accepts a prerelease or nightly suffix on a complete version", () => {
+    expect(nodeVersionMeetsFloor("v21.0.0-nightly20230801abc")).toBe(true);
+    expect(nodeVersionMeetsFloor("v20.6.0-rc.1")).toBe(true);
+    expect(nodeVersionMeetsFloor("v20.5.0-rc.1")).toBe(false);
   });
 });
 

@@ -10,11 +10,12 @@ const FLOOR_MAJOR = 20;
 const FLOOR_MINOR = 6;
 
 /**
- * Whether a `node --version` or `process.versions.node` string meets the floor. An
- * unparseable version fails closed.
+ * Whether a `node --version` or `process.versions.node` string meets the floor. The whole
+ * trimmed string must be one version (`v` optional, numeric major.minor.patch, optional
+ * prerelease suffix); anything else fails closed.
  */
 export function nodeVersionMeetsFloor(version: string): boolean {
-  const match = /v?(\d+)\.(\d+)\./.exec(version);
+  const match = /^v?(\d+)\.(\d+)\.\d+(?:-[0-9A-Za-z.-]+)?$/.exec(version.trim());
   if (match === null) return false;
   const major = Number(match[1]);
   const minor = Number(match[2]);
