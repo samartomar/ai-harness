@@ -29,7 +29,8 @@
     "src/trust/scan.ts",
     "src/trust/scanner-runtime-identity.ts",
     "src/trust/script-files.ts",
-    "src/trust/smoke.ts"
+    "src/trust/smoke.ts",
+    "src/trust/trust-lint-sarif.ts"
   ],
-  "digest": "8720cba510c7"
+  "digest": "077642c3aa71"
 }

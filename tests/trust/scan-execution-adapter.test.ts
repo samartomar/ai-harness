@@ -80,6 +80,19 @@ function recordingRunner() {
 }
 
 /**
+ * Contract C2: every uv-backed detector declares `host-process-uv-v1` on every OS,
+ * and Core names that profile in each request (no profile falls back).
+ */
+const HOST_PROFILE = {
+  id: "host-process-uv-v1",
+  isolation: "none",
+  network: "unenforced",
+  supportedPlatforms: ["linux", "darwin", "windows"].flatMap((os) =>
+    ["amd64", "arm64"].map((architecture) => ({ os, architecture })),
+  ),
+};
+
+/**
  * Shaped after Scan's own `DetectorCapabilityV1`
  * (`aih-scan@a405b9d0 src/capability/detector-capability-v1.ts:122-140`).
  * `detector.cisco` declares `skill-directory` there; the others `source-tree`.
@@ -90,6 +103,8 @@ function capability(detectorId: string, subjectKinds: readonly string[] = ["sour
     detectorId,
     analyzerIdentity: null,
     analyzerVersion: "0.0.0-test",
+    executionProfile: HOST_PROFILE,
+    executionProfiles: [HOST_PROFILE],
     subjectKinds,
     outputs: ["sarif-2.1.0"],
   };
@@ -106,11 +121,7 @@ function succeededWithSarif(sarif: string) {
   return {
     outcome: "succeeded",
     capability: capability("detector.cisco", ["skill-directory"]),
-    executionProfile: {
-      id: "linux-namespace-uv-v1",
-      isolation: "linux-namespace",
-      network: "none",
-    },
+    executionProfile: HOST_PROFILE,
     prerequisites: [],
     seams: { runner: "scan-owned-default", prerequisiteProbe: "scan-owned-default" },
     evidence: {

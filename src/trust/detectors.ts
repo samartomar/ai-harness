@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
+import { AihError } from "../errors.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
@@ -19,6 +20,9 @@ import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.j
 import type { Platform } from "../platform/base.js";
 import {
   loadScanExecutionAdapterV1,
+  SCAN_PACKAGE_INSTALL_COMMAND,
+  SCAN_PACKAGE_PROJECT_INSTALL_COMMAND,
+  ScanPackageRefusalError,
   type ScanPackageRefusalReasonV1,
   type ScanPackageRefusalV1,
   scanPackageRefusalMessage,
@@ -64,6 +68,7 @@ import {
   SNYK_AGENT_SCAN_PROJECT,
 } from "./scanner-runtime-identity.js";
 import { isInstallScriptEvidenceFilePath, isMaliciousCodeScanFilePath } from "./script-files.js";
+import { isSourceRelativeSarifUriV1, trustLintChecksFromSarifV1 } from "./trust-lint-sarif.js";
 
 const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 
@@ -76,6 +81,15 @@ export type TrustDetectorName =
   | "mcp-scanner"
   | "semgrep"
   | "snyk-agent-scan";
+
+/** Core's name for Scan's `detector.aih-trust-lint`, which reports the native findings. */
+export const SCAN_TRUST_LINT_DETECTOR = "aih-trust-lint";
+
+/** Every detector Core can route to Scan: the five analyzers and the native findings. */
+export type ScanRoutedDetectorV1 = TrustDetectorName | typeof SCAN_TRUST_LINT_DETECTOR;
+
+/** The uv-backed profiles a caller may select; the host profile is the default on every OS. */
+export type UvExecutionProfileIdV1 = "host-process-uv-v1" | "linux-namespace-uv-v1";
 
 export interface TrustDetector {
   name: TrustDetectorName;
@@ -126,7 +140,16 @@ export interface TrustDetectorOptions {
    * Defaults to `SCAN_DELEGATED_TRUST_DETECTORS`; tests name others to exercise
    * the rule each detector will follow once it is delegated.
    */
-  delegatedDetectors?: ReadonlySet<TrustDetectorName>;
+  delegatedDetectors?: ReadonlySet<ScanRoutedDetectorV1>;
+  /**
+   * The profile every uv-backed detector (semgrep, cisco, mcp-scanner,
+   * snyk-agent-scan) is requested under when Scan runs it. Default
+   * `host-process-uv-v1` on every OS, as Core runs them today; the Linux
+   * namespace profile only when a caller selects it. No profile falls back.
+   */
+  uvExecutionProfileId?: UvExecutionProfileIdV1;
+  /** Cancels the scan: Scan kills the analyzer's process tree and Core throws `TrustScanCancelledError`. */
+  signal?: AbortSignal;
   /** Native AIH findings that can corroborate an elevated third-party rule on the same line. */
   corroboratedChecks?: readonly Check[];
   progress?: (message: string) => void;
@@ -137,7 +160,7 @@ export interface TrustDetectorOptions {
  * execution profile when Scan ran it. Nothing about detector execution is silent.
  */
 export interface TrustDetectorExecutionV1 {
-  readonly detector: TrustDetectorName;
+  readonly detector: ScanRoutedDetectorV1;
   /**
    * `scan`: `@aihq/scan` handled it (installed package or injected adapter).
    * `core-legacy`: Core's retained implementation, for a detector Scan does not declare.
@@ -1876,7 +1899,8 @@ function ruleCode(
   // YARA_command_injection_generic -> trust.malicious-code) must never be
   // relabelled to an acknowledgeable trust-origin code by a substring match on
   // echoed message content.
-  const mapped = detector.ruleMap[raw];
+  // Own properties only: a rule id such as "constructor" names no mapped rule.
+  const mapped = Object.hasOwn(detector.ruleMap, raw) ? detector.ruleMap[raw] : undefined;
   if (mapped !== undefined) {
     if (mapped === "trust.hidden-unicode") {
       const risk = hiddenUnicodeRiskForDetectorResult(result, detector, root, location);
@@ -2060,12 +2084,17 @@ function sarifFingerprint(
   });
 }
 
+/**
+ * `canonicalRuleId`, when given, names the rule Core classifies and fingerprints a
+ * result under; the raw occurrence keeps the analyzer's own rule id as evidence.
+ */
 function sarifChecks(
   stdout: string,
   root: string,
   posture: Posture,
   detector: TrustDetector,
   corroboratedDangerLocations: ReadonlySet<string>,
+  canonicalRuleId?: (raw: string) => string | undefined,
 ): { checks: Check[]; rawOccurrences: RawScannerOccurrence[] } | undefined {
   const parsed = parseSarifLog(stdout);
   if (parsed === undefined) return undefined;
@@ -2108,8 +2137,14 @@ function sarifChecks(
       ]);
       if (seen.has(duplicateKey)) continue;
       seen.add(duplicateKey);
+      const canonical =
+        canonicalRuleId === undefined || resultRuleId(result) === undefined
+          ? undefined
+          : canonicalRuleId(rawRuleId);
+      const classified: SarifResult =
+        canonical === undefined ? result : { ...result, ruleId: canonical };
       const classification = ruleCode(
-        result,
+        classified,
         detector,
         root,
         location,
@@ -2128,16 +2163,16 @@ function sarifChecks(
       const { code } = classification;
       if (
         code === "trust.prompt-injection" &&
-        isNarrowReviewableRoleDefinition(result, detector, root, location)
+        isNarrowReviewableRoleDefinition(classified, detector, root, location)
       ) {
         continue;
       }
       const risk =
         code === "trust.hidden-unicode" || code === "trust.visible-unicode"
-          ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location)
+          ? hiddenUnicodeRiskForDetectorResult(classified, detector, root, location)
           : undefined;
       const detail = legalTextResultMessage(
-        unicodeResultMessage(resultMessage(result, detector), risk),
+        unicodeResultMessage(resultMessage(classified, detector), risk),
         code,
       );
       checks.push(
@@ -2153,7 +2188,7 @@ function sarifChecks(
               code,
               root,
               location,
-              resultRuleId(result) ?? "unknown-rule",
+              resultRuleId(classified) ?? "unknown-rule",
               detail,
               detector,
             ),
@@ -2256,12 +2291,59 @@ export const SCAN_DELEGATED_TRUST_DETECTORS: ReadonlySet<TrustDetectorName> = ne
  */
 export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";
 
+/** Scan's detector id for each detector Core routes to it. */
+export const SCAN_DETECTOR_IDS: Readonly<Record<ScanRoutedDetectorV1, string>> = Object.freeze({
+  [SCAN_TRUST_LINT_DETECTOR]: "detector.aih-trust-lint",
+  skillspector: "detector.skillspector",
+  cisco: "detector.cisco",
+  "mcp-scanner": "detector.cisco-mcp-scanner",
+  semgrep: "detector.semgrep",
+  "snyk-agent-scan": "detector.snyk-agent-scan",
+});
+
+/** Detectors Scan runs through uv; each is requested under one named uv profile. */
+const UV_BACKED_DETECTORS: ReadonlySet<ScanRoutedDetectorV1> = new Set([
+  "semgrep",
+  "cisco",
+  "mcp-scanner",
+  "snyk-agent-scan",
+]);
+
+const DEFAULT_UV_EXECUTION_PROFILE: UvExecutionProfileIdV1 = "host-process-uv-v1";
+
+/**
+ * A trust scan the caller cancelled. Scan kills the analyzer's process tree and
+ * returns a failure; Core then stops, because a cancelled scan has no verdict.
+ */
+export class TrustScanCancelledError extends AihError {
+  constructor(detail: string) {
+    super(`trust scan cancelled: ${detail}`, "AIH_TRUST_CANCELLED");
+  }
+}
+
+function throwIfCancelled(signal: AbortSignal | undefined, detail: string): void {
+  if (signal?.aborted === true) throw new TrustScanCancelledError(detail);
+}
+
 /** How Core reached Scan's execution for this scan. */
 export type ScanExecutionSource = "installed-package" | "injected-adapter";
 
-type ResolvedScanExecutionV1 =
+export type ResolvedScanExecutionV1 =
   | { readonly adapter: ScanExecutionAdapterV1; readonly source: ScanExecutionSource }
   | { readonly refusal: ScanPackageRefusalV1 };
+
+/** Scan's execution for a scan: the injected adapter, else the installed package or its refusal. */
+export function resolveScanExecutionV1(
+  injected?: ScanExecutionAdapterV1,
+): Promise<ResolvedScanExecutionV1> {
+  return injected !== undefined
+    ? Promise.resolve({ adapter: injected, source: "injected-adapter" })
+    : loadScanExecutionAdapterV1().then((loaded) =>
+        loaded.ok
+          ? { adapter: loaded.adapter, source: "installed-package" }
+          : { refusal: loaded.refusal },
+      );
+}
 
 type DelegatedDetectorResultV1 =
   | { readonly sarif: string; readonly executionProfileId?: string }
@@ -2296,14 +2378,16 @@ function stringMember(
 
 /**
  * The capability the adapter publishes for this detector, or undefined when it
- * publishes none. Scan names its capabilities `detector.<name>`; a bare name is
- * accepted for the same detector. A capability list Core cannot read names
- * nothing, so nothing is delegated.
+ * publishes none. Scan names its capabilities by `SCAN_DETECTOR_IDS`; Core's bare
+ * detector name is accepted for the same detector. A capability list Core cannot
+ * read names nothing, so nothing is delegated.
  */
 function adapterCapabilityFor(
   adapter: ScanExecutionAdapterV1,
-  detector: string,
+  detector: ScanRoutedDetectorV1 | typeof SCAN_NATIVE_OBSERVATION_DETECTOR_ID,
 ): Record<string, unknown> | undefined {
+  const scanId =
+    detector === SCAN_NATIVE_OBSERVATION_DETECTOR_ID ? detector : SCAN_DETECTOR_IDS[detector];
   let capabilities: readonly unknown[];
   try {
     capabilities = adapter.listDetectorCapabilitiesV1();
@@ -2314,9 +2398,53 @@ function adapterCapabilityFor(
   for (const capability of capabilities) {
     const record = asRecord(capability);
     const id = record?.detectorId;
-    if (typeof id === "string" && (id === detector || id === `detector.${detector}`)) return record;
+    if (typeof id === "string" && (id === scanId || id === detector)) return record;
   }
   return undefined;
+}
+
+/**
+ * The execution profile Core names for this detector, checked against what the
+ * capability declares for this host before anything is asked of Scan.
+ *
+ * uv-backed detectors run under `host-process-uv-v1` on every OS, as Core runs
+ * them today, unless the caller selects `linux-namespace-uv-v1`. SkillSpector and
+ * the native findings run under their capability's own default profile, and
+ * SkillSpector only in a container. A profile the capability does not declare for
+ * this OS and architecture is refused: nothing falls back to another profile.
+ */
+function requestedExecutionProfile(
+  detector: ScanRoutedDetectorV1,
+  capability: Record<string, unknown> | undefined,
+  platform: Platform,
+  uvProfile: UvExecutionProfileIdV1 | undefined,
+): { readonly id: string } | { readonly refusal: string } {
+  const scanId = SCAN_DETECTOR_IDS[detector];
+  const architecture = process.arch === "x64" ? "amd64" : process.arch;
+  const id = UV_BACKED_DETECTORS.has(detector)
+    ? (uvProfile ?? DEFAULT_UV_EXECUTION_PROFILE)
+    : stringMember(asRecord(capability?.executionProfile), "id");
+  if (id === undefined) return { refusal: `${scanId} declares no default execution profile` };
+  const profiles = capability?.executionProfiles;
+  const profile = Array.isArray(profiles)
+    ? profiles.map(asRecord).find((entry) => entry?.id === id)
+    : undefined;
+  const declared =
+    profile !== undefined &&
+    Array.isArray(profile.supportedPlatforms) &&
+    profile.supportedPlatforms.some((host) => {
+      const supported = asRecord(host);
+      return supported?.os === platform && supported.architecture === architecture;
+    });
+  if (!declared)
+    return {
+      refusal: `${scanId} does not declare ${adapterReason(id)} for ${platform}/${architecture}`,
+    };
+  if (detector === "skillspector" && profile?.isolation !== "container")
+    return {
+      refusal: `${scanId} default profile ${adapterReason(id)} is not a container profile; Core runs SkillSpector only in a container`,
+    };
+  return { id };
 }
 
 /**
@@ -2532,14 +2660,70 @@ async function recordScanNativeObservation(
   };
 }
 
+/**
+ * Semgrep prefixes each rule id with the dotted directory of the config file it
+ * read (`aih.work.semgrep.prompt-injection`), so a delegated Semgrep rule is
+ * matched by its exact id or by `.<id>` suffix against Core's own rule ids.
+ */
+function canonicalSemgrepRuleId(raw: string): string | undefined {
+  if (Object.hasOwn(SEMGREP_RULE_MAP, raw)) return raw;
+  return Object.keys(SEMGREP_RULE_MAP).find((id) => raw.endsWith(`.${id}`));
+}
+
+function sarifResultsOf(sarif: string): unknown[] | undefined {
+  const parsed = parseSarifLog(sarif);
+  if (parsed === undefined) return undefined;
+  const results: unknown[] = [];
+  for (const run of parsed.runs) {
+    const runResults = asRecord(run)?.results;
+    if (Array.isArray(runResults)) results.push(...runResults);
+  }
+  return results;
+}
+
+/**
+ * Scan's SARIF crosses a trust boundary: every artifact URI must name a path under
+ * the declared source root, and a delegated Semgrep run may report only Core's own
+ * rules. Anything else fails closed as this detector's failure, never partly read.
+ */
+function delegatedSarifRefusal(detector: ScanRoutedDetectorV1, sarif: string): string | undefined {
+  const scanId = SCAN_DETECTOR_IDS[detector];
+  // Unparseable SARIF is reported by the mapping itself as invalid SARIF.
+  for (const raw of sarifResultsOf(sarif) ?? []) {
+    const result = asRecord(raw);
+    const locations = result?.locations;
+    for (const location of Array.isArray(locations) ? locations : []) {
+      const physical = asRecord(asRecord(location)?.physicalLocation);
+      const uri = asRecord(physical?.artifactLocation)?.uri;
+      if (uri !== undefined && (typeof uri !== "string" || !isSourceRelativeSarifUriV1(uri)))
+        return `${scanId} returned SARIF artifact URI ${adapterReason(JSON.stringify(uri) ?? "")}, which is not relative to the declared source root`;
+    }
+    if (detector === "semgrep") {
+      const ruleId = result?.ruleId ?? asRecord(result?.rule)?.id;
+      if (typeof ruleId !== "string" || canonicalSemgrepRuleId(ruleId) === undefined)
+        return `${scanId} returned rule id ${adapterReason(JSON.stringify(ruleId) ?? "")}, which is not one of Core's Semgrep rules (${Object.keys(SEMGREP_RULE_MAP).join(", ")})`;
+    }
+  }
+  return undefined;
+}
+
+interface DelegatedRunOptionsV1 {
+  readonly platform: Platform;
+  readonly uvProfile?: UvExecutionProfileIdV1;
+  readonly signal?: AbortSignal;
+  /** Detector-specific request options, passed verbatim (the native findings' internal scopes). */
+  readonly detectorOptions?: Readonly<Record<string, unknown>>;
+}
+
 async function runDelegatedDetector(
   adapter: ScanExecutionAdapterV1,
   capability: Record<string, unknown> | undefined,
-  detector: TrustDetectorName,
+  detector: ScanRoutedDetectorV1,
   root: string,
   inventory: TrustFileInventory | undefined,
-  platform: Platform,
+  options: DelegatedRunOptionsV1,
 ): Promise<DelegatedDetectorResultV1> {
+  const scanId = SCAN_DETECTOR_IDS[detector];
   // Scan requires the selection as a field, so Core delegates only what it has
   // actually enumerated: it never declares a closure it did not read.
   if (inventory === undefined)
@@ -2547,59 +2731,34 @@ async function runDelegatedDetector(
       unavailable: "no file inventory is available to declare as this detector's selected closure",
       outcome: "refused",
     };
-  // Semgrep's host-process profile is opt-in and is not yet declared for
-  // Windows or macOS by the installed Scan package. Never fall back to Scan's
-  // default profile when Core's selected host profile is absent or unsupported.
-  let executionProfileId: string | undefined;
-  if (detector === "semgrep") {
-    executionProfileId = platform === "linux" ? "linux-namespace-uv-v1" : "host-process-uv-v1";
-    const architecture = process.arch === "x64" ? "amd64" : process.arch;
-    const profiles = capability?.executionProfiles;
-    const declared = Array.isArray(profiles)
-      ? profiles.some((entry) => {
-          const profile = asRecord(entry);
-          if (
-            profile === undefined ||
-            profile.id !== executionProfileId ||
-            !Array.isArray(profile.supportedPlatforms)
-          )
-            return false;
-          return profile.supportedPlatforms.some((host) => {
-            const supported = asRecord(host);
-            return supported?.os === platform && supported.architecture === architecture;
-          });
-        })
-      : false;
-    if (!declared)
-      return {
-        unavailable: `detector.semgrep does not declare ${executionProfileId} for ${platform}/${architecture}`,
-        outcome: "refused",
-      };
-  }
+  const profile = requestedExecutionProfile(
+    detector,
+    capability,
+    options.platform,
+    options.uvProfile,
+  );
+  if ("refusal" in profile) return { unavailable: profile.refusal, outcome: "refused" };
+  const executionProfileId = profile.id;
   const selectedClosurePaths = inventory.files.map((entry) => entry.relativePath);
+  let result: DelegatedDetectorResultV1;
   try {
-    const result = delegatedDetectorResult(
+    result = delegatedDetectorResult(
       await adapter.runDetectorV1({
-        detectorId: `detector.${detector}`,
-        ...(executionProfileId === undefined ? {} : { executionProfileId }),
+        detectorId: scanId,
+        executionProfileId,
         subject: {
           kind: delegatedSubjectKind(capability, selectedClosurePaths),
           sourceRoot: root,
           selectedClosurePaths,
         },
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.detectorOptions === undefined
+          ? {}
+          : { detectorOptions: options.detectorOptions }),
       }),
     );
-    if (
-      executionProfileId !== undefined &&
-      "sarif" in result &&
-      result.executionProfileId !== executionProfileId
-    )
-      return {
-        unavailable: `detector.semgrep returned execution profile ${result.executionProfileId ?? "unstated"} instead of requested ${executionProfileId}`,
-        outcome: "failed",
-      };
-    return result;
   } catch (error) {
+    throwIfCancelled(options.signal, `${scanId} was running`);
     return {
       unavailable: adapterReason(
         `scan execution adapter failed: ${(error as Error)?.message ?? "unknown error"}`,
@@ -2607,6 +2766,121 @@ async function runDelegatedDetector(
       outcome: "failed",
     };
   }
+  // Scan reports a cancelled run as a failure; Core stops rather than grade it.
+  throwIfCancelled(options.signal, `${scanId} was running`);
+  if (!("sarif" in result)) return result;
+  if (result.executionProfileId !== executionProfileId)
+    return {
+      unavailable: `${scanId} returned execution profile ${result.executionProfileId ?? "unstated"} instead of requested ${executionProfileId}`,
+      outcome: "failed",
+    };
+  const refusal = delegatedSarifRefusal(detector, result.sarif);
+  if (refusal !== undefined) return { unavailable: refusal, outcome: "failed", executionProfileId };
+  return result;
+}
+
+/** Where a scan's native findings come from, when Scan produces them. */
+export interface ScanTrustLintRouteV1 {
+  readonly adapter: ScanExecutionAdapterV1;
+  readonly source: ScanExecutionSource;
+  readonly capability: Record<string, unknown>;
+}
+
+/**
+ * Whether Scan's `detector.aih-trust-lint` produces this scan's native findings.
+ *
+ * An injected adapter that declares the detector runs it; one that does not
+ * leaves the native findings to Core, as for every undeclared detector. The
+ * installed package runs it only when it is delegated, and then with no
+ * fallback: a missing or incompatible package refuses the whole trust scan,
+ * because without native findings Core has nothing to grade the source on.
+ */
+export async function resolveScanTrustLintRouteV1(options: {
+  readonly scanExecution?: ScanExecutionAdapterV1;
+  readonly delegatedDetectors?: ReadonlySet<ScanRoutedDetectorV1>;
+}): Promise<ScanTrustLintRouteV1 | undefined> {
+  const injected = options.scanExecution;
+  if (injected !== undefined) {
+    const capability = adapterCapabilityFor(injected, SCAN_TRUST_LINT_DETECTOR);
+    return capability === undefined
+      ? undefined
+      : { adapter: injected, source: "injected-adapter", capability };
+  }
+  const delegated: ReadonlySet<ScanRoutedDetectorV1> =
+    options.delegatedDetectors ?? SCAN_DELEGATED_TRUST_DETECTORS;
+  if (!delegated.has(SCAN_TRUST_LINT_DETECTOR)) return undefined;
+  const scan = await resolveScanExecutionV1();
+  if ("refusal" in scan) throw new ScanPackageRefusalError(scan.refusal);
+  const capability = adapterCapabilityFor(scan.adapter, SCAN_TRUST_LINT_DETECTOR);
+  if (capability === undefined)
+    throw new ScanPackageRefusalError({
+      reason: "scan-package-incompatible",
+      detail: `the installed @aihq/scan declares no ${SCAN_DETECTOR_IDS[SCAN_TRUST_LINT_DETECTOR]} capability, so Core has no native findings for this source. Install it with: ${SCAN_PACKAGE_INSTALL_COMMAND} (in a project: ${SCAN_PACKAGE_PROJECT_INSTALL_COMMAND}).`,
+    });
+  return { adapter: scan.adapter, source: scan.source, capability };
+}
+
+function trustLintUnavailableCheck(source: ScanExecutionSource, reason: string): Check {
+  const said = source === "installed-package" ? `installed @aihq/scan: ${reason}` : reason;
+  return {
+    name: `trust detector ${SCAN_TRUST_LINT_DETECTOR}`,
+    verdict: "fail",
+    code: DETECTOR_UNAVAILABLE,
+    detail: `native trust findings are unavailable (${said}); Core cannot grade this source without them, so this fails at every posture.`,
+  };
+}
+
+/**
+ * Scan's native findings as Core's graded native checks, in Core's native order.
+ * A refusal, a failure or SARIF Core cannot accept leaves one failing
+ * `trust.detector-unavailable` check at every posture: native coverage is the
+ * floor every trust verdict stands on, so its absence never passes.
+ */
+export async function runScanTrustLintV1(
+  route: ScanTrustLintRouteV1,
+  root: string,
+  options: {
+    readonly inventory: TrustFileInventory;
+    readonly platform: Platform;
+    readonly posture: Posture;
+    readonly internalScopes: readonly string[];
+    readonly signal?: AbortSignal;
+  },
+): Promise<{ readonly checks: Check[]; readonly execution: TrustDetectorExecutionV1 }> {
+  throwIfCancelled(options.signal, `before ${SCAN_DETECTOR_IDS[SCAN_TRUST_LINT_DETECTOR]} started`);
+  const delegated = await runDelegatedDetector(
+    route.adapter,
+    route.capability,
+    SCAN_TRUST_LINT_DETECTOR,
+    root,
+    options.inventory,
+    {
+      platform: options.platform,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      // Dependency confusion is decided against the organization's internal scopes.
+      detectorOptions: { internalScopes: [...options.internalScopes] },
+    },
+  );
+  const base = {
+    detector: SCAN_TRUST_LINT_DETECTOR,
+    executedBy: "scan",
+    scanSource: route.source,
+    ...(delegated.executionProfileId === undefined
+      ? {}
+      : { executionProfileId: delegated.executionProfileId }),
+  } as const;
+  if ("unavailable" in delegated)
+    return {
+      checks: [trustLintUnavailableCheck(route.source, delegated.unavailable)],
+      execution: { ...base, outcome: delegated.outcome },
+    };
+  const mapped = trustLintChecksFromSarifV1(delegated.sarif, options.posture);
+  if ("refusal" in mapped)
+    return {
+      checks: [trustLintUnavailableCheck(route.source, mapped.refusal)],
+      execution: { ...base, outcome: "failed" },
+    };
+  return { checks: mapped.checks, execution: { ...base, outcome: "completed" } };
 }
 
 const SKILL_TRUST_DETECTORS: TrustDetector[] = [
@@ -2741,15 +3015,7 @@ async function runDetectorList(
   // execution: precomputed SARIF never loads the package.
   let scanExecution: Promise<ResolvedScanExecutionV1> | undefined;
   const resolveScanExecution = (): Promise<ResolvedScanExecutionV1> => {
-    const injected = options.scanExecution;
-    scanExecution ??=
-      injected !== undefined
-        ? Promise.resolve({ adapter: injected, source: "injected-adapter" })
-        : loadScanExecutionAdapterV1().then((loaded) =>
-            loaded.ok
-              ? { adapter: loaded.adapter, source: "installed-package" }
-              : { refusal: loaded.refusal },
-          );
+    scanExecution ??= resolveScanExecutionV1(options.scanExecution);
     return scanExecution;
   };
   const unavailable = (detector: TrustDetector, reason: string): void => {
@@ -2759,6 +3025,7 @@ async function runDetectorList(
   };
 
   for (const detector of detectors) {
+    throwIfCancelled(options.signal, `before ${SCAN_DETECTOR_IDS[detector.name]} started`);
     options.progress?.(`trust scan: detector ${detector.name} started`);
     let sarifText = options.precomputedSarif?.[detector.name];
     let execution: Omit<TrustDetectorExecutionV1, "detector" | "outcome"> = {
@@ -2782,7 +3049,13 @@ async function runDetectorList(
           detector.name,
           root,
           options.inventory,
-          options.platform,
+          {
+            platform: options.platform,
+            ...(options.uvExecutionProfileId === undefined
+              ? {}
+              : { uvProfile: options.uvExecutionProfileId }),
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+          },
         );
         execution = {
           executedBy: "scan",
@@ -2819,7 +3092,7 @@ async function runDetectorList(
             ? scan.refusal
             : {
                 reason: "scan-package-incompatible",
-                detail: `the installed @aihq/scan declares no detector.${detector.name} capability; Core does not execute ${detector.name} itself.`,
+                detail: `the installed @aihq/scan declares no ${SCAN_DETECTOR_IDS[detector.name]} capability; Core does not execute ${detector.name} itself.`,
               };
         unavailable(detector, scanPackageRefusalMessage(refusal));
         executions.push({
@@ -2865,6 +3138,10 @@ async function runDetectorList(
       options.posture,
       detector,
       corroboratedDangerLocations,
+      // Scan's Semgrep rule ids carry its config directory; Core classifies by its own id.
+      execution.executedBy === "scan" && detector.name === "semgrep"
+        ? canonicalSemgrepRuleId
+        : undefined,
     );
     if (mapped === undefined) {
       unavailable(detector, "detector did not emit valid SARIF");

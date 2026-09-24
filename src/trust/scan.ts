@@ -48,13 +48,18 @@ import {
 } from "./artifact-intake.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
+  resolveScanTrustLintRouteV1,
   runMcpConfigDetectors,
+  runScanTrustLintV1,
   runTrustDetectors,
   type ScanObservationV1,
+  type ScanRoutedDetectorV1,
   scanNativeMaliciousCode,
   type TrustDetectorExecutionV1,
   type TrustDetectorName,
+  TrustScanCancelledError,
   trustRuntimeAdvisory,
+  type UvExecutionProfileIdV1,
 } from "./detectors.js";
 import {
   DirectoryRegistryResponseV1Schema,
@@ -158,9 +163,17 @@ export interface ScanTrustTreeOptions {
    * Scan's detector execution. Omitted means the installed `@aihq/scan`, loaded
    * on first need; an injected adapter replaces it. Which detectors go to Scan
    * is decided per detector in `runTrustDetectors`; the rest run in Core and
-   * are recorded as `core-legacy`.
+   * are recorded as `core-legacy`. The native findings go to Scan's
+   * `detector.aih-trust-lint` when the injected adapter declares it or when it
+   * is delegated to the installed package.
    */
   scanExecution?: ScanExecutionAdapterV1;
+  /** Detectors delegated to the installed package, with no fallback to Core. */
+  delegatedDetectors?: ReadonlySet<ScanRoutedDetectorV1>;
+  /** The profile uv-backed detectors are requested under; `host-process-uv-v1` when omitted. */
+  uvExecutionProfileId?: UvExecutionProfileIdV1;
+  /** Cancels the scan; a cancelled scan throws `TrustScanCancelledError` and has no verdict. */
+  signal?: AbortSignal;
 }
 
 export interface TrustScanResult {
@@ -556,6 +569,9 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   progress?: (message: string) => void;
   inventoryFactory: NonNullable<ScanTrustTreeOptions["inventoryFactory"]>;
   scanExecution?: ScanExecutionAdapterV1;
+  delegatedDetectors?: ReadonlySet<ScanRoutedDetectorV1>;
+  uvExecutionProfileId?: UvExecutionProfileIdV1;
+  signal?: AbortSignal;
 } {
   return {
     env: options.env,
@@ -572,7 +588,15 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     progress: options.progress,
     inventoryFactory: options.inventoryFactory ?? buildTrustFileInventory,
     scanExecution: options.scanExecution,
+    delegatedDetectors: options.delegatedDetectors,
+    uvExecutionProfileId: options.uvExecutionProfileId,
+    signal: options.signal,
   };
+}
+
+function hostPlatform(): Platform {
+  if (process.platform === "win32") return "windows";
+  return process.platform === "darwin" ? "darwin" : "linux";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1003,7 +1027,11 @@ export async function scanTrustTreeWithAnalyzers(
     progress,
     inventoryFactory,
     scanExecution,
+    delegatedDetectors,
+    uvExecutionProfileId,
+    signal,
   } = normalizeScanOptions(options);
+  if (signal?.aborted === true) throw new TrustScanCancelledError("before the scan started");
   progress?.("trust scan: inventory started");
   const inventory = inventoryFactory(safeRoot, {
     skipDirs: TRUST_SKIP_DIRS,
@@ -1014,34 +1042,59 @@ export async function scanTrustTreeWithAnalyzers(
     `trust scan: inventory complete (${inventory.files.length.toLocaleString("en-US")} files)`,
   );
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot, inventory);
-  const nativeLintChecks: Check[] = [];
+  // MCP policy is Core's decision wherever the native findings come from.
+  const incomingMcp = incomingMcpChecks(safeRoot, mcpConfigFiles, posture, mcpPolicy);
+  const trustLint = await resolveScanTrustLintRouteV1({ scanExecution, delegatedDetectors });
+  const nativeExecutions: TrustDetectorExecutionV1[] = [];
   let trustDocumentCount = 0;
-  for (const entry of inventory.files) {
-    if (shouldScanTrustDoc(safeRoot, entry.absolutePath)) {
-      trustDocumentCount++;
-      nativeLintChecks.push(
-        ...scanTrustDocument(entry.relativePath, readFileSync(entry.absolutePath, "utf8")).map(
-          (check) => gradeTrustCheck(check, posture),
-        ),
-      );
-    } else if (shouldScanStrictUnicodeSurface(safeRoot, entry.absolutePath)) {
-      nativeLintChecks.push(
-        ...scanTrustUnicodeDocument(
-          entry.relativePath,
-          readFileSync(entry.absolutePath, "utf8"),
-        ).map((check) => gradeTrustCheck(check, posture)),
-      );
+  let checks: Check[];
+  if (trustLint === undefined) {
+    const nativeLintChecks: Check[] = [];
+    for (const entry of inventory.files) {
+      if (shouldScanTrustDoc(safeRoot, entry.absolutePath)) {
+        trustDocumentCount++;
+        nativeLintChecks.push(
+          ...scanTrustDocument(entry.relativePath, readFileSync(entry.absolutePath, "utf8")).map(
+            (check) => gradeTrustCheck(check, posture),
+          ),
+        );
+      } else if (shouldScanStrictUnicodeSurface(safeRoot, entry.absolutePath)) {
+        nativeLintChecks.push(
+          ...scanTrustUnicodeDocument(
+            entry.relativePath,
+            readFileSync(entry.absolutePath, "utf8"),
+          ).map((check) => gradeTrustCheck(check, posture)),
+        );
+      }
     }
+    checks = [
+      ...nativeLintChecks,
+      ...scanTrustManifests(safeRoot, inventory),
+      ...scanTrustDependencyNames(safeRoot, internalScopes, posture, inventory),
+      ...plaintextSecretChecks(safeRoot, posture),
+      ...mcpConfigSecretChecks(safeRoot, mcpConfigFiles, posture),
+      ...incomingMcp,
+      ...scanNativeMaliciousCode(safeRoot, inventory),
+    ];
+  } else {
+    for (const entry of inventory.files) {
+      if (shouldScanTrustDoc(safeRoot, entry.absolutePath)) trustDocumentCount++;
+    }
+    const native = await runScanTrustLintV1(trustLint, safeRoot, {
+      inventory,
+      platform: platform ?? hostPlatform(),
+      posture,
+      internalScopes,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    nativeExecutions.push(native.execution);
+    // Core's native order: the native findings, the MCP policy checks, then malicious code.
+    checks = [
+      ...native.checks.filter((check) => check.code !== "trust.malicious-code"),
+      ...incomingMcp,
+      ...native.checks.filter((check) => check.code === "trust.malicious-code"),
+    ];
   }
-  const checks = [
-    ...nativeLintChecks,
-    ...scanTrustManifests(safeRoot, inventory),
-    ...scanTrustDependencyNames(safeRoot, internalScopes, posture, inventory),
-    ...plaintextSecretChecks(safeRoot, posture),
-    ...mcpConfigSecretChecks(safeRoot, mcpConfigFiles, posture),
-    ...incomingMcpChecks(safeRoot, mcpConfigFiles, posture, mcpPolicy),
-    ...scanNativeMaliciousCode(safeRoot, inventory),
-  ];
   const hasDetectorRuntime = run !== undefined && platform !== undefined && env !== undefined;
   const detectorResult = hasDetectorRuntime
     ? await runTrustDetectors(safeRoot, {
@@ -1057,6 +1110,9 @@ export async function scanTrustTreeWithAnalyzers(
         corroboratedChecks: checks,
         progress,
         scanExecution,
+        ...(delegatedDetectors === undefined ? {} : { delegatedDetectors }),
+        ...(uvExecutionProfileId === undefined ? {} : { uvExecutionProfileId }),
+        ...(signal === undefined ? {} : { signal }),
       })
     : {
         checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
@@ -1080,6 +1136,9 @@ export async function scanTrustTreeWithAnalyzers(
           corroboratedChecks: checks,
           progress,
           scanExecution,
+          ...(delegatedDetectors === undefined ? {} : { delegatedDetectors }),
+          ...(uvExecutionProfileId === undefined ? {} : { uvExecutionProfileId }),
+          ...(signal === undefined ? {} : { signal }),
         })
       : { checks: [], analyzersRun: [], rawOccurrences: [], executions: [], observations: [] };
   const effectiveSandboxSmokeShape =
@@ -1109,7 +1168,11 @@ export async function scanTrustTreeWithAnalyzers(
     rawOccurrences,
     normalizedFindings,
     policyDispositions: normalizedFindings.map(dispositionForTrustFinding),
-    detectorExecutions: [...detectorResult.executions, ...mcpDetectorResult.executions],
+    detectorExecutions: [
+      ...nativeExecutions,
+      ...detectorResult.executions,
+      ...mcpDetectorResult.executions,
+    ],
     scanObservations: [...detectorResult.observations, ...mcpDetectorResult.observations],
   };
 }

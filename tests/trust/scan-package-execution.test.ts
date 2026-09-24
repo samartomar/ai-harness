@@ -68,7 +68,8 @@ const UNAVAILABLE = {
 const HOST_ARCH = process.arch === "x64" ? "amd64" : process.arch;
 const OTHER_ARCH = HOST_ARCH === "amd64" ? "arm64" : "amd64";
 
-function capability(detectorId: string, profile = "linux-namespace-uv-v1") {
+/** C2: uv-backed detectors are requested under `host-process-uv-v1` by default on every OS. */
+function capability(detectorId: string, profile = "host-process-uv-v1") {
   return {
     protocol: "DetectorCapabilityV1",
     detectorId,
@@ -388,20 +389,20 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
 
   it("runs through the installed package and records the profile Scan ran under", async () => {
     const scanPackage = installedScan(["detector.cisco"], () =>
-      Promise.resolve(succeeded("detector.cisco", "linux-namespace-uv-v1")),
+      Promise.resolve(succeeded("detector.cisco", "host-process-uv-v1")),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
     const { argvs, result } = await delegatedRun(["cisco"]);
 
     expect(requestedIds(scanPackage)).toEqual(["detector.cisco"]);
     expect(detectorCheck(result.checks, "cisco")?.detail).toBe(
-      `${CISCO_SKILL_SCANNER_ANALYZER} static scan completed through the installed @aihq/scan under execution profile linux-namespace-uv-v1; Core did not execute it. No findings != safe. Analyzers run: aih-native, ${CISCO_SKILL_SCANNER_ANALYZER}`,
+      `${CISCO_SKILL_SCANNER_ANALYZER} static scan completed through the installed @aihq/scan under execution profile host-process-uv-v1; Core did not execute it. No findings != safe. Analyzers run: aih-native, ${CISCO_SKILL_SCANNER_ANALYZER}`,
     );
     expect(result.executions).toContainEqual({
       detector: "cisco",
       executedBy: "scan",
       scanSource: "installed-package",
-      executionProfileId: "linux-namespace-uv-v1",
+      executionProfileId: "host-process-uv-v1",
       outcome: "completed",
     });
     expect(spawnedFor(argvs, "skill-scanner")).toEqual([]);
@@ -439,7 +440,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       Promise.resolve({
         outcome: "failed",
         failure: { stage: "execution", detail: "analyzer exited 2" },
-        executionProfile: { id: "linux-namespace-uv-v1" },
+        executionProfile: { id: "host-process-uv-v1" },
       }),
     );
     loader.load.mockResolvedValue({
@@ -450,7 +451,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
     expect(scanPackage.requests).toContainEqual(
       expect.objectContaining({
         detectorId: "detector.semgrep",
-        executionProfileId: "linux-namespace-uv-v1",
+        executionProfileId: "host-process-uv-v1",
       }),
     );
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
@@ -460,7 +461,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       detector: "semgrep",
       executedBy: "scan",
       scanSource: "installed-package",
-      executionProfileId: "linux-namespace-uv-v1",
+      executionProfileId: "host-process-uv-v1",
       outcome: "failed",
     });
   });
@@ -522,7 +523,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
 
     expect(requests).toEqual([]);
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
-      `installed @aihq/scan: detector.semgrep does not declare linux-namespace-uv-v1 for linux/${HOST_ARCH}`,
+      `installed @aihq/scan: detector.semgrep does not declare host-process-uv-v1 for linux/${HOST_ARCH}`,
     );
     expect(spawnedFor(argvs, "semgrep")).toEqual([]);
   });
@@ -535,7 +536,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
           ...capability("detector.semgrep"),
           executionProfiles: [
             {
-              id: "linux-namespace-uv-v1",
+              id: "host-process-uv-v1",
               supportedPlatforms: [{ os: "linux", architecture: OTHER_ARCH }],
             },
           ],
@@ -551,23 +552,23 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
 
     expect(requests).toEqual([]);
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
-      `installed @aihq/scan: detector.semgrep does not declare linux-namespace-uv-v1 for linux/${HOST_ARCH}`,
+      `installed @aihq/scan: detector.semgrep does not declare host-process-uv-v1 for linux/${HOST_ARCH}`,
     );
     expect(spawnedFor(argvs, "semgrep")).toEqual([]);
   });
 
   it("rejects a successful Scan run under a profile different from the requested one", async () => {
     const scanPackage = installedScan(["detector.semgrep"], () =>
-      Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1")),
+      Promise.resolve(succeeded("detector.semgrep", "linux-namespace-uv-v1")),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
     const { argvs, result } = await delegatedRun(["semgrep"]);
 
     expect(scanPackage.requests).toContainEqual(
-      expect.objectContaining({ executionProfileId: "linux-namespace-uv-v1" }),
+      expect.objectContaining({ executionProfileId: "host-process-uv-v1" }),
     );
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
-      "installed @aihq/scan: detector.semgrep returned execution profile host-process-uv-v1 instead of requested linux-namespace-uv-v1",
+      "installed @aihq/scan: detector.semgrep returned execution profile linux-namespace-uv-v1 instead of requested host-process-uv-v1",
     );
     expect(result.executions).toContainEqual({
       detector: "semgrep",
