@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -88,6 +88,80 @@ describe("ECC uninstall and prune without the plugin", () => {
       /framework-plugin-unavailable: .*npm install/,
     );
   });
+});
+
+describe("ECC state preflight inspects every path and ancestor", () => {
+  const unavailable = /framework-plugin-unavailable: .*npm install/;
+
+  it.each(["ownership-v1.json", "native-registration-v1.json"])(
+    "sees a lone .aih/ecc-profile/%s and refuses uninstall without the plugin",
+    async (name) => {
+      mkdirSync(join(root, ".aih", "ecc-profile"), { recursive: true });
+      writeFileSync(join(root, ".aih", "ecc-profile", name), "{}\n");
+      expect(eccStatePathsV1(ctx())).toEqual([
+        join(root, ".aih", "ecc-profile"),
+        join(root, ".aih", "ecc-profile", name),
+      ]);
+      const refused = prepareEccUninstallV1(ctx(), false);
+      await expect(refused).rejects.toThrow(unavailable);
+      await expect(prepareEccUninstallV1(ctx(), false)).rejects.toThrow(
+        join(root, ".aih", "ecc-profile", name),
+      );
+    },
+  );
+
+  it("names a dangling symlink at an enumerated path as state, never as absent", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const state = join(home, ".codex", "ecc-aih-install-state.json");
+    symlinkSync(join(root, "missing-target.json"), state);
+    expect(eccStatePathsV1(ctx())).toEqual([`${state} (dangling symbolic link)`]);
+    await expect(prepareEccUninstallV1(ctx(), false)).rejects.toThrow(unavailable);
+    await expect(eccPrunePlanV1(ctx(), [])).rejects.toThrow(`${state} (dangling symbolic link)`);
+  });
+
+  it("names a dangling symlinked ancestor as state", async () => {
+    const ancestor = join(home, ".aih");
+    symlinkSync(join(root, "missing-dir"), ancestor, "dir");
+    expect(eccStatePathsV1(ctx())).toEqual([`${ancestor} (dangling symbolic link)`]);
+    await expect(prepareEccUninstallV1(ctx(), false)).rejects.toThrow(
+      `${ancestor} (dangling symbolic link)`,
+    );
+  });
+
+  it("names an ancestor that is not a directory as state", async () => {
+    writeFileSync(join(root, ".aih"), "not a directory\n");
+    expect(eccStatePathsV1(ctx())).toEqual([`${join(root, ".aih")} (not a directory)`]);
+    await expect(prepareEccUninstallV1(ctx(), false)).rejects.toThrow(
+      `${join(root, ".aih")} (not a directory)`,
+    );
+  });
+
+  it("follows a resolving symlink at an enumerated path and loads the plugin", async () => {
+    const target = join(root, "real-ledger");
+    mkdirSync(target);
+    mkdirSync(join(home, ".aih"));
+    symlinkSync(target, join(home, ".aih", "ecc"), "dir");
+    expect(eccStatePathsV1(ctx())).toEqual([join(home, ".aih", "ecc")]);
+    await expect(prepareEccUninstallV1(ctx(), false)).rejects.toThrow(unavailable);
+    await expect(prepareEccUninstallV1(ctx(), false, withPlugin)).resolves.toBeUndefined();
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "names an inaccessible ancestor as state",
+    async () => {
+      const locked = join(home, ".codex");
+      mkdirSync(locked);
+      const { chmodSync } = await import("node:fs");
+      chmodSync(locked, 0o000);
+      try {
+        expect(eccStatePathsV1(ctx())).toEqual([
+          `${join(locked, "ecc-aih-install-state.json")} (inaccessible)`,
+        ]);
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    },
+  );
 });
 
 describe("ECC uninstall and prune with the plugin", () => {

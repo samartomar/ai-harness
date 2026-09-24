@@ -1,8 +1,9 @@
-import { existsSync } from "node:fs";
+import { lstatSync, type Stats, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../ecc/mcp-explicit-add-receipt.js";
+import { NATIVE_ECC_REGISTRATION_RECEIPT } from "../ecc-profile/native-registration.js";
 import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import type { Action, PlanContext } from "../internals/plan.js";
@@ -29,10 +30,57 @@ import {
 
 const PACKAGE = FRAMEWORK_PLUGIN_PACKAGE_NAMES.ecc;
 
+/** The ECC profile lifecycle's ownership receipt (the plugin's `ECC_PROFILE_OWNERSHIP_PATH`). */
+const ECC_PROFILE_OWNERSHIP_RECEIPT = ".aih/ecc-profile/ownership-v1.json";
+
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | undefined)?.code;
+}
+
+/**
+ * Inspect one candidate from its base with `lstat`, segment by segment. Only a
+ * genuinely missing entry under real directories is absent (`undefined`). A
+ * dangling symbolic link, an inaccessible entry or an ancestor that is not a
+ * directory is state, named by the path where it was found; a resolving
+ * symbolic link is followed like the directory or file it names.
+ */
+function inspectStatePath(base: string, segments: readonly string[]): string | undefined {
+  let current = base;
+  for (let index = -1; index < segments.length; index += 1) {
+    if (index >= 0) current = join(current, segments[index] as string);
+    const last = index === segments.length - 1;
+    let entry: Stats;
+    try {
+      entry = lstatSync(current);
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") return undefined;
+      if (errorCode(error) === "ENOTDIR") return `${current} (not a directory)`;
+      return `${current} (inaccessible)`;
+    }
+    if (entry.isSymbolicLink()) {
+      try {
+        entry = statSync(current);
+      } catch (error) {
+        const code = errorCode(error);
+        return code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR"
+          ? `${current} (dangling symbolic link)`
+          : `${current} (inaccessible)`;
+      }
+    }
+    if (last) return current;
+    if (!entry.isDirectory()) return `${current} (not a directory)`;
+  }
+  return current;
+}
+
 /**
  * The state aih writes for ECC that Core can see without the plugin: the
- * project's `.aih/ecc/` receipts and explicit MCP receipt, the machine
- * registration ledger under `~/.aih/ecc/`, and aih's Codex install state.
+ * project's `.aih/ecc/` receipts and explicit MCP receipt, the ECC profile
+ * lifecycle state under `.aih/ecc-profile/` (its ownership and native
+ * registration receipts), the machine registration ledger under `~/.aih/ecc/`,
+ * and aih's Codex install state. Each path and its ancestors are inspected
+ * with `lstat`: anything but genuine absence is listed, a path that is not
+ * plainly present carrying its condition in parentheses.
  */
 export function eccStatePathsV1(ctx: PlanContext): string[] {
   // The homes the ECC code resolves: HOME or USERPROFILE (either order), the
@@ -41,15 +89,24 @@ export function eccStatePathsV1(ctx: PlanContext): string[] {
     (home): home is string => typeof home === "string" && home.length > 0,
   );
   const homes = named.length > 0 ? named : [homedir()];
-  const candidates = [
-    join(ctx.root, ".aih", "ecc"),
-    join(ctx.root, ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH),
-    ...homes.flatMap((home) => [
-      join(home, ".aih", "ecc"),
-      join(home, ".codex", "ecc-aih-install-state.json"),
-    ]),
+  const segments = (relativePath: string): string[] => relativePath.split("/");
+  const candidates: Array<[string, string[]]> = [
+    [ctx.root, [".aih", "ecc"]],
+    [ctx.root, segments(ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH)],
+    [ctx.root, [".aih", "ecc-profile"]],
+    [ctx.root, segments(ECC_PROFILE_OWNERSHIP_RECEIPT)],
+    [ctx.root, segments(NATIVE_ECC_REGISTRATION_RECEIPT)],
+    ...homes.flatMap(
+      (home): Array<[string, string[]]> => [
+        [home, [".aih", "ecc"]],
+        [home, [".codex", "ecc-aih-install-state.json"]],
+      ],
+    ),
   ];
-  return [...new Set(candidates)].filter((path) => existsSync(path));
+  const found = candidates
+    .map(([base, parts]) => inspectStatePath(base, parts))
+    .filter((path): path is string => path !== undefined);
+  return [...new Set(found)];
 }
 
 function incompatible(loaded: LoadedFrameworkPluginV1, hook: string, need: string): never {

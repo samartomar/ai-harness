@@ -13,9 +13,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Without it, `aih ecc`, `aih ecc mcp add|remove`, governed delivery of a policy that
   selects ECC content (`aih policy project`, `aih init` on a bound project), and
   uninstall/prune with any aih ECC state (project `.aih/ecc/` receipts, the explicit MCP
-  receipt, the machine registration ledger, aih's Codex install state) refuse before any
-  cleanup with `framework-plugin-unavailable` (or `-incompatible`), naming the state found and
-  the install command; nothing is skipped silently. `aih doctor`, `aih report` and
+  receipt, the ECC profile lifecycle state and receipts under `.aih/ecc-profile/`, the machine
+  registration ledger, aih's Codex install state) refuse before any cleanup with
+  `framework-plugin-unavailable` (or `-incompatible`), naming the state found and the install
+  command; nothing is skipped silently. Each state path and its ancestors are inspected with
+  `lstat`: a dangling symbolic link, an inaccessible entry or an ancestor that is not a directory
+  counts as state and is named with its condition, never treated as absent. `aih doctor`, `aih report` and
   `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
   report blocks while it needs ECC's knowledge and cannot get it.
 - **Breaking (library):** the library root no longer exports the ECC Package Graph
