@@ -6,14 +6,14 @@ import {
   readAcceptanceDecisions,
 } from "../../baseline-evidence/acceptance.js";
 import { baselineCatalogById } from "../../baseline-evidence/catalogs.js";
-import type { EccMcpComponentId } from "../../ecc/components.js";
+import { AihError } from "../../errors.js";
 import {
   type EccInstallPreviewArtifact,
+  type EccMcpComponentId,
   parseEccInstallPreview,
   readEccInstallPreview,
-} from "../../ecc/install-preview.js";
-import { selectedEccMcpServers } from "../../ecc/mcp.js";
-import { AihError } from "../../errors.js";
+  selectedEccMcpServers,
+} from "../../framework-plugin/ecc-facade.js";
 import { executePlan, type PlanResult } from "../../internals/execute.js";
 import { readRegularFileWithStats } from "../../internals/fsxn.js";
 import { type Action, plan as planActions } from "../../internals/plan.js";

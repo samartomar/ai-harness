@@ -1,8 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson, readAihConfigBaseline, readPolicyBinding } from "../config/marker.js";
-import type { EccCommandDeps } from "../ecc/pipeline.js";
 import { AihError } from "../errors.js";
+import type { EccCommandDeps } from "../framework-plugin/ecc-facade.js";
 import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { executeSuperpowersInitPhase } from "../framework-plugin/superpowers-command.js";
 import {

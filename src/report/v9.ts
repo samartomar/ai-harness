@@ -1,4 +1,4 @@
-import type { EccLanguagePack } from "../ecc/select.js";
+import type { EccLanguagePack } from "../framework-plugin/ecc-facade.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import type { DigestAction } from "../internals/plan.js";
 import { redactText } from "../support/redact.js";

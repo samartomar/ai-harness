@@ -32,7 +32,7 @@ import {
   readRegistrationLedger,
   registrationLedgerPath,
   writeRegistrationLedgerAtomic,
-} from "../ecc/registration.js";
+} from "../framework-plugin/ecc-facade.js";
 import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 
 const POSTURES: readonly Posture[] = ["vibe", "enterprise"];

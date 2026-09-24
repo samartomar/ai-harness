@@ -4,20 +4,16 @@ import { platform as hostPlatform } from "node:process";
 import { isProxy } from "node:util/types";
 import { baselineCatalogById } from "../../../baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../../baseline-evidence/vendor.js";
-import { planEccComponentSubtraction } from "../../../ecc/materialization-plan.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
-  readEccMaterializationReceipt,
-} from "../../../ecc/materialization-receipt.js";
-import {
-  explicitEccMcpRenderPlan,
-  planExplicitEccMcpRemove,
-  readExplicitEccMcpReceiptStates,
-} from "../../../ecc/mcp-explicit-add.js";
-import {
   ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
+  explicitEccMcpRenderPlan,
   parseExplicitAddReceipt,
-} from "../../../ecc/mcp-explicit-add-receipt.js";
+  planEccComponentSubtraction,
+  planExplicitEccMcpRemove,
+  readEccMaterializationReceipt,
+  readExplicitEccMcpReceiptStates,
+} from "../../../framework-plugin/ecc-facade.js";
 import { resolveContents } from "../../../internals/execute.js";
 import {
   type OwnedFilePolicy,

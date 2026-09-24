@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { AIH_CONFIG_FILE, readPolicyBinding } from "../config/marker.js";
+import { AihError } from "../errors.js";
 import {
   applyPreparedGovernedEccDelivery,
+  type EccCommandDeps,
+  executeEccCommand,
   type PreparedGovernedEccDelivery,
-} from "../ecc/governed-lifecycle.js";
-import { type EccCommandDeps, executeEccCommand } from "../ecc/pipeline.js";
-import { AihError } from "../errors.js";
+} from "../framework-plugin/ecc-facade.js";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { readIfExists } from "../internals/fsxn.js";
