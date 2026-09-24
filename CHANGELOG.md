@@ -18,9 +18,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one Core function the plugin also uses; a relative `AIH_ECC_STATE_ROOT` counts as state), the
   machine registration ledger, aih's Codex install state) refuse before any cleanup with
   `framework-plugin-unavailable` (or `-incompatible`), naming the state found and the install
-  command; nothing is skipped silently. Each state path and its ancestors are inspected with
-  `lstat`: a dangling symbolic link, an inaccessible entry or an ancestor that is not a directory
-  counts as state and is named with its condition, never treated as absent. `aih doctor`, `aih report` and
+  command; nothing is skipped silently. Each state path is inspected with `lstat` component by
+  component from the file-system root, including everything above a supplied base such as
+  `AIH_ECC_STATE_ROOT`, `HOME`, `XDG_STATE_HOME`, `USERPROFILE` or `LOCALAPPDATA`: a dangling
+  symbolic link or junction, an inaccessible entry or a component that is not a directory counts
+  as state and is named with its condition, never treated as absent. `aih doctor`, `aih report` and
   `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
   report blocks while it needs ECC's knowledge and cannot get it.
 - **Breaking (library):** the library root no longer exports the ECC Package Graph

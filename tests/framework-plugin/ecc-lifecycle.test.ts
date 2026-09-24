@@ -260,3 +260,97 @@ describe("ECC native machine state root", () => {
     );
   });
 });
+
+describe("ECC native machine state root: every component from the file-system root", () => {
+  const unavailable = /framework-plugin-unavailable: .*npm install/;
+
+  /** A link or junction at `path` whose target no longer exists. */
+  function dangling(path: string, type: "dir" | "junction" = "dir"): string {
+    const target = join(root, `gone-${Math.random().toString(16).slice(2)}`);
+    mkdirSync(target);
+    symlinkSync(target, path, type);
+    rmSync(target, { recursive: true });
+    return path;
+  }
+
+  it("names a dangling link above an explicit AIH_ECC_STATE_ROOT and refuses without the plugin", async () => {
+    const link = dangling(join(root, "dangling"));
+    const context = ctx({ AIH_ECC_STATE_ROOT: join(link, "child") });
+    expect(eccStatePathsV1(context)).toEqual([`${link} (dangling symbolic link)`]);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(unavailable);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(
+      `${link} (dangling symbolic link)`,
+    );
+    await expect(eccPrunePlanV1(context, [])).rejects.toThrow(`${link} (dangling symbolic link)`);
+  });
+
+  it("names a dangling link above the POSIX default's supplied base", async () => {
+    const link = dangling(join(root, "dangling-xdg"));
+    const context = ctx({ XDG_STATE_HOME: join(link, "state") });
+    expect(eccStatePathsV1(context)).toEqual([`${link} (dangling symbolic link)`]);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(unavailable);
+  });
+
+  it("names a dangling link above HOME for every home-based candidate", () => {
+    const link = dangling(join(root, "dangling-home"));
+    const away = join(link, "home");
+    expect(eccStatePathsV1(ctx({ HOME: away, USERPROFILE: away }))).toEqual([
+      `${link} (dangling symbolic link)`,
+    ]);
+  });
+
+  it("names a dangling link above the Windows default's supplied base", async () => {
+    const link = dangling(join(root, "dangling-local"));
+    const context = ctx({ LOCALAPPDATA: join(link, "Local") }, "windows");
+    expect(eccStatePathsV1(context)).toEqual([`${link} (dangling symbolic link)`]);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(unavailable);
+  });
+
+  it.runIf(process.platform === "win32")(
+    "names a dangling junction above an explicit root and above the Windows default",
+    async () => {
+      const junction = dangling(join(root, "dangling-junction"), "junction");
+      const explicit = ctx({ AIH_ECC_STATE_ROOT: join(junction, "child") });
+      expect(eccStatePathsV1(explicit)).toEqual([`${junction} (dangling symbolic link)`]);
+      await expect(prepareEccUninstallV1(explicit, false)).rejects.toThrow(unavailable);
+      const fallback = ctx({ LOCALAPPDATA: join(junction, "Local") }, "windows");
+      expect(eccStatePathsV1(fallback)).toEqual([`${junction} (dangling symbolic link)`]);
+    },
+  );
+
+  it("names the non-directory component above an explicit root", () => {
+    const file = join(root, "not-a-dir");
+    writeFileSync(file, "file\n");
+    expect(eccStatePathsV1(ctx({ AIH_ECC_STATE_ROOT: join(file, "state", "child") }))).toEqual([
+      `${file} (not a directory)`,
+    ]);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "names an inaccessible component above an explicit root",
+    async () => {
+      const locked = join(root, "locked");
+      mkdirSync(join(locked, "inner"), { recursive: true });
+      const { chmodSync } = await import("node:fs");
+      chmodSync(locked, 0o000);
+      try {
+        expect(
+          eccStatePathsV1(ctx({ AIH_ECC_STATE_ROOT: join(locked, "inner", "state") })),
+        ).toEqual([`${join(locked, "inner")} (inaccessible)`]);
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    },
+  );
+
+  it("follows a resolving link above the state root and reports absence below real directories", () => {
+    const target = join(root, "real-state-parent");
+    mkdirSync(target);
+    symlinkSync(target, join(root, "linked"), "dir");
+    expect(eccStatePathsV1(ctx({ AIH_ECC_STATE_ROOT: join(root, "linked", "state") }))).toEqual([]);
+    mkdirSync(join(target, "state"));
+    expect(eccStatePathsV1(ctx({ AIH_ECC_STATE_ROOT: join(root, "linked", "state") }))).toEqual([
+      join(root, "linked", "state"),
+    ]);
+  });
+});

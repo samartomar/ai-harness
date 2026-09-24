@@ -1,6 +1,6 @@
 import { lstatSync, type Stats, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, parse, resolve, sep } from "node:path";
 import { z } from "zod";
 import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../ecc/mcp-explicit-add-receipt.js";
 import {
@@ -42,17 +42,23 @@ function errorCode(error: unknown): string | undefined {
 }
 
 /**
- * Inspect one candidate from its base with `lstat`, segment by segment. Only a
- * genuinely missing entry under real directories is absent (`undefined`). A
- * dangling symbolic link, an inaccessible entry or an ancestor that is not a
- * directory is state, named by the path where it was found; a resolving
- * symbolic link is followed like the directory or file it names.
+ * Inspect one candidate with `lstat`, component by component from the
+ * file-system root down through its base and segments, so nothing above a
+ * supplied base (an explicit root, `HOME`, `LOCALAPPDATA`...) is skipped. Only
+ * a genuinely missing entry under directories is absent (`undefined`). A
+ * dangling symbolic link or junction, an inaccessible entry or a component
+ * that is not a directory is state, named by the component where it was found;
+ * a resolving symbolic link or junction is followed like the directory or file
+ * it names.
  */
 function inspectStatePath(base: string, segments: readonly string[]): string | undefined {
-  let current = base;
-  for (let index = -1; index < segments.length; index += 1) {
-    if (index >= 0) current = join(current, segments[index] as string);
-    const last = index === segments.length - 1;
+  const full = resolve(base, ...segments);
+  const fsRoot = parse(full).root;
+  const components = full.slice(fsRoot.length).split(sep).filter(Boolean);
+  let current = fsRoot;
+  for (let index = -1; index < components.length; index += 1) {
+    if (index >= 0) current = join(current, components[index] as string);
+    const last = index === components.length - 1;
     let entry: Stats;
     try {
       entry = lstatSync(current);
