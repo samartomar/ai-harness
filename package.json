@@ -54,7 +54,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=20.6.0"
   },
   "scripts": {
     "build": "npm run build:policy-data && tsup && node tools/copy-policy-data.mjs && tsc -p tsconfig.dts.json",

@@ -16,6 +16,7 @@ import {
 import { pathStep } from "../heal/path-heal.js";
 import { gitRead } from "../internals/git.js";
 import { preCommitHookActive } from "../internals/git-hooks.js";
+import { NODE_RUNTIME_FLOOR_TEXT, nodeVersionMeetsFloor } from "../internals/node-runtime-floor.js";
 import type { Action, DigestAction, PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
@@ -215,16 +216,15 @@ async function firstHealCheck(
 
 /**
  * node runtime on PATH — GATE (machine). Enforces what the row TITLE promises
- * ("Node.js runtime (>= 20)"): a broken install (present but non-zero exit) fails
- * like npm's gate does, and a runnable node older than 20 fails too — parsed from
+ * ("Node.js runtime (>= 20.6)"): a broken install (present but non-zero exit) fails
+ * like npm's gate does, and a runnable node older than 20.6 fails too — parsed from
  * `node --version`. Fails closed on an unparseable version rather than waving it
  * through, so the gate never green-lights a runtime the harness can't run on.
  */
 async function nodeVerdict(ctx: PlanContext): Promise<Check["verdict"]> {
   const res = await ctx.run(versionArgv(ctx.host.platform, "node"));
   if (classifyTool(res, ctx.host.platform === "windows") !== "ok") return "fail";
-  const major = Number(res.stdout.match(/v?(\d+)\./)?.[1] ?? Number.NaN);
-  return Number.isFinite(major) && major >= 20 ? "pass" : "fail";
+  return nodeVersionMeetsFloor(res.stdout) ? "pass" : "fail";
 }
 
 /** npm present and runnable — GATE (machine). Blocked on node ⇒ skip (node gate owns it). */
@@ -330,11 +330,11 @@ async function buildChecks(ctx: PlanContext): Promise<{
   const nodeOk = node === "pass";
   out.push({
     id: "node-runtime",
-    title: "Node.js runtime (>= 20) on PATH",
+    title: `Node.js runtime (>= ${NODE_RUNTIME_FLOOR_TEXT}) on PATH`,
     severity: "gate",
     dimension: "machine",
     verdict: node,
-    cmd: "install Node 20+ (nvm/winget/brew) and re-open the shell",
+    cmd: `install Node ${NODE_RUNTIME_FLOOR_TEXT}+ (nvm/winget/brew) and re-open the shell`,
   });
 
   out.push({
