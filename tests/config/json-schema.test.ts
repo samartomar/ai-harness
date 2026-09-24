@@ -678,6 +678,12 @@ describe("committed JSON Schemas", () => {
       contextDir: "ai-coding",
       frameworkHookControls: { ecc: { disabledHookIds: ["pre:observe"] } },
     });
+    // The user list may only add disables; the profile is enterprise-only.
+    rejectCommittedSchema("schemas/aih-config.schema.json", {
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      frameworkHookControls: { ecc: { profile: "minimal", disabledHookIds: [] } },
+    });
   });
 
   it("rejects unknown baseline ids in .aih-config.json", () => {

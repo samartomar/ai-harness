@@ -109,7 +109,7 @@ describe("planHookControls", () => {
       }),
     ).toThrow(/pre:bash:dispatcher is not individually disable-eligible/);
     expect(() =>
-      planHookControls(ctx, { profile: { id: "max", authority: "user" }, disabled: [] }),
+      planHookControls(ctx, { profile: { id: "max", authority: "enterprise" }, disabled: [] }),
     ).toThrow(/unknown ECC hook profile max/);
     expect(() =>
       planHookControls(ctx, {

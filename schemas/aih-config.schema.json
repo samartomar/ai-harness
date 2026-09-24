@@ -1046,10 +1046,6 @@
         "ecc": {
           "type": "object",
           "properties": {
-            "profile": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{0,39}$"
-            },
             "disabledHookIds": {
               "maxItems": 128,
               "type": "array",
@@ -1067,10 +1063,6 @@
         "superpowers": {
           "type": "object",
           "properties": {
-            "profile": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{0,39}$"
-            },
             "disabledHookIds": {
               "maxItems": 128,
               "type": "array",

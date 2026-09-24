@@ -197,17 +197,17 @@ export interface FrameworkHookDisableRequestV1 {
   readonly authority: FrameworkHookControlAuthorityV1;
 }
 
-/** An upstream hook profile choice and who made it. */
+/** An upstream hook profile choice. Only enterprise policy sets a profile. */
 export interface FrameworkHookProfileRequestV1 {
   readonly id: string;
-  readonly authority: FrameworkHookControlAuthorityV1;
+  readonly authority: "enterprise";
 }
 
 /**
  * The hook controls Core's effective policy view carries for this invocation:
  * enterprise policy (`governance.frameworkHookControls`) merged with the
  * project user's list (`.aih-config.json` `frameworkHookControls`). A user can
- * only add disables; an enterprise profile outranks a user profile.
+ * only add disables; the profile comes from enterprise policy alone.
  */
 export interface FrameworkHookControlRequestV1 {
   readonly disabled: readonly FrameworkHookDisableRequestV1[];

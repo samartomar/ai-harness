@@ -108,9 +108,11 @@ describe("planHookControls", () => {
   it("accepts Core's hook-control carrier but refuses a profile, which Superpowers lacks", () => {
     expect(() =>
       planHookControls(operationContext(), {
-        profile: { id: "standard", authority: "user" },
+        profile: { id: "standard", authority: "enterprise" },
         disabled: [],
       }),
-    ).toThrow(/obra\/Superpowers has no hook profiles; the user hook profile standard is refused/);
+    ).toThrow(
+      /obra\/Superpowers has no hook profiles; the enterprise hook profile standard is refused/,
+    );
   });
 });

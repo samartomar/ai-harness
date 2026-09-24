@@ -8,8 +8,9 @@ import { z } from "zod";
  *
  * Keyed by framework id (the closed plugin set). Core checks syntax only: which
  * hook ids and profiles exist is the plugin's inventory, and the plugin refuses
- * an id or profile it does not have. A user may only ADD disables; enterprise
- * outranks user ({@link mergeFrameworkHookControlRequestV1}).
+ * an id or profile it does not have. Enterprise policy is the only profile
+ * source; the user list has its own narrower grammar that may only ADD disables
+ * ({@link FrameworkUserHookControlsSchema}).
  */
 
 const HookIdSchema = z
@@ -37,5 +38,23 @@ export const FrameworkHookControlsSchema = z
   })
   .strict();
 
+/**
+ * The user list grammar: disables only. A profile (or any other field) is not a
+ * user control — a profile switches every hook at once, past each row's
+ * individual disable eligibility, so only enterprise policy may set one.
+ */
+export const FrameworkUserHookControlEntrySchema = FrameworkHookControlEntrySchema.pick({
+  disabledHookIds: true,
+}).strict();
+
+export const FrameworkUserHookControlsSchema = z
+  .object({
+    ecc: FrameworkUserHookControlEntrySchema.optional(),
+    superpowers: FrameworkUserHookControlEntrySchema.optional(),
+  })
+  .strict();
+
 export type FrameworkHookControlEntry = z.infer<typeof FrameworkHookControlEntrySchema>;
 export type FrameworkHookControls = z.infer<typeof FrameworkHookControlsSchema>;
+export type FrameworkUserHookControlEntry = z.infer<typeof FrameworkUserHookControlEntrySchema>;
+export type FrameworkUserHookControls = z.infer<typeof FrameworkUserHookControlsSchema>;

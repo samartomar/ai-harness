@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixtureDescriptorBytes as eccDescriptorBytes } from "../../packages/framework-ecc/tests/context.js";
 import type { FrameworkDescriptorLoadV1 } from "../../src/catalog-package/framework-descriptors.js";
 import { AIH_CONFIG_FILE } from "../../src/config/marker.js";
+import { SettingsError } from "../../src/errors.js";
 import type { FrameworkIdV1 } from "../../src/framework-plugin/contract-v1.js";
 import { frameworkHookEnvironmentPlansV1 } from "../../src/framework-plugin/hook-control-plans.js";
 import {
@@ -149,6 +150,20 @@ describe("the user list in .aih-config.json", () => {
     userList({ nope: { disabledHookIds: [] } });
     expect(() => readUserFrameworkHookControlsV1(root)).toThrow(/frameworkHookControls/);
   });
+
+  it("refuses a profile in the user list even where enterprise sets none", () => {
+    // Enterprise policy is the only profile source: a user profile would change
+    // every hook at once, past individual disable eligibility.
+    userList({ ecc: { profile: "minimal", disabledHookIds: [] } });
+    expect(() => readUserFrameworkHookControlsV1(root)).toThrow(
+      /the user list may only add disables; ecc.profile is set only by enterprise policy/,
+    );
+    expect(() => frameworkHookControlRequestV1("ecc", undefined, root)).toThrow(SettingsError);
+    userList({ superpowers: { disabledHookIds: [], extra: true } });
+    expect(() => readUserFrameworkHookControlsV1(root)).toThrow(
+      /the user list may only add disables; superpowers.extra is not a user control/,
+    );
+  });
 });
 
 describe("mergeFrameworkHookControlRequestV1", () => {
@@ -167,18 +182,13 @@ describe("mergeFrameworkHookControlRequestV1", () => {
     });
   });
 
-  it("takes a user profile only where enterprise sets none, and refuses a conflicting one", () => {
+  it("takes the profile only from enterprise; the user list carries none", () => {
     expect(
-      mergeFrameworkHookControlRequestV1(undefined, { profile: "strict", disabledHookIds: [] }),
-    ).toEqual({ profile: { id: "strict", authority: "user" }, disabled: [] });
-    expect(() =>
-      mergeFrameworkHookControlRequestV1(
-        { profile: "minimal", disabledHookIds: [] },
-        { profile: "strict", disabledHookIds: [] },
-      ),
-    ).toThrow(
-      /enterprise policy sets the ecc hook profile minimal; the user list may only add disables/,
-    );
+      mergeFrameworkHookControlRequestV1(undefined, { disabledHookIds: ["pre:observe"] }),
+    ).toEqual({ disabled: [{ hookId: "pre:observe", authority: "user" }] });
+    expect(
+      mergeFrameworkHookControlRequestV1({ profile: "minimal", disabledHookIds: [] }, undefined),
+    ).toEqual({ profile: { id: "minimal", authority: "enterprise" }, disabled: [] });
   });
 
   it("reads both authorities for one framework", () => {

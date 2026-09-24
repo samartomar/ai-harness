@@ -10,16 +10,20 @@ import type {
 } from "./contract-v1.js";
 import {
   type FrameworkHookControlEntry,
-  type FrameworkHookControls,
-  FrameworkHookControlsSchema,
+  type FrameworkUserHookControlEntry,
+  type FrameworkUserHookControls,
+  FrameworkUserHookControlsSchema,
 } from "./hook-controls-schema.js";
 
 /**
  * The user's hook-control list, `frameworkHookControls` in the project's
  * `.aih-config.json`. A present list is a control value and fails closed: a
- * malformed one is refused, never read as "no controls".
+ * malformed one is refused, never read as "no controls". The user list may only
+ * add disables: a profile, or any other field, is refused by name.
  */
-export function readUserFrameworkHookControlsV1(root: string): FrameworkHookControls | undefined {
+export function readUserFrameworkHookControlsV1(
+  root: string,
+): FrameworkUserHookControls | undefined {
   const raw = readIfExists(join(root, AIH_CONFIG_FILE));
   if (raw === undefined) return undefined;
   let parsed: unknown;
@@ -37,7 +41,8 @@ export function readUserFrameworkHookControlsV1(root: string): FrameworkHookCont
   }
   const value = (parsed as { frameworkHookControls?: unknown }).frameworkHookControls;
   if (value === undefined) return undefined;
-  const result = FrameworkHookControlsSchema.safeParse(value);
+  refuseNonDisableUserControls(value);
+  const result = FrameworkUserHookControlsSchema.safeParse(value);
   if (result.success) return result.data;
   throw new SettingsError(
     `invalid frameworkHookControls in ${AIH_CONFIG_FILE}: ${result.error.issues
@@ -46,26 +51,33 @@ export function readUserFrameworkHookControlsV1(root: string): FrameworkHookCont
   );
 }
 
+function refuseNonDisableUserControls(value: unknown): void {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return;
+  for (const [frameworkId, entry] of Object.entries(value)) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+    for (const field of Object.keys(entry)) {
+      if (field === "disabledHookIds") continue;
+      const name = `${frameworkId.slice(0, 32)}.${field.slice(0, 64)}`;
+      throw new SettingsError(
+        `invalid frameworkHookControls in ${AIH_CONFIG_FILE}: the user list may only add disables; ${
+          field === "profile"
+            ? `${name} is set only by enterprise policy`
+            : `${name} is not a user control`
+        }`,
+      );
+    }
+  }
+}
+
 /**
  * Merge the two authorities for one framework. Enterprise disables come first
- * and keep enterprise authority; the user list only adds disables. A user
- * profile applies only where enterprise sets none: a different user profile
- * than the enterprise one is refused, not silently overridden.
+ * and keep enterprise authority; the user list only adds disables. The profile
+ * comes from enterprise policy alone.
  */
 export function mergeFrameworkHookControlRequestV1(
   enterprise: FrameworkHookControlEntry | undefined,
-  user: FrameworkHookControlEntry | undefined,
-  frameworkId: FrameworkIdV1 = "ecc",
+  user: FrameworkUserHookControlEntry | undefined,
 ): FrameworkHookControlRequestV1 {
-  if (
-    enterprise?.profile !== undefined &&
-    user?.profile !== undefined &&
-    user.profile !== enterprise.profile
-  ) {
-    throw new SettingsError(
-      `enterprise policy sets the ${frameworkId} hook profile ${enterprise.profile}; the user list may only add disables, so its profile ${user.profile} is refused`,
-    );
-  }
   const disabled: FrameworkHookDisableRequestV1[] = (enterprise?.disabledHookIds ?? []).map(
     (hookId) => ({ hookId, authority: "enterprise" }),
   );
@@ -73,13 +85,12 @@ export function mergeFrameworkHookControlRequestV1(
   for (const hookId of user?.disabledHookIds ?? []) {
     if (!enterpriseIds.has(hookId)) disabled.push({ hookId, authority: "user" });
   }
-  const profile =
-    enterprise?.profile !== undefined
-      ? { id: enterprise.profile, authority: "enterprise" as const }
-      : user?.profile !== undefined
-        ? { id: user.profile, authority: "user" as const }
-        : undefined;
-  return { disabled, ...(profile === undefined ? {} : { profile }) };
+  return {
+    disabled,
+    ...(enterprise?.profile === undefined
+      ? {}
+      : { profile: { id: enterprise.profile, authority: "enterprise" as const } }),
+  };
 }
 
 /** Both authorities' entries for one framework. */
@@ -89,7 +100,7 @@ export function frameworkHookControlEntriesV1(
   root: string,
 ): {
   readonly enterprise?: FrameworkHookControlEntry;
-  readonly user?: FrameworkHookControlEntry;
+  readonly user?: FrameworkUserHookControlEntry;
 } {
   const enterprise = policy?.governance?.frameworkHookControls?.[frameworkId];
   const user = readUserFrameworkHookControlsV1(root)?.[frameworkId];
@@ -106,5 +117,5 @@ export function frameworkHookControlRequestV1(
   root: string,
 ): FrameworkHookControlRequestV1 {
   const { enterprise, user } = frameworkHookControlEntriesV1(frameworkId, policy, root);
-  return mergeFrameworkHookControlRequestV1(enterprise, user, frameworkId);
+  return mergeFrameworkHookControlRequestV1(enterprise, user);
 }

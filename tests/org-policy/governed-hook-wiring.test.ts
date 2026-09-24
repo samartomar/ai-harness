@@ -231,7 +231,7 @@ describe("G4 — the registrar is reachable end to end through the verified proj
       `${JSON.stringify({
         schemaVersion: 1,
         contextDir: "ai-coding",
-        frameworkHookControls: { ecc: { profile: "minimal", disabledHookIds: [] } },
+        frameworkHookControls: { ecc: { disabledHookIds: ["pre:write:doc-file-warning"] } },
       })}
 `,
     );
