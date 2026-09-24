@@ -182,15 +182,58 @@ function collectionCatalog(value: Record<string, unknown>, id: DefinitionSourceI
   }
 }
 
-/** Reject a missing path, a link at any segment, or two paths of one component that overlap. */
-function assertComponentPaths(sourceRoot: string, catalog: BaselineCatalog): void {
+/**
+ * How component paths may relate across one definition. `disjoint` (the default) is the
+ * whole-repository inventory Scan's request-set route requires: no path equals or contains
+ * another anywhere in the inventory. `compiler-catalog` is the named exception for a
+ * Catalog-compiled catalog whose components are deliberately overlapping views of shared
+ * files (as in the governed ECC vendor lock); it still refuses overlap inside one component.
+ */
+export const SCANNER_DEFINITION_OVERLAP_MODES_V1 = ["disjoint", "compiler-catalog"] as const;
+export type ScannerDefinitionOverlapModeV1 = (typeof SCANNER_DEFINITION_OVERLAP_MODES_V1)[number];
+
+/**
+ * Reject two paths where one equals or is a path-segment ancestor of the other: inside one
+ * component always, and between components unless the mode is `compiler-catalog`.
+ */
+function assertNoPathOverlap(
+  catalog: BaselineCatalog,
+  overlap: ScannerDefinitionOverlapModeV1,
+): void {
+  const report = (ancestor: string, path: string, ancestorOwner: string, owner: string) => {
+    if (ancestorOwner === owner) fail(`component ${owner} paths overlap: ${ancestor}, ${path}`);
+    if (overlap === "disjoint")
+      fail(`components ${ancestorOwner} and ${owner} overlap: ${ancestor}, ${path}`);
+  };
+  // Every path's owning components, in inventory order; an equal path is checked on entry.
+  const owners = new Map<string, string[]>();
+  for (const component of catalog.components)
+    for (const path of component.paths) {
+      const existing = owners.get(path) ?? [];
+      for (const owner of existing) report(path, path, owner, component.id);
+      owners.set(path, [...existing, component.id]);
+    }
+  // A path overlaps each owner of every proper ancestor, compared segment by segment.
+  for (const component of catalog.components)
+    for (const path of component.paths) {
+      const segments = path.split("/");
+      for (let length = 1; length < segments.length; length += 1) {
+        const ancestor = segments.slice(0, length).join("/");
+        for (const owner of owners.get(ancestor) ?? []) report(ancestor, path, owner, component.id);
+      }
+    }
+}
+
+/** Reject a missing path, a link at any segment, or overlapping paths (see the mode). */
+function assertComponentPaths(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+  overlap: ScannerDefinitionOverlapModeV1,
+): void {
   const root = resolve(sourceRoot);
+  assertNoPathOverlap(catalog, overlap);
   for (const component of catalog.components) {
-    const paths = [...component.paths].sort(codeUnitCompare);
-    for (const [index, path] of paths.entries()) {
-      const next = paths[index + 1];
-      if (next?.startsWith(`${path}/`))
-        fail(`component ${component.id} paths overlap: ${path}, ${next}`);
+    for (const path of component.paths) {
       let current = root;
       for (const part of path.split("/")) {
         current = resolve(current, part);
@@ -239,6 +282,8 @@ interface ScannerDefinitionInputV1 {
   readonly catalogId: string;
   readonly definitionPath: string;
   readonly head: string;
+  /** Defaults to `disjoint`; `compiler-catalog` must be named explicitly. */
+  readonly overlap?: ScannerDefinitionOverlapModeV1;
 }
 
 function resolveDefinition(
@@ -265,7 +310,10 @@ function resolveDefinition(
   if (input.head !== catalog.pinnedSha)
     fail(`${id} checkout is ${input.head}, definition pins ${catalog.pinnedSha}`);
   if (collection !== undefined) assertCollectionSnapshotBytesV1(input.sourceRoot, collection.input);
-  assertComponentPaths(input.sourceRoot, catalog);
+  const overlap = input.overlap ?? "disjoint";
+  if (!SCANNER_DEFINITION_OVERLAP_MODES_V1.includes(overlap))
+    fail(`unknown overlap mode ${JSON.stringify(overlap)}`);
+  assertComponentPaths(input.sourceRoot, catalog, overlap);
 
   const carried = (deps.carriedCatalog ?? installedCarriedCatalog)(id);
   const collectionInput = collection === undefined ? {} : { collection: collection.input };

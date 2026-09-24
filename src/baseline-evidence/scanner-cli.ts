@@ -12,7 +12,10 @@ import {
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
-import { resolveScannerDefinitionV1 } from "./scanner-definition.js";
+import {
+  resolveScannerDefinitionV1,
+  type ScannerDefinitionOverlapModeV1,
+} from "./scanner-definition.js";
 import {
   consumeScannerBaselinePublicationsV1,
   consumeScannerBaselinePublicationV1,
@@ -94,6 +97,18 @@ function discoveryPublisher(bytes: Buffer): ScannerBaselinePublicationPublisherV
   );
 }
 
+function definitionOverlap(
+  args: readonly string[],
+  definitionPath: string | undefined,
+): ScannerDefinitionOverlapModeV1 | undefined {
+  const overlap = optionalFlag(args, "--definition-overlap");
+  if (overlap === undefined) return undefined;
+  if (definitionPath === undefined) fail("--definition-overlap requires --definition");
+  if (overlap !== "disjoint" && overlap !== "compiler-catalog")
+    fail("--definition-overlap must be disjoint|compiler-catalog");
+  return overlap;
+}
+
 function checkoutHead(root: string): string {
   return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
@@ -105,15 +120,20 @@ function checkoutHead(root: string): string {
 /**
  * `--definition` stands in for the installed Catalog only at a pin that Catalog does not
  * carry; a carried pin keeps the installed route (and its coverage), a differing carried
- * definition is refused, and nothing falls back from one route to the other.
+ * definition is refused, and nothing falls back from one route to the other. A definition's
+ * components must be disjoint unless `--definition-overlap compiler-catalog` names the
+ * overlapping-views exception.
  */
-function assertCheckout(root: string, catalogId: string, definitionPath?: string) {
+function assertCheckout(root: string, catalogId: string, args: readonly string[]) {
+  const definitionPath = optionalFlag(args, "--definition");
+  const overlap = definitionOverlap(args, definitionPath);
   if (definitionPath !== undefined) {
     const resolved = resolveScannerDefinitionV1({
       sourceRoot: root,
       catalogId,
       definitionPath: resolve(definitionPath),
       head: checkoutHead(root),
+      ...(overlap === undefined ? {} : { overlap }),
     });
     if (resolved.route === "definition")
       return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
@@ -143,9 +163,8 @@ function newDirectory(path: string): string {
 async function request(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
-  const definitionPath = optionalFlag(args, "--definition");
+  const prepared = assertCheckout(sourceRoot, catalogId, args);
   const output = newDirectory(flag(args, "--output"));
-  const prepared = assertCheckout(sourceRoot, catalogId, definitionPath);
   const { catalog } = prepared;
   const authored = createCoreBaselineVetRequests(sourceRoot, catalog);
   const { canonicalBaselineVetRequestV1Bytes } = scanPackageExportsOrThrowV1(
@@ -168,7 +187,7 @@ async function request(args: readonly string[]): Promise<void> {
 async function consumePublication(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
-  const { catalog } = assertCheckout(sourceRoot, catalogId);
+  const { catalog } = assertCheckout(sourceRoot, catalogId, []);
   const seenPath = optionalFlag(args, "--seen");
   const seen =
     seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
@@ -262,7 +281,7 @@ async function consumePublications(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
   const publicationRoot = resolve(flag(args, "--publication-root"));
-  const { catalog } = assertCheckout(sourceRoot, catalogId, optionalFlag(args, "--definition"));
+  const { catalog } = assertCheckout(sourceRoot, catalogId, args);
   const requests = createCoreBaselineVetRequests(sourceRoot, catalog);
   const seenPath = optionalFlag(args, "--seen");
   const seen =
@@ -303,11 +322,7 @@ function sourceEvidence(path: string): BaselineSourceEvidence {
 
 function assemble(args: readonly string[]): void {
   const eccRoot = resolve(flag(args, "--ecc-root"));
-  const { catalog: eccCatalog } = assertCheckout(
-    eccRoot,
-    "ecc",
-    optionalFlag(args, "--definition"),
-  );
+  const { catalog: eccCatalog } = assertCheckout(eccRoot, "ecc", args);
   const ecc = sourceEvidence(flag(args, "--ecc-evidence"));
   const superpowers = sourceEvidence(flag(args, "--superpowers-evidence"));
   const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [ecc, superpowers] });

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import {
   resolveScannerDefinitionV1,
+  SCANNER_DEFINITION_OVERLAP_MODES_V1,
   SCANNER_DEFINITION_SOURCES_V1,
 } from "../../src/baseline-evidence/scanner-definition.js";
 
@@ -35,7 +36,7 @@ function eccDefinition(overrides: Partial<BaselineCatalog> = {}): BaselineCatalo
     pinnedSha: PIN,
     components: [
       { id: "runtime:ecc-installer", paths: ["package.json", "scripts/lib/install"] },
-      { id: "module:hooks-runtime", paths: ["scripts/lib"] },
+      { id: "module:hooks-runtime", paths: ["scripts/lib/other.js"] },
       { id: "skill:tdd", paths: ["skills/tdd"], skillContent: true },
     ],
     ...overrides,
@@ -178,7 +179,7 @@ describe("definition-driven Scanner catalog resolution", () => {
     ).toThrow("baseline definition: path traverses a link: linked/SKILL.md");
   });
 
-  it("refuses overlapping paths inside one component but keeps overlapping component views", () => {
+  it("refuses overlapping paths inside one component", () => {
     expect(() =>
       resolveEcc(
         eccDefinition({
@@ -190,8 +191,100 @@ describe("definition-driven Scanner catalog resolution", () => {
     ).toThrow(
       "baseline definition: component runtime:ecc-installer paths overlap: scripts/lib, scripts/lib/install",
     );
-    // runtime:ecc-installer and module:hooks-runtime overlap on purpose (as in the governed lock).
-    expect(resolveEcc(eccDefinition()).route).toBe("definition");
+  });
+
+  it("compares path segments, not adjacent sorted strings", () => {
+    write("a/c", "c\n");
+    write("a-b", "b\n");
+    expect(() =>
+      resolveEcc(eccDefinition({ components: [{ id: "skill:a", paths: ["a", "a-b", "a/c"] }] })),
+    ).toThrow("baseline definition: component skill:a paths overlap: a, a/c");
+    // "a-b" shares a string prefix with "a" but not a path segment.
+    expect(
+      resolveEcc(
+        eccDefinition({
+          components: [
+            { id: "skill:a", paths: ["a"] },
+            { id: "skill:a-b", paths: ["a-b"] },
+          ],
+        }),
+      ).route,
+    ).toBe("definition");
+  });
+
+  it("refuses a path repeated inside one component", () => {
+    expect(() =>
+      resolveEcc(
+        eccDefinition({
+          components: [{ id: "runtime:ecc-installer", paths: ["package.json", "package.json"] }],
+        }),
+      ),
+    ).toThrow(/^baseline definition: ecc definition is malformed/);
+  });
+
+  it("refuses overlap between components across the whole inventory by default", () => {
+    const overlapping = eccDefinition({
+      components: [
+        { id: "runtime:ecc-installer", paths: ["package.json", "scripts/lib/install"] },
+        { id: "module:hooks-runtime", paths: ["scripts/lib"] },
+      ],
+    });
+    expect(() => resolveEcc(overlapping)).toThrow(
+      "baseline definition: components module:hooks-runtime and runtime:ecc-installer overlap: scripts/lib, scripts/lib/install",
+    );
+    const equal = eccDefinition({
+      components: [
+        { id: "runtime:ecc-installer", paths: ["package.json"] },
+        { id: "module:hooks-runtime", paths: ["package.json"] },
+      ],
+    });
+    expect(() => resolveEcc(equal)).toThrow(
+      "baseline definition: components runtime:ecc-installer and module:hooks-runtime overlap: package.json, package.json",
+    );
+  });
+
+  it("keeps overlapping component views only in the named compiler-catalog mode", () => {
+    const views = eccDefinition({
+      components: [
+        { id: "runtime:ecc-installer", paths: ["package.json", "scripts/lib/install"] },
+        { id: "module:hooks-runtime", paths: ["scripts/lib"] },
+        { id: "module:all", paths: ["package.json"] },
+      ],
+    });
+    const resolveViews = (overlap?: "disjoint" | "compiler-catalog") =>
+      resolveScannerDefinitionV1(
+        {
+          sourceRoot: source,
+          catalogId: "ecc",
+          definitionPath: definitionFile(views),
+          head: PIN,
+          ...(overlap === undefined ? {} : { overlap }),
+        },
+        notCarried,
+      );
+    expect(() => resolveViews()).toThrow(/overlap/);
+    expect(() => resolveViews("disjoint")).toThrow(/overlap/);
+    expect(resolveViews("compiler-catalog").route).toBe("definition");
+    // Within one component the named mode still refuses.
+    const inner = eccDefinition({
+      components: [{ id: "runtime:ecc-installer", paths: ["scripts/lib", "scripts/lib/install"] }],
+    });
+    expect(() =>
+      resolveScannerDefinitionV1(
+        {
+          sourceRoot: source,
+          catalogId: "ecc",
+          definitionPath: definitionFile(inner),
+          head: PIN,
+          overlap: "compiler-catalog",
+        },
+        notCarried,
+      ),
+    ).toThrow("component runtime:ecc-installer paths overlap: scripts/lib, scripts/lib/install");
+  });
+
+  it("names the overlap modes a definition may be resolved in", () => {
+    expect(SCANNER_DEFINITION_OVERLAP_MODES_V1).toEqual(["disjoint", "compiler-catalog"]);
   });
 
   describe("collections", () => {

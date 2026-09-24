@@ -509,6 +509,57 @@ describe("baseline Scanner bridge CLI", () => {
       expect(existsSync(join(output, "coverage-map.json"))).toBe(false);
     });
 
+    it("passes the named compiler-catalog overlap mode only when it is asked for", async () => {
+      const source = makeDirectory("compiler-source");
+      const definition = join(root, "compiler.definition.json");
+      writeFileSync(definition, "{}");
+      mocks.createRequests.mockReturnValue([{ requestSha256: "5".repeat(64) }]);
+      await runScannerBridge([
+        "request",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--definition-overlap",
+        "compiler-catalog",
+        "--output",
+        join(root, "compiler-requests"),
+      ]);
+      expect(mocks.resolveDefinition).toHaveBeenCalledWith({
+        sourceRoot: source,
+        catalogId: "ecc",
+        definitionPath: definition,
+        head: NEW_PIN,
+        overlap: "compiler-catalog",
+      });
+    });
+
+    it.each([
+      [["--definition-overlap", "compiler-catalog"], "--definition-overlap requires --definition"],
+      [
+        ["--definition", "d.json", "--definition-overlap", "any"],
+        "--definition-overlap must be disjoint|compiler-catalog",
+      ],
+    ])("refuses %j", async (extra, message) => {
+      const source = makeDirectory(`overlap-refused-${extra.length}`);
+      await expect(
+        runScannerBridge([
+          "request",
+          "--catalog",
+          "ecc",
+          "--source",
+          source,
+          ...extra,
+          "--output",
+          join(root, `overlap-refused-${extra.length}-requests`),
+        ]),
+      ).rejects.toThrow(message);
+      expect(mocks.resolveDefinition).not.toHaveBeenCalled();
+      expect(mocks.prepareCatalog).not.toHaveBeenCalled();
+    });
+
     it("defers to the installed Catalog route when it carries the identical definition", async () => {
       const source = makeDirectory("carried-source");
       const definition = join(root, "carried.definition.json");
