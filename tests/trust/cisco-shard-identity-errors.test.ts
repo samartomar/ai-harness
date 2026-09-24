@@ -13,6 +13,8 @@ import {
   buildCiscoSourceShardManifest,
   type CiscoShardJoinProjectionResultV1,
   type PrecomputedDetectorSarifV1,
+  ProjectionCleanupRejectionV1,
+  projectionCleanupFailureOfV1,
   runTrustDetectors,
   type TrustDetectorResult,
   withCiscoShardJoinProjectionV1,
@@ -31,6 +33,8 @@ import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 // ---------------------------------------------------------------------------
 
 const PROJECTION = ".aih-cisco-shard-projection-";
+/** Either projection a component scan can leave behind: Core's shard projection or vet's own. */
+const ANY_PROJECTION = /\.aih-(cisco-shard-projection|baseline-component)-/;
 const inject = vi.hoisted(() => ({
   /** Fail every bigint lstat of a projection directory from the Nth on (0: none). */
   identityCall: 0,
@@ -40,7 +44,7 @@ const inject = vi.hoisted(() => ({
   realpathCalls: 0,
   /** Fail every lstat of a source job file (set after the join is built: the copy filter). */
   copy: false,
-  /** Fail every rm of a projection directory. */
+  /** Fail every rm of a projection directory, Core's or vet's. */
   rm: false,
 }));
 
@@ -80,7 +84,7 @@ vi.mock("node:fs", async (importOriginal) => {
     { native },
   );
   const rmSync = ((path: string, options?: never) => {
-    if (inject.rm && String(path).includes(PROJECTION)) throw eacces("rm", path);
+    if (inject.rm && ANY_PROJECTION.test(String(path))) throw eacces("rm", path);
     return actual.rmSync(path, options);
   }) as typeof actual.rmSync;
   return {
@@ -312,16 +316,126 @@ describe("a projection Core cannot remove never replaces the result", () => {
     expect(outcome.cleanupFailure).toEqual(cleanupFailure(path));
   });
 
-  it("rejects with the scan's own error, not the cleanup's", async () => {
+  it("rejects with the scan's own error, which carries the cleanup failure", async () => {
     const joined = verifiedJoin();
-    await expect(
-      withCiscoShardJoinProjectionV1(joined, ["skills/alpha"], async (projection) => {
-        leftBehind.push(projection.root);
+    const own = new Error("the scan itself failed", { cause: "the scan's own cause" });
+    let root = "";
+    const rejection = await withCiscoShardJoinProjectionV1(
+      joined,
+      ["skills/alpha"],
+      async (projection) => {
+        root = projection.root;
+        leftBehind.push(root);
         inject.rm = true;
-        throw new Error("the scan itself failed");
-      }),
-    ).rejects.toThrow(/^the scan itself failed$/);
+        throw own;
+      },
+    ).catch((error: unknown) => error);
+    expect(rejection).toBe(own);
+    expect(own.cause).toBe("the scan's own cause");
+    expect(projectionCleanupFailureOfV1(rejection)).toEqual(cleanupFailure(root));
+    expect((rejection as { cleanupFailure?: unknown }).cleanupFailure).toEqual(
+      cleanupFailure(root),
+    );
   });
+
+  it.each([
+    ["a frozen error", (): unknown => Object.freeze(new Error("frozen scan failure"))],
+    ["a thrown string", (): unknown => "a thrown string"],
+    [
+      "an error already carrying a cleanup failure",
+      (): unknown =>
+        Object.assign(new Error("inner projection failed"), { cleanupFailure: "inner" }),
+    ],
+  ] as const)(
+    "keeps %s as the cause of a rejection that carries the cleanup failure",
+    async (_label, make) => {
+      const joined = verifiedJoin();
+      const thrown: unknown = make();
+      let root = "";
+      const rejection = await withCiscoShardJoinProjectionV1(
+        joined,
+        ["skills/alpha"],
+        async (projection) => {
+          root = projection.root;
+          leftBehind.push(root);
+          inject.rm = true;
+          throw thrown;
+        },
+      ).catch((error: unknown) => error);
+      expect(rejection).toBeInstanceOf(ProjectionCleanupRejectionV1);
+      expect((rejection as Error).cause).toBe(thrown);
+      expect(projectionCleanupFailureOfV1(rejection)).toEqual(cleanupFailure(root));
+    },
+  );
+});
+
+describe("baseline vet keeps a cleanup failure in what it returns or throws", () => {
+  const cisco = (path: string) => ({
+    kind: "cisco-shard-projection-cleanup-failed-v1",
+    path,
+    code: "EACCES",
+    detail: `Core could not remove the shard join's projection: ${path} cannot be removed (EACCES)`,
+  });
+  const own = (path: string) => ({
+    kind: "baseline-component-projection-cleanup-failed-v1",
+    path,
+    code: "EACCES",
+    detail: `Core could not remove baseline component skill:alpha's projection: ${path} cannot be removed (EACCES)`,
+  });
+  const component = { id: "skill:alpha", paths: ["skills/alpha"] };
+  const clean = { analyzersRun: ["aih-native"], checks: [] };
+
+  it.each([
+    ["Core's shard projection", true, cisco],
+    ["vet's own projection", false, own],
+  ] as const)(
+    "returns the scan with the failure when %s cannot be removed and there is no progress",
+    async (_label, shared, expected) => {
+      const joined = verifiedJoin();
+      let root = "";
+      const scanTree = vi.fn(async (projectionRoot: string) => {
+        root = projectionRoot;
+        leftBehind.push(root);
+        inject.rm = true;
+        return clean;
+      });
+      const result = await defaultComponentScanner(
+        {},
+        scanTree,
+        () => (shared ? ["cisco"] : []),
+        shared ? joined : undefined,
+      )({ sourceRoot: source, component });
+      expect(scanTree).toHaveBeenCalledTimes(1);
+      expect(result.analyzersRun).toEqual(["aih-native"]);
+      expect(result.projectionCleanupFailures).toEqual([expected(root)]);
+    },
+  );
+
+  it.each([
+    ["Core's shard projection", true, cisco],
+    ["vet's own projection", false, own],
+  ] as const)(
+    "rejects with the scan's own error, carrying the failure, when %s cannot be removed",
+    async (_label, shared, expected) => {
+      const joined = verifiedJoin();
+      const failure = new Error("the component scan failed");
+      let root = "";
+      const scanTree = vi.fn(async (projectionRoot: string) => {
+        root = projectionRoot;
+        leftBehind.push(root);
+        inject.rm = true;
+        throw failure;
+      });
+      const rejection = await defaultComponentScanner(
+        {},
+        scanTree,
+        () => (shared ? ["cisco"] : []),
+        shared ? joined : undefined,
+      )({ sourceRoot: source, component }).catch((error: unknown) => error);
+      expect(rejection).toBe(failure);
+      expect(projectionCleanupFailureOfV1(rejection)).toEqual(expected(root));
+    },
+  );
 });
 
 describe("baseline vet never scans a projection Core could not prepare", () => {
@@ -358,6 +472,9 @@ describe("baseline vet never scans a projection Core could not prepare", () => {
     const removal = lines.find((line) => line.includes("could not remove")) ?? "";
     const left = /: (\S+\.aih-cisco-shard-projection-\S+) cannot be removed/.exec(removal)?.[1];
     if (left !== undefined) leftBehind.push(left);
+    expect(result.projectionCleanupFailures).toEqual([
+      expect.objectContaining({ kind: "cisco-shard-projection-cleanup-failed-v1", path: left }),
+    ]);
     expect(removal).toMatch(
       /^baseline vet: component skill:alpha: Core could not remove the shard join's projection: .+\.aih-cisco-shard-projection-\S+ cannot be removed \(EACCES\)$/,
     );

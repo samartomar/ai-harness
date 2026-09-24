@@ -74,30 +74,30 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ["src/scan-package/load-scan-package.ts", 167, "export function loadScanCiscoShardRunnerV1("],
   [
     "src/trust/detectors.ts",
-    1322,
+    1419,
     'export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";',
   ],
   [
     "src/trust/detectors.ts",
-    1325,
+    1422,
     "export const SCAN_DETECTOR_IDS: Readonly<Record<ScanRoutedDetectorV1, string>> = Object.freeze({",
   ],
   [
     "src/trust/detectors.ts",
-    1342,
+    1439,
     'export const DEFAULT_UV_EXECUTION_PROFILE: UvExecutionProfileIdV1 = "host-process-uv-v1";',
   ],
   [
     "src/trust/detectors.ts",
-    1344,
+    1441,
     'export const TRUST_LINT_EXECUTION_PROFILE = "in-process-trust-lint-v1";',
   ],
   [
     "src/trust/detectors.ts",
-    1346,
+    1443,
     'export const SKILLSPECTOR_EXECUTION_PROFILE = "docker-host-local-skillspector-v1";',
   ],
-  ["src/trust/detectors.ts", 2067, "export async function resolveScanTrustLintRouteV1(options: {"],
+  ["src/trust/detectors.ts", 2164, "export async function resolveScanTrustLintRouteV1(options: {"],
   [
     "src/binding/scan-binding-gate.ts",
     32,

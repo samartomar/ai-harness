@@ -138,8 +138,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scanned: `withCiscoShardJoinProjectionV1` now returns a typed result, either `scanned` with the
   scan's own result or `refused` with the failed Cisco detector naming the path and code, and
   reads nothing more there; baseline vet uses the refusal as the component's scan. A projection
-  Core cannot remove no longer replaces the result or the scan's own error: the result carries a
-  typed `cleanupFailure` with the path and code, which baseline vet reports as progress. Baseline
+  Core cannot remove no longer replaces the result or the scan's own error, and is never lost:
+  the result carries a typed `cleanupFailure` with the path and code, and a rejected scan's own
+  error carries it as a `cleanupFailure` property (only a rejection that cannot take the
+  property, such as a frozen error or a thrown string, is wrapped in a
+  `ProjectionCleanupRejectionV1` whose `cause` it is; `projectionCleanupFailureOfV1` reads it).
+  Baseline vet keeps it on the component scan it returns (`projectionCleanupFailures`, also
+  reported as progress), and its own component projection now follows the same rules. Baseline
   vet's "produced no analyzer receipt" error now names the detector diagnostics too.
 - The record `joinCiscoShardResults` verified is stored deep-frozen, and
   `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each

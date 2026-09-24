@@ -47,6 +47,7 @@ import {
 } from "./artifact-intake.js";
 import {
   type PrecomputedDetectorSarifV1,
+  type ProjectionCleanupFailureV1,
   resolveScanTrustLintRouteV1,
   runMcpConfigDetectors,
   runScanTrustLintV1,
@@ -183,6 +184,8 @@ export interface TrustScanResult {
   detectorExecutions?: TrustDetectorExecutionV1[];
   /** Observations the installed @aihq/scan recorded beside Core's detectors (no findings). */
   scanObservations?: ScanObservationV1[];
+  /** Projections Core could not remove after this scan: diagnostics only, never findings or a verdict. */
+  projectionCleanupFailures?: ProjectionCleanupFailureV1[];
 }
 
 interface IncomingMcpServerMap {

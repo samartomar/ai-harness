@@ -500,12 +500,114 @@ export interface CiscoShardJoinProjectionV1 {
   readonly cisco: VerifiedCiscoShardSarifV1;
 }
 
-/** A projection Core could not remove once its scan settled: left behind at `path`. */
-export interface CiscoShardProjectionCleanupFailureV1 {
-  readonly kind: "cisco-shard-projection-cleanup-failed-v1";
+/**
+ * A projection Core could not remove once its scan settled, left behind at
+ * `path`: Core's shard projection, or baseline vet's own component projection.
+ * A diagnostic only: never a finding, and it never replaces a result.
+ */
+export interface ProjectionCleanupFailureV1 {
+  readonly kind:
+    | "cisco-shard-projection-cleanup-failed-v1"
+    | "baseline-component-projection-cleanup-failed-v1";
   readonly path: string;
   readonly code: string;
   readonly detail: string;
+}
+
+/** A shard projection Core could not remove once its scan settled. */
+export interface CiscoShardProjectionCleanupFailureV1 extends ProjectionCleanupFailureV1 {
+  readonly kind: "cisco-shard-projection-cleanup-failed-v1";
+}
+
+/**
+ * The rejection for a scan whose own rejection cannot carry the cleanup
+ * failure (a primitive, a frozen error, or one already carrying another): the
+ * scan's rejection is its `cause`, unchanged.
+ */
+export class ProjectionCleanupRejectionV1 extends Error {
+  readonly cleanupFailure: ProjectionCleanupFailureV1;
+  constructor(rejection: unknown, cleanupFailure: ProjectionCleanupFailureV1) {
+    super(rejectionTextV1(rejection), { cause: rejection });
+    this.name = "ProjectionCleanupRejectionV1";
+    this.cleanupFailure = cleanupFailure;
+  }
+}
+
+function rejectionTextV1(rejection: unknown): string {
+  try {
+    return rejection instanceof Error ? rejection.message : String(rejection);
+  } catch {
+    return "a scan rejected with a value that cannot be printed";
+  }
+}
+
+/**
+ * Removes a projection; never throws. A failure is returned, naming the path
+ * and error code, for the caller to keep beside its result.
+ */
+export function removeProjectionV1<K extends ProjectionCleanupFailureV1["kind"]>(
+  root: string,
+  kind: K,
+  projection: string,
+): (ProjectionCleanupFailureV1 & { readonly kind: K }) | undefined {
+  try {
+    rmSync(root, { recursive: true, force: true });
+    return undefined;
+  } catch (error) {
+    return Object.freeze({
+      kind,
+      path: root,
+      code: errorCodeV1(error),
+      detail: `Core could not remove ${projection}: ${failedPathV1(root, error, "removed")}`,
+    });
+  }
+}
+
+/**
+ * The scan's own rejection, now carrying `cleanupFailure` as a typed
+ * property; never throws. A property, not `cause`: the cause belongs to the
+ * scan's error and may already hold its own reason, and wrapping would replace
+ * the error the caller catches. Only a rejection that cannot take the property
+ * is wrapped, in a `ProjectionCleanupRejectionV1` whose `cause` it is.
+ */
+export function rejectionWithCleanupFailureV1(
+  rejection: unknown,
+  cleanupFailure: ProjectionCleanupFailureV1,
+): unknown {
+  try {
+    if (
+      rejection instanceof Error &&
+      Object.isExtensible(rejection) &&
+      !Object.hasOwn(rejection, "cleanupFailure")
+    ) {
+      Object.defineProperty(rejection, "cleanupFailure", {
+        value: cleanupFailure,
+        enumerable: true,
+      });
+      return rejection;
+    }
+  } catch {
+    // A rejection that refuses the property is wrapped below.
+  }
+  return new ProjectionCleanupRejectionV1(rejection, cleanupFailure);
+}
+
+/** The cleanup failure a scan's rejection carries, if any. */
+export function projectionCleanupFailureOfV1(
+  rejection: unknown,
+): ProjectionCleanupFailureV1 | undefined {
+  try {
+    if (typeof rejection !== "object" || rejection === null) return undefined;
+    const failure = (rejection as { cleanupFailure?: unknown }).cleanupFailure;
+    if (typeof failure !== "object" || failure === null) return undefined;
+    const kind = (failure as { kind?: unknown }).kind;
+    return kind === "cisco-shard-projection-cleanup-failed-v1" ||
+      kind === "baseline-component-projection-cleanup-failed-v1"
+      ? (failure as ProjectionCleanupFailureV1)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -537,7 +639,8 @@ export type CiscoShardJoinProjectionResultV1<T> =
  * is revoked, and the directory removed, once `scan` settles. A projection
  * Core cannot prepare is never scanned: Core returns the failed Cisco detector
  * naming the path and error code, and reads nothing more there. A rejected
- * `scan` rejects with its own error.
+ * `scan` rejects with its own error, carrying any `cleanupFailure`
+ * (`rejectionWithCleanupFailureV1`).
  */
 export async function withCiscoShardJoinProjectionV1<T>(
   joined: JoinedCiscoShardEvidence,
@@ -548,14 +651,14 @@ export async function withCiscoShardJoinProjectionV1<T>(
   const jobs = includedJobs(verified, includedPaths);
   const root = mkdtempSync(join(dirname(verified.root), ".aih-cisco-shard-projection-"));
   let issued: VerifiedCiscoShardSarifV1 | undefined;
-  let outcome:
+  let settled:
     | { readonly kind: "scanned"; readonly result: T }
-    | { readonly kind: "refused"; readonly detector: TrustDetectorResult };
-  let cleanupFailure: CiscoShardProjectionCleanupFailureV1 | undefined;
+    | { readonly kind: "refused"; readonly detector: TrustDetectorResult }
+    | { readonly kind: "rejected"; readonly error: unknown };
   try {
     const prepared = prepareShardProjectionV1(verified, jobs, root);
     if ("refusal" in prepared) {
-      outcome = {
+      settled = {
         kind: "refused",
         detector: shardProjectionRefusedV1(
           `Core could not prepare the shard join's projection: ${prepared.refusal}`,
@@ -563,13 +666,22 @@ export async function withCiscoShardJoinProjectionV1<T>(
       };
     } else {
       issued = issueShardJoin(jobs, prepared.canonical, prepared.identity);
-      outcome = { kind: "scanned", result: await scan(Object.freeze({ root, cisco: issued })) };
+      settled = { kind: "scanned", result: await scan(Object.freeze({ root, cisco: issued })) };
     }
-  } finally {
-    if (issued !== undefined) REVOKED_PROJECTION_JOINS.add(issued);
-    cleanupFailure = removeShardProjectionV1(root);
+  } catch (error) {
+    settled = { kind: "rejected", error };
   }
-  return Object.freeze(cleanupFailure === undefined ? outcome : { ...outcome, cleanupFailure });
+  if (issued !== undefined) REVOKED_PROJECTION_JOINS.add(issued);
+  const cleanupFailure = removeProjectionV1(
+    root,
+    "cisco-shard-projection-cleanup-failed-v1",
+    "the shard join's projection",
+  );
+  if (settled.kind === "rejected")
+    throw cleanupFailure === undefined
+      ? settled.error
+      : rejectionWithCleanupFailureV1(settled.error, cleanupFailure);
+  return Object.freeze(cleanupFailure === undefined ? settled : { ...settled, cleanupFailure });
 }
 
 /**
@@ -595,21 +707,6 @@ function shardProjectionRefusedV1(reason: string): TrustDetectorResult {
     executions: [{ detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" }],
     observations: [],
   };
-}
-
-/** Removes a projection; never throws: a failure is returned for the caller to report. */
-function removeShardProjectionV1(root: string): CiscoShardProjectionCleanupFailureV1 | undefined {
-  try {
-    rmSync(root, { recursive: true, force: true });
-    return undefined;
-  } catch (error) {
-    return Object.freeze({
-      kind: "cisco-shard-projection-cleanup-failed-v1",
-      path: root,
-      code: errorCodeV1(error),
-      detail: `Core could not remove the shard join's projection: ${failedPathV1(root, error, "removed")}`,
-    });
-  }
 }
 
 /**

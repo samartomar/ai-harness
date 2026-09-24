@@ -209,7 +209,12 @@ and never passes. A projection Core cannot prepare (reading its identity, copyin
 resolving it) is never scanned: Core returns a `refused` result holding the failed Cisco detector,
 with the path and error code, and reads nothing more there. Removing the projection never
 replaces the result, or the scan's own error: a removal that fails is returned beside the result
-as a typed `cleanupFailure` naming the path and code, which baseline vet reports as progress.
+as a typed `cleanupFailure` naming the path and code. When the scan rejects, the scan's own error
+is rethrown carrying that `cleanupFailure` as a property; only a rejection that cannot take it (a
+frozen error, a thrown primitive, or one already carrying another) is wrapped in a
+`ProjectionCleanupRejectionV1` whose `cause` is the original. Baseline vet keeps the failure on
+the component scan it returns (`projectionCleanupFailures`) and reports it as progress, and its
+own component projection follows the same rules.
 
 ## Analyzer execution profiles and their limits
 

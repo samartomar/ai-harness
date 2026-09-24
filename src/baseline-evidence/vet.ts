@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Check } from "../internals/verify.js";
 import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
@@ -13,6 +13,9 @@ import {
   buildCiscoSourceShardManifest,
   DEFAULT_UV_EXECUTION_PROFILE,
   joinedCiscoShardSarif,
+  type ProjectionCleanupFailureV1,
+  rejectionWithCleanupFailureV1,
+  removeProjectionV1,
   resolveCiscoScanConcurrency,
   type VerifiedCiscoShardSarifV1,
   withCiscoShardJoinProjectionV1,
@@ -301,6 +304,9 @@ export function defaultComponentScanner(
           requiredDetectors,
         });
       let scan: TrustScanResult;
+      // A projection Core could not remove is kept on the scan it returns, or on
+      // the scan's own rejection: never only in progress, never in its place.
+      let cleanupFailure: ProjectionCleanupFailureV1 | undefined;
       if (sharedCiscoEvidence !== undefined && usesCisco) {
         // Only Core rebinds the verified join: to a projection it makes and fills.
         // One it could not prepare is never scanned: its failed Cisco detector is
@@ -313,10 +319,7 @@ export function defaultComponentScanner(
             return scanProjection(projection.root, projection.cisco);
           },
         );
-        if (projected.cleanupFailure !== undefined)
-          scanOptions.progress?.(
-            `baseline vet: component ${component.id}: ${projected.cleanupFailure.detail}`,
-          );
+        cleanupFailure = projected.cleanupFailure;
         scan =
           projected.kind === "scanned"
             ? projected.result
@@ -330,12 +333,30 @@ export function defaultComponentScanner(
         const projectionRoot = mkdtempSync(
           join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
         );
+        let settled: { readonly scan: TrustScanResult } | { readonly error: unknown };
         try {
           project(projectionRoot, false);
-          scan = await scanProjection(projectionRoot);
-        } finally {
-          rmSync(projectionRoot, { recursive: true, force: true });
+          settled = { scan: await scanProjection(projectionRoot) };
+        } catch (error) {
+          settled = { error };
         }
+        cleanupFailure = removeProjectionV1(
+          projectionRoot,
+          "baseline-component-projection-cleanup-failed-v1",
+          `baseline component ${component.id}'s projection`,
+        );
+        if ("error" in settled)
+          throw cleanupFailure === undefined
+            ? settled.error
+            : rejectionWithCleanupFailureV1(settled.error, cleanupFailure);
+        scan = settled.scan;
+      }
+      if (cleanupFailure !== undefined) {
+        scan = {
+          ...scan,
+          projectionCleanupFailures: [...(scan.projectionCleanupFailures ?? []), cleanupFailure],
+        };
+        scanOptions.progress?.(`baseline vet: component ${component.id}: ${cleanupFailure.detail}`);
       }
       timing.complete(scan);
       return scan;
