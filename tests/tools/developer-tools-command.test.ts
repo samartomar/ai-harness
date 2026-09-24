@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Cli } from "../../src/internals/clis.js";
 import { executePlan } from "../../src/internals/execute.js";
 import { digest, type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -21,6 +22,7 @@ import {
   executeDeveloperToolsCommand,
 } from "../../src/tools/developer-tools-command.js";
 import { HEADROOM_MCP_TOOL_NAMES, headroomLayout } from "../../src/tools/headroom.js";
+import { readHeadroomReceipt } from "../../src/tools/headroom-receipt.js";
 
 const roots: string[] = [];
 
@@ -542,6 +544,61 @@ describe("developer-tools Headroom lifecycle", () => {
     );
     const excluded = await executeDeveloperToolsCommand({ ...scope.ctx, options: {} }, scope.deps);
     expect(headroomTool(excluded)).toMatchObject({ state: "policy-excluded", changed: true });
+    expect(existsSync(scope.layout.stateRoot)).toBe(false);
+  });
+
+  it("refuses to discard a user-edited Codex Headroom table and records the incomplete host", async () => {
+    const scope = headroomScope({
+      commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
+    });
+    const deps = { ...scope.deps, projectMcp: undefined };
+    const codex = { ...scope.ctx, targets: ["codex"] as Cli[] };
+    const codexConfig = join(scope.ctx.env.HOME as string, ".codex", "config.toml");
+    await executeDeveloperToolsCommand(codex, deps);
+    const generated = readFileSync(codexConfig, "utf8");
+    expect(generated).toContain('[mcp_servers."headroom"]');
+    const edited = generated.replace(
+      '[mcp_servers."headroom"]',
+      '[mcp_servers."headroom"]\nstartup_timeout_sec = 45',
+    );
+    writeFileSync(codexConfig, edited);
+
+    const refused = await executeDeveloperToolsCommand(
+      { ...codex, options: { deactivateHeadroom: true } },
+      deps,
+    );
+    expect(headroomTool(refused)).toMatchObject({
+      state: "blocked",
+      changed: false,
+      detail: expect.stringMatching(
+        /codex[\s\S]*config\.toml[\s\S]*edited[\s\S]*--deactivate-headroom/u,
+      ),
+    });
+    expect(refused.report?.ok).toBe(false);
+    expect(readFileSync(codexConfig, "utf8")).toContain("startup_timeout_sec = 45");
+    const recorded = readHeadroomReceipt(scope.layout);
+    expect(recorded.state).toBe("valid");
+    expect(recorded.state === "valid" && recorded.receipt.deactivation).toMatchObject({
+      incompleteHosts: [{ host: "codex", reason: expect.stringMatching(/edited/u) }],
+    });
+    expect(existsSync(scope.layout.environment)).toBe(true);
+
+    // An ordinary run neither re-registers Headroom nor reports it active.
+    const ordinary = await executeDeveloperToolsCommand({ ...codex, options: {} }, deps);
+    expect(headroomTool(ordinary)).toMatchObject({
+      state: "blocked",
+      detail: expect.stringMatching(/deactivation is incomplete/u),
+    });
+    expect(readFileSync(codexConfig, "utf8")).toContain("startup_timeout_sec = 45");
+
+    // Restoring AIH's bytes lets the removal finish.
+    writeFileSync(codexConfig, generated);
+    const finished = await executeDeveloperToolsCommand(
+      { ...codex, options: { deactivateHeadroom: true } },
+      deps,
+    );
+    expect(headroomTool(finished)).toMatchObject({ state: "selected-pending", changed: true });
+    expect(readFileSync(codexConfig, "utf8")).not.toContain("headroom");
     expect(existsSync(scope.layout.stateRoot)).toBe(false);
   });
 

@@ -27,6 +27,11 @@ export interface PolicyAwareMcpCatalog {
   policy?: OrgPolicy;
   servers?: Record<string, McpServer>;
   excludedDeveloperToolServers?: Record<string, McpServer>;
+  /**
+   * Entries AIH removes only when a host copy is byte-identical to the launcher it
+   * recorded (Headroom's activation receipt); an edited copy is the user's to keep.
+   */
+  recordedRetiredServers?: Record<string, McpServer>;
   developerTools?: DefaultDeveloperMcpProjection["selection"];
   githubHost?: string;
   error?: unknown;
@@ -193,6 +198,7 @@ export function policyAwareMcpCatalog(
       policy: policyResult.policy,
       servers: projected.servers,
       excludedDeveloperToolServers: { ...projected.excludedServers, ...optionalExcluded },
+      recordedRetiredServers: { headroom: headroom.retired },
       developerTools: projected.selection,
       githubHost,
     };

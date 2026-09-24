@@ -12,7 +12,8 @@ export interface HeadroomMcpCandidates {
 
 /**
  * Headroom's MCP registration follows its activation receipt, never selection
- * alone. A stale, invalid or deactivating record yields no active entry.
+ * alone. A stale, invalid or deactivating record (including an incomplete earlier
+ * deactivation) yields no active entry.
  */
 export function headroomMcpCandidates(ctx: PlanContext): HeadroomMcpCandidates {
   const generated = headroomMcpServer(ctx);
@@ -28,6 +29,10 @@ export function headroomMcpCandidates(ctx: PlanContext): HeadroomMcpCandidates {
       : undefined;
   // The launcher itself refuses a receipt recorded for another platform.
   const active =
-    receipt.state === "valid" && ctx.options.deactivateHeadroom !== true ? generated : undefined;
+    receipt.state === "valid" &&
+    receipt.receipt.deactivation === undefined &&
+    ctx.options.deactivateHeadroom !== true
+      ? generated
+      : undefined;
   return { ...(active === undefined ? {} : { active }), retired: recorded ?? generated };
 }

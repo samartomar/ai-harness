@@ -77,6 +77,19 @@ describe("Headroom activation receipt", () => {
     expect(() => writeHeadroomReceipt(layout, receipt, "0".repeat(64))).toThrow(/changed/u);
   });
 
+  it("round-trips an incomplete deactivation naming a recorded host", () => {
+    const ctx = context();
+    const { layout, receipt } = activated(ctx);
+    const incomplete = {
+      ...receipt,
+      deactivation: {
+        incompleteHosts: [{ host: "codex", path: "~/.codex/config.toml", reason: "edited" }],
+      },
+    };
+    writeHeadroomReceipt(layout, incomplete, undefined);
+    expect(readHeadroomReceipt(layout)).toMatchObject({ state: "valid", receipt: incomplete });
+  });
+
   it("treats an older pin as stale and keeps its recorded launcher for removal", () => {
     const ctx = context();
     const { layout, receipt } = activated(ctx);
@@ -120,6 +133,21 @@ describe("Headroom activation receipt", () => {
     [
       "an unsupported host",
       (receipt: Record<string, unknown>) => JSON.stringify({ ...receipt, hosts: ["notepad"] }),
+    ],
+    [
+      "an incomplete deactivation naming an unrecorded host",
+      (receipt: Record<string, unknown>) =>
+        JSON.stringify({
+          ...receipt,
+          deactivation: {
+            incompleteHosts: [{ host: "cursor", path: ".cursor/mcp.json", reason: "edited" }],
+          },
+        }),
+    ],
+    [
+      "an incomplete deactivation with no hosts",
+      (receipt: Record<string, unknown>) =>
+        JSON.stringify({ ...receipt, deactivation: { incompleteHosts: [] } }),
     ],
   ])("fails closed for %s", (_label, mutate) => {
     const ctx = context();

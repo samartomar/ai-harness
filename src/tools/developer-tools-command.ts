@@ -1,11 +1,16 @@
 import { AihError } from "../errors.js";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { entry } from "../internals/cli-registry.js";
+import type { Cli } from "../internals/clis.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { type CommandSpec, digest, type PlanContext, plan } from "../internals/plan.js";
 import { VerificationReport } from "../internals/verify.js";
 import { defaultNativeRuntimeLayout } from "../mcp/default-native-runtime.js";
-import { command as mcpCommand } from "../mcp/index.js";
+import {
+  command as mcpCommand,
+  type RetainedRecordedMcpEntry,
+  retainedRecordedMcpEntries,
+} from "../mcp/index.js";
 import { resolveDeveloperToolSelectionForOrgPolicyV1 } from "../org-policy/developer-tool-policy.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import { combineProjectResults } from "../org-policy/validate.js";
@@ -26,6 +31,7 @@ import {
   type HeadroomLifecycleDeps,
   type HeadroomRequest,
   headroomRequestFrom,
+  recordIncompleteHeadroomRemoval,
   removeHeadroomState,
   verifyActiveHeadroom,
 } from "./headroom-lifecycle.js";
@@ -370,11 +376,35 @@ async function reconcileHeadroom(
   return { result: { id: "headroom", ...outcome }, remove: false };
 }
 
+/**
+ * Every host the activation receipt recorded that still registers Headroom after
+ * the projection: AIH's unchanged entry, or an edited Codex table AIH will not discard.
+ */
+function retainedHeadroomHostEntries(ctx: PlanContext): RetainedRecordedMcpEntry[] {
+  const receipt = readHeadroomReceipt(headroomLayout(ctx));
+  if (receipt.state !== "valid" && receipt.state !== "stale") return [];
+  return retainedRecordedMcpEntries(
+    ctx,
+    receipt.receipt.hosts as Cli[],
+    "headroom",
+    receipt.receipt.launcher.server,
+  );
+}
+
 function finishHeadroomRemoval(
   ctx: PlanContext,
   phase: HeadroomPhase,
 ): DeveloperToolLifecycleResult {
   try {
+    const retained = retainedHeadroomHostEntries(ctx);
+    if (retained.length > 0) {
+      return {
+        id: "headroom",
+        state: "blocked",
+        detail: recordIncompleteHeadroomRemoval(ctx, retained),
+        changed: false,
+      };
+    }
     const removal = removeHeadroomState(ctx);
     if (phase.result.state === "policy-excluded") {
       return removal.changed

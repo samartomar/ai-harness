@@ -60,6 +60,17 @@ export interface HeadroomActivationReceipt {
   readonly egressControls: Readonly<Record<string, string>>;
   readonly hosts: readonly string[];
   readonly launcher: { readonly sha256: string; readonly server: StdioServer };
+  /**
+   * Present only after a deactivation that could not clean every recorded host:
+   * the runtime and receipt stay, and no run re-registers or reports Headroom active.
+   */
+  readonly deactivation?: { readonly incompleteHosts: readonly HeadroomIncompleteHost[] };
+}
+
+export interface HeadroomIncompleteHost {
+  readonly host: string;
+  readonly path: string;
+  readonly reason: string;
 }
 
 export type HeadroomReceiptState =
@@ -166,6 +177,7 @@ function parseReceipt(value: unknown, layout: HeadroomLayout): HeadroomActivatio
       "egressControls",
       "hosts",
       "launcher",
+      ...(Object.hasOwn(root, "deactivation") ? ["deactivation"] : []),
     ],
     "Headroom activation receipt",
   );
@@ -233,6 +245,9 @@ function parseReceipt(value: unknown, layout: HeadroomLayout): HeadroomActivatio
   if (digest(launcher.sha256, "Headroom launcher") !== headroomLauncherDigest(server)) {
     throw new Error("Headroom launcher digest does not match its recorded server");
   }
+  const deactivation = Object.hasOwn(root, "deactivation")
+    ? parseDeactivation(root.deactivation, root.hosts as string[])
+    : undefined;
   return {
     version: HEADROOM_RECEIPT_VERSION,
     canonicalRoot: layout.project,
@@ -255,7 +270,36 @@ function parseReceipt(value: unknown, layout: HeadroomLayout): HeadroomActivatio
     egressControls,
     hosts: [...(root.hosts as string[])],
     launcher: { sha256: launcher.sha256 as string, server },
+    ...(deactivation === undefined ? {} : { deactivation }),
   };
+}
+
+function parseDeactivation(
+  value: unknown,
+  hosts: readonly string[],
+): NonNullable<HeadroomActivationReceipt["deactivation"]> {
+  const record = object(value, "Headroom deactivation");
+  exactKeys(record, ["incompleteHosts"], "Headroom deactivation");
+  const items = record.incompleteHosts;
+  if (!Array.isArray(items) || items.length === 0 || items.length > hosts.length) {
+    throw new Error("Headroom deactivation hosts are invalid");
+  }
+  const incompleteHosts = items.map((item) => {
+    const host = object(item, "Headroom incomplete host");
+    exactKeys(host, ["host", "path", "reason"], "Headroom incomplete host");
+    if (typeof host.host !== "string" || !hosts.includes(host.host)) {
+      throw new Error("Headroom deactivation names a host the activation did not record");
+    }
+    return {
+      host: host.host,
+      path: text(host.path, "Headroom incomplete host path"),
+      reason: text(host.reason, "Headroom incomplete host reason"),
+    };
+  });
+  if (new Set(incompleteHosts.map(({ host }) => host)).size !== incompleteHosts.length) {
+    throw new Error("Headroom deactivation hosts are invalid");
+  }
+  return { incompleteHosts };
 }
 
 function stalenessReason(receipt: HeadroomActivationReceipt): string | undefined {

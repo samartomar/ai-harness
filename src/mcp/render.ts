@@ -282,6 +282,25 @@ export function existingMcpTomlNames(existing: string, scope: string): Set<strin
   return names;
 }
 
+/**
+ * The exact text of one server's `[mcp_servers.NAME]` tree (its table and any
+ * `[mcp_servers.NAME.*]` sub-tables) within LF-normalized TOML, trailing blank lines
+ * trimmed, so it can be compared byte for byte with {@link mcpTomlBody}'s rendering.
+ */
+export function mcpTomlServerTree(text: string, name: string): string | undefined {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const kept: string[] = [];
+  let inside = false;
+  for (const line of lines) {
+    const mcpHeader = TOML_MCP_TREE_HEADER.exec(line);
+    if (mcpHeader !== null) inside = tomlHeaderName(mcpHeader) === name;
+    else if (TOML_TABLE_HEADER.test(line)) inside = false;
+    if (inside) kept.push(line);
+  }
+  while (kept.length > 0 && kept.at(-1)?.trim() === "") kept.pop();
+  return kept.length > 0 ? kept.join("\n") : undefined;
+}
+
 export function removeMcpTomlServers(existing: string, names: readonly string[]): string {
   const disabled = new Set(names);
   if (disabled.size === 0 || existing.length === 0) return existing;
