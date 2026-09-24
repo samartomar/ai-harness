@@ -747,6 +747,16 @@ target defaults to consult, so a newly registered CLI installs nothing rather th
 that is false for it. No mechanism replaces already-installed content, so a rerun cannot re-scope an
 existing install.
 
+Every `chrome-devtools-mcp` launch aih can read in the user (`~/.codex/config.toml`) or project
+(`.codex/config.toml`) Codex config must set `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1"` and
+`CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"` in its `env` table, whatever the entry is called. aih
+checks this at plan time and again just before apply, on governed installs too and for its own stale
+managed entries. It refuses with `mcp.telemetry-opt-out-missing`, naming the scope, entry, config
+path, missing variables and next step, and never rewrites the entry. aih sees only launches written
+literally in the config: an entry whose command is a wrapper script that starts
+`chrome-devtools-mcp` without naming it is outside what aih can verify, so set both variables inside
+that script yourself.
+
 Kiro installs are ownership-tracked so a stale copy is visible. Because ECC's own installer writes
 the bytes, aih attributes ownership by what a run CREATES: it snapshots `.kiro/` before the
 installer, re-walks it after a successful install, and records each created file's sha256 plus the
