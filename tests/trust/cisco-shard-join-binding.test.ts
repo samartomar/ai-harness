@@ -7,6 +7,7 @@ import {
   buildCiscoShardResult,
   type CiscoShardJob,
   joinCiscoShardResults,
+  verifiedCiscoShardJobSarifV1,
 } from "../../src/trust/cisco-shards.js";
 import {
   buildCiscoSourceShardManifest,
@@ -61,7 +62,7 @@ afterEach(() => {
 });
 
 /** One job's SARIF as Scan returns it, its completion evidence written out by hand. */
-function jobSarif(job: CiscoShardJob): Record<string, unknown> {
+function jobSarif(job: CiscoShardJob, results: readonly unknown[] = []): Record<string, unknown> {
   const subjectTreeSha256 = JOB_SUBJECTS[job.path];
   if (subjectTreeSha256 === undefined) throw new Error(`no vector for ${job.path}`);
   return {
@@ -82,13 +83,30 @@ function jobSarif(job: CiscoShardJob): Record<string, unknown> {
             },
           },
         ],
-        results: [],
+        results: [...results],
       },
     ],
   };
 }
 
-function verifiedJoin(root: string) {
+/** One Cisco finding in `<job>/SKILL.md`, so a join that loses it is visible. */
+function finding(job: CiscoShardJob): Record<string, unknown> {
+  return {
+    ruleId: "fixture",
+    level: "error",
+    message: { text: `finding in ${job.path}` },
+    locations: [
+      {
+        physicalLocation: {
+          artifactLocation: { uri: `${job.path}/SKILL.md` },
+          region: { startLine: 1 },
+        },
+      },
+    ],
+  };
+}
+
+function verifiedJoin(root: string, withFindings = false) {
   const manifest = buildCiscoSourceShardManifest(root, {
     source: { id: "fixture", pinnedSha: "a".repeat(40) },
     analyzer: { version: "2.0.14", lockSha256: CISCO_LOCK },
@@ -96,7 +114,9 @@ function verifiedJoin(root: string) {
     shardCount: 1,
   });
   const results = manifest.shards.map((shard) =>
-    buildCiscoShardResult(manifest, shard.id, jobSarif),
+    buildCiscoShardResult(manifest, shard.id, (job) =>
+      jobSarif(job, withFindings ? [finding(job)] : []),
+    ),
   );
   return joinCiscoShardResults(manifest, results, root);
 }
@@ -203,6 +223,105 @@ describe("a verified Cisco shard join is bound to the tree it was verified again
     const result = await scanCisco(projection, issued);
     expect(result.executions).toEqual([
       { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
+    ]);
+  });
+});
+
+/** The record's shape, as a caller holding the accessor's result could write to it. */
+interface WritableJoinRecord {
+  root: string;
+  jobs: {
+    path: string;
+    sarif: string;
+    subject: { subjectTreeSha256: string; analyzedFileCount: number };
+  }[];
+}
+
+/** Runs one write against what the accessor returned; a frozen value refuses it, which is the point. */
+function attempt(write: () => void): void {
+  try {
+    write();
+  } catch {
+    // A frozen record throws in strict mode; the assertions below judge the outcome.
+  }
+}
+
+/** Evidence-less, zero-findings SARIF that passes the shape check. */
+const EVIDENCE_LESS = JSON.stringify({
+  version: "2.1.0",
+  runs: [
+    {
+      tool: { driver: { name: "cisco-ai-skill-scanner" } },
+      invocations: [{ executionSuccessful: true }],
+      results: [],
+    },
+  ],
+});
+
+describe("the verified shard record cannot be changed through its accessor", () => {
+  it.each([
+    [
+      "replacing a job's SARIF with evidence-less zero-findings SARIF",
+      (record: WritableJoinRecord) => {
+        const job = record.jobs[0];
+        if (job !== undefined) job.sarif = EVIDENCE_LESS;
+      },
+    ],
+    [
+      "replacing the job list's entries",
+      (record: WritableJoinRecord) => {
+        record.jobs.splice(0, record.jobs.length);
+      },
+    ],
+    [
+      "pushing a job",
+      (record: WritableJoinRecord) => {
+        record.jobs.push({
+          path: "skills/gamma",
+          sarif: EVIDENCE_LESS,
+          subject: { subjectTreeSha256: "0".repeat(64), analyzedFileCount: 1 },
+        });
+      },
+    ],
+    [
+      "editing a job's path",
+      (record: WritableJoinRecord) => {
+        const job = record.jobs[0];
+        if (job !== undefined) job.path = "skills/other";
+      },
+    ],
+    [
+      "editing a job's verified subject",
+      (record: WritableJoinRecord) => {
+        const job = record.jobs[0];
+        if (job !== undefined) job.subject.subjectTreeSha256 = ALPHA_CHANGED;
+      },
+    ],
+    [
+      "editing the verified root",
+      (record: WritableJoinRecord) => {
+        record.root = "/elsewhere";
+      },
+    ],
+  ])("ignores %s", async (_label, write) => {
+    const joined = verifiedJoin(sourceA, true);
+    const before = joinedCiscoShardSarif(joined).sarif;
+    const returned = verifiedCiscoShardJobSarifV1(joined) as unknown as WritableJoinRecord;
+    attempt(() => write(returned));
+
+    const issued = joinedCiscoShardSarif(joined);
+    expect(issued.sarif).toBe(before);
+    const again = verifiedCiscoShardJobSarifV1(joined);
+    expect(again?.jobs.map((job) => job.path)).toEqual(["skills/alpha", "skills/beta"]);
+    expect(again?.jobs[0]?.subject.subjectTreeSha256).toBe(JOB_SUBJECTS["skills/alpha"]);
+    expect(again?.jobs[0]?.sarif).not.toBe(EVIDENCE_LESS);
+    const result = await scanCisco(sourceA, issued);
+    expect(result.executions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
+    ]);
+    expect(result.rawOccurrences.map((occurrence) => occurrence.location?.uri).sort()).toEqual([
+      "skills/alpha/SKILL.md",
+      "skills/beta/SKILL.md",
     ]);
   });
 });

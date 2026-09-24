@@ -124,6 +124,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   join. A join presented for another root, a job added or removed, or a job changed after the
   join fails the detector naming the difference. `joinedCiscoShardSarif` takes the root the join
   is presented at (a baseline component's projection root).
+- The record `joinCiscoShardResults` verified is stored deep-frozen, and
+  `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each
+  job's subject), so a caller can no longer replace a job's SARIF, add or remove a job, or edit a
+  path, subject or root that the shard exemption later reads.
 - An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
   without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
   malformed one such as `@my team` with its field path instead of ignoring it, and Scan

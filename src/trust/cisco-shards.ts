@@ -444,17 +444,39 @@ export function joinCiscoShardResults(
       return output;
     }),
   };
-  VERIFIED_JOB_EVIDENCE.set(joined, {
-    root,
-    jobs: manifest.jobs.map((job) => {
-      const output = outputs.get(job.id);
-      const subject = subjects.get(job.id);
-      if (output === undefined || subject === undefined)
-        throw new Error(`missing Cisco job output: ${job.path}`);
-      return { path: job.path, sarif: canonicalJson(output.evidence), subject };
+  VERIFIED_JOB_EVIDENCE.set(
+    joined,
+    frozenJoinRecord({
+      root,
+      jobs: manifest.jobs.map((job) => {
+        const output = outputs.get(job.id);
+        const subject = subjects.get(job.id);
+        if (output === undefined || subject === undefined)
+          throw new Error(`missing Cisco job output: ${job.path}`);
+        return { path: job.path, sarif: canonicalJson(output.evidence), subject };
+      }),
     }),
-  });
+  );
   return joined;
+}
+
+/** A deep-frozen copy of a verified record: it shares no object with its input. */
+function frozenJoinRecord(record: VerifiedCiscoShardJoinV1): VerifiedCiscoShardJoinV1 {
+  return Object.freeze({
+    root: record.root,
+    jobs: Object.freeze(
+      record.jobs.map((job) =>
+        Object.freeze({
+          path: job.path,
+          sarif: job.sarif,
+          subject: Object.freeze({
+            subjectTreeSha256: job.subject.subjectTreeSha256,
+            analyzedFileCount: job.subject.analyzedFileCount,
+          }),
+        }),
+      ),
+    ),
+  });
 }
 
 /**
@@ -472,14 +494,20 @@ export interface VerifiedCiscoShardJoinV1 {
 }
 
 /**
- * The verified record, keyed by the joined object that call returned. A join
- * built any other way, or evidence changed afterwards, is never read.
+ * The verified record, deep-frozen when the join verified it and keyed by the
+ * joined object that call returned. A join built any other way, or evidence
+ * changed afterwards, is never read; the stored record is never handed out.
  */
 const VERIFIED_JOB_EVIDENCE = new WeakMap<JoinedCiscoShardEvidence, VerifiedCiscoShardJoinV1>();
 
-/** The verified record of a join `joinCiscoShardResults` returned, or undefined for any other value. */
+/**
+ * A frozen copy of the verified record of a join `joinCiscoShardResults`
+ * returned, or undefined for any other value. Nothing a caller does to it
+ * reaches the stored record.
+ */
 export function verifiedCiscoShardJobSarifV1(
   joined: JoinedCiscoShardEvidence,
 ): VerifiedCiscoShardJoinV1 | undefined {
-  return VERIFIED_JOB_EVIDENCE.get(joined);
+  const record = VERIFIED_JOB_EVIDENCE.get(joined);
+  return record === undefined ? undefined : frozenJoinRecord(record);
 }
