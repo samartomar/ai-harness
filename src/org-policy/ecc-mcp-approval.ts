@@ -1,4 +1,4 @@
-import { ECC_MCP_CATALOG_PROVENANCE, eccExternalMcpCatalog } from "./ecc-mcp-catalog.js";
+import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-contract.js";
 
 /**
  * Portable, deliberately conservative email grammar for a human policy approver.
@@ -72,10 +72,6 @@ const RECORD_KEYS = [
   "state",
 ] as const;
 
-function fail(message: string): never {
-  throw new Error(`invalid ECC MCP approval inventory: ${message}`);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -147,12 +143,4 @@ export function resolveEccMcpApproval(
   return approval.state === "approved"
     ? { state: "approved", approval }
     : { state: "revoked", approval };
-}
-
-const expected = eccExternalMcpCatalog.map((entry) => entry.id);
-if (
-  expected.length !== ECC_EXTERNAL_MCP_APPROVAL_IDS.length ||
-  expected.some((id, index) => id !== ECC_EXTERNAL_MCP_APPROVAL_IDS[index])
-) {
-  fail("approval ids do not match the pinned external catalog");
 }

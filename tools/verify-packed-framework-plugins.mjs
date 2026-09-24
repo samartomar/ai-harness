@@ -12,7 +12,9 @@
  *     module) and ships `dist/framework-host.js` with its declarations; the
  *     plugin carries only its dist, which imports Core only through
  *     `@aihq/core/framework-host` and Node built-ins.
- *   Core + plugin installed: `aih superpowers <fixture>` exits 0 with the
+ *   Core + plugin, no Catalog: `aih superpowers` refuses with
+ *     `catalog-package-unavailable`; the descriptor is Catalog data.
+ *   Core + plugin + the pinned Catalog 0.3.0: `aih superpowers <fixture>` exits 0 with the
  *     exact-pinned acquisition preview, loaded from the INSTALLED plugin, whose
  *     `@aihq/core/framework-host` resolved to the INSTALLED Core; `aih init`
  *     (dry run) runs the same evidence-gated preview.
@@ -169,15 +171,6 @@ try {
     run(process.execPath, [tscCli, "-p", "tsconfig.dts.json", "--outDir", join(coreStage, "dist")], repo),
     "Core declaration emit",
   );
-  // The committed package data the build copies beside the chunks (tools/copy-policy-data.mjs).
-  for (const source of [
-    "src/org-policy/workbench/default-catalog-preassembly.generated.cjs",
-    "src/org-policy/workbench/core/packaged-source-data-data.json",
-    "src/org-policy/workbench/core/catalog-qualification-data.json",
-    "src/org-policy/packaged-collection-evidence-data.json",
-  ]) {
-    if (existsSync(join(repo, source))) cpSync(join(repo, source), join(coreStage, "dist", source.split("/").at(-1)));
-  }
   const coreManifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
   for (const entry of coreManifest.files) {
     if (entry.startsWith("!") || entry === "dist") continue;
@@ -328,6 +321,23 @@ try {
   const fixture = join(work, "fixture");
   mkdirSync(fixture, { recursive: true });
 
+  // ---- plugin installed, Catalog absent: the descriptor is Catalog data (C1) ------
+  const withoutCatalog = aih(["superpowers", fixture, "--json", "--no-log"]);
+  const withoutCatalogError = json(withoutCatalog)?.error;
+  summary.withoutCatalog = { exit: withoutCatalog.status, error: withoutCatalogError };
+  check(
+    "without Catalog, aih superpowers refuses with catalog-package-unavailable and no embedded fallback",
+    withoutCatalog.status === 1 && withoutCatalogError?.message?.includes("catalog-package-unavailable") === true,
+    withoutCatalogError?.message?.slice(0, 300) ?? withoutCatalog.stdout.slice(0, 300),
+  );
+
+  // The real Catalog 0.3.0 this repository pins carries the Superpowers descriptor
+  // and the plugin identity record the loader checks.
+  const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-f60735e.tgz");
+  must(
+    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", pinnedCatalog], consumer),
+    "Catalog 0.3.0 install",
+  );
   const withPlugin = aih(["superpowers", fixture, "--json", "--no-log"], ["--import", pathToFileURL(trace).href]);
   const withPluginResult = json(withPlugin);
   summary.withPlugin = {
@@ -392,9 +402,8 @@ try {
   writeFileSync(pluginManifestPath, pluginManifestBytes);
 
   // ---- Catalog installed: the plugin must equal Catalog's identity record ----------
-  // A fixture Catalog in the C1 `./catalog-framework-plugins.json` format (not the
-  // real @aihq/catalog, whose 0.3.0 publishes this subpath), then the real 0.2.0
-  // tarball this repository pins, which does not publish it.
+  // The pinned real Catalog 0.3.0 (its identity record, then a rewritten record),
+  // then the real 0.2.0 tarball, which does not publish plugin identities.
   const identities = (superpowersVersion) => ({
     format: "aih-catalog-framework-plugins",
     version: 1,
@@ -421,34 +430,6 @@ try {
       },
     ],
   });
-  const catalogStage = join(work, "stage-catalog-fixture");
-  mkdirSync(join(catalogStage, "defaults"), { recursive: true });
-  writeFileSync(
-    join(catalogStage, "package.json"),
-    `${JSON.stringify(
-      {
-        name: "@aihq/catalog",
-        version: "0.3.0",
-        type: "module",
-        exports: {
-          ".": "./index.js",
-          "./catalog-framework-plugins.json": "./defaults/catalog-framework-plugins-v1.json",
-          "./package.json": "./package.json",
-        },
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  writeFileSync(join(catalogStage, "index.js"), "export {};\n");
-  writeFileSync(join(catalogStage, "defaults", "catalog-framework-plugins-v1.json"), `${JSON.stringify(identities("0.1.0"))}\n`);
-  const catalogPacked = JSON.parse(
-    must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], catalogStage), "fixture Catalog pack"),
-  );
-  must(
-    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", join(work, catalogPacked[0].filename)], consumer),
-    "fixture Catalog install",
-  );
   const matched = aih(["superpowers", fixture, "--json", "--no-log"]);
   check(
     "with Catalog's matching identity record installed, aih superpowers succeeds",

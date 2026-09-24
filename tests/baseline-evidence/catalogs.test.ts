@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import eccProfiles from "../../src/baseline-evidence/ecc-profiles.json";
+import { loadFrameworkDescriptorSectionV1 } from "../../src/catalog-package/framework-descriptors.js";
+import { AihError } from "../../src/errors.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 
 function registryPin(owner: string, repo: string): string {
@@ -13,6 +14,9 @@ function registryPin(owner: string, repo: string): string {
 
 describe("production baseline catalogs", () => {
   it("binds ECC components to the existing registry pin and locked common baseline", () => {
+    const eccProfiles = loadFrameworkDescriptorSectionV1<{
+      profiles: { full: { modules: string[] } };
+    }>("ecc", "profileGraph");
     const catalog = baselineCatalogById("ecc");
     expect(catalog.pinnedSha).toBe(registryPin("affaan-m", "ECC"));
     const ids = catalog.components.map((component) => component.id);
@@ -123,10 +127,20 @@ describe("production baseline catalogs", () => {
     ]);
   });
 
-  it("can rebind the known catalog layout to an org-vetted newer pin", () => {
-    const next = "e".repeat(40);
-    expect(baselineCatalogById("ecc", next).pinnedSha).toBe(next);
-    expect(() => baselineCatalogById("ecc", "deadbeef")).toThrow();
+  it("binds the layout only to the pin the installed Catalog carries, refusing others by both identities", () => {
+    const carried = baselineCatalogById("ecc").pinnedSha;
+    expect(baselineCatalogById("ecc", carried).pinnedSha).toBe(carried);
+    const other = "e".repeat(40);
+    let refusal: unknown;
+    try {
+      baselineCatalogById("ecc", other);
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(AihError);
+    expect(refusal).toMatchObject({ code: "AIH_TRUST" });
+    expect((refusal as AihError).message).toContain(carried);
+    expect((refusal as AihError).message).toContain(other);
     expect(() => baselineCatalogById("unknown")).toThrow(/unknown/i);
   });
 });

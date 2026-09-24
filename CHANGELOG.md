@@ -8,12 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- Remove legacy MCP-target reconstruction during saved-policy consumption. Policies authored
+  against an older MCP target declaration now fail closed with `Stale selected content`; re-save
+  the policy with the currently installed Catalog's MCP targets before consuming it.
 - Remove the pre-release Policy Workbench browser/HTML/server bundle and its
   `aih --ui` and `aih policy generate` command registrations. They have no
   compatibility stubs or `aih-ui` replacement. Core retains policy validation,
   protected authority consumption, policy-data commands, and backend catalog
   records needed by current consumers. Earlier Workbench work in this changelog
   remains development history, not a current browser feature.
+- Remove Core's Catalog producer tools `tools/build-catalog-preassembly.ts`,
+  `tools/copy-policy-data.mjs` and `tools/update-ecc-content-metadata.mjs`. Catalog's build
+  regenerates that data.
 
 ### Changed
 
@@ -23,7 +29,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the readiness report now check the minor version too, so Node 20.0 to 20.5 fails the
   runtime gate instead of passing it. Migration: upgrade Node to 20.6 or later (Node 22
   LTS is recommended).
-- `@aihq/catalog` is now an optional peer dependency (`>=0.2.0 <1.0.0`), loaded at run
+- **Breaking:** Catalog-owned data no longer ships in Core. The ECC and Superpowers framework
+  descriptors (component definitions, module and profile graphs, install preview, MCP, skill and
+  hook inventories, vendor lock), the Policy Workbench authoring bundle and source inputs, the
+  public baseline, Core qualification material, scanner evidence and scanner-provider inputs
+  (including the Matt Pocock and Ponytail snapshots) are read only from the installed
+  `@aihq/catalog` 0.3.x. Operations that need them (ECC install preview and lifecycle, baseline
+  vetting and analysis, framework plug-ins, policy authoring and policy-data preparation or
+  import) report `catalog-package-unavailable` without Catalog and `catalog-package-incompatible`
+  for a Catalog that cannot supply them; Core-only operations keep working. There is no embedded
+  fallback. Migration: install `@aihq/catalog` 0.3.x next to Core.
+- **Breaking:** Core accepts each Catalog-carried authority input only when its SHA-256 matches
+  the digest this Core release pins, and refuses any other bytes with
+  `catalog-package-incompatible` naming the unaccepted SHA-256. A Catalog self-digest is an
+  integrity check, not authority. Policy bindings are derived by Core from the admitted authoring
+  bundle; bindings shipped by Catalog are ignored. Migration: use the Catalog release this Core
+  release accepts.
+- **Breaking:** Core no longer compiles Catalog-owned content. The `built-in/v1`,
+  `pinned-baseline/v1`, `pinned-skill-collection/v1` and `pinned-component-collection/v1`
+  producers, the Matt Pocock and Ponytail scanner providers and the embedded Workbench
+  preassembly moved to Catalog; Core keeps those format identities only to validate what Catalog
+  admits. Compiling a replacement Catalog-owned baseline is refused. Organization-authored
+  manifests and witnessed organization evidence still compile. Migration: regenerate
+  Catalog-owned content with Catalog's generators.
+- **Breaking:** Vetting an upstream pin that the installed Catalog does not carry is refused.
+  `aih baseline vet --pin <other>`, an `AIH_ECC_REF` other than the Catalog's pin, and baseline
+  analysis at another pin fail with `AIH_TRUST` naming both pins (`Catalog <framework> carries
+  pin <carried>; it does not carry requested pin <requested>`). Core no longer rebinds the
+  framework layout to an organization-vetted newer pin. Migration: install a Catalog that carries
+  the pin (Catalog's framework-descriptor generators produce one) and a Core release that accepts
+  that descriptor's SHA-256.
+- `@aihq/catalog` is now an optional peer dependency (`>=0.3.0 <0.4.0`), loaded at run
   time through one module and never bundled. The historical ECC runtime descriptor used by
   `aih ecc --lifecycle install` and `aih policy project` is resolved in a recorded order: a
   matching verified local source-data receipt, then the installed Catalog's
@@ -32,11 +68,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   descriptor is a named refusal (`catalog-package-incompatible`,
   `catalog-index-refused`, `catalog-runtime-descriptors-refused`,
   `catalog-descriptor-absent`, `catalog-descriptor-unverified`,
-  `catalog-descriptor-not-accepted`), never an embedded fallback; this includes the
-  registry's `@aihq/catalog` 0.2.0, which does not publish that subpath. The same bytes
+  `catalog-descriptor-not-accepted`), never an embedded fallback. The registry's
+  `@aihq/catalog` 0.2.0 is outside the peer range. The same bytes
   are accepted as before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`), and the
-  source used is printed on stderr. Shared policy/catalog descriptor data still
-  ships for other backend consumers, not this historical resolver.
+  source used is printed on stderr.
 - `@aihq/scan` is now an optional peer dependency (`>=0.4.0 <1.0.0`) and is no longer
   bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
   and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`

@@ -316,7 +316,9 @@ describe("active external-pin ledger", () => {
       expect(headroom.reason).toContain(`${wheel.name} sha256:${wheel.sha256}`);
     }
     expect(headroom.reason).toMatch(/explicit activation.*--accept-headroom-egress/i);
-    expect(headroom.reason).toMatch(/HEADROOM_BEACON=off.*DO_NOT_TRACK=1.*HEADROOM_UPDATE_CHECK=off/);
+    expect(headroom.reason).toMatch(
+      /HEADROOM_BEACON=off.*DO_NOT_TRACK=1.*HEADROOM_UPDATE_CHECK=off/,
+    );
     expect(headroom.reason).toMatch(/proxy, wrap, deploy.*not used/i);
     expect(headroom.reason).toMatch(/Intel macOS.*Windows arm64/i);
   });

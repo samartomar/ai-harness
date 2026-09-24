@@ -7,15 +7,17 @@ import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { BASELINE_CATALOG_IDS, baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { comparePinSets, formatPinCurrency } from "../../src/baseline-evidence/pin-currency.js";
 import type { BaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
-import vendorLock from "../../src/baseline-evidence/vendor-lock.json" with { type: "json" };
+import {
+  readVendorBaselineLock,
+  vendorBaselineLockBytes,
+} from "../../src/baseline-evidence/vendor.js";
 import {
   checkBaselinePinCurrency,
-  defaultLockPath,
   runPinCurrencyCli,
 } from "../../src/internals/check-baseline-pin-currency.js";
 
 const CATALOGS = BASELINE_CATALOG_IDS.map((id) => baselineCatalogById(id));
-const lock = vendorLock as unknown as BaselineEvidenceLock;
+const lock = readVendorBaselineLock();
 
 function withSourcePin(pin: string): BaselineEvidenceLock {
   return {
@@ -132,9 +134,10 @@ describe("baseline pin currency", () => {
   });
 
   it("passes on the committed lock through the CLI entry point", () => {
-    const result = checkBaselinePinCurrency("src/baseline-evidence/vendor-lock.json");
-    expect(result.ok).toBe(true);
-    expect(result.report).toContain("matches every declared pin");
+    expect(vendorBaselineLockBytes().length).toBeGreaterThan(0);
+    const written: string[] = [];
+    expect(runPinCurrencyCli(undefined, (text) => written.push(text))).toBe(0);
+    expect(written.join("")).toContain("matches every declared pin");
   });
 
   it("reports not-ok through the CLI entry point when a pin has moved", () => {
@@ -159,15 +162,9 @@ describe("baseline pin currency", () => {
     expect(() => checkBaselinePinCurrency("package.json")).toThrow();
   });
 
-  it("defaults to the committed lock the check exists to defend", () => {
-    expect(defaultLockPath().replace(/\\/g, "/")).toContain(
-      "src/baseline-evidence/vendor-lock.json",
-    );
-  });
-
-  it("exits 0 and prints the report when the committed evidence is current", () => {
+  it("defaults to the installed Catalog lock and prints the report when current", () => {
     const written: string[] = [];
-    expect(runPinCurrencyCli(defaultLockPath(), (text) => written.push(text))).toBe(0);
+    expect(runPinCurrencyCli(undefined, (text) => written.push(text))).toBe(0);
     expect(written.join("")).toContain("matches every declared pin");
   });
 

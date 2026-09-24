@@ -151,7 +151,10 @@ const catalog: CatalogPackageAccessV1 = {
     );
   },
   resolve: () => {
-    throw new Error("unreachable");
+    // Node's own "not installed" shape: the package manifest does not resolve.
+    throw Object.assign(new Error("Cannot find module '@aihq/catalog/package.json'"), {
+      code: "MODULE_NOT_FOUND",
+    });
   },
   readFile: () => {
     throw new Error("unreachable");

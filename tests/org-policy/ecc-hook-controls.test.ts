@@ -29,7 +29,7 @@ function policy(eccHookControls?: Record<string, unknown>): Record<string, unkno
 }
 
 describe("source-locked ECC hook controls", () => {
-  it("canonicalizes disable ids in pinned source order for the selected profile", () => {
+  it("preserves shape-valid disable ids without consulting the Catalog", () => {
     expect(
       parseOrgPolicy(
         policy({
@@ -39,7 +39,7 @@ describe("source-locked ECC hook controls", () => {
       ).governance?.eccHookControls,
     ).toEqual({
       profile: "standard",
-      disabledIds: ["pre:observe", "post:quality-gate"],
+      disabledIds: ["post:quality-gate", "pre:observe"],
     });
     expect(parseOrgPolicy(policy({ profile: "minimal" })).governance?.eccHookControls).toEqual({
       profile: "minimal",
@@ -47,19 +47,21 @@ describe("source-locked ECC hook controls", () => {
     expect(parseOrgPolicy(policy()).governance?.eccHookControls).toBeUndefined();
   });
 
-  it("rejects duplicate, unknown, wrapper, and profile-ineligible disable ids", () => {
+  it("rejects duplicate and malformed ids while deferring inventory checks", () => {
     expect(() =>
       parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:observe", "pre:observe"] })),
     ).toThrowError(/unique/i);
+    expect(
+      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["unknown:hook"] })).governance
+        ?.eccHookControls,
+    ).toEqual({ profile: "standard", disabledIds: ["unknown:hook"] });
     expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["unknown:hook"] })),
-    ).toThrowError(/expected one of/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:bash:dispatcher"] })),
-    ).toThrowError(/expected one of/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:bash:tmux-reminder"] })),
-    ).toThrowError(/not eligible under the standard profile/i);
+      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["UPPERCASE"] })),
+    ).toThrowError(/invalid string/i);
+    expect(
+      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:bash:tmux-reminder"] }))
+        .governance?.eccHookControls,
+    ).toEqual({ profile: "standard", disabledIds: ["pre:bash:tmux-reminder"] });
     expect(
       parseOrgPolicy(policy({ profile: "strict", disabledIds: ["pre:bash:tmux-reminder"] }))
         .governance?.eccHookControls,

@@ -1,15 +1,23 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { loadFrameworkDescriptorSectionV1 } from "../../src/catalog-package/framework-descriptors.js";
 import {
   AIH_OWNED_ECC_MCP_EXCLUSIONS,
   ECC_MCP_CATALOG_CANONICAL_SHA256,
   ECC_MCP_CATALOG_IDS,
   ECC_MCP_CATALOG_PROVENANCE,
-  eccExternalMcpCatalog,
+  eccExternalMcpCatalogV1,
   validateEccMcpCatalogInventory,
 } from "../../src/org-policy/ecc-mcp-catalog.js";
-import snapshot from "../../src/org-policy/ecc-mcp-catalog.snapshot.json";
+
+const sourceDocument = loadFrameworkDescriptorSectionV1<{
+  bytesBase64: string;
+  sha256: string;
+}>("ecc", "mcpInventoryDocument");
+const snapshot = JSON.parse(Buffer.from(sourceDocument.bytesBase64, "base64").toString("utf8")) as {
+  mcpServers: Record<string, Record<string, unknown>>;
+};
+const eccExternalMcpCatalog = eccExternalMcpCatalogV1();
 
 const PINNED_IDS = [
   "nexus",
@@ -62,14 +70,9 @@ describe("source-locked ECC MCP catalog inventory", () => {
     expect(createHash("sha256").update(JSON.stringify(snapshot), "utf8").digest("hex")).toBe(
       ECC_MCP_CATALOG_CANONICAL_SHA256,
     );
+    expect(sourceDocument.sha256).toBe(ECC_MCP_CATALOG_PROVENANCE.contentSha256);
     expect(
-      createHash("sha256")
-        .update(
-          readFileSync(
-            new URL("../../src/org-policy/ecc-mcp-catalog.snapshot.json", import.meta.url),
-          ),
-        )
-        .digest("hex"),
+      createHash("sha256").update(Buffer.from(sourceDocument.bytesBase64, "base64")).digest("hex"),
     ).toBe(ECC_MCP_CATALOG_PROVENANCE.contentSha256);
   });
 

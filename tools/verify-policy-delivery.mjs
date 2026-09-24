@@ -22,6 +22,7 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const TARGETS = ["claude", "codex", "cursor", "opencode", "kimi", "kiro"];
@@ -156,7 +157,13 @@ function policy(items) {
 }
 
 function seedEvidence(root) {
-  const lock = readFileSync(resolve("src/baseline-evidence/vendor-lock.json"));
+  const descriptor = JSON.parse(
+    readFileSync(
+      createRequire(import.meta.url).resolve("@aihq/catalog/catalog-framework-ecc.json"),
+      "utf8",
+    ),
+  );
+  const lock = Buffer.from(descriptor.sections.vendorLockDocument.bytesBase64, "base64");
   const artifact = ".aih/baseline-reports/ecc.json";
   const digest = sha256(lock);
   const manifest = Buffer.from(

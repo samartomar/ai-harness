@@ -2,12 +2,9 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../baseline-evidence/scanner-profile.js";
 import { readVendorBaselineLock, vendorBaselineLockSha256 } from "../baseline-evidence/vendor.js";
+import { loadCatalogCoreMaterialV1 } from "../catalog-package/core-materials.js";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { projectBaselineDisplayEvidenceV1 } from "./baseline-display-projection-v1.js";
-import {
-  PACKAGED_PUBLIC_BASELINE_BYTES_V1,
-  PACKAGED_PUBLIC_BASELINE_SHA256_V1,
-} from "./packaged-public-baseline-data.js";
 import type { AuthoringCatalogBundleV1 } from "./workbench/contracts.js";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -80,14 +77,18 @@ export function inspectPackagedPublicBaselineBytesV1(bytes: string, seal: string
 
 /** Inputless package loader. It never reads a caller's evidence file or starts a process. */
 export function packagedPublicBaselineEvidenceV1() {
-  if (PACKAGED_PUBLIC_BASELINE_BYTES_V1 === null && PACKAGED_PUBLIC_BASELINE_SHA256_V1 === null)
-    return undefined;
-  if (PACKAGED_PUBLIC_BASELINE_BYTES_V1 === null || PACKAGED_PUBLIC_BASELINE_SHA256_V1 === null)
-    throw new TypeError("Packaged public evidence is incomplete.");
-  return inspectPackagedPublicBaselineBytesV1(
-    PACKAGED_PUBLIC_BASELINE_BYTES_V1,
-    PACKAGED_PUBLIC_BASELINE_SHA256_V1,
-  );
+  const material = loadCatalogCoreMaterialV1("publicBaseline");
+  if (material.baseline === null) return undefined;
+  if (
+    material.baseline === undefined ||
+    typeof material.baseline !== "object" ||
+    Array.isArray(material.baseline)
+  )
+    throw new TypeError("Catalog public baseline is malformed.");
+  const entry = material.baseline as Record<string, unknown>;
+  if (typeof entry.bytes !== "string" || typeof entry.sha256 !== "string")
+    throw new TypeError("Catalog public baseline is incomplete.");
+  return inspectPackagedPublicBaselineBytesV1(entry.bytes, entry.sha256);
 }
 
 export function packagedPublicBaselineOverlayV1(bundle: AuthoringCatalogBundleV1) {

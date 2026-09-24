@@ -41,26 +41,23 @@ export function checkBaselineAnalyzerReceipts(lock: BaselineEvidenceLock): Basel
       ReturnType<typeof baselineCatalogById>["components"][number]
     >;
     try {
+      const active = baselineCatalogById(source.id);
+      if (source.pinnedSha !== active.pinnedSha) {
+        findings.push({
+          sourceId: source.id,
+          componentId: "<catalog>",
+          detail: `lock pinned ${source.pinnedSha} but active catalog pin is ${active.pinnedSha}`,
+        });
+        continue;
+      }
       canonicalComponents = new Map(
-        baselineCatalogById(source.id, source.pinnedSha).components.map((component) => [
-          component.id,
-          component,
-        ]),
+        active.components.map((component) => [component.id, component]),
       );
     } catch (error) {
       findings.push({
         sourceId: source.id,
         componentId: "<catalog>",
         detail: error instanceof Error ? error.message : String(error),
-      });
-      continue;
-    }
-    const activePin = baselineCatalogById(source.id).pinnedSha;
-    if (source.pinnedSha !== activePin) {
-      findings.push({
-        sourceId: source.id,
-        componentId: "<catalog>",
-        detail: `lock pinned ${source.pinnedSha} but active catalog pin is ${activePin}`,
       });
       continue;
     }

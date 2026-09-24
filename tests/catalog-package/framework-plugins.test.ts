@@ -138,8 +138,11 @@ describe("loadFrameworkPluginIdentitiesV1", () => {
     expect(loaded.refusal.detail).toContain("./catalog-framework-plugins.json is invalid");
   });
 
-  it("finds the currently installed Catalog 0.2.0 incompatible: it publishes no plugin identities", async () => {
+  it("reads both plugin identities from the installed Catalog 0.3.0", async () => {
     const loaded = await loadFrameworkPluginIdentitiesV1();
-    expect(!loaded.ok && loaded.refusal.reason).toBe("catalog-package-incompatible");
+    expect(loaded.ok && loaded.entries.map((entry) => entry.packageName)).toEqual([
+      "@aihq/framework-ecc",
+      "@aihq/framework-superpowers",
+    ]);
   });
 });

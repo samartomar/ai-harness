@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { BaselineCatalog } from "../baseline-evidence/catalog.js";
-import shippedPreview from "../baseline-evidence/ecc-install-preview.json";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import { AihError } from "../errors.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { digest, type Plan, plan } from "../internals/plan.js";
@@ -69,7 +69,9 @@ export function parseEccInstallPreview(value: unknown): EccInstallPreviewArtifac
 }
 
 export function readEccInstallPreview(): EccInstallPreviewArtifact {
-  return structuredClone(parseEccInstallPreview(shippedPreview));
+  return structuredClone(
+    parseEccInstallPreview(loadFrameworkDescriptorSectionV1("ecc", "installPreview")),
+  );
 }
 
 function assertBoundToCatalog(artifact: EccInstallPreviewArtifact, catalog: BaselineCatalog): void {

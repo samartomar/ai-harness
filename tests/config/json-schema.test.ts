@@ -657,9 +657,12 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-org-policy.schema.json",
       policy({ profile: "standard", disabledIds: ["pre:observe", "post:quality-gate"] }),
     );
+    validateCommittedSchema(
+      "schemas/aih-org-policy.schema.json",
+      policy({ profile: "standard", disabledIds: ["unknown:hook"] }),
+    );
     for (const invalid of [
-      { profile: "standard", disabledIds: ["unknown:hook"] },
-      { profile: "standard", disabledIds: ["pre:bash:dispatcher"] },
+      { profile: "standard", disabledIds: ["UPPERCASE"] },
       { profile: "standard", extra: true },
       { disabledIds: ["pre:observe"] },
     ]) {

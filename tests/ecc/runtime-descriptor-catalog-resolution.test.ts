@@ -135,7 +135,10 @@ const unavailable: CatalogPackageAccessV1 = {
       ),
     ),
   resolve: () => {
-    throw new Error("unreachable");
+    // Node's own "not installed" shape: the package manifest does not resolve.
+    throw Object.assign(new Error("Cannot find module '@aihq/catalog/package.json'"), {
+      code: "MODULE_NOT_FOUND",
+    });
   },
   readFile: () => {
     throw new Error("unreachable");
@@ -198,7 +201,7 @@ describe("historical ECC runtime descriptor resolution order", () => {
     ]);
     expect(resolved.descriptorCarrier).toMatchObject({
       package: "@aihq/catalog",
-      version: "0.2.0",
+      version: "0.3.0",
       runtimeDescriptorsFormat: "aih-catalog-runtime-descriptors",
       runtimeDescriptorsVersion: 1,
     });
@@ -362,7 +365,7 @@ describe("historical ECC runtime descriptor resolution order", () => {
         "catalog-package-incompatible",
       );
     }
-    // The registry's 0.2.0 publishes no runtime-descriptors subpath.
+    // A Catalog without the public runtime-descriptors subpath is incompatible.
     const withoutSubpath = await refusalOf(
       resolveHistoricalEccRuntimeDescriptorV1(policyFor(), {
         now: NOW,

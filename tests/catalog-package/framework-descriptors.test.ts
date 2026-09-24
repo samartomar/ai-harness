@@ -2,87 +2,137 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import {
-  FRAMEWORK_DESCRIPTOR_FORMAT_V1,
+  ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1,
   loadFrameworkDescriptorBytesV1,
 } from "../../src/catalog-package/framework-descriptors.js";
+import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
 
-// Phase-1 stub over Core's embedded data, with the C1 signature W1 implements
-// against the installed Catalog.
+const requireFromTest = createRequire(import.meta.url);
 
-const MODULE_URL = new URL("../../src/catalog-package/framework-descriptors.ts", import.meta.url);
-
-/** Whether the Catalog Core would load publishes the Superpowers descriptor subpath. */
-function installedCatalogPublishesSuperpowersDescriptor(): boolean {
-  try {
-    createRequire(MODULE_URL).resolve("@aihq/catalog/catalog-framework-superpowers.json");
-    return true;
-  } catch {
-    return false;
-  }
+function access(overrides: Partial<CatalogPackageAccessV1> = {}): CatalogPackageAccessV1 {
+  return {
+    importPackage: () => import("@aihq/catalog"),
+    resolve: (specifier) => requireFromTest.resolve(specifier),
+    readFile: (path) => readFileSync(path),
+    ...overrides,
+  };
 }
 
-describe("the phase-1 descriptor stub guard", () => {
-  it("fails once the installed Catalog publishes the descriptor while the stub is still wired", () => {
-    const source = readFileSync(MODULE_URL, "utf8");
-    if (installedCatalogPublishesSuperpowersDescriptor()) {
-      expect(
-        source,
-        "replace the phase-1 stub with W1's Catalog-backed loadFrameworkDescriptorBytesV1",
-      ).not.toContain("PHASE-1 STUB");
-    } else {
-      expect(source).toContain("PHASE-1 STUB");
+describe("loadFrameworkDescriptorBytesV1", () => {
+  it("returns the exact installed bytes Core's authority table accepts", async () => {
+    for (const frameworkId of ["ecc", "superpowers"] as const) {
+      const bytes = readFileSync(
+        requireFromTest.resolve(`@aihq/catalog/catalog-framework-${frameworkId}.json`),
+      );
+      const result = await loadFrameworkDescriptorBytesV1(frameworkId, access());
+      if (!result.ok) throw new Error(result.refusal.detail);
+      const { bytes: loaded, ...identity } = result;
+      expect(identity).toEqual({
+        ok: true,
+        frameworkId,
+        sha256: ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1[frameworkId],
+        catalogVersion: "0.3.0",
+      });
+      expect(Buffer.from(loaded).equals(bytes)).toBe(true);
     }
   });
-});
 
-describe("loadFrameworkDescriptorBytesV1 (phase-1 stub)", () => {
-  it("serves canonical Superpowers descriptor bytes with their digest", async () => {
-    const loaded = await loadFrameworkDescriptorBytesV1("superpowers");
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    expect(loaded.frameworkId).toBe("superpowers");
-    expect(loaded.sha256).toBe(createHash("sha256").update(loaded.bytes).digest("hex"));
-    const text = new TextDecoder().decode(loaded.bytes);
-    expect(text.endsWith("}\n")).toBe(true);
-    const parsed = JSON.parse(text) as {
-      format: string;
-      version: number;
-      frameworkId: string;
-      sections: Record<string, { pinnedSha?: string; hooks?: unknown[] }>;
+  it("refuses reader-accepted bytes whose digest Core does not accept", async () => {
+    const document = {
+      format: "aih-catalog-framework-descriptor",
+      version: 1,
+      frameworkId: "superpowers",
+      sections: { vendorLock: { pinnedSha: "f".repeat(40) } },
     };
-    expect(Object.keys(parsed)).toEqual(["format", "frameworkId", "sections", "version"]);
-    expect(parsed.format).toBe(FRAMEWORK_DESCRIPTOR_FORMAT_V1);
-    expect(parsed.version).toBe(1);
-    expect(parsed.frameworkId).toBe("superpowers");
-    const vendor = readVendorBaselineLock().sources.find((source) => source.id === "superpowers");
-    expect(parsed.sections.vendorLock).toEqual(vendor);
-    expect(parsed.sections.hookControlInventory?.hooks).toHaveLength(1);
-  });
-
-  it("serves exactly the bytes the Superpowers plugin's own tests pin", async () => {
-    const loaded = await loadFrameworkDescriptorBytesV1("superpowers");
-    const pinned = readFileSync(
-      new URL(
-        "../../packages/framework-superpowers/tests/fixtures/catalog-framework-superpowers.json",
-        import.meta.url,
-      ),
+    const bytes = Buffer.from(`${JSON.stringify(document)}
+`);
+    const result = await loadFrameworkDescriptorBytesV1(
+      "superpowers",
+      access({
+        importPackage: () =>
+          Promise.resolve({
+            readCatalogFrameworkDescriptorV1Result: () => ({
+              state: "read",
+              descriptor: document,
+            }),
+          }),
+        resolve: (specifier) =>
+          specifier.endsWith("package.json")
+            ? "C:/fixture/package.json"
+            : "C:/fixture/catalog-framework-superpowers-v1.json",
+        readFile: (path) =>
+          path.endsWith("package.json") ? Buffer.from('{"version":"0.3.0"}') : bytes,
+      }),
     );
-    expect(loaded.ok && Buffer.from(loaded.bytes).equals(pinned)).toBe(true);
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: {
+        reason: "catalog-package-incompatible",
+        detail: expect.stringContaining(
+          `unaccepted authority sha256 ${createHash("sha256").update(bytes).digest("hex")}`,
+        ),
+      },
+    });
   });
 
-  it("serves identical bytes on every call", async () => {
-    const first = await loadFrameworkDescriptorBytesV1("superpowers");
-    const second = await loadFrameworkDescriptorBytesV1("superpowers");
-    expect(first.ok && second.ok && first.sha256 === second.sha256).toBe(true);
+  it("refuses a reader that changes the accepted bytes it was handed", async () => {
+    const installed = readFileSync(
+      requireFromTest.resolve("@aihq/catalog/catalog-framework-superpowers.json"),
+    );
+    const document = JSON.parse(installed.toString("utf8")) as {
+      sections: { packagedSource: { commit: string } };
+    };
+    const pin = Buffer.from(document.sections.packagedSource.commit);
+    const result = await loadFrameworkDescriptorBytesV1(
+      "superpowers",
+      access({
+        importPackage: () =>
+          Promise.resolve({
+            readCatalogFrameworkDescriptorV1Result: (input: { bytes: Uint8Array }) => {
+              // Rewrite the pinned SHA in place, then report the original as read.
+              const { buffer, byteOffset, byteLength } = input.bytes;
+              const bytes = Buffer.from(buffer, byteOffset, byteLength);
+              for (let at = bytes.indexOf(pin); at !== -1; at = bytes.indexOf(pin, at + 1))
+                bytes.fill("f", at, at + pin.length);
+              return { state: "read", descriptor: document };
+            },
+          }),
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: {
+        reason: "catalog-package-incompatible",
+        detail: expect.stringContaining("reader changed the descriptor bytes"),
+      },
+    });
   });
 
-  it("refuses a framework the stub does not carry instead of inventing data", async () => {
-    const loaded = await loadFrameworkDescriptorBytesV1("ecc");
-    expect(loaded.ok).toBe(false);
-    if (loaded.ok) return;
-    expect(loaded.refusal.reason).toBe("catalog-package-incompatible");
-    expect(loaded.refusal.detail).toContain("./catalog-framework-ecc.json");
+  it("preserves unavailable and incompatible package refusals", async () => {
+    const unavailable = await loadFrameworkDescriptorBytesV1(
+      "ecc",
+      access({
+        importPackage: () =>
+          Promise.reject(
+            Object.assign(new Error("Cannot find package '@aihq/catalog' imported from test"), {
+              code: "ERR_MODULE_NOT_FOUND",
+            }),
+          ),
+      }),
+    );
+    expect(unavailable).toMatchObject({
+      ok: false,
+      refusal: { reason: "catalog-package-unavailable" },
+    });
+
+    const incompatible = await loadFrameworkDescriptorBytesV1(
+      "ecc",
+      access({ importPackage: () => Promise.resolve({}) }),
+    );
+    expect(incompatible).toMatchObject({
+      ok: false,
+      refusal: { reason: "catalog-package-incompatible" },
+    });
   });
 });

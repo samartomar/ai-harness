@@ -35,11 +35,7 @@ const ECC_PROFILE_FRAMEWORK_MODULES = new Set([
  * entry must keep doing so, so this list only shrinks as W1 lands.
  */
 const W1_CATALOG_PRODUCERS = new Set([
-  "src/baseline-evidence/catalog-providers/ecc.ts",
   "src/baseline-evidence/ecc-preview-boundary.ts",
-  "src/internals/prepare-packaged-workbench-source-data.ts",
-  "src/internals/verify-packaged-workbench-source-data.ts",
-  "src/org-policy/catalog-providers/ecc.ts",
   "src/org-policy/workbench/core/packaged-source-data.ts",
   "src/org-policy/workbench/core/source-data-local-receipt.ts",
   "src/org-policy/workbench/core/source-data-runtime-descriptor-custody.ts",

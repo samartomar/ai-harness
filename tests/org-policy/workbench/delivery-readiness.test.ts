@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { prepareWorkbenchEvidenceCompositionsForReleaseV1 } from "../../../src/org-policy/workbench/core/evidence-compositions.js";
 import { inspectWorkbenchEvidenceCoverageV1 } from "../../../src/org-policy/workbench/delivery-readiness.js";
-import { prepareWorkbenchEvidenceCompositionsForReleaseV1 } from "../../../src/org-policy/workbench/providers/evidence-compositions.js";
 import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 
 describe("Workbench release evidence coverage", () => {

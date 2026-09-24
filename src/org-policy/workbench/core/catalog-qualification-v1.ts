@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { PreparedAihScannerPublicationsV1 } from "../../../baseline-evidence/aih-scan-preparation.js";
 import { hashComponentTree } from "../../../baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../../baseline-evidence/license.js";
-import { prepareRegisteredScannerCatalogV1 } from "../../../baseline-evidence/scanner-provider-catalogs.js";
+import { prepareRegisteredScannerCatalogV1 } from "../../../baseline-evidence/scanner-catalog-consumer.js";
 import { evidenceExpiryV1, evidenceIsCurrentV1 } from "../../../evidence-freshness.js";
 import { defaultRunner } from "../../../internals/proc.js";
 import { findOnPath } from "../../../live/runner.js";

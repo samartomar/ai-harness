@@ -1,10 +1,3 @@
-import {
-  isWorkbenchCatalogSharedInputPath,
-  providerForWorkbenchPath,
-  providerTestsFor,
-  WORKBENCH_PROVIDER_IDS,
-  type WorkbenchProviderId,
-} from "./workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
 
 export const CI_SELECTOR_VERSION = "1.5.5";
@@ -39,7 +32,8 @@ export interface CiImpactReceipt {
   fullSuite: boolean;
   releasePreparation: boolean;
   fallbackReasons: string[];
-  affectedProviders: WorkbenchProviderId[];
+  /** Retained empty for v2 receipt compatibility; providers are Catalog-owned. */
+  affectedProviders: string[];
   providerTests: string[];
 }
 
@@ -88,13 +82,11 @@ const SELECTOR_PATHS = new Set([
   "src/internals/ci-local-verification.ts",
   "src/internals/ci-local-verification-command.ts",
   "src/internals/workbench-test-ownership.ts",
-  "src/internals/workbench-provider-ownership.ts",
   "src/internals/delivery-governance-command.ts",
   "src/internals/delivery-governance.ts",
   "src/internals/staged-check.ts",
   "tests/internals/ci-impact.test.ts",
   "tests/internals/ci-local-verification.test.ts",
-  "tests/internals/workbench-provider-ownership.test.ts",
   "tests/internals/staged-check.test.ts",
   "tests/release/delivery-governance.test.ts",
 ]);
@@ -183,12 +175,8 @@ function scopedTestLane(
   let workbench = selectedTests.some(isWorkbenchTest);
   for (const path of changedPaths) {
     if (isDocumentation(path)) continue;
-    if (isWorkbenchCatalogSharedInputPath(path)) {
+    if (path.startsWith("src/catalog-package/") || path === "src/org-policy/catalog.ts") {
       core = true;
-      workbench = true;
-      continue;
-    }
-    if (providerForWorkbenchPath(path) !== undefined) {
       workbench = true;
       continue;
     }
@@ -244,7 +232,6 @@ export function classifyCiImpact(
   const selectedDomains = new Set<string>();
   let docsOnly = changedPaths.length > 0;
   let crossPlatform = false;
-  const affectedProviders = new Set<WorkbenchProviderId>();
 
   if (changedPaths.length === 0) fallbackReasons.push("empty-change-set");
 
@@ -274,25 +261,7 @@ export function classifyCiImpact(
       continue;
     }
     docsOnly = false;
-    const providerId = providerForWorkbenchPath(path);
-    if (providerId !== undefined) {
-      matchedRules.push(`provider:${providerId}`);
-      affectedProviders.add(providerId);
-      selectedDomains.add("org-policy");
-      continue;
-    }
-    if (path.startsWith("src/baseline-evidence/catalog-providers/")) {
-      fallbackReasons.push(`baseline-provider-consumers:${path}`);
-      continue;
-    }
-    if (
-      path.startsWith("src/org-policy/catalog-providers/") ||
-      path.startsWith("src/org-policy/workbench/providers/")
-    ) {
-      fallbackReasons.push(`unknown-provider-path:${path}`);
-      continue;
-    }
-    if (isWorkbenchCatalogSharedInputPath(path)) {
+    if (path.startsWith("src/catalog-package/") || path === "src/org-policy/catalog.ts") {
       matchedRules.push("workbench-shared-input");
       selectedDomains.add("org-policy");
       const sourceDomain = domainOf(path, "src");
@@ -348,18 +317,8 @@ export function classifyCiImpact(
 
     fallbackReasons.push(`unknown-path:${path}`);
   }
-  const providerIds = [...affectedProviders].sort((left, right) => left.localeCompare(right));
-  const providerTests = providerTestsFor(providerIds);
-  const missingProviderTest = providerTests.find((path) => !testFiles.includes(path));
-  if (missingProviderTest !== undefined) {
-    return validateCiImpactReceipt(
-      fullReceipt(input, changedPaths, testFiles, matchedRules, [
-        `missing-provider-test:${missingProviderTest}`,
-      ]),
-      options,
-    );
-  }
-  for (const test of providerTests) selectedTests.add(test);
+  const providerIds: string[] = [];
+  const providerTests: string[] = [];
   if (fallbackReasons.length > 0) {
     return validateCiImpactReceipt(
       fullReceipt(input, changedPaths, testFiles, matchedRules, fallbackReasons),
@@ -448,24 +407,17 @@ export function validateCiImpactReceipt(
   }
   if (
     !Array.isArray(value.affectedProviders) ||
-    value.affectedProviders.some((provider) => !WORKBENCH_PROVIDER_IDS.includes(provider)) ||
+    value.affectedProviders.length > 0 ||
     JSON.stringify(value.affectedProviders) !==
       JSON.stringify(sortedUnique(value.affectedProviders))
   ) {
     throw new Error("affected providers must be known, sorted, and unique");
   }
-  const expectedProviders = value.fullSuite
-    ? []
-    : sortedUnique(
-        value.changedPaths.flatMap((path) => {
-          const provider = providerForWorkbenchPath(path);
-          return provider === undefined ? [] : [provider];
-        }),
-      );
+  const expectedProviders: string[] = [];
   if (JSON.stringify(value.affectedProviders) !== JSON.stringify(expectedProviders)) {
     throw new Error("affected providers do not match changed paths");
   }
-  const expectedProviderTests = providerTestsFor(value.affectedProviders);
+  const expectedProviderTests: string[] = [];
   if (
     !Array.isArray(value.providerTests) ||
     JSON.stringify(value.providerTests) !== JSON.stringify(expectedProviderTests)
@@ -532,7 +484,12 @@ export function validateCiImpactReceipt(
 
   for (const path of value.changedPaths) {
     const domain = domainOf(path, "src");
-    if (domain === undefined || value.fullSuite || isWorkbenchCatalogSharedInputPath(path))
+    if (
+      domain === undefined ||
+      value.fullSuite ||
+      path.startsWith("src/catalog-package/") ||
+      path === "src/org-policy/catalog.ts"
+    )
       continue;
     if (!value.selectedTests.some((test) => testsForDomain(domain, [test]).length > 0)) {
       throw new Error(`selected tests do not cover source domain ${domain}`);

@@ -278,15 +278,11 @@ describe("Workbench retirement topology", () => {
     }
   });
 
-  it("retains the scoped backend preassembly artifact", () => {
-    // Scope note: this checks the generated backend preassembly bundle only.
-    // Ownership and CLI registration of `policy data prepare/sign/import` are
-    // pending and intentionally not asserted. This Vitest run is not
-    // packaged-install evidence.
+  it("removes the Core-owned backend preassembly artifact", () => {
     expect(
       fs.existsSync(path.join(REPO_ROOT, "src", "org-policy", "workbench", PREASSEMBLY_FILE_NAME)),
-      `backend preassembly ${PREASSEMBLY_FILE_NAME} was removed`,
-    ).toBe(true);
+      `retired Core preassembly ${PREASSEMBLY_FILE_NAME} still exists`,
+    ).toBe(false);
   });
 });
 

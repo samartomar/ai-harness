@@ -14,8 +14,9 @@ export interface CompilerFormatRegistrationV1 {
 }
 
 /**
- * The sole reviewed enrollment record for a build-time input format. Adding a
- * format here requires a fixture factory in index.ts through its derived type.
+ * The sole reviewed enrollment record for a source-bundle input format. Catalog
+ * owns the producers of the pinned and built-in formats; Core keeps only their
+ * identities and kind restrictions so admitted signed source bundles verify.
  */
 export const compilerFormatRegistrationsV1 = [
   {

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   baselineAnalyzerVersions,
@@ -8,10 +7,13 @@ import {
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import type { BaselineComponentEvidence } from "../../src/baseline-evidence/schema.js";
 import {
+  admitCatalogVendorLockDocumentV1,
   readVendorBaselineLock,
   vendorBaselineLockBytes,
   vendorBaselineLockSha256,
 } from "../../src/baseline-evidence/vendor.js";
+import { loadFrameworkDescriptorSectionV1 } from "../../src/catalog-package/framework-descriptors.js";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 
 function requiredAnalyzerReceipts(
   sourceId: string,
@@ -92,8 +94,12 @@ describe("shipped vendor baseline lock", () => {
     ).toBe(true);
   });
 
-  it("exposes copied authoritative bytes and hashes the exact committed lock file", () => {
-    const committed = readFileSync("src/baseline-evidence/vendor-lock.json");
+  it("exposes copied authoritative bytes and hashes the exact Catalog-carried lock", () => {
+    const document = loadFrameworkDescriptorSectionV1<{ bytesBase64: string }>(
+      "ecc",
+      "vendorLockDocument",
+    );
+    const committed = Buffer.from(document.bytesBase64, "base64");
     const bytes = vendorBaselineLockBytes();
 
     expect(bytes).toEqual(committed);
@@ -101,5 +107,22 @@ describe("shipped vendor baseline lock", () => {
 
     bytes[0] = 0;
     expect(vendorBaselineLockBytes()).toEqual(committed);
+  });
+
+  it("refuses a flipped verdict even when Catalog recomputes its self-digest", () => {
+    const lock = readVendorBaselineLock();
+    const blocked = lock.sources
+      .flatMap((source) => source.components)
+      .find((item) => item.verdict === "blocked");
+    if (blocked === undefined) throw new Error("missing blocked fixture component");
+    blocked.verdict = "pass";
+    blocked.findings = [];
+    const bytes = Buffer.concat([canonicalStrictJsonBytesV1(lock), Buffer.from("\n")]);
+    expect(() =>
+      admitCatalogVendorLockDocumentV1({
+        bytesBase64: bytes.toString("base64"),
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      }),
+    ).toThrow(/authority sha256 .* is not accepted/);
   });
 });

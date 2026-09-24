@@ -28,7 +28,7 @@ import { AihError } from "../errors.js";
 
 export const CATALOG_PACKAGE_NAME = "@aihq/catalog";
 /** The peer range `package.json` declares; compatibility beyond it is checked at run time. */
-export const CATALOG_PACKAGE_PEER_RANGE = ">=0.2.0 <1.0.0";
+export const CATALOG_PACKAGE_PEER_RANGE = ">=0.3.0 <0.4.0";
 export const CATALOG_PACKAGE_INSTALL_COMMAND = "npm install -g @aihq/core @aihq/scan @aihq/catalog";
 export const CATALOG_PACKAGE_PROJECT_INSTALL_COMMAND =
   "npm install @aihq/core @aihq/scan @aihq/catalog";
@@ -45,16 +45,33 @@ export interface CatalogPackageRefusalV1 {
 
 /** The Catalog readers Core calls. */
 export type CatalogPackageExportNameV1 =
+  | "prepareCatalogSourceDataV1"
   | "readCatalogContentV1Result"
+  | "readCatalogFrameworkDescriptorV1Result"
+  | "readCatalogFrameworkPluginsV1Result"
   | "readCatalogRuntimeDescriptorsV1Result";
 
 /** The public data subpaths Core reads, exactly as Catalog's `exports` map names them. */
 export type CatalogPackageSubpathV1 =
+  | "./catalog-authoring-bundle.json"
+  | "./catalog-core-qualification.json"
+  | "./catalog-framework-ecc.json"
+  | "./catalog-framework-plugins.json"
+  | "./catalog-framework-superpowers.json"
   | "./catalog-index.json"
+  | "./catalog-public-baseline.json"
   | "./catalog-runtime-descriptors.json"
-  | "./catalog-framework-plugins.json";
+  | "./catalog-scanner-evidence.json"
+  | "./catalog-scanner-providers.json";
 
-type CatalogPackageFunctionsV1 = Pick<typeof CatalogPackage, CatalogPackageExportNameV1>;
+type CatalogPackageFunctionsV1 = Pick<
+  typeof CatalogPackage,
+  "readCatalogContentV1Result" | "readCatalogRuntimeDescriptorsV1Result"
+> & {
+  readonly prepareCatalogSourceDataV1: (request: unknown) => unknown;
+  readonly readCatalogFrameworkDescriptorV1Result: (request: unknown) => unknown;
+  readonly readCatalogFrameworkPluginsV1Result: (request: unknown) => unknown;
+};
 
 export interface CatalogPackageFileV1 {
   /** Absolute path the subpath resolved to inside the installed package. */
@@ -83,6 +100,15 @@ export interface CatalogPackageAccessV1 {
   readonly resolve: (specifier: string) => string;
   readonly readFile: (path: string) => Uint8Array;
 }
+
+export type CatalogPackageFileLoadV1<S extends CatalogPackageSubpathV1> =
+  | {
+      readonly ok: true;
+      readonly root: string;
+      readonly version: string | undefined;
+      readonly file: CatalogPackageFileV1 & { readonly subpath: S };
+    }
+  | { readonly ok: false; readonly refusal: CatalogPackageRefusalV1 };
 
 const installedCatalogAccess: CatalogPackageAccessV1 = {
   importPackage: () => import("@aihq/catalog"),
@@ -126,6 +152,25 @@ function importFailure(error: unknown): CatalogPackageRefusalV1 {
   return incompatible(`the installed ${CATALOG_PACKAGE_NAME} could not be loaded (${message})`);
 }
 
+function resolutionFailure(error: unknown): CatalogPackageRefusalV1 {
+  const message = messageOf(error);
+  const missingPackage =
+    message.includes(`Cannot find package '${CATALOG_PACKAGE_NAME}'`) ||
+    message.includes(`Cannot find package "${CATALOG_PACKAGE_NAME}"`) ||
+    message.includes(`Cannot find module '${CATALOG_PACKAGE_NAME}/package.json'`) ||
+    message.includes(`Cannot find module "${CATALOG_PACKAGE_NAME}/package.json"`);
+  if (
+    (codeOf(error) === "MODULE_NOT_FOUND" || codeOf(error) === "ERR_MODULE_NOT_FOUND") &&
+    missingPackage
+  ) {
+    return {
+      reason: "catalog-package-unavailable",
+      detail: `${CATALOG_PACKAGE_NAME} is not installed next to @aihq/core. ${INSTALL_ADVICE}`,
+    };
+  }
+  return incompatible(`the installed ${CATALOG_PACKAGE_NAME} could not be resolved (${message})`);
+}
+
 function exportIsFunction(namespace: object, name: string): boolean {
   try {
     return typeof (namespace as Record<string, unknown>)[name] === "function";
@@ -135,18 +180,23 @@ function exportIsFunction(namespace: object, name: string): boolean {
   }
 }
 
-function packageVersion(access: CatalogPackageAccessV1): string | undefined {
+function packageVersion(access: CatalogPackageAccessV1, manifestPath?: string): string | undefined {
   try {
     const manifest: unknown = JSON.parse(
-      Buffer.from(access.readFile(access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`))).toString(
-        "utf8",
-      ),
+      Buffer.from(
+        access.readFile(manifestPath ?? access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`)),
+      ).toString("utf8"),
     );
     const version = (manifest as { version?: unknown } | null)?.version;
     return typeof version === "string" ? bounded(version) : undefined;
   } catch {
     return undefined;
   }
+}
+
+function compatibleVersion(version: string | undefined): version is string {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version ?? "");
+  return match?.[1] === "0" && match[2] === "3";
 }
 
 /**
@@ -162,6 +212,12 @@ export async function loadCatalogPackageV1<
   subpaths: readonly S[],
   access: CatalogPackageAccessV1 = installedCatalogAccess,
 ): Promise<CatalogPackageLoadV1<K, S>> {
+  let manifestPath: string;
+  try {
+    manifestPath = access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`);
+  } catch (error) {
+    return { ok: false, refusal: resolutionFailure(error) };
+  }
   let namespace: unknown;
   try {
     namespace = await access.importPackage();
@@ -180,18 +236,17 @@ export async function loadCatalogPackageV1<
       ),
     };
   }
-  let root: string;
-  try {
-    root = dirname(access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`));
-  } catch (error) {
+  const root = dirname(manifestPath);
+  const files = {} as Record<S, CatalogPackageFileV1>;
+  const version = packageVersion(access, manifestPath);
+  if (!compatibleVersion(version)) {
     return {
       ok: false,
       refusal: incompatible(
-        `the installed ${CATALOG_PACKAGE_NAME} does not publish ./package.json (${messageOf(error)})`,
+        `the installed ${CATALOG_PACKAGE_NAME} version ${version ?? "is unreadable"}`,
       ),
     };
   }
-  const files = {} as Record<S, CatalogPackageFileV1>;
   for (const subpath of subpaths) {
     const specifier = `${CATALOG_PACKAGE_NAME}/${subpath.slice("./".length)}`;
     let path: string;
@@ -224,9 +279,65 @@ export async function loadCatalogPackageV1<
     ok: true,
     exports: exports as Pick<CatalogPackageFunctionsV1, K>,
     root,
-    version: packageVersion(access),
+    version,
     files: Object.freeze(files),
   };
+}
+
+/**
+ * Synchronous data-only path for existing synchronous Core policy APIs. It
+ * resolves only Catalog's public package manifest and named JSON subpath; the
+ * caller owns schema validation of the returned bytes.
+ */
+export function loadCatalogPackageFileV1<S extends CatalogPackageSubpathV1>(
+  subpath: S,
+  access: CatalogPackageAccessV1 = installedCatalogAccess,
+): CatalogPackageFileLoadV1<S> {
+  let manifestPath: string;
+  try {
+    manifestPath = access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`);
+  } catch (error) {
+    return { ok: false, refusal: resolutionFailure(error) };
+  }
+  const root = dirname(manifestPath);
+  const version = packageVersion(access, manifestPath);
+  if (!compatibleVersion(version)) {
+    return {
+      ok: false,
+      refusal: incompatible(
+        `the installed ${CATALOG_PACKAGE_NAME} version ${version ?? "is unreadable"}`,
+      ),
+    };
+  }
+  const specifier = `${CATALOG_PACKAGE_NAME}/${subpath.slice("./".length)}`;
+  let path: string;
+  try {
+    path = access.resolve(specifier);
+  } catch (error) {
+    return {
+      ok: false,
+      refusal: incompatible(
+        codeOf(error) === "ERR_PACKAGE_PATH_NOT_EXPORTED"
+          ? `the installed ${CATALOG_PACKAGE_NAME} does not export ${subpath}`
+          : `the installed ${CATALOG_PACKAGE_NAME} could not resolve ${subpath} (${messageOf(error)})`,
+      ),
+    };
+  }
+  try {
+    return {
+      ok: true,
+      root,
+      version,
+      file: Object.freeze({ subpath, path, bytes: Uint8Array.from(access.readFile(path)) }),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      refusal: incompatible(
+        `the installed ${CATALOG_PACKAGE_NAME} ${subpath} could not be read (${messageOf(error)})`,
+      ),
+    };
+  }
 }
 
 /** `reason: detail`, the form every report prints a package refusal in. */

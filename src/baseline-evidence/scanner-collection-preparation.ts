@@ -16,8 +16,8 @@ import {
   packagedCoverageProjectionDigestV1,
   packagedReportComponentDigestV1,
 } from "../org-policy/packaged-collection-evidence-v1.js";
+import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
-import { prepareRegisteredScannerCatalogV1 } from "./scanner-provider-catalogs.js";
 import {
   consumeScannerBaselinePublicationsV1,
   type ScannerBaselinePublicationProvenanceV1,

@@ -96,16 +96,6 @@ vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async (importOr
   };
 });
 
-vi.mock(
-  "../../../src/org-policy/workbench/default-catalog-preassembly.js",
-  async (importOriginal) => ({
-    ...(await importOriginal<
-      typeof import("../../../src/org-policy/workbench/default-catalog-preassembly.js")
-    >()),
-    packagedDefaultCatalogPreassemblyCompanionV1: () => undefined,
-  }),
-);
-
 const roots: string[] = [];
 // Model one administrator verifier shared by independent project stores.
 const verifierParent = mkdtempSync(join(tmpdir(), "aih-source-data-test-verifier-"));
