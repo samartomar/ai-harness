@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -98,7 +106,9 @@ function catalogFixture(): { root: string; access: CatalogPackageAccessV1 } {
           });
         return join(root, relative);
       },
+      rootManifestPath: () => join(root, "package.json"),
       readFile: (path) => readFileSync(path),
+      listDirectory: (path) => readdirSync(path),
     },
   };
 }
@@ -140,7 +150,16 @@ const unavailable: CatalogPackageAccessV1 = {
       code: "MODULE_NOT_FOUND",
     });
   },
+  rootManifestPath: () => {
+    // No enclosing node_modules holds the package.
+    throw Object.assign(new Error("Cannot find package '@aihq/catalog' imported from /fixture"), {
+      code: "ERR_MODULE_NOT_FOUND",
+    });
+  },
   readFile: () => {
+    throw new Error("unreachable");
+  },
+  listDirectory: () => {
     throw new Error("unreachable");
   },
 };

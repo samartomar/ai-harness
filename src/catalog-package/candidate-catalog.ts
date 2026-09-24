@@ -289,6 +289,12 @@ function accessFor(candidate: OpenedCandidateV1): CatalogPackageAccessV1 {
         });
       return `${VIRTUAL_ROOT}${path}`;
     },
+    rootManifestPath: () => `${VIRTUAL_ROOT}package.json`,
+    listDirectory: (virtual) => {
+      if (virtual !== VIRTUAL_ROOT.slice(0, -1))
+        throw new Error(`candidate Catalog lists only its root, not ${virtual}`);
+      return [...new Set([...candidate.files.keys()].map((path) => path.split("/")[0] as string))];
+    },
     readFile: (virtual) => {
       const path = virtual.startsWith(VIRTUAL_ROOT) ? virtual.slice(VIRTUAL_ROOT.length) : "";
       const bytes = candidate.files.get(path);

@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type * as CatalogPackage from "@aihq/catalog";
 import { AihError } from "../errors.js";
 
@@ -98,7 +99,14 @@ export interface CatalogPackageAccessV1 {
   readonly importPackage: () => Promise<unknown>;
   /** Resolves `@aihq/catalog/<subpath>` through the package's `exports` map to an absolute path. */
   readonly resolve: (specifier: string) => string;
+  /**
+   * The package's own root `package.json`, located the way Node locates the package before it
+   * applies the package's `exports` map; never through `exports`, which the package controls.
+   */
+  readonly rootManifestPath: () => string;
   readonly readFile: (path: string) => Uint8Array;
+  /** Entry names in a directory, of every type, without following any link. */
+  readonly listDirectory: (path: string) => readonly string[];
 }
 
 export type CatalogPackageFileLoadV1<S extends CatalogPackageSubpathV1> =
@@ -124,9 +132,35 @@ const installedCatalogAccess: CatalogPackageAccessV1 = {
     installedReached = true;
     return createRequire(import.meta.url).resolve(specifier);
   },
+  rootManifestPath: () => {
+    if (candidateAccess !== undefined) return candidateAccess.rootManifestPath();
+    installedReached = true;
+    return installedCatalogPackageManifestPathV1(dirname(fileURLToPath(import.meta.url)));
+  },
   readFile: (path) =>
     candidateAccess !== undefined ? candidateAccess.readFile(path) : readFileSync(path),
+  listDirectory: (path) =>
+    candidateAccess !== undefined ? candidateAccess.listDirectory(path) : readdirSync(path),
 };
+
+/**
+ * The root `package.json` of the `@aihq/catalog` that `import` from `from` loads: as Node's
+ * resolver does before it reads any `exports` map, the first `node_modules/@aihq/catalog`
+ * directory in `from` or an enclosing directory, with links resolved as Node resolves them.
+ * (`module.findPackageJSON` answers the same question but needs Node 22.14; Core supports 20.6.)
+ */
+export function installedCatalogPackageManifestPathV1(from: string): string {
+  for (let directory = from; ; directory = dirname(directory)) {
+    const root = join(directory, "node_modules", ...CATALOG_PACKAGE_NAME.split("/"));
+    if (statSync(root, { throwIfNoEntry: false })?.isDirectory() === true)
+      return join(realpathSync(root), "package.json");
+    if (dirname(directory) === directory)
+      throw Object.assign(
+        new Error(`Cannot find package '${CATALOG_PACKAGE_NAME}' imported from ${from}`),
+        { code: "ERR_MODULE_NOT_FOUND" },
+      );
+  }
+}
 
 /**
  * Only `activateCandidateCatalogV1` (internal preparation tools) calls this: from here on
@@ -236,22 +270,25 @@ function packageVersion(manifest: unknown): string | undefined {
  * Ordinary loading refuses either marker, however the package was installed or its tarball
  * named: a candidate is used only through the explicit, digest-checked preparation
  * activation (`activateCandidateCatalogV1`), whose reads never come here unchecked.
+ * The marker is an ENTRY of the package root: of any type (a dangling link or a directory
+ * counts), in any letter case (a case-insensitive file system serves a variant as the marker).
  */
 function candidateRefusal(
   access: CatalogPackageAccessV1,
-  manifestPath: string,
+  root: string,
   manifest: unknown,
 ): CatalogPackageRefusalV1 | undefined {
   if (access === installedCatalogAccess && candidateAccess !== undefined) return undefined;
-  const markers: string[] = [];
+  let markers: string[];
   try {
-    access.readFile(join(dirname(manifestPath), "CANDIDATE.json"));
-    markers.push("CANDIDATE.json");
+    markers = access
+      .listDirectory(root)
+      .filter((name) => name.toLowerCase() === "candidate.json")
+      .map(bounded);
   } catch (error) {
-    if (codeOf(error) !== "ENOENT")
-      return incompatible(
-        `${installed()} could not be checked for a candidate marker (${messageOf(error)})`,
-      );
+    return incompatible(
+      `${installed()} could not be checked for a candidate marker (${messageOf(error)})`,
+    );
   }
   if (manifest !== null && typeof manifest === "object" && Object.hasOwn(manifest, "aihCandidate"))
     markers.push("package.json#aihCandidate");
@@ -268,6 +305,44 @@ function compatibleVersion(version: string | undefined): version is string {
 }
 
 /**
+ * Every manifest and marker check, all before anything is imported from the package, so a
+ * refused package's code never runs. The manifest checked is the package's own root manifest;
+ * a package whose `exports` sends `./package.json` anywhere else is refused.
+ */
+function checkedPackage(
+  access: CatalogPackageAccessV1,
+):
+  | { readonly ok: true; readonly root: string; readonly version: string }
+  | { readonly ok: false; readonly refusal: CatalogPackageRefusalV1 } {
+  let manifestPath: string;
+  let exportedManifestPath: string;
+  try {
+    manifestPath = access.rootManifestPath();
+    exportedManifestPath = access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`);
+  } catch (error) {
+    return { ok: false, refusal: resolutionFailure(error) };
+  }
+  if (exportedManifestPath !== manifestPath)
+    return {
+      ok: false,
+      refusal: incompatible(
+        `${installed()} exports ./package.json as ${bounded(exportedManifestPath)}, which is not its root package.json`,
+      ),
+    };
+  const root = dirname(manifestPath);
+  const manifest = packageManifest(access, manifestPath);
+  const version = packageVersion(manifest);
+  if (!compatibleVersion(version))
+    return {
+      ok: false,
+      refusal: incompatible(`${installed()} version ${version ?? "is unreadable"}`),
+    };
+  const candidate = candidateRefusal(access, root, manifest);
+  if (candidate !== undefined) return { ok: false, refusal: candidate };
+  return { ok: true, root, version };
+}
+
+/**
  * Import the installed `@aihq/catalog`, hand back exactly the named functions
  * (verified by `typeof`) and the exact bytes of the named public subpaths.
  * Never throws.
@@ -280,12 +355,9 @@ export async function loadCatalogPackageV1<
   subpaths: readonly S[],
   access: CatalogPackageAccessV1 = installedCatalogAccess,
 ): Promise<CatalogPackageLoadV1<K, S>> {
-  let manifestPath: string;
-  try {
-    manifestPath = access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`);
-  } catch (error) {
-    return { ok: false, refusal: resolutionFailure(error) };
-  }
+  const checked = checkedPackage(access);
+  if (!checked.ok) return checked;
+  const { root, version } = checked;
   let namespace: unknown;
   try {
     namespace = await access.importPackage();
@@ -302,18 +374,7 @@ export async function loadCatalogPackageV1<
       refusal: incompatible(`${installed()} does not export ${missing.join(", ")} as functions`),
     };
   }
-  const root = dirname(manifestPath);
   const files = {} as Record<S, CatalogPackageFileV1>;
-  const manifest = packageManifest(access, manifestPath);
-  const version = packageVersion(manifest);
-  if (!compatibleVersion(version)) {
-    return {
-      ok: false,
-      refusal: incompatible(`${installed()} version ${version ?? "is unreadable"}`),
-    };
-  }
-  const candidate = candidateRefusal(access, manifestPath, manifest);
-  if (candidate !== undefined) return { ok: false, refusal: candidate };
   for (const subpath of subpaths) {
     const specifier = `${CATALOG_PACKAGE_NAME}/${subpath.slice("./".length)}`;
     let path: string;
@@ -358,23 +419,9 @@ export function loadCatalogPackageFileV1<S extends CatalogPackageSubpathV1>(
   subpath: S,
   access: CatalogPackageAccessV1 = installedCatalogAccess,
 ): CatalogPackageFileLoadV1<S> {
-  let manifestPath: string;
-  try {
-    manifestPath = access.resolve(`${CATALOG_PACKAGE_NAME}/package.json`);
-  } catch (error) {
-    return { ok: false, refusal: resolutionFailure(error) };
-  }
-  const root = dirname(manifestPath);
-  const manifest = packageManifest(access, manifestPath);
-  const version = packageVersion(manifest);
-  if (!compatibleVersion(version)) {
-    return {
-      ok: false,
-      refusal: incompatible(`${installed()} version ${version ?? "is unreadable"}`),
-    };
-  }
-  const candidate = candidateRefusal(access, manifestPath, manifest);
-  if (candidate !== undefined) return { ok: false, refusal: candidate };
+  const checked = checkedPackage(access);
+  if (!checked.ok) return checked;
+  const { root, version } = checked;
   const specifier = `${CATALOG_PACKAGE_NAME}/${subpath.slice("./".length)}`;
   let path: string;
   try {

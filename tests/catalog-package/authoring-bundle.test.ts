@@ -7,7 +7,7 @@ import {
   CatalogPackageRefusalError,
 } from "../../src/catalog-package/load-catalog-package.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
-import { withoutCandidateMarker } from "./candidate-catalog-fixture.js";
+import { releaseAt } from "./candidate-catalog-fixture.js";
 
 const requireFromTest = createRequire(import.meta.url);
 const installedDocument = JSON.parse(
@@ -22,9 +22,9 @@ function fixture(document: unknown): CatalogPackageAccessV1 {
       specifier.endsWith("package.json")
         ? "C:/fixture/package.json"
         : "C:/fixture/catalog-authoring-bundle-v1.json",
-    readFile: withoutCandidateMarker((path) =>
+    ...releaseAt("C:/fixture/package.json"),
+    readFile: (path) =>
       path.endsWith("package.json") ? Buffer.from('{"version":"0.3.0"}') : bytes,
-    ),
   };
 }
 
@@ -111,9 +111,8 @@ describe("loadCatalogAuthoringBundleV1", () => {
     const bytes = Buffer.from('{"version":1e400}\n');
     const access: CatalogPackageAccessV1 = {
       ...fixture({}),
-      readFile: withoutCandidateMarker((path) =>
+      readFile: (path) =>
         path.endsWith("package.json") ? Buffer.from('{"version":"0.3.0"}') : bytes,
-      ),
     };
     let thrown: unknown;
     try {

@@ -407,7 +407,7 @@ describe("an activated candidate Catalog", () => {
     });
   });
 
-  it("records the package.json it interpreted even when exports remap ./package.json", async () => {
+  it("records the package.json it interpreted, and refuses exports that remap ./package.json", async () => {
     const { candidate, descriptors } = await fresh();
     const manifest = JSON.stringify({
       name: "@aihq/catalog",
@@ -428,13 +428,12 @@ describe("an activated candidate Catalog", () => {
     expect(candidate.activeCandidateCatalogUseV1()?.files).toEqual([
       { path: "package.json", sha256: sha256(manifest) },
     ]);
-    descriptors.loadFrameworkDescriptorSectionV1("superpowers", "vendorLock");
+    // Like an installed package, a candidate whose exported ./package.json is not its root
+    // manifest is refused before any of its files is read.
+    expect(() => descriptors.loadFrameworkDescriptorSectionV1("superpowers", "vendorLock")).toThrow(
+      /exports \.\/package\.json as aih-candidate-catalog:\/metadata\.json, which is not its root package\.json/,
+    );
     expect(candidate.activeCandidateCatalogUseV1()?.files).toEqual([
-      {
-        path: "defaults/catalog-framework-superpowers-v1.json",
-        sha256: sha256(candidateDescriptorBytes),
-      },
-      { path: "metadata.json", sha256: sha256(metadata) },
       { path: "package.json", sha256: sha256(manifest) },
     ]);
   });

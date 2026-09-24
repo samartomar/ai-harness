@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
+import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 
 export const sha256 = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
@@ -138,11 +139,9 @@ export function markedCandidatePackageFiles(): Record<string, Buffer | string> {
   };
 }
 
-/** A test double's file read on a release: `CANDIDATE.json` is absent (ENOENT), as on disk. */
-export function withoutCandidateMarker<T>(read: (path: string) => T): (path: string) => T {
-  return (path) => {
-    if (basename(path) === "CANDIDATE.json")
-      throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
-    return read(path);
-  };
+/** A test double's release layout: its root manifest where it resolves, and no marker entry. */
+export function releaseAt(
+  manifestPath: string,
+): Pick<CatalogPackageAccessV1, "rootManifestPath" | "listDirectory"> {
+  return { rootManifestPath: () => manifestPath, listDirectory: () => ["package.json"] };
 }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,7 +7,7 @@ import {
   loadFrameworkDescriptorBytesV1,
 } from "../../src/catalog-package/framework-descriptors.js";
 import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
-import { withoutCandidateMarker } from "./candidate-catalog-fixture.js";
+import { releaseAt } from "./candidate-catalog-fixture.js";
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -15,7 +15,9 @@ function access(overrides: Partial<CatalogPackageAccessV1> = {}): CatalogPackage
   return {
     importPackage: () => import("@aihq/catalog"),
     resolve: (specifier) => requireFromTest.resolve(specifier),
+    rootManifestPath: () => requireFromTest.resolve("@aihq/catalog/package.json"),
     readFile: (path) => readFileSync(path),
+    listDirectory: (path) => readdirSync(path),
     ...overrides,
   };
 }
@@ -62,9 +64,9 @@ describe("loadFrameworkDescriptorBytesV1", () => {
           specifier.endsWith("package.json")
             ? "C:/fixture/package.json"
             : "C:/fixture/catalog-framework-superpowers-v1.json",
-        readFile: withoutCandidateMarker((path) =>
+        ...releaseAt("C:/fixture/package.json"),
+        readFile: (path) =>
           path.endsWith("package.json") ? Buffer.from('{"version":"0.3.0"}') : bytes,
-        ),
       }),
     );
     expect(result).toMatchObject({

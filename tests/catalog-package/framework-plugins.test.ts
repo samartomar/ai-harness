@@ -7,7 +7,7 @@ import {
   parseFrameworkPluginIdentitiesV1,
 } from "../../src/catalog-package/framework-plugins.js";
 import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
-import { withoutCandidateMarker } from "./candidate-catalog-fixture.js";
+import { releaseAt } from "./candidate-catalog-fixture.js";
 
 // The C1 plugin identity document, in the shape the Catalog generator emits:
 // `{ format, version, entries }`, eight keys per entry.
@@ -97,11 +97,11 @@ function catalogAccess(file: Uint8Array | undefined): CatalogPackageAccessV1 {
       }
       throw new Error(`unexpected ${specifier}`);
     },
-    readFile: withoutCandidateMarker((path) =>
+    ...releaseAt("/catalog/package.json"),
+    readFile: (path) =>
       path.endsWith("package.json")
         ? new TextEncoder().encode(JSON.stringify({ name: "@aihq/catalog", version: "0.3.0" }))
         : (file ?? new Uint8Array()),
-    ),
   };
 }
 

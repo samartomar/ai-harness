@@ -1,13 +1,26 @@
-import { readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   CATALOG_PACKAGE_INSTALL_COMMAND,
   CATALOG_PACKAGE_PEER_RANGE,
   CATALOG_PACKAGE_PROJECT_INSTALL_COMMAND,
   type CatalogPackageAccessV1,
   catalogPackageRefusalMessage,
+  installedCatalogPackageManifestPathV1,
   loadCatalogPackageFileV1,
   loadCatalogPackageV1,
 } from "../../src/catalog-package/load-catalog-package.js";
@@ -34,7 +47,9 @@ function access(overrides: Partial<CatalogPackageAccessV1> = {}): CatalogPackage
   return {
     importPackage: () => import("@aihq/catalog"),
     resolve: (specifier) => requireFromTest.resolve(specifier),
+    rootManifestPath: () => join(installedRoot, "package.json"),
     readFile: (path) => readFileSync(path),
+    listDirectory: (path) => readdirSync(path),
     ...overrides,
   };
 }
@@ -126,10 +141,6 @@ describe("load-catalog-package", () => {
                 code: "MODULE_NOT_FOUND",
               }),
             ),
-          resolve: (specifier) =>
-            specifier.endsWith("package.json")
-              ? `${brokenPath.slice(0, brokenPath.lastIndexOf("dist"))}package.json`
-              : requireFromTest.resolve(specifier),
         }),
       );
       expect(loaded).toMatchObject({
@@ -146,6 +157,8 @@ describe("load-catalog-package", () => {
       access({
         resolve: (specifier) =>
           specifier.endsWith("/package.json") ? "C:/catalog/package.json" : specifier,
+        rootManifestPath: () => "C:/catalog/package.json",
+        listDirectory: () => ["package.json"],
         readFile: () => Buffer.from('{"name":"@aihq/catalog","version":"0.2.0"}'),
       }),
     );
@@ -239,7 +252,6 @@ describe("load-catalog-package", () => {
 
   describe("an installed candidate Catalog", () => {
     const manifestPath = join(installedRoot, "package.json");
-    const markerPath = join(installedRoot, "CANDIDATE.json");
     const marker = { format: "aih-catalog-candidate", version: 1, inputsSha256: "0".repeat(64) };
     /** The installed release, marked the way the Catalog candidate build marks a candidate. */
     function marked(field: boolean, file: boolean): CatalogPackageAccessV1 {
@@ -249,9 +261,9 @@ describe("load-catalog-package", () => {
             return Buffer.from(
               JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), aihCandidate: marker }),
             );
-          if (path === markerPath && file) return Buffer.from(JSON.stringify(marker));
           return readFileSync(path);
         },
+        listDirectory: (path) => [...readdirSync(path), ...(file ? ["CANDIDATE.json"] : [])],
       });
     }
 
@@ -287,9 +299,10 @@ describe("load-catalog-package", () => {
       const loaded = loadCatalogPackageFileV1(
         "./catalog-index.json",
         access({
-          readFile: (path) => {
-            if (path === markerPath) throw Object.assign(new Error("EACCES"), { code: "EACCES" });
-            return readFileSync(path);
+          listDirectory: (path) => {
+            if (path === installedRoot)
+              throw Object.assign(new Error("EACCES"), { code: "EACCES" });
+            return readdirSync(path);
           },
         }),
       );
@@ -305,6 +318,199 @@ describe("load-catalog-package", () => {
     it("leaves a release without either marker unaffected", async () => {
       expect((await loadCatalogPackageV1(READERS, SUBPATHS, marked(false, false))).ok).toBe(true);
       expect(loadCatalogPackageFileV1("./catalog-index.json", marked(false, false)).ok).toBe(true);
+    });
+  });
+
+  describe("a package laid out on disk, located the way Node locates it", () => {
+    const scratch: string[] = [];
+    afterEach(() => {
+      for (const path of scratch.splice(0)) rmSync(path, { recursive: true, force: true });
+    });
+
+    interface Layout {
+      readonly manifest?: Record<string, unknown>;
+      readonly exportedManifest?: string;
+      readonly files?: Record<string, string>;
+      readonly danglingMarker?: string;
+      readonly markerDirectory?: string;
+    }
+
+    /** `<consumer>/node_modules/@aihq/catalog`, whose entry module records that it ran. */
+    function installedOnDisk(layout: Layout = {}): {
+      consumer: string;
+      root: string;
+      ran: string;
+      access: CatalogPackageAccessV1;
+    } {
+      const consumer = mkdtempSync(join(tmpdir(), "aih-q1k-catalog-layout-"));
+      scratch.push(consumer);
+      const root = join(consumer, "node_modules", "@aihq", "catalog");
+      const ran = join(consumer, "entry-module-ran");
+      mkdirSync(join(root, "meta"), { recursive: true });
+      const manifest = {
+        name: "@aihq/catalog",
+        version: "0.3.0",
+        type: "module",
+        exports: {
+          ".": "./index.js",
+          "./package.json": layout.exportedManifest ?? "./package.json",
+          "./catalog-index.json": "./catalog-index.json",
+        },
+        ...layout.manifest,
+      };
+      writeFileSync(join(root, "package.json"), JSON.stringify(manifest));
+      writeFileSync(
+        join(root, "index.js"),
+        `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(ran)}, "ran");\nexport function readCatalogContentV1Result() {}\n`,
+      );
+      writeFileSync(join(root, "catalog-index.json"), "{}");
+      for (const [path, text] of Object.entries(layout.files ?? {}))
+        writeFileSync(join(root, path), text);
+      if (layout.danglingMarker !== undefined)
+        symlinkSync(
+          join(consumer, "missing-marker.json"),
+          join(root, layout.danglingMarker),
+          "file",
+        );
+      if (layout.markerDirectory !== undefined) mkdirSync(join(root, layout.markerDirectory));
+      const requireFromConsumer = createRequire(join(consumer, "consumer.cjs"));
+      return {
+        consumer,
+        root: realpathSync(root),
+        ran,
+        access: {
+          importPackage: () =>
+            import(pathToFileURL(requireFromConsumer.resolve("@aihq/catalog")).href),
+          resolve: (specifier) => requireFromConsumer.resolve(specifier),
+          rootManifestPath: () => installedCatalogPackageManifestPathV1(consumer),
+          readFile: (path) => readFileSync(path),
+          listDirectory: (path) => readdirSync(path),
+        },
+      };
+    }
+
+    async function expectRefused(
+      installed: { access: CatalogPackageAccessV1; ran: string },
+      detail: string,
+    ): Promise<void> {
+      const refusal = {
+        ok: false,
+        refusal: {
+          reason: "catalog-package-incompatible",
+          detail: expect.stringContaining(detail),
+        },
+      };
+      expect(
+        await loadCatalogPackageV1(["readCatalogContentV1Result"], [], installed.access),
+      ).toMatchObject(refusal);
+      expect(loadCatalogPackageFileV1("./catalog-index.json", installed.access)).toMatchObject(
+        refusal,
+      );
+      // No manifest or marker refusal lets the package's own code run first.
+      expect(existsSync(installed.ran)).toBe(false);
+    }
+
+    const marker = JSON.stringify({ format: "aih-catalog-candidate", version: 1 });
+
+    it("finds the root manifest without the package's exports map", () => {
+      const { consumer, root } = installedOnDisk({ exportedManifest: "./meta/release.json" });
+      const nested = join(consumer, "src", "deep");
+      mkdirSync(nested, { recursive: true });
+      expect(installedCatalogPackageManifestPathV1(nested)).toBe(join(root, "package.json"));
+    });
+
+    it("loads a release laid out on disk on both paths", async () => {
+      const installed = installedOnDisk();
+      const loaded = await loadCatalogPackageV1(
+        ["readCatalogContentV1Result"],
+        ["./catalog-index.json"],
+        installed.access,
+      );
+      expect(loaded).toMatchObject({ ok: true, root: installed.root, version: "0.3.0" });
+      expect(existsSync(installed.ran)).toBe(true);
+      expect(loadCatalogPackageFileV1("./catalog-index.json", installed.access)).toMatchObject({
+        ok: true,
+        root: installed.root,
+        version: "0.3.0",
+      });
+    });
+
+    it("is catalog-package-unavailable when no enclosing node_modules holds the package", () => {
+      const consumer = mkdtempSync(join(tmpdir(), "aih-q1k-catalog-absent-"));
+      scratch.push(consumer);
+      const loaded = loadCatalogPackageFileV1(
+        "./catalog-index.json",
+        access({ rootManifestPath: () => installedCatalogPackageManifestPathV1(consumer) }),
+      );
+      expect(loaded).toMatchObject({
+        ok: false,
+        refusal: { reason: "catalog-package-unavailable" },
+      });
+    });
+
+    it("refuses a candidate whose exports map sends ./package.json to a decoy release manifest", async () => {
+      await expectRefused(
+        installedOnDisk({
+          exportedManifest: "./meta/release.json",
+          manifest: { aihCandidate: { format: "aih-catalog-candidate", version: 1 } },
+          files: {
+            "meta/release.json": JSON.stringify({ name: "@aihq/catalog", version: "0.3.0" }),
+            "CANDIDATE.json": marker,
+          },
+        }),
+        "is not its root package.json",
+      );
+    });
+
+    it("refuses any package whose exported ./package.json is not the root manifest", async () => {
+      await expectRefused(
+        installedOnDisk({
+          exportedManifest: "./meta/release.json",
+          files: {
+            "meta/release.json": JSON.stringify({ name: "@aihq/catalog", version: "0.3.0" }),
+          },
+        }),
+        "is not its root package.json",
+      );
+    });
+
+    it("refuses a CANDIDATE.json entry that is a dangling link", async () => {
+      await expectRefused(
+        installedOnDisk({ danglingMarker: "CANDIDATE.json" }),
+        "carries CANDIDATE.json: a candidate Catalog is not a release",
+      );
+    });
+
+    it("refuses a directory named CANDIDATE.json", async () => {
+      await expectRefused(
+        installedOnDisk({ markerDirectory: "CANDIDATE.json" }),
+        "carries CANDIDATE.json: a candidate Catalog is not a release",
+      );
+    });
+
+    it("refuses a case variant of the marker entry", async () => {
+      await expectRefused(
+        installedOnDisk({ files: { "candidate.JSON": marker } }),
+        "carries candidate.JSON: a candidate Catalog is not a release",
+      );
+    });
+
+    it("never runs a marked candidate's code before refusing it", async () => {
+      await expectRefused(
+        installedOnDisk({
+          manifest: { aihCandidate: { format: "aih-catalog-candidate", version: 1 } },
+          files: { "CANDIDATE.json": marker },
+        }),
+        "carries CANDIDATE.json, package.json#aihCandidate",
+      );
+    });
+
+    it("reaches the real installed package through production access", () => {
+      expect(loadCatalogPackageFileV1("./catalog-index.json")).toMatchObject({
+        ok: true,
+        root: installedRoot,
+        version: "0.3.0",
+      });
     });
   });
 });
