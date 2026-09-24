@@ -36,6 +36,34 @@ describe("loadCatalogAuthoringBundleV1", () => {
     expect(result.prepared).not.toBe(installedDocument.prepared);
   });
 
+  it("binds each sealed pinned-baseline framework asset to its own exact revision", () => {
+    const { bundle, bindings } = loadCatalogAuthoringBundleV1(fixture(installedDocument)).prepared;
+    const framework = Object.values(bundle.assets).filter(
+      (asset) =>
+        asset.derivation === "upstream" &&
+        bundle.sources[asset.sourceId]?.inputFormat === "pinned-baseline/v1",
+    );
+    expect(framework.length).toBeGreaterThan(0);
+    for (const asset of framework) {
+      const source = bundle.sources[asset.sourceId];
+      expect(bindings[asset.id]).toEqual({
+        kind: "external-selection",
+        external: {
+          owner: asset.sourceId.slice("source:".length),
+          item: {
+            id: asset.id.slice(asset.id.indexOf("/") + 1),
+            kind: asset.kind,
+            source: {
+              repository: source?.upstreamOrigin.locator,
+              commit: asset.sourceRevisionId,
+              path: asset.originalPath,
+            },
+          },
+        },
+      });
+    }
+  });
+
   it("ignores Catalog-supplied bindings and derives them from admitted declarations", () => {
     const changed = structuredClone(installedDocument) as {
       prepared: {

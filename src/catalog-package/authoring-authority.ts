@@ -116,6 +116,36 @@ export function deriveWorkbenchPolicyBindingsV1(
       };
     }
   }
+  // A sealed pinned-baseline source may carry another exact framework revision
+  // than the catalog's current layout; its assets bind to their own admitted
+  // repository, revision and path, never to the current pin.
+  for (const asset of Object.values(bundle.assets)) {
+    const source = bundle.sources[asset.sourceId];
+    const owner = asset.sourceId.slice("source:".length);
+    if (
+      asset.derivation !== "upstream" ||
+      source?.inputFormat !== "pinned-baseline/v1" ||
+      source.upstreamOrigin.kind !== "git" ||
+      (owner !== "ecc" && owner !== "superpowers") ||
+      !asset.id.startsWith(`${owner}/`)
+    )
+      continue;
+    bindings[asset.id] = {
+      kind: "external-selection",
+      external: {
+        owner,
+        item: {
+          id: asset.id.slice(owner.length + 1),
+          kind: asset.kind,
+          source: {
+            repository: source.upstreamOrigin.locator,
+            commit: asset.sourceRevisionId,
+            path: asset.originalPath,
+          },
+        },
+      },
+    };
+  }
   for (const item of [...catalog.aihSkills, ...catalog.aihAgents]) {
     bindings[`aih/${item.id}`] = {
       kind: "package-root",
