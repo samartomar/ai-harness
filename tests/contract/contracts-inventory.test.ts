@@ -100,7 +100,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ["src/trust/detectors.ts", 1439, "export async function resolveScanTrustLintRouteV1(options: {"],
   [
     "src/binding/scan-binding-gate.ts",
-    22,
+    24,
     'export const BINDING_GATE_DETECTOR_ID = "detector.aih-binding-gate";',
   ],
   [
