@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, posix, relative } from "node:path";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
 import { AihError } from "../errors.js";
@@ -20,6 +20,7 @@ import { startTrackedScanCall } from "../scan-package/settlement.js";
 import {
   buildCiscoShardManifest,
   type CiscoShardManifest,
+  ciscoShardJobSubjectV1,
   type JoinedCiscoShardEvidence,
   verifiedCiscoShardJobSarifV1,
 } from "./cisco-shards.js";
@@ -365,7 +366,9 @@ function sourcePathsIntersect(left: string, right: string): boolean {
  * job by job, against each job's own subject (`joinCiscoShardResults`). Its
  * runs name different subjects, so it is exempt from the one-subject check
  * precomputed SARIF otherwise meets, and only a value `joinedCiscoShardSarif`
- * issued is: a look-alike is refused.
+ * issued is: a look-alike is refused. The exemption holds only for the tree
+ * the value was issued for: its root, its exact job set, and each job's
+ * subject as verified at the join (`issuedShardJoinRefusalV1`).
  */
 export interface VerifiedCiscoShardSarifV1 {
   readonly kind: "verified-cisco-shard-join-v1";
@@ -375,17 +378,31 @@ export interface VerifiedCiscoShardSarifV1 {
 /** Precomputed SARIF: a Scanner annex's bytes, or a Cisco shard join Core verified. */
 export type PrecomputedDetectorSarifV1 = string | VerifiedCiscoShardSarifV1;
 
-const ISSUED_SHARD_JOINS = new WeakSet<VerifiedCiscoShardSarifV1>();
+/** What an issued join is bound to: the canonical root it is presented for, and each job's verified subject. */
+interface IssuedShardJoinBindingV1 {
+  readonly root: string;
+  readonly jobs: readonly { readonly path: string; readonly subject: ScanSubjectDigestV1 }[];
+}
 
+const ISSUED_SHARD_JOINS = new WeakMap<VerifiedCiscoShardSarifV1, IssuedShardJoinBindingV1>();
+
+/**
+ * Issues the verified join's SARIF, optionally only for the jobs that meet
+ * `includedPaths`. It is bound to `scanRoot` (by default the root the join was
+ * verified against): a projection of the source presents it at its own root,
+ * which must hold exactly those jobs with the files the join verified.
+ */
 export function joinedCiscoShardSarif(
   joined: JoinedCiscoShardEvidence,
   includedPaths?: readonly string[],
+  scanRoot?: string,
 ): VerifiedCiscoShardSarifV1 {
-  const jobs = verifiedCiscoShardJobSarifV1(joined);
-  if (jobs === undefined)
+  const verified = verifiedCiscoShardJobSarifV1(joined);
+  if (verified === undefined)
     throw new Error("Cisco shard evidence was not joined by joinCiscoShardResults");
   const runs: CheckedScanSarifLogV1["runs"][number][] = [];
-  for (const job of jobs) {
+  const bound: IssuedShardJoinBindingV1["jobs"][number][] = [];
+  for (const job of verified.jobs) {
     if (
       includedPaths !== undefined &&
       !includedPaths.some((path) => sourcePathsIntersect(job.path, path))
@@ -399,13 +416,69 @@ export function joinedCiscoShardSarif(
       );
     }
     runs.push(...checked.log.runs);
+    bound.push(Object.freeze({ path: job.path, subject: Object.freeze({ ...job.subject }) }));
   }
   const issued: VerifiedCiscoShardSarifV1 = Object.freeze({
     kind: "verified-cisco-shard-join-v1",
     sarif: JSON.stringify({ version: "2.1.0", runs }),
   });
-  ISSUED_SHARD_JOINS.add(issued);
+  ISSUED_SHARD_JOINS.set(
+    issued,
+    Object.freeze({
+      root: scanRoot === undefined ? verified.root : realpathSync.native(scanRoot),
+      jobs: Object.freeze(bound),
+    }),
+  );
   return issued;
+}
+
+/**
+ * Why an issued shard join does not describe the tree being scanned now, or
+ * undefined when it does: the scanned root must be the one it is bound to,
+ * the jobs Core derives from that tree (every directory holding a selected
+ * `SKILL.md`) must be exactly its jobs, and each job's subject, rehashed now,
+ * must equal the subject verified at the join.
+ */
+function issuedShardJoinRefusalV1(
+  binding: IssuedShardJoinBindingV1,
+  root: string,
+  inventory: TrustFileInventory,
+): string | undefined {
+  let scanned: string;
+  try {
+    scanned = realpathSync.native(root);
+  } catch (error) {
+    return `the root being scanned cannot be resolved: ${(error as Error)?.message ?? "unknown error"}`;
+  }
+  if (scanned !== binding.root)
+    return `the shard join Core verified is bound to source root ${binding.root}, not the root being scanned, ${scanned}`;
+  const bound = binding.jobs.map((job) => job.path).sort();
+  const derived = [
+    ...new Set(
+      inventory.files
+        .map((entry) => entry.relativePath)
+        .filter((path) => posix.basename(path) === "SKILL.md")
+        .map((path) => posix.dirname(path)),
+    ),
+  ].sort();
+  const added = derived.filter((path) => !bound.includes(path));
+  const removed = bound.filter((path) => !derived.includes(path));
+  if (added.length > 0 || removed.length > 0)
+    return `the shard join Core verified covers jobs ${bound.join(", ")}, and the tree being scanned has jobs ${derived.join(", ") || "none"} (added: ${added.join(", ") || "none"}; removed: ${removed.join(", ") || "none"})`;
+  for (const job of binding.jobs) {
+    let now: ScanSubjectDigestV1;
+    try {
+      now = ciscoShardJobSubjectV1(scanned, job.path);
+    } catch (error) {
+      return `the tree changed after Core verified the shard join: job ${job.path} cannot be rehashed: ${(error as Error)?.message ?? "unknown error"}`;
+    }
+    if (
+      now.subjectTreeSha256 !== job.subject.subjectTreeSha256 ||
+      now.analyzedFileCount !== job.subject.analyzedFileCount
+    )
+      return `the tree changed after Core verified the shard join: job ${job.path} was verified with ${job.subject.analyzedFileCount} files and subject tree ${job.subject.subjectTreeSha256}, and now has ${now.analyzedFileCount} files with subject tree ${now.subjectTreeSha256}`;
+  }
+  return undefined;
 }
 
 // --------------------------------------------------------------------------
@@ -1825,10 +1898,20 @@ async function runDetectorList(
     let verifiedShardJoin = false;
     if (typeof precomputed === "string") sarifText = precomputed;
     else if (precomputed !== undefined) {
-      if (detector.name !== "cisco" || !ISSUED_SHARD_JOINS.has(precomputed)) {
+      const binding = ISSUED_SHARD_JOINS.get(precomputed);
+      if (detector.name !== "cisco" || binding === undefined) {
         unavailable(
           detector,
           `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: a shard join Core did not verify for ${SCAN_DETECTOR_IDS[detector.name]}`,
+        );
+        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+        continue;
+      }
+      const unbound = issuedShardJoinRefusalV1(binding, root, options.inventory);
+      if (unbound !== undefined) {
+        unavailable(
+          detector,
+          `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: ${unbound}`,
         );
         executions.push({ detector: detector.name, ...execution, outcome: "failed" });
         continue;

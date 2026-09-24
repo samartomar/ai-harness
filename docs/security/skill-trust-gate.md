@@ -157,7 +157,12 @@ SARIF with no completion evidence at all, which is every publication made before
 is never counted complete: it is `trust.detector-unavailable` with reason
 `completion-evidence-absent` and must be republished with evidence. A joined Cisco shard log
 is exempt only when `joinCiscoShardResults` verified it, because each job was already checked
-against its own subject.
+against its own subject. The exemption is bound to the tree it was verified for: the scanned
+root (by realpath) must be the one the join was issued for, the jobs Core derives from that tree
+now (each directory holding a selected `SKILL.md`) must be exactly the join's jobs, and each
+job's subject, rehashed at the scan, must equal the subject verified at the join. Anything else
+fails the detector with the difference named. A baseline component scan presents the join at
+its projection root, which must hold those jobs with the verified files.
 
 ## Analyzer execution profiles and their limits
 

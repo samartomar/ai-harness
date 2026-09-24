@@ -292,7 +292,11 @@ export function defaultComponentScanner(
             sharedCiscoEvidence !== undefined && usesCisco
               ? {
                   ...scanOptions.precomputedDetectorSarif,
-                  cisco: joinedCiscoShardSarif(sharedCiscoEvidence, component.paths),
+                  cisco: joinedCiscoShardSarif(
+                    sharedCiscoEvidence,
+                    component.paths,
+                    projectionRoot,
+                  ),
                 }
               : scanOptions.precomputedDetectorSarif,
           progress: timing.progress,

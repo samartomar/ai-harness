@@ -118,6 +118,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wrong fails the detector. Joined Cisco shards stay exempt from the one-subject check because
   each job was checked against its own subject; only a join `joinCiscoShardResults` verified
   (`joinedCiscoShardSarif` now returns it as a `VerifiedCiscoShardSarifV1`) is exempt.
+- A verified Cisco shard join is exempt only for the tree it was verified for: the scanned root
+  (by realpath) must be the root it was issued for, the tree's jobs must be exactly the join's
+  jobs, and every job's subject, rehashed at the scan, must equal the subject verified at the
+  join. A join presented for another root, a job added or removed, or a job changed after the
+  join fails the detector naming the difference. `joinedCiscoShardSarif` takes the root the join
+  is presented at (a baseline component's projection root).
 - An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
   without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
   malformed one such as `@my team` with its field path instead of ignoring it, and Scan

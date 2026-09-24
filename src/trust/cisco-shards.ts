@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import { checkedScanSarifLogV1, scanCompletionRefusalV1 } from "./scan-sarif.js";
-import { scanSubjectDigestV1 } from "./scan-subject-files.js";
+import { type ScanSubjectDigestV1, scanSubjectDigestV1 } from "./scan-subject-files.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_SHA = /^[0-9a-f]{40}$/;
@@ -332,15 +333,28 @@ export function ciscoShardJobCompletionRefusalV1(
   jobPath: string,
   analyzer: { readonly version: string; readonly lockSha256: string },
 ): string | undefined {
+  const verified = verifiedCiscoShardJobSubjectV1(sarif, sourceRoot, jobPath, analyzer);
+  return "refusal" in verified ? verified.refusal : undefined;
+}
+
+/** The job's subject as Core rehashed it, once its SARIF proved that subject complete (above). */
+function verifiedCiscoShardJobSubjectV1(
+  sarif: unknown,
+  sourceRoot: string,
+  jobPath: string,
+  analyzer: { readonly version: string; readonly lockSha256: string },
+): { readonly subject: ScanSubjectDigestV1 } | { readonly refusal: string } {
   const checked = checkedScanSarifLogV1(sarif);
-  if ("refusal" in checked) return checked.refusal;
-  let subject: ReturnType<typeof scanSubjectDigestV1>;
+  if ("refusal" in checked) return { refusal: checked.refusal };
+  let subject: ScanSubjectDigestV1;
   try {
-    subject = scanSubjectDigestV1(hashComponentTree(sourceRoot, [jobPath]).files);
+    subject = ciscoShardJobSubjectV1(sourceRoot, jobPath);
   } catch (error) {
-    return `completion evidence Core cannot check, because it cannot rehash job ${jobPath}: ${(error as Error)?.message ?? "unknown error"}`;
+    return {
+      refusal: `completion evidence Core cannot check, because it cannot rehash job ${jobPath}: ${(error as Error)?.message ?? "unknown error"}`,
+    };
   }
-  return scanCompletionRefusalV1(checked.log, {
+  const refusal = scanCompletionRefusalV1(checked.log, {
     detectorId: "detector.cisco",
     subject,
     emptyAllowed: false,
@@ -349,6 +363,12 @@ export function ciscoShardJobCompletionRefusalV1(
       lockSha256: analyzer.lockSha256,
     },
   });
+  return refusal === undefined ? { subject } : { refusal };
+}
+
+/** A shard job's subject (C2a §1.6): every regular file under `<sourceRoot>/<jobPath>`, rehashed now. */
+export function ciscoShardJobSubjectV1(sourceRoot: string, jobPath: string): ScanSubjectDigestV1 {
+  return scanSubjectDigestV1(hashComponentTree(sourceRoot, [jobPath]).files);
 }
 
 export function joinCiscoShardResults(
@@ -375,7 +395,9 @@ export function joinCiscoShardResults(
     if (!results.has(shard.id)) throw new Error(`missing Cisco shard result: ${shard.id}`);
   }
 
+  const root = realpathSync.native(sourceRoot);
   const outputs = new Map<string, CiscoShardOutput>();
+  const subjects = new Map<string, ScanSubjectDigestV1>();
   for (const shard of manifest.shards) {
     const result = results.get(shard.id);
     if (result === undefined) throw new Error(`missing Cisco shard result: ${shard.id}`);
@@ -394,15 +416,18 @@ export function joinCiscoShardResults(
       if (sha256(canonicalJson(output.evidence)) !== output.evidenceSha256) {
         throw new Error(`Cisco job ${job.path} has a mismatched evidence digest`);
       }
-      const incomplete = ciscoShardJobCompletionRefusalV1(
+      const verified = verifiedCiscoShardJobSubjectV1(
         output.evidence,
         sourceRoot,
         job.path,
         manifest.analyzer,
       );
-      if (incomplete !== undefined)
-        throw new Error(`Cisco job ${job.path} did not prove it completed: it holds ${incomplete}`);
+      if ("refusal" in verified)
+        throw new Error(
+          `Cisco job ${job.path} did not prove it completed: it holds ${verified.refusal}`,
+        );
       outputs.set(output.jobId, output);
+      subjects.set(output.jobId, verified.subject);
     }
     for (const job of shard.jobs) {
       if (!outputs.has(job.id)) throw new Error(`missing Cisco job output: ${job.path}`);
@@ -419,26 +444,42 @@ export function joinCiscoShardResults(
       return output;
     }),
   };
-  VERIFIED_JOB_EVIDENCE.set(
-    joined,
-    joined.outputs.map((output) => ({ path: output.path, sarif: canonicalJson(output.evidence) })),
-  );
+  VERIFIED_JOB_EVIDENCE.set(joined, {
+    root,
+    jobs: manifest.jobs.map((job) => {
+      const output = outputs.get(job.id);
+      const subject = subjects.get(job.id);
+      if (output === undefined || subject === undefined)
+        throw new Error(`missing Cisco job output: ${job.path}`);
+      return { path: job.path, sarif: canonicalJson(output.evidence), subject };
+    }),
+  });
   return joined;
 }
 
 /**
- * The job evidence exactly as it stood when `joinCiscoShardResults` verified it,
- * per job in manifest order, keyed by the joined object that call returned.
- * A join built any other way, or evidence changed afterwards, is never read.
+ * What `joinCiscoShardResults` verified: the canonical source root (realpath)
+ * and, per job in manifest order, the job evidence exactly as it stood and the
+ * job's subject (subject-files-v1) Core rehashed and the evidence proved.
  */
-const VERIFIED_JOB_EVIDENCE = new WeakMap<
-  JoinedCiscoShardEvidence,
-  readonly { readonly path: string; readonly sarif: string }[]
->();
+export interface VerifiedCiscoShardJoinV1 {
+  readonly root: string;
+  readonly jobs: readonly {
+    readonly path: string;
+    readonly sarif: string;
+    readonly subject: ScanSubjectDigestV1;
+  }[];
+}
 
-/** The verified job SARIF of a join `joinCiscoShardResults` returned, or undefined for any other value. */
+/**
+ * The verified record, keyed by the joined object that call returned. A join
+ * built any other way, or evidence changed afterwards, is never read.
+ */
+const VERIFIED_JOB_EVIDENCE = new WeakMap<JoinedCiscoShardEvidence, VerifiedCiscoShardJoinV1>();
+
+/** The verified record of a join `joinCiscoShardResults` returned, or undefined for any other value. */
 export function verifiedCiscoShardJobSarifV1(
   joined: JoinedCiscoShardEvidence,
-): readonly { readonly path: string; readonly sarif: string }[] | undefined {
+): VerifiedCiscoShardJoinV1 | undefined {
   return VERIFIED_JOB_EVIDENCE.get(joined);
 }
