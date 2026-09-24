@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  type BigIntStats,
   cpSync,
   lstatSync,
   mkdirSync,
@@ -425,17 +426,43 @@ interface IssuedShardJoinBindingV1 {
   readonly root: string;
   readonly jobs: readonly { readonly path: string; readonly subject: ScanSubjectDigestV1 }[];
   readonly projection?: DirectoryIdentityV1;
+  /** Why Core could not prepare the projection: the join is refused wherever it is presented. */
+  readonly refusal?: string;
 }
 
 const ISSUED_SHARD_JOINS = new WeakMap<VerifiedCiscoShardSarifV1, IssuedShardJoinBindingV1>();
 /** Projection joins whose projection Core has removed: refused from then on. */
 const REVOKED_PROJECTION_JOINS = new WeakSet<VerifiedCiscoShardSarifV1>();
 
-/** The identity of a real directory at `path` (never a link or junction), or undefined. */
-function directoryIdentityV1(path: string): DirectoryIdentityV1 | undefined {
-  const stat = lstatSync(path, { bigint: true, throwIfNoEntry: false });
-  if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory()) return undefined;
-  return Object.freeze({ dev: stat.dev, ino: stat.ino, birthtimeNs: stat.birthtimeNs });
+/** A failed file-system operation on `path`, named by the path and the error code, for a refusal. */
+function failedPathV1(
+  path: string,
+  error: unknown,
+  action: "read" | "resolved" | "copied",
+): string {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return `${path} cannot be ${action} (${typeof code === "string" ? code : "unknown error"})`;
+}
+
+/**
+ * The identity of a real directory at `path` (never a link or junction):
+ * `identity` is undefined when there is none, and `unreadable` names an I/O
+ * error that kept Core from reading it, which a caller turns into a refusal.
+ */
+function directoryIdentityV1(
+  path: string,
+): { readonly identity: DirectoryIdentityV1 | undefined } | { readonly unreadable: string } {
+  let stat: BigIntStats | undefined;
+  try {
+    stat = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+  } catch (error) {
+    return { unreadable: failedPathV1(path, error, "read") };
+  }
+  if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory())
+    return { identity: undefined };
+  return {
+    identity: Object.freeze({ dev: stat.dev, ino: stat.ino, birthtimeNs: stat.birthtimeNs }),
+  };
 }
 
 function sameDirectoryV1(
@@ -490,31 +517,74 @@ export async function withCiscoShardJoinProjectionV1<T>(
   const root = mkdtempSync(join(dirname(verified.root), ".aih-cisco-shard-projection-"));
   let issued: VerifiedCiscoShardSarifV1 | undefined;
   try {
-    const identity = directoryIdentityV1(root);
-    if (identity === undefined)
-      throw new Error(`Cisco shard projection ${root} is not the directory Core created`);
-    // Copying a job copies every job nested in it, so only the outermost
-    // selected jobs are copied; every selected job is still bound and rehashed.
-    const outermost = jobs.filter(
-      (job) => !jobs.some((other) => job.path.startsWith(`${other.path}/`)),
-    );
-    for (const job of outermost) {
+    // A projection Core cannot prepare still reaches the scan, as a join that
+    // fails the detector with the reason: never a crash, never a pass.
+    const prepared = prepareShardProjectionV1(verified, jobs, root);
+    issued =
+      "refusal" in prepared
+        ? issueShardJoin(
+            jobs,
+            root,
+            undefined,
+            `Core could not prepare the shard join's projection: ${prepared.refusal}`,
+          )
+        : issueShardJoin(jobs, prepared.canonical, prepared.identity);
+    return await scan(Object.freeze({ root, cisco: issued }));
+  } finally {
+    if (issued !== undefined) REVOKED_PROJECTION_JOINS.add(issued);
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Reads the new projection directory's identity, copies the selected jobs
+ * into it from the verified root, and resolves it; or names the path and error
+ * code of the first file-system operation that failed.
+ */
+function prepareShardProjectionV1(
+  verified: VerifiedCiscoShardJoinV1,
+  jobs: VerifiedCiscoShardJoinV1["jobs"],
+  root: string,
+):
+  | { readonly canonical: string; readonly identity: DirectoryIdentityV1 }
+  | { readonly refusal: string } {
+  const read = directoryIdentityV1(root);
+  if ("unreadable" in read) return { refusal: read.unreadable };
+  if (read.identity === undefined) return { refusal: `${root} is not a real directory` };
+  // Copying a job copies every job nested in it, so only the outermost
+  // selected jobs are copied; every selected job is still bound and rehashed.
+  const outermost = jobs.filter(
+    (job) => !jobs.some((other) => job.path.startsWith(`${other.path}/`)),
+  );
+  for (const job of outermost) {
+    const source = join(verified.root, ...job.path.split("/"));
+    let unreadable: string | undefined;
+    try {
       const target = join(root, ...job.path.split("/"));
       mkdirSync(dirname(target), { recursive: true });
-      cpSync(join(verified.root, ...job.path.split("/")), target, {
+      cpSync(source, target, {
         recursive: true,
         errorOnExist: true,
         force: false,
         dereference: false,
         preserveTimestamps: true,
-        filter: (candidate) => !lstatSync(candidate).isSymbolicLink(),
+        filter: (candidate) => {
+          try {
+            return !lstatSync(candidate).isSymbolicLink();
+          } catch (error) {
+            unreadable = failedPathV1(candidate, error, "read");
+            throw error;
+          }
+        },
       });
+    } catch (error) {
+      return { refusal: unreadable ?? failedPathV1(source, error, "copied") };
     }
-    issued = issueShardJoin(jobs, realpathSync.native(root), identity);
-    return await scan(Object.freeze({ root, cisco: issued }));
-  } finally {
-    if (issued !== undefined) REVOKED_PROJECTION_JOINS.add(issued);
-    rmSync(root, { recursive: true, force: true });
+  }
+  try {
+    return { canonical: realpathSync.native(root), identity: read.identity };
+  } catch (error) {
+    return { refusal: failedPathV1(root, error, "resolved") };
   }
 }
 
@@ -541,6 +611,7 @@ function issueShardJoin(
   jobs: VerifiedCiscoShardJoinV1["jobs"],
   root: string,
   projection?: DirectoryIdentityV1,
+  refusal?: string,
 ): VerifiedCiscoShardSarifV1 {
   const runs: CheckedScanSarifLogV1["runs"][number][] = [];
   const bound: IssuedShardJoinBindingV1["jobs"][number][] = [];
@@ -564,6 +635,7 @@ function issueShardJoin(
       root,
       jobs: Object.freeze(bound),
       ...(projection === undefined ? {} : { projection }),
+      ...(refusal === undefined ? {} : { refusal }),
     }),
   );
   return issued;
@@ -585,18 +657,29 @@ function issuedShardJoinRefusalV1(
 ): string | undefined {
   if (REVOKED_PROJECTION_JOINS.has(issued))
     return "the shard join's projection no longer exists: Core removed it when the projection's scan settled";
+  if (binding.refusal !== undefined) return binding.refusal;
   let scanned: string;
   try {
     scanned = realpathSync.native(root);
   } catch (error) {
-    return `the root being scanned cannot be resolved: ${(error as Error)?.message ?? "unknown error"}`;
+    return `the root being scanned cannot be resolved: ${failedPathV1(root, error, "resolved")}`;
   }
   if (scanned !== binding.root)
     return `the shard join Core verified is bound to source root ${binding.root}, not the root being scanned, ${scanned}`;
   const projection = binding.projection;
-  const replaced = `the shard join is bound to the projection directory Core created at ${binding.root}, and the directory there now is another one`;
-  if (projection !== undefined && !sameDirectoryV1(projection, directoryIdentityV1(scanned)))
-    return replaced;
+  // The projection must still be the directory Core created; an identity
+  // Core cannot read is a refusal naming the path and the error code.
+  const identityRefusal = (when: string): string | undefined => {
+    if (projection === undefined) return undefined;
+    const now = directoryIdentityV1(scanned);
+    if ("unreadable" in now)
+      return `the identity of the projection directory Core created cannot be read ${when}: ${now.unreadable}`;
+    return sameDirectoryV1(projection, now.identity)
+      ? undefined
+      : `the shard join is bound to the projection directory Core created at ${binding.root}, and the directory there now is another one`;
+  };
+  const before = identityRefusal("before the jobs are rehashed");
+  if (before !== undefined) return before;
   const bound = binding.jobs.map((job) => job.path).sort();
   const derived = [
     ...new Set(
@@ -623,9 +706,7 @@ function issuedShardJoinRefusalV1(
     )
       return `the tree changed after Core verified the shard join: job ${job.path} was verified with ${job.subject.analyzedFileCount} files and subject tree ${job.subject.subjectTreeSha256}, and now has ${now.analyzedFileCount} files with subject tree ${now.subjectTreeSha256}`;
   }
-  if (projection !== undefined && !sameDirectoryV1(projection, directoryIdentityV1(scanned)))
-    return replaced;
-  return undefined;
+  return identityRefusal("after the jobs were rehashed");
 }
 
 // --------------------------------------------------------------------------

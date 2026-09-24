@@ -131,7 +131,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recreated pathname with the same jobs, it fails with "the shard join's projection no longer
   exists", and a directory replaced at the same pathname during the scan fails too. A join whose
   selected jobs nest (`skills/a` and `skills/a/nested`) can now be projected: Core copies only the
-  outermost selected jobs and still binds and rehashes every selected job.
+  outermost selected jobs and still binds and rehashes every selected job. A file-system error
+  while Core prepares a projection (reading its identity, copying a job, resolving it) or checks
+  its identity at the scan fails the Cisco detector with a refusal naming the path and the error
+  code (such as `EACCES`), instead of rejecting the whole scan.
 - The record `joinCiscoShardResults` verified is stored deep-frozen, and
   `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each
   job's subject), so a caller can no longer replace a job's SARIF, add or remove a job, or edit a

@@ -203,7 +203,9 @@ directory Core created, by identity (device, inode and birth time, a real direct
 link or junction), checked before and after the jobs are rehashed; a directory replaced at the
 same pathname fails the detector. When the scan settles Core revokes the join, so presenting it
 again, even at a recreated pathname holding the same jobs, fails with "the shard join's projection
-no longer exists".
+no longer exists". A file-system error while Core prepares the projection (reading its
+identity, copying a job, resolving it) or reads its identity at the scan fails the detector with a
+refusal naming the path and the error code; it never rejects the scan and never passes.
 
 ## Analyzer execution profiles and their limits
 
