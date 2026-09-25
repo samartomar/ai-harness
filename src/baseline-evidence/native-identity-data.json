@@ -36,5 +36,5 @@
     "src/trust/trust-lint-sarif.ts",
     "src/trust/unreviewed-analyzer-rules.ts"
   ],
-  "digest": "f4ec39e633f7"
+  "digest": "9ce895ff8ac8"
 }
