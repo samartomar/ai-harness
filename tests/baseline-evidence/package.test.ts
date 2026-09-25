@@ -39,7 +39,9 @@ describe("baseline evidence release payload", () => {
   it("delegates baseline execution to the exact public Scanner and keeps Core consumption explicit", () => {
     const manifest = packageJson();
     const scripts = manifest.scripts;
-    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.4.0");
+    expect(manifest.devDependencies["@aihq/scan"]).toBe(
+      "file:tests/fixtures/packages/aihq-scan-0.5.0-a1524d78.tgz",
+    );
     expect(scripts["baseline:request"]).toContain("scanner-cli.ts request");
     expect(scripts["baseline:vet"]).toBeUndefined();
     expect(scripts["baseline:consume"]).toBeUndefined();
@@ -78,7 +80,7 @@ describe("baseline evidence release payload", () => {
     expect(manifest.peerDependenciesMeta?.["@aihq/catalog"]).toEqual({ optional: true });
     // Core's tests use the exact compatible Catalog tarball committed beside them.
     expect(manifest.devDependencies["@aihq/catalog"]).toBe(
-      "file:tests/fixtures/packages/aihq-catalog-0.3.0-f60735e.tgz",
+      "file:tests/fixtures/packages/aihq-catalog-0.3.0-c8e2c03.tgz",
     );
     const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
     expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/catalog"[^\]]*\]/u);

@@ -147,8 +147,8 @@
     }
   },
   "devDependencies": {
-    "@aihq/catalog": "file:tests/fixtures/packages/aihq-catalog-0.3.0-f60735e.tgz",
-    "@aihq/scan": "0.4.0",
+    "@aihq/catalog": "file:tests/fixtures/packages/aihq-catalog-0.3.0-c8e2c03.tgz",
+    "@aihq/scan": "file:tests/fixtures/packages/aihq-scan-0.5.0-a1524d78.tgz",
     "@babel/parser": "7.29.7",
     "@biomejs/biome": "^2.5.1",
     "@playwright/test": "1.63.0",

@@ -27,7 +27,7 @@ const catalogTarball = join(
   "tests",
   "fixtures",
   "packages",
-  "aihq-catalog-0.3.0-f60735e.tgz",
+  "aihq-catalog-0.3.0-c8e2c03.tgz",
 );
 const scratch: string[] = [];
 

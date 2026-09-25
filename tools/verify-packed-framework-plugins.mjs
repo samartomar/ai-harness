@@ -333,7 +333,7 @@ try {
 
   // The real Catalog 0.3.0 this repository pins carries the Superpowers descriptor
   // and the plugin identity record the loader checks.
-  const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-f60735e.tgz");
+  const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-c8e2c03.tgz");
   must(
     npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", pinnedCatalog], consumer),
     "Catalog 0.3.0 install",

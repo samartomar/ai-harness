@@ -21,7 +21,7 @@ import {
 const requireFromTest = createRequire(import.meta.url);
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const FIXTURE = fileURLToPath(
-  new URL("../fixtures/packages/aihq-catalog-0.3.0-f60735e.tgz", import.meta.url),
+  new URL("../fixtures/packages/aihq-catalog-0.3.0-c8e2c03.tgz", import.meta.url),
 );
 const temporary: string[] = [];
 
