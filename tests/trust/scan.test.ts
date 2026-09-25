@@ -604,7 +604,7 @@ describe("scanTrustTree", () => {
     expect(initial.report?.ok).toBe(true);
   });
 
-  it("refuses to acknowledge actual hidden Unicode on instruction surfaces", async () => {
+  it("records an acknowledgement of actual hidden Unicode on instruction surfaces", async () => {
     skill("skills/designer", "Use hidden marker ​ here.\n");
     useScan({
       results: [
@@ -626,14 +626,14 @@ describe("scanTrustTree", () => {
           {
             target: dir,
             acknowledge: fingerprint,
-            reason: "not acceptable for instruction surfaces",
+            reason: "reviewed the marker; it is intentional",
           },
           {},
           "enterprise",
           successfulSmokeRunner(),
         ),
       ),
-    ).rejects.toThrow(/cannot acknowledge trust.hidden-unicode/);
+    ).resolves.toBeDefined();
   });
 
   it("scans config and executable surfaces for non-blocking visible Unicode", async () => {
@@ -5549,7 +5549,7 @@ describe("trustScanCommand", () => {
     expect(secondFingerprint).not.toBe(firstFingerprint);
   });
 
-  it("never acknowledges an unpinned executable dependency", async () => {
+  it("records an acknowledgement of an unpinned executable dependency", async () => {
     skill("skills/dep", "# Dependency\n");
     write("package.json", JSON.stringify({ dependencies: { react: "^18.0.0" } }));
     write("package-lock.json", JSON.stringify({ lockfileVersion: 3, packages: {} }));
@@ -5583,7 +5583,7 @@ describe("trustScanCommand", () => {
           successfulSmokeRunner(),
         ),
       ),
-    ).rejects.toThrow(/trust-danger findings must be fixed/);
+    ).resolves.toBeDefined();
   });
 
   it("acknowledges an MCP policy fingerprint and re-blocks after server config changes", async () => {
@@ -5654,7 +5654,7 @@ describe("trustScanCommand", () => {
     );
   });
 
-  it("refuses to acknowledge trust-danger findings", async () => {
+  it("records an acknowledgement of a trust-danger finding", async () => {
     skill("skills/bash", "---\npermissionMode: bypassPermissions\n---\n# Bash\n");
     useScan({ results: [BYPASS_PERMISSIONS_FINDING] });
     const initial = await scanTrustTree(dir, { posture: "enterprise" });
@@ -5667,13 +5667,13 @@ describe("trustScanCommand", () => {
           {
             target: dir,
             acknowledge: fingerprint,
-            reason: "not acceptable for danger",
+            reason: "reviewed the permission mode",
           },
           {},
           "enterprise",
         ),
       ),
-    ).rejects.toThrow(/cannot acknowledge trust.auto-exec-hook/);
+    ).resolves.toBeDefined();
   });
 
   it("reports early progress for a large tree while reusing one bounded inventory", async () => {

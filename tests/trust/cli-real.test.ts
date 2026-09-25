@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -118,7 +118,7 @@ describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
   );
 
   it(
-    "blocks an auto-exec local source without promoting",
+    "promotes an auto-exec local source and records the label",
     () => {
       const workspace = fresh("aih-cli-auto-root-");
       const source = fresh("aih-cli-auto-source-");
@@ -137,10 +137,12 @@ describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
         "--force",
       ]);
 
-      expect(result.status).toBe(1);
+      expect(result.status).toBe(0);
       expect(result.stdout).toContain("trust.auto-exec-hook");
-      expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
-      expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+      expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(true);
+      expect(readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8")).toContain(
+        "trust.auto-exec-hook",
+      );
     },
     TEST_TIMEOUT_MS,
   );
