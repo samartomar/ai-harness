@@ -512,40 +512,37 @@ describe("active external-pin ledger", () => {
   });
 
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {
+    // The analyzer rows carry the uv.lock @aihq/scan installs (aih-scan
+    // tools/baseline-analyzers/<analyzer>/uv.lock): Core accepts exactly that lock.
     expect(entry("cisco-skill-scanner")).toMatchObject({
       version: CISCO_SKILL_SCANNER_VERSION,
-      commit: "a49c8d9f7555dd99a9f5e4430c3bb8d4fe4a9371",
-      integrity: "sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2",
+      commit: "a24df340ca6056a6446a239f4a7b114b11c6073a",
+      integrity: "sha256:1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
       disposition: "active",
     });
+    expect(entry("cisco-skill-scanner").reason).toMatch(/one lock serves both/i);
+    // The cisco-mcp-scanner row (and its 4.8.2 revision defect) moves at Q1 runbook
+    // step 11, not with the analyzer identities Core accepts.
+    expect(CISCO_MCP_SCANNER_VERSION).toBe("4.8.4");
     expect(entry("cisco-mcp-scanner")).toMatchObject({
-      version: CISCO_MCP_SCANNER_VERSION,
+      version: "4.8.2",
       integrity: "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
       disposition: "active",
     });
     const snyk = entry("snyk-agent-scan");
     expect(snyk).toMatchObject({
-      version: "0.5.17",
-      integrity: "sha256:ae928b023023fba12fdaaaa31e9da5dad4252c181545dfba72d46534d694b935",
+      version: "0.6.4",
+      commit: "af0d2c9cf37d70a29ee9ed725f2779a92c0409d5",
+      integrity: "sha256:c71ffe188e38e2730c3525e710d54a0ab81e0ed914d2d132692d0ef79911d85f",
       disposition: "active",
     });
-    expect(snyk.reason).toContain(
-      "https://github.com/samartomar/ai-harness/actions/runs/31828959167",
-    );
-    expect(snyk.reason).toContain("b4c76cbc88ff300c1f3e241e9b9c1f25ef921760");
-    expect(snyk.reason).toContain("snyk-agent-scan@uv:0.5.17");
-    expect(snyk.reason).toContain("status=qualified");
-    expect(snyk.reason).toContain(
-      "sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0",
-    );
-    expect(snyk.reason).toContain(
-      "sha256:22e5dc96b689af87589b32f96570a0da407a6562281d7c94021c57b849737daa",
-    );
-    expect(snyk.reason).toContain("synthetic fixture");
+    // Stated plainly: no real 0.6.4 run has qualified Snyk findings.
+    expect(snyk.reason).toMatch(/Findings at 0\.6\.4 are not qualified.*HTTP 429/);
+    expect(snyk.reason).toContain("does not carry over");
     expect(entry("semgrep")).toMatchObject({
       version: SEMGREP_VERSION,
-      commit: "abce3b5391706850837d4339f84bfaa3ec08604b",
-      integrity: "sha256:95e504f01bf9ae20c23359a76bf9ada3e10c88906de58964f489e6332753260a",
+      commit: "2f122b2feb38cc06272b1dde5b482e85eaf3adad",
+      integrity: "sha256:5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
       disposition: "active",
     });
     expect(entry("agentshield")).toMatchObject({
@@ -587,23 +584,24 @@ describe("active external-pin ledger", () => {
 
   it("documents explicit retained and qualified-runner decisions", () => {
     expect(entry("skillspector")).toMatchObject({
-      commit: "2d198ab910add401cad658d1087e7c7ba24fd640",
-      integrity: "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+      version: "2.12.0",
+      commit: "c7958a3268d9498644b22edb75d0f051bbc8cbfc",
+      integrity: "sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
       disposition: "active",
     });
-    // A rotation is only trustworthy if the method was validated against a known
-    // answer first, so the reason must carry that validation, the reproduction
-    // count, and the perturbation control that proves the cutoff is load-bearing.
+    // docs/security/skillspector.md "Rotating the Pin" step 1: two clean builds
+    // agree, and the perturbation control proves the cutoff is load-bearing. The
+    // reason states which reproduction evidence this rotation did not repeat.
     expect(entry("skillspector").reason).toMatch(
-      /method validated against a known answer first.*reproduced its committed\s+sha256:108b707c/i,
+      /Two clean cache-disabled OCI exports.*byte-identical/i,
     );
-    expect(entry("skillspector").reason).toMatch(/reproduced five times/i);
     expect(entry("skillspector").reason).toMatch(
-      /cutoff moved 2026-08-07 -> 2026-08-15T00:00:00Z.*perturbation control holds.*sha256:8b13ea26/i,
+      /cutoff moved 2026-08-15T00:00:00Z -> 2026-09-24T00:00:00Z.*perturbation control holds.*sha256:90e6770a/i,
     );
-    // The YR4 carve-out equivalence must be restated at every rotation.
+    expect(entry("skillspector").reason).toMatch(/did not repeat the known-answer validation/i);
+    // Step 2: the YR4 carve-out equivalence must be restated at every rotation.
     expect(entry("skillspector").reason).toMatch(
-      /all five yara_rules blobs and LICENSE carry identical git\s+SHAs at both tags/i,
+      /agent_skills\.yar \(the YR4 rule source, blob 6aa11e5a[0-9a-f]*\) and LICENSE carry identical git SHAs at both tags/i,
     );
     expect(entry("anthropic-skills-guide")).toMatchObject({
       commit: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",

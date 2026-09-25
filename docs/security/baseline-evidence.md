@@ -159,13 +159,13 @@ the release vet records exact analyzer receipts before the lock is written:
   detector change always moves the identity even between release version bumps
   (see `src/baseline-evidence/native-identity.ts`) — and pinned SkillSpector
   through Docker are required for every declared component;
-- `semgrep==1.173.0` through its committed uv project is required for every
+- `semgrep==1.178.0` through its committed uv project is required for every
   declared component;
-- `cisco-ai-skill-scanner==2.0.14` through its committed uv project is additionally required
+- `cisco-ai-skill-scanner==2.1.0` through its committed uv project is additionally required
   for every component whose declared bytes contain a regular `SKILL.md` file;
 - SkillSpector is bound to source revision
-  `2d198ab910add401cad658d1087e7c7ba24fd640` and controlled image digest
-  `sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800`.
+  `c7958a3268d9498644b22edb75d0f051bbc8cbfc` (v2.12.0) and controlled image digest
+  `sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6`.
 
 Supplemental locked detectors are not part of the minimum release floor and do
 not enlarge the deterministic component-receipt closure. When one completes,
@@ -185,9 +185,9 @@ Semgrep and Git ignore files, and includes unknown extensions. A fresh vet names
 each uv analyzer by the version and uv.lock digest aih accepts for the profile it
 runs under (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1` in
 `src/trust/scan-analyzer-identity.ts`), never by what Scan declares; Scan must
-declare and run exactly that identity, or the analyzer is refused. The host-process
-Cisco lock (`108c4f78340d`) is not the lock the committed receipts pin
-(`aaba1f326049`); that difference is recorded in the table, not accepted silently. The explicit Python minor keeps offline cache
+declare and run exactly that identity, or the analyzer is refused. Both uv
+profiles install one Cisco lock (`1e98c5679994`), so the Cisco identity is the
+same under either profile. The explicit Python minor keeps offline cache
 selection stable when a newer interpreter is installed for an unrelated helper.
 The component scanner uses a path-preserving projection, includes one regular
 top-level repository license file for license inheritance, and does not follow

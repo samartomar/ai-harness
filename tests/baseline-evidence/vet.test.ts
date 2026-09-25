@@ -228,13 +228,13 @@ describe("vetBaselineCatalog", () => {
   it("keeps optional analyzer availability out of deterministic component receipts", async () => {
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({
-        analyzersRun: ["aih-native", "mcp-scanner@uv:4.8.2"],
+        analyzersRun: ["aih-native", "mcp-scanner@uv:4.8.4"],
         checks: [pass("scan")],
       }),
       requiredAnalyzers: ["aih-native"],
       analyzerVersions: {
         "aih-native": "native.aaaaaaaaaaaa",
-        "mcp-scanner@uv:4.8.2": "4.8.2+uvlock.bbbbbbbbbbbb",
+        "mcp-scanner@uv:4.8.4": "4.8.4+uvlock.bbbbbbbbbbbb",
       },
     });
 

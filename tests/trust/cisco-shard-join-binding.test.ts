@@ -39,7 +39,7 @@ import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 // framing, `UTF-8(path) || 0x00 || sha256 || 0x0A`, never Core's subject code.
 // ---------------------------------------------------------------------------
 
-const CISCO_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
+const CISCO_LOCK = "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210";
 const JOB_FILES = {
   "skills/alpha": { "skills/alpha/SKILL.md": "# alpha\n" },
   "skills/beta": { "skills/beta/SKILL.md": "# beta\n" },
@@ -104,7 +104,7 @@ function jobSarif(
                 detectorId: "detector.cisco",
                 subjectTreeSha256,
                 analyzedFileCount,
-                analyzer: { version: "2.0.14", lockSha256: CISCO_LOCK },
+                analyzer: { version: "2.1.0", lockSha256: CISCO_LOCK },
               },
             },
           },
@@ -135,7 +135,7 @@ function finding(job: CiscoShardJob): Record<string, unknown> {
 function verifiedJoin(root: string, withFindings = false, subjects: HandSubjects = ONE_FILE_JOBS) {
   const manifest = buildCiscoSourceShardManifest(root, {
     source: { id: "fixture", pinnedSha: "a".repeat(40) },
-    analyzer: { version: "2.0.14", lockSha256: CISCO_LOCK },
+    analyzer: { version: "2.1.0", lockSha256: CISCO_LOCK },
     policy: { version: "native.test", profile: "fixture" },
     shardCount: 1,
   });
@@ -485,7 +485,7 @@ const NESTED_SUBJECTS: HandSubjects = {
 function nestedJoin(root: string, withFindings: boolean) {
   const manifest = buildCiscoShardManifest({
     source: { id: "fixture", pinnedSha: "a".repeat(40), treeSha256: "e".repeat(64) },
-    analyzer: { name: "cisco", version: "2.0.14", lockSha256: CISCO_LOCK },
+    analyzer: { name: "cisco", version: "2.1.0", lockSha256: CISCO_LOCK },
     policy: { version: "native.test", profile: "fixture" },
     jobs: Object.keys(NESTED_SUBJECTS).map((path, index) => ({
       path,

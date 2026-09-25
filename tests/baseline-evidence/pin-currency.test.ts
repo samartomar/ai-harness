@@ -2,7 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { baselineAnalyzerVersions } from "../../src/baseline-evidence/analyzer-profile.js";
+import {
+  baselineAnalyzerVersions,
+  SEMGREP_VERSION,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { BASELINE_CATALOG_IDS, baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { comparePinSets, formatPinCurrency } from "../../src/baseline-evidence/pin-currency.js";
@@ -17,7 +20,56 @@ import {
 } from "../../src/internals/check-baseline-pin-currency.js";
 
 const CATALOGS = BASELINE_CATALOG_IDS.map((id) => baselineCatalogById(id));
-const lock = readVendorBaselineLock();
+/**
+ * The installed Catalog fixture's lock was vetted before the U1 analyzer upgrade,
+ * so its analyzer receipts are stale until the requalified Catalog is adopted
+ * (Q1 runbook step 11). The drift cases below start from the same lock re-stamped
+ * at today's analyzer identities, so each shows only the drift it injects.
+ */
+const shipped = readVendorBaselineLock();
+const PRE_U1_SEMGREP_LABEL = "semgrep@uv:1.173.0";
+const PRE_U1_ANALYZER_DRIFT = [
+  {
+    kind: "analyzer",
+    id: PRE_U1_SEMGREP_LABEL,
+    declared: "(not declared)",
+    recorded: "1.173.0+uvlock.77f2bf3e7525",
+  },
+  {
+    kind: "analyzer",
+    id: "skillspector@docker",
+    declared:
+      "c7958a3268d9498644b22edb75d0f051bbc8cbfc@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
+    recorded:
+      "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+  },
+  {
+    kind: "analyzer",
+    id: "cisco@uvx",
+    declared: "2.1.0+uvlock.1e98c5679994",
+    recorded: "2.0.14+uvlock.aaba1f326049",
+  },
+];
+
+function vettedAtCurrentAnalyzers(evidence: BaselineEvidenceLock): BaselineEvidenceLock {
+  const current = baselineAnalyzerVersions();
+  return {
+    ...evidence,
+    sources: evidence.sources.map((source) => ({
+      ...source,
+      components: source.components.map((component) => ({
+        ...component,
+        analyzers: component.analyzers.map((receipt) => {
+          const name =
+            receipt.name === PRE_U1_SEMGREP_LABEL ? `semgrep@uv:${SEMGREP_VERSION}` : receipt.name;
+          return { name, version: current[name] ?? receipt.version };
+        }),
+      })),
+    })),
+  };
+}
+
+const lock = vettedAtCurrentAnalyzers(shipped);
 
 function withSourcePin(pin: string): BaselineEvidenceLock {
   return {
@@ -46,7 +98,13 @@ function withAnalyzerVersion(name: string, version: string): BaselineEvidenceLoc
 describe("baseline pin currency", () => {
   const analyzerVersions = baselineAnalyzerVersions();
 
-  it("reports no drift for the committed lock, which was vetted at these exact pins", () => {
+  it("reports the pre-U1 analyzer receipts of the installed Catalog lock as drift, once each", () => {
+    expect(comparePinSets({ lock: shipped, catalogs: CATALOGS, analyzerVersions })).toEqual(
+      PRE_U1_ANALYZER_DRIFT,
+    );
+  });
+
+  it("reports no drift for a lock vetted at these exact pins", () => {
     expect(comparePinSets({ lock, catalogs: CATALOGS, analyzerVersions })).toEqual([]);
     expect(formatPinCurrency([])).toContain("matches every declared pin");
   });
@@ -133,11 +191,17 @@ describe("baseline pin currency", () => {
     );
   });
 
-  it("passes on the committed lock through the CLI entry point", () => {
-    expect(vendorBaselineLockBytes().length).toBeGreaterThan(0);
+  it("passes through the CLI entry point on a lock vetted at these exact pins", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-pin-currency-current-"));
+    const lockPath = join(dir, "vendor-lock.json");
     const written: string[] = [];
-    expect(runPinCurrencyCli(undefined, (text) => written.push(text))).toBe(0);
-    expect(written.join("")).toContain("matches every declared pin");
+    try {
+      writeFileSync(lockPath, JSON.stringify(lock), "utf8");
+      expect(runPinCurrencyCli(lockPath, (text) => written.push(text))).toBe(0);
+      expect(written.join("")).toContain("matches every declared pin");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("reports not-ok through the CLI entry point when a pin has moved", () => {
@@ -162,10 +226,12 @@ describe("baseline pin currency", () => {
     expect(() => checkBaselinePinCurrency("package.json")).toThrow();
   });
 
-  it("defaults to the installed Catalog lock and prints the report when current", () => {
+  it("defaults to the installed Catalog lock and blocks on its pre-U1 analyzer receipts", () => {
+    expect(vendorBaselineLockBytes().length).toBeGreaterThan(0);
     const written: string[] = [];
-    expect(runPinCurrencyCli(undefined, (text) => written.push(text))).toBe(0);
-    expect(written.join("")).toContain("matches every declared pin");
+    expect(runPinCurrencyCli(undefined, (text) => written.push(text))).toBe(1);
+    expect(written.join("")).toContain("no longer match the committed evidence");
+    expect(written.join("")).toContain(PRE_U1_SEMGREP_LABEL);
   });
 
   it("exits 1 when a pin has moved, so CI blocks rather than warns", () => {

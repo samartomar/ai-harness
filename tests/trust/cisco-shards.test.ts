@@ -18,7 +18,7 @@ const SOURCE_SHA = "a".repeat(40);
 const SOURCE_TREE = "b".repeat(64);
 const INPUT_HASHES = ["1", "2", "3", "4", "5"].map((value) => value.repeat(64));
 // The Cisco host-profile lock Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
-const LOCK_SHA256 = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
+const LOCK_SHA256 = "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210";
 const roots: string[] = [];
 
 /**
@@ -54,7 +54,7 @@ function fakeCiscoShardScan(respond: (request: FakeShardRequest) => unknown): {
     listDetectorCapabilitiesV1: () => [
       {
         detectorId: "detector.cisco",
-        analyzerVersion: "2.0.14",
+        analyzerVersion: "2.1.0",
         executionProfiles: [
           { id: "host-process-uv-v1", analyzerLock: { path: "uv.lock", sha256: LOCK_SHA256 } },
         ],
@@ -88,7 +88,7 @@ function manifest(shardCount = 3) {
     },
     analyzer: {
       name: "cisco",
-      version: "2.0.14",
+      version: "2.1.0",
       lockSha256: LOCK_SHA256,
     },
     policy: {
@@ -119,7 +119,7 @@ function resultsFor(plan = manifest(), _root = jobsRoot()) {
         job.path,
         [{ ruleId: "fixture", message: { text: job.path } }],
         {
-          version: "2.0.14",
+          version: "2.1.0",
           lockSha256: LOCK_SHA256,
         },
       ),
@@ -331,7 +331,7 @@ describe("Cisco exact-source shard evidence", () => {
     }
     const plan = buildCiscoSourceShardManifest(root, {
       source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.14", lockSha256: LOCK_SHA256 },
+      analyzer: { version: "2.1.0", lockSha256: LOCK_SHA256 },
       policy: { version: "native.test", profile: "ecc-full" },
       shardCount: 2,
     });
@@ -423,7 +423,7 @@ describe("Cisco exact-source shard evidence", () => {
     writeFileSync(join(skillDir, "SKILL.md"), "# alpha\n", "utf8");
     const plan = buildCiscoSourceShardManifest(root, {
       source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.14", lockSha256: LOCK_SHA256 },
+      analyzer: { version: "2.1.0", lockSha256: LOCK_SHA256 },
       policy: { version: "native.test", profile: "ecc-full" },
       shardCount: 1,
     });

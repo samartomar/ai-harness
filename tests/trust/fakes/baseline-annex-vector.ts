@@ -28,12 +28,12 @@ export const WITH_GIT = {
 } as const;
 
 export const SEMGREP_NAMESPACE = {
-  version: "1.173.0+uvlock.77f2bf3e7525",
-  lockSha256: "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08",
+  version: "1.178.0+uvlock.5fae6a8598f7",
+  lockSha256: "5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
 } as const;
 export const CISCO_NAMESPACE = {
-  version: "2.0.14+uvlock.aaba1f326049",
-  lockSha256: "aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1",
+  version: "2.1.0+uvlock.1e98c5679994",
+  lockSha256: "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
 } as const;
 export const SKILLSPECTOR_HARDENED = {
   version: `${SKILLSPECTOR_SOURCE_REVISION}@${SKILLSPECTOR_IMAGE_DIGEST}`,

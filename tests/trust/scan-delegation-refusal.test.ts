@@ -653,7 +653,7 @@ describe("Scan's detector SARIF is checked at the boundary", () => {
 });
 
 describe("Core, not Scan, decides which analyzer identity it accepts", () => {
-  const CISCO_HOST_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
+  const CISCO_HOST_LOCK = "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210";
   const hostProfile = (analyzerLock?: { path: string; sha256: string }) => {
     const [hostUv] = FAKE_SCAN_PROFILES["detector.cisco"] ?? [];
     if (hostUv === undefined) throw new Error("fake lost the host profile");
@@ -686,7 +686,7 @@ describe("Core, not Scan, decides which analyzer identity it accepts", () => {
       const check = detectorCheck(outcome.checks, "cisco");
       expect(check?.code).toBe("trust.detector-unavailable");
       expect(check?.detail).toContain(
-        `detector.cisco under host-process-uv-v1 declares analyzer 2.0.14 ${observed}; Core accepts 2.0.14 with uv.lock ${CISCO_HOST_LOCK}`,
+        `detector.cisco under host-process-uv-v1 declares analyzer 2.1.0 ${observed}; Core accepts 2.1.0 with uv.lock ${CISCO_HOST_LOCK}`,
       );
       expect(outcome.detectorExecutions).toContainEqual(
         expect.objectContaining({ detector: "cisco", outcome: "refused" }),
@@ -701,14 +701,14 @@ describe("Core, not Scan, decides which analyzer identity it accepts", () => {
       "detector.semgrep": {
         kind: "sarif",
         sarif: sarif([]),
-        observedAnalyzerVersion: "1.173.0+uvlock.000000000000",
+        observedAnalyzerVersion: "1.178.0+uvlock.000000000000",
       },
     });
     const { scan: outcome } = await delegatedScan(root, ["semgrep"], { scanExecution: scan });
     const check = detectorCheck(outcome.checks, "semgrep");
     expect(check?.code).toBe("trust.detector-unavailable");
     expect(check?.detail).toContain(
-      "detector.semgrep under host-process-uv-v1 ran analyzer 1.173.0+uvlock.000000000000 with uv.lock 77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08; Core accepts 1.173.0+uvlock.77f2bf3e7525",
+      "detector.semgrep under host-process-uv-v1 ran analyzer 1.178.0+uvlock.000000000000 with uv.lock 5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594; Core accepts 1.178.0+uvlock.5fae6a8598f7",
     );
   });
 

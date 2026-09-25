@@ -549,9 +549,9 @@ $ScanRoot = (Resolve-Path .).Path
 $SkillSpectorRoot = Join-Path ([System.IO.Path]::GetTempPath()) "aih-skillspector-2d198ab910ad"
 git clone https://github.com/NVIDIA/SkillSpector.git $SkillSpectorRoot
 Set-Location $SkillSpectorRoot
-git checkout 2d198ab910add401cad658d1087e7c7ba24fd640
-docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=1785167267 -f (Join-Path $ScanRoot "tools\skillspector\Dockerfile") -t skillspector:aih-2d198ab910ad --load .
-docker image inspect skillspector:aih-2d198ab910ad --format "{{.Id}}"
+git checkout c7958a3268d9498644b22edb75d0f051bbc8cbfc
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=1790202473 -f (Join-Path $ScanRoot "tools\skillspector\Dockerfile") -t skillspector:aih-c7958a3268d9 --load .
+docker image inspect skillspector:aih-c7958a3268d9 --format "{{.Id}}"
 ```
 
 Use AI-Harness to report the currently pinned analyzer image metadata before changing policy or detector requirements:
@@ -563,10 +563,10 @@ aih trust skillspector-pin
 If the local image ID differs from the controlled digest reported by `aih trust skillspector-pin`, record an explicit reviewed local digest before requiring `skillspector` in enterprise policy:
 
 ```powershell
-$SkillSpectorDigest = docker image inspect skillspector:aih-2d198ab910ad --format "{{.Id}}"
+$SkillSpectorDigest = docker image inspect skillspector:aih-c7958a3268d9 --format "{{.Id}}"
 aih trust skillspector-pin `
-  --candidate-revision 2d198ab910add401cad658d1087e7c7ba24fd640 `
-  --candidate-tag skillspector:aih-2d198ab910ad `
+  --candidate-revision c7958a3268d9498644b22edb75d0f051bbc8cbfc `
+  --candidate-tag skillspector:aih-c7958a3268d9 `
   --candidate-digest $SkillSpectorDigest `
   --approve-local-digest `
   --reason "Reviewed local Docker build from pinned SkillSpector source." `
@@ -584,8 +584,8 @@ aih trust skillspector-pin --candidate-revision <40-char-sha> --candidate-tag <i
 The source commit pin is the review anchor; the image ID verifies the local build output. If the image will be shared beyond the admin machine, tag it into the approved registry and sign the registry reference or immutable digest according to the organization's signing policy:
 
 ```powershell
-$ImageRef = "<registry>/<namespace>/skillspector:aih-2d198ab910ad"
-docker tag skillspector:aih-2d198ab910ad $ImageRef
+$ImageRef = "<registry>/<namespace>/skillspector:aih-c7958a3268d9"
+docker tag skillspector:aih-c7958a3268d9 $ImageRef
 docker push $ImageRef
 cosign sign --key <cosign-key-ref> $ImageRef
 cosign verify --key <cosign-public-key-ref> $ImageRef

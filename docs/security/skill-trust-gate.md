@@ -278,6 +278,8 @@ The governed Snyk Agent Scan 0.5.17 adapter has protected behavioral qualificati
 [main run 31828959167](https://github.com/samartomar/ai-harness/actions/runs/31828959167). The run
 used a generated synthetic fixture and produced a commit-bound sanitized receipt. This evidence
 qualifies the adapter path and pinned runtime; it does not claim arbitrary scanned content is safe.
+It does not carry over to the 0.6.4 runtime `@aihq/scan` now installs, which is not yet
+behaviorally qualified.
 
 ## GREEN policy
 

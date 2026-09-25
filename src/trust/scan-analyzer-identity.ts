@@ -17,8 +17,6 @@ export interface AcceptedScanAnalyzerIdentityV1 {
   readonly analyzerVersion: string;
   /** `null`: the profile installs no uv environment and must declare no lock. */
   readonly lockSha256: string | null;
-  /** A known difference from Core's committed evidence, kept visible rather than accepted silently. */
-  readonly knownGap?: string;
 }
 
 /**
@@ -27,9 +25,10 @@ export interface AcceptedScanAnalyzerIdentityV1 {
  * authority: a capability that declares another version or lock, or a run
  * whose evidence names one, is refused as `trust.detector-unavailable`, and a
  * baseline vet names its analyzers from this table, never from Scan's
- * declaration. These are the identities the Scan B2 candidate
- * (`@aihq/scan` 0.5.0, sep/scan-b2 f378c61) ships; a new analyzer or lock needs
- * a Core change that pins it.
+ * declaration. These are the identities the U1 analyzer upgrade ships
+ * (`@aihq/scan` 0.5.0, aih-scan 391b04d): each lock is the sha256 of
+ * tools/baseline-analyzers/<analyzer>/uv.lock there, and the installed candidate
+ * declares the same. A new analyzer or lock needs a Core change that pins it.
  */
 export const ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1: readonly AcceptedScanAnalyzerIdentityV1[] =
   Object.freeze([
@@ -55,45 +54,40 @@ export const ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1: readonly AcceptedScanAnalyzer
       detectorId: "detector.semgrep",
       executionProfileId: "host-process-uv-v1",
       analyzerVersion: SEMGREP_VERSION,
-      lockSha256: "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08",
+      lockSha256: "5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
     }),
     Object.freeze({
       detectorId: "detector.semgrep",
       executionProfileId: "linux-namespace-uv-v1",
       analyzerVersion: SEMGREP_VERSION,
-      lockSha256: "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08",
+      lockSha256: "5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
     }),
     Object.freeze({
       detectorId: "detector.cisco",
       executionProfileId: "linux-namespace-uv-v1",
       analyzerVersion: CISCO_SKILL_SCANNER_VERSION,
-      lockSha256: "aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1",
+      lockSha256: "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
     }),
-    // KNOWN GAP, accepted explicitly: Scan's host profile installs its own Cisco
-    // lock (tools/baseline-analyzers/cisco-skill-scanner-host: litellm 1.92.2
-    // so the environment installs on Windows), not the namespace lock the
-    // protected Scanner receipts pin ("cisco@uvx": 2.0.14+uvlock.aaba1f326049).
-    // A fresh host-profile vet therefore names 2.0.14+uvlock.108c4f78340d, which
-    // committed receipts do not match; reconciling the two is an owner decision.
+    // One Cisco lock for every profile since U1g (aih-scan
+    // tools/baseline-analyzers/cisco-skill-scanner), so the host profile names
+    // the analyzer the Scanner receipts name.
     Object.freeze({
       detectorId: "detector.cisco",
       executionProfileId: "host-process-uv-v1",
       analyzerVersion: CISCO_SKILL_SCANNER_VERSION,
-      lockSha256: "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f",
-      knownGap:
-        "the host-process Cisco lock is not the namespace lock the protected Scanner receipts pin",
+      lockSha256: "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
     }),
     Object.freeze({
       detectorId: "detector.cisco-mcp-scanner",
       executionProfileId: "host-process-uv-v1",
       analyzerVersion: CISCO_MCP_SCANNER_VERSION,
-      lockSha256: "92846b24c170bcf8ab380d5743bcce4504d249268712f2443f181a9b6789694a",
+      lockSha256: "b679f3afa51977495cc378cbf7e42ebbe9ef68eda38056d72613e9970bd99c16",
     }),
     Object.freeze({
       detectorId: "detector.snyk-agent-scan",
       executionProfileId: "host-process-uv-v1",
       analyzerVersion: SNYK_AGENT_SCAN_VERSION,
-      lockSha256: "49064889ec53d91a5981cb5959d764c9bdf10843a54b5e5d339cfc046ad16169",
+      lockSha256: "c71ffe188e38e2730c3525e710d54a0ab81e0ed914d2d132692d0ef79911d85f",
     }),
   ]);
 
@@ -101,10 +95,10 @@ export const ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1: readonly AcceptedScanAnalyzer
  * The profile Scan's baseline-vet batch runs each SARIF analyzer under, by
  * detector id, so the only one whose pinned analyzer a Scanner publication's
  * annex may name: aih-scan `BASELINE_BATCH_EXECUTION_PROFILES_V1`
- * (sep/scan-vet-evidence 3bd0ffb, src/baseline/runtime-v1.ts:2099-2106), which
- * the batch's default execution names for every analyzer it runs
- * (runtime-v1.ts:2121). SkillSpector's hardened Docker profile installs no lock;
- * its identity is the image.
+ * (391b04d, src/baseline/runtime-v1.ts:2134-2142), which the batch's default
+ * execution names for every analyzer it runs (runtime-v1.ts:2150-2156).
+ * SkillSpector's hardened Docker profile installs no lock; its identity is the
+ * image.
  */
 export const SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1: Readonly<Record<string, string>> =
   Object.freeze({

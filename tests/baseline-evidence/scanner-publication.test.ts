@@ -90,7 +90,7 @@ function fixture(detail = "") {
   const version = {
     "aih-native": SCANNER_BASELINE_ANALYZER_VERSIONS["aih-native"],
     skillspector: SCANNER_BASELINE_ANALYZER_VERSIONS["skillspector@docker"],
-    semgrep: SCANNER_BASELINE_ANALYZER_VERSIONS["semgrep@uv:1.173.0"],
+    semgrep: SCANNER_BASELINE_ANALYZER_VERSIONS["semgrep@uv:1.178.0"],
   } as const;
   const observations = annexArtifacts.map((artifact) => {
     const analyzer = artifact.path.slice(6, -5) as keyof typeof version;

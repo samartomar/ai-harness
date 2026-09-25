@@ -6,20 +6,20 @@
 `aih` invokes SkillSpector through a pinned local Docker image tag:
 
 ```text
-skillspector:aih-2d198ab910ad
+skillspector:aih-c7958a3268d9
 ```
 
 The tag corresponds to NVIDIA/SkillSpector commit:
 
 ```text
-2d198ab910add401cad658d1087e7c7ba24fd640
+c7958a3268d9498644b22edb75d0f051bbc8cbfc
 ```
 
 `aih` treats the local image as verified when Docker reports either the built-in
 controlled build digest or an org-policy approved local digest:
 
 ```text
-sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800
+sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6
 ```
 
 ## Acquire the Image
@@ -30,9 +30,9 @@ name `aih` expects. Core's required `vet-once` workflow verifies committed
 evidence and does not acquire or execute this image:
 
 ```bash
-docker pull ghcr.io/samartomar/skillspector@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800
-docker tag ghcr.io/samartomar/skillspector@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800 \
-  skillspector:aih-2d198ab910ad
+docker pull ghcr.io/samartomar/skillspector@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6
+docker tag ghcr.io/samartomar/skillspector@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6 \
+  skillspector:aih-c7958a3268d9
 ```
 
 Pulling by digest is content-addressed, so verification does not depend on the
@@ -63,19 +63,19 @@ SCAN_ROOT="/path/to/aih-scan"
 VET_ROOT="$(mktemp -d)"
 git clone https://github.com/NVIDIA/SkillSpector.git "$VET_ROOT/SkillSpector"
 git -C "$VET_ROOT/SkillSpector" checkout --detach \
-  2d198ab910add401cad658d1087e7c7ba24fd640
+  c7958a3268d9498644b22edb75d0f051bbc8cbfc
 docker buildx build \
   --platform linux/amd64 \
   --provenance=false \
   --sbom=false \
-  --build-arg SOURCE_DATE_EPOCH=1785167267 \
+  --build-arg SOURCE_DATE_EPOCH=1790202473 \
   -f "$SCAN_ROOT/tools/skillspector/Dockerfile" \
-  -t ghcr.io/samartomar/skillspector:aih-2d198ab910ad \
+  -t ghcr.io/samartomar/skillspector:aih-c7958a3268d9 \
   --output type=oci,dest="$VET_ROOT/skillspector.oci.tar" \
   "$VET_ROOT/SkillSpector"
 docker load -i "$VET_ROOT/skillspector.oci.tar"
-docker tag ghcr.io/samartomar/skillspector:aih-2d198ab910ad \
-  skillspector:aih-2d198ab910ad
+docker tag ghcr.io/samartomar/skillspector:aih-c7958a3268d9 \
+  skillspector:aih-c7958a3268d9
 ```
 
 Scan's Dockerfile consumes the upstream commit's checked-in
@@ -94,14 +94,15 @@ metadata and with it the layer digest.
 
 The builder therefore pins `UV_EXCLUDE_NEWER`, which fixes backend resolution to
 the date the controlled image was built. That is what makes the digest
-independently rebuildable: with the cutoff in place, revision
-`2d198ab910add401cad658d1087e7c7ba24fd640` reproduces
-`sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800`
-exactly, and did so five times -- two clean cache-disabled exports on one
-runner plus three further runners independently. Built at the previous
-`2026-08-07` cutoff the same revision yields
-`sha256:8b13ea2631690da416e951195545511e63d85e18a0cc183000295a5dd48d5f80`,
-which is the perturbation control proving the cutoff is load-bearing.
+independently rebuildable: with the `2026-09-24` cutoff in place, revision
+`c7958a3268d9498644b22edb75d0f051bbc8cbfc` (v2.12.0) reproduces
+`sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6`
+exactly in two clean cache-disabled exports on one runner. Built at a
+`2026-09-15` cutoff the same revision resolves a different `hatchling` and
+yields
+`sha256:90e6770a03aaa7e6a33949376bfb551d82c4badfbb8c86721ae8fe2fc2535a73`,
+which is the perturbation control proving the cutoff is load-bearing. Unlike
+the previous rotation, this one did not repeat the multi-runner reproduction.
 Treat the cutoff as a pinned build input: moving it rotates the digest and
 requires a re-vet. The `skillspector` entry in
 `src/internals/external-pin-ledger.json` records this evidence.
@@ -112,7 +113,7 @@ from the controlled digest above, so compare the image ID before deciding which
 path to use:
 
 ```bash
-docker image inspect skillspector:aih-2d198ab910ad --format '{{.Id}}'
+docker image inspect skillspector:aih-c7958a3268d9 --format '{{.Id}}'
 ```
 
 If the image ID matches the controlled digest, no local policy approval is
@@ -121,8 +122,8 @@ the build inputs:
 
 ```bash
 aih trust skillspector-pin \
-  --candidate-revision 2d198ab910add401cad658d1087e7c7ba24fd640 \
-  --candidate-tag skillspector:aih-2d198ab910ad \
+  --candidate-revision c7958a3268d9498644b22edb75d0f051bbc8cbfc \
+  --candidate-tag skillspector:aih-c7958a3268d9 \
   --candidate-digest sha256:<64-char-hex> \
   --approve-local-digest \
   --reason "<review reason>" \
@@ -236,8 +237,10 @@ CR — legal `package.json` whitespace that still matches the pinned rule — ca
 slip past the co-signal and win the advisory. Every other constant is the rule
 string byte-for-byte, with `nocase` expressed as the `i` flag.
 
-**Re-verify on pin bump.** This mapping is proven against SkillSpector revision
-`2d198ab910add401cad658d1087e7c7ba24fd640`. Whenever `SKILLSPECTOR_SOURCE_REVISION`
+**Re-verify on pin bump.** This mapping was derived at SkillSpector revision
+`2d198ab910add401cad658d1087e7c7ba24fd640` and holds at
+`c7958a3268d9498644b22edb75d0f051bbc8cbfc`, where `agent_skills.yar` carries the identical git
+blob. Whenever `SKILLSPECTOR_SOURCE_REVISION`
 (`src/trust/images.ts`) changes, re-read
 `src/skillspector/yara_rules/agent_skills.yar` and re-derive this table: any new
 or altered Gate-B string in `agent_skill_mcp_tool_poisoning_metadata` must be

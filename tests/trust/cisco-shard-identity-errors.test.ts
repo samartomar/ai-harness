@@ -96,7 +96,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-const CISCO_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
+const CISCO_LOCK = "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210";
 /** subject-files-v1 of `skills/alpha/SKILL.md` holding "# alpha\n", by hand. */
 const ALPHA = "439283bdb63ecb24c6a5af487d4a88163b4a7de486efa7d844cb1fb6e0db379a";
 
@@ -139,7 +139,7 @@ function jobSarif(job: CiscoShardJob): Record<string, unknown> {
                 detectorId: "detector.cisco",
                 subjectTreeSha256: ALPHA,
                 analyzedFileCount: 1,
-                analyzer: { version: "2.0.14", lockSha256: CISCO_LOCK },
+                analyzer: { version: "2.1.0", lockSha256: CISCO_LOCK },
               },
             },
           },
@@ -153,7 +153,7 @@ function jobSarif(job: CiscoShardJob): Record<string, unknown> {
 function verifiedJoin() {
   const manifest = buildCiscoSourceShardManifest(source, {
     source: { id: "fixture", pinnedSha: "a".repeat(40) },
-    analyzer: { version: "2.0.14", lockSha256: CISCO_LOCK },
+    analyzer: { version: "2.1.0", lockSha256: CISCO_LOCK },
     policy: { version: "native.test", profile: "fixture" },
     shardCount: 1,
   });

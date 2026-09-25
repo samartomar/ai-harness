@@ -6,6 +6,10 @@ import type { TrustDetectorName } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import {
+  CISCO_MCP_SCANNER_ANALYZER,
+  SEMGREP_ANALYZER,
+} from "../../src/trust/scanner-runtime-identity.js";
+import {
   createSelfCompletingFakeScanAdapterForTests,
   type FakeScanAnswerV1,
   selfDerivedPrecomputedCompletionForTests,
@@ -46,6 +50,21 @@ import {
 // ---------------------------------------------------------------------------
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+
+/**
+ * The goldens are W2's separation-parity record, captured with the analyzers
+ * pinned before the U1 upgrade. They are kept as that record: the SARIF they
+ * replay is the recorded pre-U1 output, and the parity claim is about Core's
+ * mapping of it. Only the version-bearing labels Core names the analyzers by
+ * moved with the re-pin; Cisco (`cisco@uvx`) and SkillSpector
+ * (`skillspector@docker`) carry no version in their label.
+ */
+const CAPTURE_ANALYZER_LABELS: Readonly<Record<string, string>> = {
+  "semgrep@uv:1.173.0": SEMGREP_ANALYZER,
+  "mcp-scanner@uv:4.8.2": CISCO_MCP_SCANNER_ANALYZER,
+};
+
+const currentAnalyzerLabel = (label: string): string => CAPTURE_ANALYZER_LABELS[label] ?? label;
 
 const roots: string[] = [];
 
@@ -252,7 +271,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
       return;
     }
     expect(status).toEqual([expect.objectContaining({ verdict: "pass" })]);
-    expect(result.analyzersRun).toEqual(run.analyzersRun);
+    expect(result.analyzersRun).toEqual(run.analyzersRun.map(currentAnalyzerLabel));
     const findings = checks.filter((check) => !isDetectorStatus(check));
     const expectedFindings = run.checks.filter((check) => !isDetectorStatus(check));
     const rows = (result.rawOccurrences ?? []).slice(
@@ -260,7 +279,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
     );
     expect(rows.map(comparableOccurrence)).toEqual(
       run.rawOccurrences.map((row) => ({
-        analyzer: row.analyzer,
+        analyzer: currentAnalyzerLabel(row.analyzer),
         ruleId: row.ruleId.replace("<semgrep-config-dir>", "aih.work"),
         level: row.level,
         message: row.message,

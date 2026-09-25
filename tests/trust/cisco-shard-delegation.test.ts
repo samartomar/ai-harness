@@ -18,7 +18,7 @@ import { fakeCiscoJobSarif, type HandJobSubjectsForTests } from "./fakes/fake-ci
 // ---------------------------------------------------------------------------
 
 // The Cisco host-profile lock Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
-const LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
+const LOCK = "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210";
 const roots: string[] = [];
 
 /**
@@ -48,7 +48,7 @@ function sourceRoot(): string {
 function manifestFor(root: string, lockSha256: string = LOCK) {
   return buildCiscoSourceShardManifest(root, {
     source: { id: "fixture", pinnedSha: "0".repeat(40) },
-    analyzer: { version: `2.0.14+uvlock.${lockSha256.slice(0, 12)}`, lockSha256 },
+    analyzer: { version: `2.1.0+uvlock.${lockSha256.slice(0, 12)}`, lockSha256 },
     policy: { version: "native.test", profile: "fixture:source-wide-inventory" },
     shardCount: 1,
   });
@@ -86,7 +86,7 @@ function fakeScan(
     listDetectorCapabilitiesV1: () => [
       {
         detectorId: "detector.cisco",
-        analyzerVersion: "2.0.14",
+        analyzerVersion: "2.1.0",
         executionProfiles: [
           { id: "host-process-uv-v1", analyzerLock: { path: "uv.lock", sha256: lockSha256 } },
         ],
@@ -145,7 +145,7 @@ describe("runCiscoSourceShardThroughScanV1", () => {
     expect(scan.requests).toHaveLength(1);
     expect(scan.requests[0]).toMatchObject({
       jobs: manifest.jobs.map(({ id, path, inputSha256 }) => ({ id, path, inputSha256 })),
-      expected: { analyzerVersion: "2.0.14", lockSha256: LOCK },
+      expected: { analyzerVersion: "2.1.0", lockSha256: LOCK },
       executionProfileId: "host-process-uv-v1",
       concurrency: 2,
     });
@@ -166,7 +166,7 @@ describe("runCiscoSourceShardThroughScanV1", () => {
     ).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ScanPackageRefusalError);
     expect((error as Error).message).toContain(
-      `detector.cisco under host-process-uv-v1 declares analyzer 2.0.14 with uv.lock ${"b".repeat(64)}; Core accepts 2.0.14 with uv.lock ${LOCK}`,
+      `detector.cisco under host-process-uv-v1 declares analyzer 2.1.0 with uv.lock ${"b".repeat(64)}; Core accepts 2.1.0 with uv.lock ${LOCK}`,
     );
     expect(scan.requests).toHaveLength(0);
   });
@@ -369,7 +369,7 @@ describe("runCiscoSourceShardThroughScanV1", () => {
         ...options,
         importer: scan.importer,
       }),
-    ).rejects.toThrow("Cisco shard ran analyzer version 2.0.15 instead of the manifest's 2.0.14");
+    ).rejects.toThrow("Cisco shard ran analyzer version 2.0.15 instead of the manifest's 2.1.0");
   });
 
   it("refuses a job whose SARIF does not prove it analyzed the job's files", async () => {
@@ -398,9 +398,9 @@ describe("runCiscoSourceShardThroughScanV1", () => {
       [
         "another analyzer lock",
         (evidence) => {
-          evidence.analyzer = { version: "2.0.14", lockSha256: "a".repeat(64) };
+          evidence.analyzer = { version: "2.1.0", lockSha256: "a".repeat(64) };
         },
-        `completion evidence for analyzer "2.0.14" with uv.lock ${"a".repeat(64)}; Core accepts 2.0.14 with uv.lock ${LOCK}`,
+        `completion evidence for analyzer "2.1.0" with uv.lock ${"a".repeat(64)}; Core accepts 2.1.0 with uv.lock ${LOCK}`,
       ],
     ];
     for (const [, edit, reason] of cases) {

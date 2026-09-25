@@ -229,7 +229,7 @@ function detectorRunner(
       }
     }
     if (argv[0] === "uv" && argv[1] === "run" && argv.includes("skill-scanner")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.14\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.1.0\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
@@ -242,7 +242,7 @@ function detectorRunner(
       if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
     }
     if (argv.includes("semgrep")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "1.178.0\n" };
       if (argv.includes("scan")) {
         return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }) };
       }
@@ -355,8 +355,8 @@ describe("skillVetCommand", () => {
       "aih-native",
       "skillspector@docker",
       "cisco@uvx",
-      "semgrep@uv:1.173.0",
-      "snyk-agent-scan@uv:0.5.17",
+      "semgrep@uv:1.178.0",
+      "snyk-agent-scan@uv:0.6.4",
     ]);
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
@@ -601,8 +601,8 @@ describe("skillVetCommand", () => {
       "aih-native",
       "skillspector@docker",
       "cisco@uvx",
-      "semgrep@uv:1.173.0",
-      "snyk-agent-scan@uv:0.5.17",
+      "semgrep@uv:1.178.0",
+      "snyk-agent-scan@uv:0.6.4",
     ]);
     expect(evidence.checks).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "skill license", verdict: "pass" })]),

@@ -50,8 +50,8 @@ describe("required baseline analyzer applicability", () => {
       const required = requiredBaselineAnalyzersForComponent(component(id, paths));
       expect(required).toEqual(
         includesCisco
-          ? ["aih-native", "skillspector@docker", "semgrep@uv:1.173.0", "cisco@uvx"]
-          : ["aih-native", "skillspector@docker", "semgrep@uv:1.173.0"],
+          ? ["aih-native", "skillspector@docker", "semgrep@uv:1.178.0", "cisco@uvx"]
+          : ["aih-native", "skillspector@docker", "semgrep@uv:1.178.0"],
       );
       expect(requiredBaselineDetectorsForComponent(component(id, paths))).toEqual(
         includesCisco ? ["skillspector", "semgrep", "cisco"] : ["skillspector", "semgrep"],
@@ -69,7 +69,7 @@ describe("required baseline analyzer applicability", () => {
     expect(requiredBaselineAnalyzersForComponent(nested, root)).toEqual([
       "aih-native",
       "skillspector@docker",
-      "semgrep@uv:1.173.0",
+      "semgrep@uv:1.178.0",
       "cisco@uvx",
     ]);
     expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual([
@@ -87,7 +87,7 @@ describe("required baseline analyzer applicability", () => {
     expect(requiredBaselineAnalyzersForComponent(nested, root)).toEqual([
       "aih-native",
       "skillspector@docker",
-      "semgrep@uv:1.173.0",
+      "semgrep@uv:1.178.0",
     ]);
     expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual([
       "skillspector",
@@ -99,11 +99,11 @@ describe("required baseline analyzer applicability", () => {
     expect(baselineAnalyzerVersions()).toEqual({
       "aih-native": "native.014fbd614a5a",
       "skillspector@docker":
-        "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
-      "semgrep@uv:1.173.0": "1.173.0+uvlock.77f2bf3e7525",
-      "cisco@uvx": "2.0.14+uvlock.aaba1f326049",
-      "mcp-scanner@uv:4.8.2": "4.8.2+uvlock.92846b24c170",
-      "snyk-agent-scan@uv:0.5.17": "0.5.17+uvlock.49064889ec53",
+        "c7958a3268d9498644b22edb75d0f051bbc8cbfc@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
+      "semgrep@uv:1.178.0": "1.178.0+uvlock.5fae6a8598f7",
+      "cisco@uvx": "2.1.0+uvlock.1e98c5679994",
+      "mcp-scanner@uv:4.8.4": "4.8.4+uvlock.b679f3afa519",
+      "snyk-agent-scan@uv:0.6.4": "0.6.4+uvlock.c71ffe188e38",
     });
   });
 
@@ -121,9 +121,9 @@ describe("required baseline analyzer applicability", () => {
 });
 
 // The locks Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1) under host-process-uv-v1.
-const CISCO_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
-const SEMGREP_LOCK = "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08";
-const MCP_LOCK = "92846b24c170bcf8ab380d5743bcce4504d249268712f2443f181a9b6789694a";
+const CISCO_LOCK = "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210";
+const SEMGREP_LOCK = "5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594";
+const MCP_LOCK = "b679f3afa51977495cc378cbf7e42ebbe9ef68eda38056d72613e9970bd99c16";
 const HOST = { os: "linux", architecture: process.arch === "x64" ? "amd64" : process.arch };
 const VERSIONS: Record<string, string> = {
   "detector.cisco": CISCO_SKILL_SCANNER_VERSION,
@@ -168,8 +168,8 @@ describe("scanBaselineAnalyzerVersionsV1", () => {
     expect(identity.versions).toMatchObject({
       "skillspector@docker": baselineAnalyzerVersions()["skillspector@docker"],
       "cisco@uvx": `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${CISCO_LOCK.slice(0, 12)}`,
-      "semgrep@uv:1.173.0": `${SEMGREP_VERSION}+uvlock.${SEMGREP_LOCK.slice(0, 12)}`,
-      "mcp-scanner@uv:4.8.2": `${CISCO_MCP_SCANNER_VERSION}+uvlock.${MCP_LOCK.slice(0, 12)}`,
+      "semgrep@uv:1.178.0": `${SEMGREP_VERSION}+uvlock.${SEMGREP_LOCK.slice(0, 12)}`,
+      "mcp-scanner@uv:4.8.4": `${CISCO_MCP_SCANNER_VERSION}+uvlock.${MCP_LOCK.slice(0, 12)}`,
     });
     expect(identity.versions["aih-native"]).toMatch(/^native\.[0-9a-f]{12}$/);
     // Scan declares no Snyk capability here: an optional analyzer is simply not named.
@@ -196,7 +196,7 @@ describe("scanBaselineAnalyzerVersionsV1", () => {
         "host-process-uv-v1",
       ),
     ).toThrow(
-      `detector.cisco under host-process-uv-v1 declares analyzer 2.0.14 with uv.lock ${other}; Core accepts 2.0.14 with uv.lock ${CISCO_LOCK}`,
+      `detector.cisco under host-process-uv-v1 declares analyzer 2.1.0 with uv.lock ${other}; Core accepts 2.1.0 with uv.lock ${CISCO_LOCK}`,
     );
   });
 
@@ -206,7 +206,7 @@ describe("scanBaselineAnalyzerVersionsV1", () => {
       "host-process-uv-v1",
     );
     expect(identity.versions).not.toHaveProperty(`mcp-scanner@uv:${CISCO_MCP_SCANNER_VERSION}`);
-    expect(identity.versions["semgrep@uv:1.173.0"]).toBe("1.173.0+uvlock.77f2bf3e7525");
+    expect(identity.versions["semgrep@uv:1.178.0"]).toBe("1.178.0+uvlock.5fae6a8598f7");
   });
 });
 
@@ -328,7 +328,7 @@ describe("probeScanDetectorsV1", () => {
       },
       {
         detector: "semgrep",
-        analyzerLabel: "semgrep@uv:1.173.0",
+        analyzerLabel: "semgrep@uv:1.178.0",
         reason: expect.stringContaining("does not declare host-process-uv-v1"),
       },
       {

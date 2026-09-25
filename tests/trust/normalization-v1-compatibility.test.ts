@@ -250,7 +250,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "semgrep",
-    analyzerLabel: "semgrep@uv:1.173.0",
+    analyzerLabel: "semgrep@uv:1.178.0",
     nativeRuleId: "semgrep.prompt-injection",
     path: "skills/semgrep-prompt/SKILL.md",
     message: "prompt injection shape in trust content",
@@ -267,7 +267,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "semgrep",
-    analyzerLabel: "semgrep@uv:1.173.0",
+    analyzerLabel: "semgrep@uv:1.178.0",
     nativeRuleId: "semgrep.malicious-code",
     path: "skills/semgrep-code/SKILL.md",
     message: "download-and-execute shell shape in trust content",
@@ -284,7 +284,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uv:0.5.17",
+    analyzerLabel: "snyk-agent-scan@uv:0.6.4",
     nativeRuleId: "E001",
     path: "skills/snyk-prompt/SKILL.md",
     message: "Prompt injection in tool description",
@@ -301,7 +301,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uv:0.5.17",
+    analyzerLabel: "snyk-agent-scan@uv:0.6.4",
     nativeRuleId: "W012",
     path: "skills/snyk-dependency/SKILL.md",
     message: "Unverifiable external dependency",
@@ -340,13 +340,13 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
     detectorClass: "skillspector",
     analyzerLabel: "skillspector@docker",
     analyzerIdentity:
-      "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+      "c7958a3268d9498644b22edb75d0f051bbc8cbfc@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "skillspector",
       analyzerLabel: "skillspector@docker",
       analyzerIdentity:
-        "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+        "c7958a3268d9498644b22edb75d0f051bbc8cbfc@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
@@ -366,13 +366,13 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
   },
   {
     detectorClass: "semgrep",
-    analyzerLabel: "semgrep@uv:1.173.0",
-    analyzerIdentity: "1.173.0+uvlock.77f2bf3e7525",
+    analyzerLabel: "semgrep@uv:1.178.0",
+    analyzerIdentity: "1.178.0+uvlock.5fae6a8598f7",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "semgrep",
-      analyzerLabel: "semgrep@uv:1.173.0",
-      analyzerIdentity: "1.173.0+uvlock.77f2bf3e7525",
+      analyzerLabel: "semgrep@uv:1.178.0",
+      analyzerIdentity: "1.178.0+uvlock.5fae6a8598f7",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
@@ -384,13 +384,13 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
   },
   {
     detectorClass: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uv:0.5.17",
-    analyzerIdentity: "0.5.17+uvlock.49064889ec53",
+    analyzerLabel: "snyk-agent-scan@uv:0.6.4",
+    analyzerIdentity: "0.6.4+uvlock.c71ffe188e38",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "snyk-agent-scan",
-      analyzerLabel: "snyk-agent-scan@uv:0.5.17",
-      analyzerIdentity: "0.5.17+uvlock.49064889ec53",
+      analyzerLabel: "snyk-agent-scan@uv:0.6.4",
+      analyzerIdentity: "0.6.4+uvlock.c71ffe188e38",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
@@ -403,12 +403,12 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
   {
     detectorClass: "cisco",
     analyzerLabel: "cisco@uvx",
-    analyzerIdentity: "2.0.14+uvlock.aaba1f326049",
+    analyzerIdentity: "2.1.0+uvlock.1e98c5679994",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "cisco",
       analyzerLabel: "cisco@uvx",
-      analyzerIdentity: "2.0.14+uvlock.aaba1f326049",
+      analyzerIdentity: "2.1.0+uvlock.1e98c5679994",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {

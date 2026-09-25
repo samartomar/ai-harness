@@ -105,7 +105,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/trust/scan-analyzer-identity.ts",
-    34,
+    33,
     "export const ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1: readonly AcceptedScanAnalyzerIdentityV1[] =",
   ],
   [

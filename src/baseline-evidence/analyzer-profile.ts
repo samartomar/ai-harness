@@ -53,7 +53,7 @@ export const REQUIRED_BASELINE_DETECTORS = [
 export const REQUIRED_BASELINE_ANALYZERS = [
   "aih-native",
   "skillspector@docker",
-  "semgrep@uv:1.173.0",
+  "semgrep@uv:1.178.0",
   "cisco@uvx",
 ] as const;
 
@@ -111,15 +111,15 @@ export function requiredBaselineDetectorsForComponent(
 
 /**
  * The analyzer identities committed baseline evidence is checked against. They
- * are pinned: Cisco and Semgrep are the protected Scanner publisher's, and the
- * MCP and Snyk identities are the uv.lock digests Core shipped before Scan
- * owned those environments.
+ * are pinned: Cisco and Semgrep are the protected Scanner publication's, and
+ * the MCP and Snyk identities are the uv.lock digests @aihq/scan installs for
+ * them (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
  */
 export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
   return {
     ...SCANNER_BASELINE_ANALYZER_VERSIONS,
-    [CISCO_MCP_SCANNER_ANALYZER]: "4.8.2+uvlock.92846b24c170",
-    [SNYK_AGENT_SCAN_ANALYZER]: "0.5.17+uvlock.49064889ec53",
+    [CISCO_MCP_SCANNER_ANALYZER]: "4.8.4+uvlock.b679f3afa519",
+    [SNYK_AGENT_SCAN_ANALYZER]: "0.6.4+uvlock.c71ffe188e38",
   };
 }
 
@@ -229,7 +229,7 @@ function analyzerProvisioningHint(analyzerLabel: string): string {
   if (analyzerLabel === "skillspector@docker") {
     return "build and load the pinned SkillSpector image per docs/security/skillspector.md";
   }
-  if (analyzerLabel === "cisco@uvx" || analyzerLabel === "semgrep@uv:1.173.0") {
+  if (analyzerLabel === "cisco@uvx" || analyzerLabel === SEMGREP_ANALYZER) {
     return "provision the analyzer's uv environment through the installed @aihq/scan once online; the trust scan itself always runs offline";
   }
   return "provision the analyzer toolchain before vetting";

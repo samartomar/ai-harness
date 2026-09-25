@@ -306,8 +306,8 @@ describe("completion evidence v1 binds a run to the subject Core submitted", () 
     subject,
     emptyAllowed: true,
     analyzer: {
-      version: "1.173.0+uvlock.77f2bf3e7525",
-      lockSha256: "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08",
+      version: "1.178.0+uvlock.5fae6a8598f7",
+      lockSha256: "5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
     },
   };
   const evidence = (overrides: Record<string, unknown> = {}) => ({
@@ -385,7 +385,7 @@ describe("completion evidence v1 binds a run to the subject Core submitted", () 
     [
       "another analyzer lock",
       [evidence({ analyzer: { version: expected.analyzer.version, lockSha256: null } })],
-      `completion evidence for analyzer "1.173.0+uvlock.77f2bf3e7525" with no uv.lock; Core accepts 1.173.0+uvlock.77f2bf3e7525 with uv.lock ${expected.analyzer.lockSha256}`,
+      `completion evidence for analyzer "1.178.0+uvlock.5fae6a8598f7" with no uv.lock; Core accepts 1.178.0+uvlock.5fae6a8598f7 with uv.lock ${expected.analyzer.lockSha256}`,
     ],
   ])("refuses %s", (_name, evidences, reason) => {
     expect(scanCompletionRefusalV1(logWith(...evidences), expected)).toBe(reason);

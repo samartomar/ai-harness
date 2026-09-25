@@ -145,8 +145,8 @@ function succeededWithSarif(sarif: string, request?: unknown) {
             "detector.cisco",
             request as Record<string, unknown>,
             {
-              version: "2.0.14+uvlock.108c4f78340d",
-              lockSha256: "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f",
+              version: "2.1.0+uvlock.1e98c5679994",
+              lockSha256: "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
             },
           ),
         ),
@@ -163,7 +163,7 @@ function succeededWithSarif(sarif: string, request?: unknown) {
       observation: {
         protocol: "BaselineAnalyzerObservationV1",
         analyzer: "cisco",
-        analyzerVersion: "2.0.14+uvlock.108c4f78340d",
+        analyzerVersion: "2.1.0+uvlock.1e98c5679994",
         mediaType: "application/sarif+json",
         annex: {
           path: "annex/cisco-raw.json",

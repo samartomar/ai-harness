@@ -1,6 +1,8 @@
 /**
- * Exact analyzer identities emitted by the protected Scanner publisher
- * f6189c0211fe27369fb15672f00da76c2072361c for the `aih-baseline-v1` profile.
+ * Exact analyzer identities a protected Scanner publication names for the
+ * `aih-baseline-v1` profile: the U1 analyzer upgrade (aih-scan 391b04d). The
+ * native identity is the one the protected publisher emitted before U1; it moves
+ * only with the first new publication's report.
  *
  * These values are a consumer-side allow-list, not facts copied from an
  * incoming receipt. A Scanner bundle with any other identity fails closed
@@ -9,15 +11,15 @@
 export const SCANNER_BASELINE_ANALYZER_VERSIONS = Object.freeze({
   "aih-native": "native.014fbd614a5a",
   "skillspector@docker":
-    "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
-  "semgrep@uv:1.173.0": "1.173.0+uvlock.77f2bf3e7525",
-  "cisco@uvx": "2.0.14+uvlock.aaba1f326049",
+    "c7958a3268d9498644b22edb75d0f051bbc8cbfc@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
+  "semgrep@uv:1.178.0": "1.178.0+uvlock.5fae6a8598f7",
+  "cisco@uvx": "2.1.0+uvlock.1e98c5679994",
 } as const);
 
 export const SCANNER_TO_CORE_BASELINE_ANALYZER = Object.freeze({
   "aih-native": "aih-native",
   skillspector: "skillspector@docker",
-  semgrep: "semgrep@uv:1.173.0",
+  semgrep: "semgrep@uv:1.178.0",
   cisco: "cisco@uvx",
 } as const);
 

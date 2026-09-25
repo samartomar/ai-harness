@@ -3161,7 +3161,7 @@ describe("scanTrustTree", () => {
       requiredDetectors: ["semgrep"],
     });
 
-    expect(result.analyzersRun).not.toContain("semgrep@uv:1.173.0");
+    expect(result.analyzersRun).not.toContain("semgrep@uv:1.178.0");
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3285,7 +3285,7 @@ describe("scanTrustTree", () => {
       posture: "enterprise",
     });
 
-    expect(result.analyzersRun).toEqual(["aih-native", "semgrep@uv:1.173.0"]);
+    expect(result.analyzersRun).toEqual(["aih-native", "semgrep@uv:1.178.0"]);
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3318,7 +3318,7 @@ describe("scanTrustTree", () => {
     expect(result.rawOccurrences).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          analyzer: "semgrep@uv:1.173.0",
+          analyzer: "semgrep@uv:1.178.0",
           ruleId: "aih.work.semgrep.prompt-injection",
           location: { uri: "skills/clean/SKILL.md", startLine: 1 },
         }),
@@ -3347,7 +3347,7 @@ describe("scanTrustTree", () => {
       posture: "enterprise",
       requiredDetectors: ["semgrep"],
     });
-    expect(unknown.analyzersRun).not.toContain("semgrep@uv:1.173.0");
+    expect(unknown.analyzersRun).not.toContain("semgrep@uv:1.178.0");
     expect(unknown.checks.some((check) => check.detail?.includes("future Semgrep finding"))).toBe(
       false,
     );
@@ -3423,7 +3423,7 @@ describe("scanTrustTree", () => {
     // Precomputed SARIF is Scan's output too (a Scanner annex or joined Cisco
     // shards): the same boundary applies, and nothing of it is read.
     expect(requestFor(scan, "detector.semgrep")).toBeUndefined();
-    expect(result.analyzersRun).not.toContain("semgrep@uv:1.173.0");
+    expect(result.analyzersRun).not.toContain("semgrep@uv:1.178.0");
     expect(result.checks.some((check) => check.detail?.includes("prompt injection fixture"))).toBe(
       false,
     );
@@ -3448,7 +3448,7 @@ describe("scanTrustTree", () => {
       requiredDetectors: ["semgrep"],
     });
     expect(requestFor(scan, "detector.semgrep")).toBeDefined();
-    expect(delegated.analyzersRun).not.toContain("semgrep@uv:1.173.0");
+    expect(delegated.analyzersRun).not.toContain("semgrep@uv:1.178.0");
     expect(
       delegated.checks.some((check) => check.detail?.includes("prompt injection fixture")),
     ).toBe(false);
@@ -3547,7 +3547,7 @@ describe("scanTrustTree", () => {
       posture: "enterprise",
     });
 
-    expect(result.analyzersRun).toEqual(["aih-native", "snyk-agent-scan@uv:0.5.17"]);
+    expect(result.analyzersRun).toEqual(["aih-native", "snyk-agent-scan@uv:0.6.4"]);
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3671,7 +3671,7 @@ describe("scanTrustTree", () => {
       posture: "enterprise",
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.17"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.6.4"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3698,14 +3698,14 @@ describe("scanTrustTree", () => {
       posture: "enterprise",
     });
 
-    expect(result.analyzersRun).toEqual(["aih-native", "snyk-agent-scan@uv:0.5.17"]);
+    expect(result.analyzersRun).toEqual(["aih-native", "snyk-agent-scan@uv:0.6.4"]);
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           name: "trust detector snyk-agent-scan",
           verdict: "pass",
           detail:
-            "snyk-agent-scan@uv:0.5.17 static scan completed through the installed @aihq/scan under execution profile host-process-uv-v1; Core did not execute it. No findings != safe. Analyzers run: aih-native, snyk-agent-scan@uv:0.5.17",
+            "snyk-agent-scan@uv:0.6.4 static scan completed through the installed @aihq/scan under execution profile host-process-uv-v1; Core did not execute it. No findings != safe. Analyzers run: aih-native, snyk-agent-scan@uv:0.6.4",
         }),
       ]),
     );
@@ -3793,7 +3793,7 @@ describe("scanTrustTree", () => {
     });
 
     expect(requestFor(scan, "detector.snyk-agent-scan")).not.toHaveProperty("env");
-    expect(result.analyzersRun).not.toContain("snyk-agent-scan@uv:0.5.17");
+    expect(result.analyzersRun).not.toContain("snyk-agent-scan@uv:0.6.4");
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3819,7 +3819,7 @@ describe("scanTrustTree", () => {
 
     // Scan declares mcp-scanner, yet Core asks it only when an incoming MCP config exists.
     expect(requestFor(noMcpScan, "detector.cisco-mcp-scanner")).toBeUndefined();
-    expect(noMcp.analyzersRun).not.toContain("mcp-scanner@uv:4.8.2");
+    expect(noMcp.analyzersRun).not.toContain("mcp-scanner@uv:4.8.4");
     expect(noMcp.checks.some((check) => check.name === "trust detector mcp-scanner")).toBe(false);
 
     write(
@@ -3844,7 +3844,7 @@ describe("scanTrustTree", () => {
         detectorOptions: { mcpConfigPaths: [".mcp.json"] },
       }),
     );
-    expect(withMcp.analyzersRun).toEqual(["aih-native", "mcp-scanner@uv:4.8.2"]);
+    expect(withMcp.analyzersRun).toEqual(["aih-native", "mcp-scanner@uv:4.8.4"]);
     expect(withMcp.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3920,7 +3920,7 @@ describe("scanTrustTree", () => {
     expect(requestFor(scan, "detector.cisco-mcp-scanner")?.detectorOptions).toEqual({
       mcpConfigPaths: ["mcp-configs/mcp-servers.json"],
     });
-    expect(result.analyzersRun).toContain("mcp-scanner@uv:4.8.2");
+    expect(result.analyzersRun).toContain("mcp-scanner@uv:4.8.4");
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3934,7 +3934,7 @@ describe("scanTrustTree", () => {
     expect(result.rawOccurrences).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          analyzer: "mcp-scanner@uv:4.8.2",
+          analyzer: "mcp-scanner@uv:4.8.4",
           location: expect.objectContaining({ uri: "mcp-configs/mcp-servers.json" }),
         }),
       ]),
@@ -3994,7 +3994,7 @@ describe("scanTrustTree", () => {
       posture: "enterprise",
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.2"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.4"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4033,7 +4033,7 @@ describe("scanTrustTree", () => {
     });
 
     expect(requestFor(scan, "detector.cisco-mcp-scanner")).toBeUndefined();
-    expect(result.analyzersRun).not.toContain("mcp-scanner@uv:4.8.2");
+    expect(result.analyzersRun).not.toContain("mcp-scanner@uv:4.8.4");
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4089,7 +4089,7 @@ describe("scanTrustTree", () => {
       });
 
       expect(requestFor(scan, "detector.cisco-mcp-scanner")).toBeDefined();
-      expect(result.analyzersRun).not.toContain("mcp-scanner@uv:4.8.2");
+      expect(result.analyzersRun).not.toContain("mcp-scanner@uv:4.8.4");
       expect(result.checks).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -4138,7 +4138,7 @@ describe("scanTrustTree", () => {
       posture: "vibe",
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.2"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.4"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4353,7 +4353,7 @@ describe("scanTrustTree", () => {
         {
           results: [
             {
-              // The real cisco-ai-skill-scanner==2.0.14 rule id for this finding.
+              // The real cisco-ai-skill-scanner==2.1.0 rule id for this finding.
               ruleId: "MANIFEST_MISSING_LICENSE",
               message: { text: MISSING_LICENSE_MESSAGE },
               locations: [
@@ -5771,7 +5771,7 @@ describe("trustScanCommand", () => {
     expect(await scan).toBe(0);
     expect(completed).toBe(true);
     expect(JSON.parse(stdout)).toMatchObject({ capability: "large-trust-scan" });
-    expect(stdout).toContain("semgrep@uv:1.173.0 static scan completed through the installed");
+    expect(stdout).toContain("semgrep@uv:1.178.0 static scan completed through the installed");
     expect(stdout).not.toContain("inventory");
     expect(stderr).toContain("detector semgrep started");
   });

@@ -26,12 +26,12 @@ const VECTOR = {
 } as const;
 
 const SEMGREP_HOST = {
-  version: "1.173.0+uvlock.77f2bf3e7525",
-  lockSha256: "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08",
+  version: "1.178.0+uvlock.5fae6a8598f7",
+  lockSha256: "5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
 } as const;
 const CISCO_HOST = {
-  version: "2.0.14+uvlock.108c4f78340d",
-  lockSha256: "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f",
+  version: "2.1.0+uvlock.1e98c5679994",
+  lockSha256: "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
 } as const;
 
 let root: string;
@@ -216,14 +216,14 @@ describe("precomputed SARIF counts complete only with completion evidence for th
   });
 });
 
-/** Cisco under `linux-namespace-uv-v1`, the lock the protected Scanner receipts pin. */
+/** Cisco under `linux-namespace-uv-v1`: since U1g the same lock as the host profile. */
 const CISCO_NAMESPACE = {
-  version: "2.0.14+uvlock.aaba1f326049",
-  lockSha256: "aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1",
+  version: "2.1.0+uvlock.1e98c5679994",
+  lockSha256: "1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
 } as const;
 const SNYK_HOST = {
-  version: "0.5.17+uvlock.49064889ec53",
-  lockSha256: "49064889ec53d91a5981cb5959d764c9bdf10843a54b5e5d339cfc046ad16169",
+  version: "0.6.4+uvlock.c71ffe188e38",
+  lockSha256: "c71ffe188e38e2730c3525e710d54a0ab81e0ed914d2d132692d0ef79911d85f",
 } as const;
 
 async function precomputedUnder(
@@ -244,41 +244,43 @@ async function precomputedUnder(
 }
 
 describe("precomputed evidence must name the analyzer of the profile Core requires", () => {
-  it("fails a Cisco annex naming the host-profile (knownGap) lock when the namespace profile is required", async () => {
+  it.each(["linux-namespace-uv-v1", "host-process-uv-v1"] as const)(
+    "completes a Cisco annex under %s: both Cisco profiles pin one lock",
+    async (profile) => {
+      const result = await precomputedUnder(
+        "cisco",
+        sarifLog([evidence("detector.cisco", VECTOR, CISCO_NAMESPACE)]),
+        profile,
+      );
+      expect(CISCO_HOST).toEqual(CISCO_NAMESPACE);
+      expect(result.executions).toEqual([
+        { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
+      ]);
+    },
+  );
+
+  it.each([
+    [
+      "the pre-upgrade namespace lock",
+      "2.0.14+uvlock.aaba1f326049",
+      "aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1",
+    ],
+    [
+      "the pre-upgrade host lock",
+      "2.0.14+uvlock.108c4f78340d",
+      "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f",
+    ],
+  ])("fails a Cisco annex naming %s", async (_label, version, lockSha256) => {
     const result = await precomputedUnder(
       "cisco",
-      sarifLog([evidence("detector.cisco", VECTOR, CISCO_HOST)]),
+      sarifLog([evidence("detector.cisco", VECTOR, { version, lockSha256 })]),
       "linux-namespace-uv-v1",
     );
     expect(result.executions).toEqual([
       { detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" },
     ]);
     expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
-      `precomputed SARIF for detector.cisco is refused: completion evidence names the analyzer Core pins for detector.cisco under host-process-uv-v1 (${CISCO_HOST.version} with uv.lock ${CISCO_HOST.lockSha256}); Core requires the one it pins under linux-namespace-uv-v1 (${CISCO_NAMESPACE.version} with uv.lock ${CISCO_NAMESPACE.lockSha256})`,
-    );
-  });
-
-  it("completes a Cisco annex naming the namespace lock when the namespace profile is required", async () => {
-    const result = await precomputedUnder(
-      "cisco",
-      sarifLog([evidence("detector.cisco", VECTOR, CISCO_NAMESPACE)]),
-      "linux-namespace-uv-v1",
-    );
-    expect(result.executions).toEqual([
-      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
-    ]);
-  });
-
-  it("fails a Cisco annex naming the namespace lock when no profile is stated: Core's default is host-process-uv-v1", async () => {
-    const result = await precomputedUnder(
-      "cisco",
-      sarifLog([evidence("detector.cisco", VECTOR, CISCO_NAMESPACE)]),
-    );
-    expect(result.executions).toEqual([
-      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" },
-    ]);
-    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
-      `precomputed SARIF for detector.cisco is refused: completion evidence names the analyzer Core pins for detector.cisco under linux-namespace-uv-v1 (${CISCO_NAMESPACE.version} with uv.lock ${CISCO_NAMESPACE.lockSha256}); Core requires the one it pins under host-process-uv-v1 (${CISCO_HOST.version} with uv.lock ${CISCO_HOST.lockSha256})`,
+      `precomputed SARIF for detector.cisco is refused: completion evidence for analyzer "${version}" with uv.lock ${lockSha256}; Core accepts ${CISCO_NAMESPACE.version} with uv.lock ${CISCO_NAMESPACE.lockSha256}`,
     );
   });
 
@@ -513,7 +515,7 @@ describe("a delegated run counts complete only when Scan's unmodified bytes prov
   ])("fails the required detector for %s", async (_label, sarif, reason) => {
     const result = await semgrep(sarif);
     failedWith(result.checks, "semgrep", reason);
-    expect(result.analyzersRun).not.toContain("semgrep@uv:1.173.0");
+    expect(result.analyzersRun).not.toContain("semgrep@uv:1.178.0");
     expect(result.executions).toEqual([
       expect.objectContaining({ detector: "semgrep", outcome: "failed" }),
     ]);

@@ -182,11 +182,11 @@
     {
       "surface": "skillspector",
       "identity": "NVIDIA/SkillSpector",
-      "version": "2.9.4",
-      "commit": "2d198ab910add401cad658d1087e7c7ba24fd640",
-      "integrity": "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+      "version": "2.12.0",
+      "commit": "c7958a3268d9498644b22edb75d0f051bbc8cbfc",
+      "integrity": "sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
       "disposition": "active",
-      "reason": "Rotated 2.5.3 -> 2.9.4 under the four-step procedure, on the hermetic recipe. Delta is 12 commits / 74 files (+7158/-434) carrying real security content: symlinks rejected in the skill walk and git symlinks disabled on clone, nSpect High vulnerabilities remediated, local targets rejected over HTTP transport, and HIGH SC8 when a skill ships __pycache__ or .pyc. Two changes move verdicts and were not in the reported delta: a new whitespace-padding analyzer (P9) adds findings, and a locality check on agent_skill_destructive_autonomous_actions suppresses cross-context false HIGHs. The YR4 carve-out needs no change: all five yara_rules blobs and LICENSE carry identical git SHAs at both tags, and static_yara.py's changes leave _DEFAULT_RULE_ID and the meta-derived message untouched, so no Gate-B string moved. Digest method validated against a known answer first: the same hermetic recipe on the 2.5.3 revision reproduced its committed sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55 exactly. This digest then reproduced five times -- two clean cache-disabled OCI exports on one runner and three further runners independently. The build cutoff moved 2026-08-07 -> 2026-08-15T00:00:00Z because it must sit at or after the source commit (2026-08-13); the perturbation control holds, since building this revision at the old cutoff yields sha256:8b13ea2631690da416e951195545511e63d85e18a0cc183000295a5dd48d5f80 instead."
+      "reason": "Rotated 2.9.4 -> 2.12.0 (tag v2.12.0, commit c7958a3268d9498644b22edb75d0f051bbc8cbfc, 2026-09-23T22:27:53Z) under the four-step procedure, on the hermetic recipe now owned by @aihq/scan (tools/skillspector/Dockerfile). Two clean cache-disabled OCI exports on one Docker Desktop linux/amd64 host were byte-identical: manifest sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6, config sha256:828545498654824b4bd282e63d0b6cdf7cd2c8d6a06a3975c10f2e4e303924c5. The build cutoff moved 2026-08-15T00:00:00Z -> 2026-09-24T00:00:00Z because it must sit at or after the source commit; the perturbation control holds, since the same revision at a 2026-09-15 cutoff resolves hatchling 1.32.0 instead of 1.32.4 and yields sha256:90e6770a03aaa7e6a33949376bfb551d82c4badfbb8c86721ae8fe2fc2535a73 instead. This rotation did not repeat the known-answer validation of the method or the multi-runner reproduction the 2.9.4 rotation recorded. The YR4 carve-out needs no change: agent_skills.yar (the YR4 rule source, blob 6aa11e5ae320185e2424cbcee886e9b782cd77f3) and LICENSE carry identical git SHAs at both tags, and static_yara.py keeps _DEFAULT_RULE_ID YR4 and the meta-derived message; hacktools.yar changed (2f1ac2b3 -> 4155b6d4) and cryptominers, malware and webshells are unchanged. The image was published to GHCR at that digest on 2026-09-24 with owner approval."
     },
     {
       "surface": "skillspector-python-base",
@@ -194,7 +194,7 @@
       "version": "3.12-slim-bookworm",
       "integrity": "sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
       "disposition": "active",
-      "reason": "Pulled by digest for the controlled SkillSpector v2.9.4 OCI build. The 3.12-slim-bookworm tag moved 3.12.13 -> 3.12.14, so the digest is repinned; the interpreter minor is unchanged, which is what the Dockerfile's hardcoded .venv/lib/python3.12 path depends on."
+      "reason": "Pulled by digest for the controlled SkillSpector v2.12.0 OCI build (and the v2.9.4 build before it). The 3.12-slim-bookworm tag moved 3.12.13 -> 3.12.14, so the digest is repinned; the interpreter minor is unchanged, which is what the Dockerfile's hardcoded .venv/lib/python3.12 path depends on."
     },
     {
       "surface": "skillspector-build-uv",
@@ -202,16 +202,16 @@
       "version": "0.12.8",
       "commit": "68209e5c61ce4b76c2e685bea7913876bc929dc9",
       "disposition": "retained",
-      "reason": "Exact build-tool input for the currently published SkillSpector v2.9.4 image digest sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800. The controlled five-way reproduction used uv 0.12.8; changing this Dockerfile input without rebuilding and re-vetting the image makes the committed recipe cease to reproduce the trusted digest. The 0.12.8 tag resolves to commit 68209e5c61ce4b76c2e685bea7913876bc929dc9. This build-only pin is retained until the next controlled SkillSpector rebuild; the independent general uv toolchain is 0.12.13."
+      "reason": "Exact build-tool input for the currently published SkillSpector v2.12.0 image digest sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6. Both clean builds of that rotation used uv 0.12.8; changing this Dockerfile input without rebuilding and re-vetting the image makes the recipe cease to reproduce the trusted digest. The 0.12.8 tag resolves to commit 68209e5c61ce4b76c2e685bea7913876bc929dc9. This build-only pin is retained until the next controlled SkillSpector rebuild; the independent general uv toolchain is 0.12.13."
     },
     {
       "surface": "cisco-skill-scanner",
       "identity": "cisco-ai-skill-scanner",
-      "version": "2.0.14",
-      "commit": "a49c8d9f7555dd99a9f5e4430c3bb8d4fe4a9371",
-      "integrity": "sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2",
+      "version": "2.1.0",
+      "commit": "a24df340ca6056a6446a239f4a7b114b11c6073a",
+      "integrity": "sha256:1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
       "disposition": "active",
-      "reason": "Advance to the exact 2.0.14 wheel published 2026-09-01 after Scanner qualification bound tag commit a49c8d9f7555dd99a9f5e4430c3bb8d4fe4a9371, PyPI wheel sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2, and the committed uv 0.12.9 lock sha256:aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1. Protected Scanner publisher ba0f0bfc46f2634da71e125bf3bbcefb3493389c produced request-bound ECC and Superpowers evidence with analyzer identity 2.0.14+uvlock.aaba1f326049; locked version checks remain required before release."
+      "reason": "Advance 2.0.14 -> 2.1.0 (tag 2.1.0 = commit a24df340ca6056a6446a239f4a7b114b11c6073a). 2.1.0 ships compiled platform wheels only (no py3-none-any), so the recorded integrity is the uv.lock @aihq/scan installs for every Cisco profile (tools/baseline-analyzers/cisco-skill-scanner/uv.lock, sha256:1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210), which hashes every platform wheel; the win_amd64 and manylinux x86_64 wheels are sha256:c29d68a2... and sha256:c84292b7.... Since U1g one lock serves both linux-namespace-uv-v1 and host-process-uv-v1, so the analyzer identity is 2.1.0+uvlock.1e98c5679994 under either. Real 2.1.0 runs completed on the golden corpus (Linux) and on win32 under host-process-uv-v1. Locked version checks remain required before release."
     },
     {
       "surface": "cisco-mcp-scanner",
@@ -225,18 +225,20 @@
     {
       "surface": "snyk-agent-scan",
       "identity": "snyk-agent-scan",
-      "version": "0.5.17",
-      "integrity": "sha256:ae928b023023fba12fdaaaa31e9da5dad4252c181545dfba72d46534d694b935",
+      "version": "0.6.4",
+      "commit": "af0d2c9cf37d70a29ee9ed725f2779a92c0409d5",
+      "integrity": "sha256:c71ffe188e38e2730c3525e710d54a0ab81e0ed914d2d132692d0ef79911d85f",
       "disposition": "active",
-      "reason": "The committed 62-package uv 0.12.2 lock carries mcp 1.28.1 and cryptography 50.0.0; locked online and offline help passed. Protected main qualification run https://github.com/samartomar/ai-harness/actions/runs/31828959167 at b4c76cbc88ff300c1f3e241e9b9c1f25ef921760 completed snyk-agent-scan@uv:0.5.17 against the synthetic fixture and emitted a status=qualified sanitized receipt. GitHub reports artifact digest sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0, and the receipt binds ephemeral raw output hash sha256:22e5dc96b689af87589b32f96570a0da407a6562281d7c94021c57b849737daa. This activates only the governed Snyk detector integration; it does not claim arbitrary input is safe."
+      "reason": "Advance 0.5.17 -> 0.6.4 (tag v0.6.4 = commit af0d2c9cf37d70a29ee9ed725f2779a92c0409d5; 0.5.17 was ea959964ce4728426fca9fa78c9e7809b972f313). The recorded integrity is the uv.lock @aihq/scan installs (tools/baseline-analyzers/snyk-agent-scan/uv.lock, sha256:c71ffe188e38e2730c3525e710d54a0ab81e0ed914d2d132692d0ef79911d85f), which carries the py3-none-any wheel sha256:c0b9c1ecc14407c1e7f3fe634328148bcfd55d24c847e7d8b0078042e5439a06. 0.6 prints a ScanResponse and exits 0 even when analysis fails; Scan's parser fails such a run closed. Findings at 0.6.4 are not qualified: the only real run hit the service's daily quota (HTTP 429) and failed closed, so the success path rests on fixtures written from the 0.6.4 sources. The 0.5.17 qualification (run 31828959167, snyk-agent-scan@uv:0.5.17) does not carry over. This activates only the governed Snyk detector integration; it does not claim arbitrary input is safe."
     },
     {
       "surface": "semgrep",
       "identity": "semgrep",
-      "version": "1.173.0",
-      "commit": "abce3b5391706850837d4339f84bfaa3ec08604b",
-      "integrity": "sha256:95e504f01bf9ae20c23359a76bf9ada3e10c88906de58964f489e6332753260a",
-      "disposition": "active"
+      "version": "1.178.0",
+      "commit": "2f122b2feb38cc06272b1dde5b482e85eaf3adad",
+      "integrity": "sha256:5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
+      "disposition": "active",
+      "reason": "Advance 1.173.0 -> 1.178.0 (tag v1.178.0 = commit 2f122b2feb38cc06272b1dde5b482e85eaf3adad). The recorded integrity is the uv.lock @aihq/scan installs under both uv profiles (tools/baseline-analyzers/semgrep/uv.lock, sha256:5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594), which hashes every platform wheel. On the golden corpus 1.178.0 reproduced the 1.173.0 findings in 12 of 12 cases on Linux and on Windows."
     },
     {
       "surface": "agentshield",

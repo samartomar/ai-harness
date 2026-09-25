@@ -454,8 +454,8 @@ describe("Core Scanner baseline consumer", () => {
         version: SCANNER_BASELINE_ANALYZER_VERSIONS["aih-native"],
       },
       {
-        name: "semgrep@uv:1.173.0",
-        version: SCANNER_BASELINE_ANALYZER_VERSIONS["semgrep@uv:1.173.0"],
+        name: "semgrep@uv:1.178.0",
+        version: SCANNER_BASELINE_ANALYZER_VERSIONS["semgrep@uv:1.178.0"],
       },
       {
         name: "skillspector@docker",
@@ -465,15 +465,35 @@ describe("Core Scanner baseline consumer", () => {
     expect(evidence.components[1]?.analyzers.map((entry) => entry.name)).toEqual([
       "aih-native",
       "cisco@uvx",
-      "semgrep@uv:1.173.0",
+      "semgrep@uv:1.178.0",
       "skillspector@docker",
     ]);
   });
 
-  it("refuses a Cisco annex naming the host-profile lock: Scan's baseline runtime runs Cisco under linux-namespace-uv-v1", async () => {
+  it("accepts a Cisco annex under either uv profile: since U1g both install the one Cisco lock, so the identity names the same analyzer", async () => {
+    // The analyzer identity cannot tell the profiles apart any more; which
+    // profile ran a batch rests on the attested publisher (SI1 gap 1).
     const { root, catalog } = sourceFixture();
     const request = createCoreBaselineVetRequest(root, catalog);
     const result = buildResult(root, request, {}, {}, { cisco: "host-process-uv-v1" });
+    const signed = signedFixture(request, result);
+
+    const evidence = await consumeVerifiedScannerBaseline({
+      sourceRoot: root,
+      catalog,
+      request,
+      result,
+      envelope: signed.envelope,
+      roots: signed.roots,
+      expected: signed.expected,
+    });
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass", "pass"]);
+  });
+
+  it("refuses a Cisco annex naming a pre-upgrade Cisco lock", async () => {
+    const { root, catalog } = sourceFixture();
+    const request = createCoreBaselineVetRequest(root, catalog);
+    const result = buildResult(root, request, { cisco: "2.0.14+uvlock.aaba1f326049" });
     const signed = signedFixture(request, result);
 
     await expect(
@@ -487,7 +507,7 @@ describe("Core Scanner baseline consumer", () => {
         expected: signed.expected,
       }),
     ).rejects.toThrow(
-      "precomputed SARIF for detector.cisco is refused: completion evidence names the analyzer Core pins for detector.cisco under host-process-uv-v1 (2.0.14+uvlock.108c4f78340d with uv.lock 108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f); Core requires the one it pins under linux-namespace-uv-v1 (2.0.14+uvlock.aaba1f326049 with uv.lock aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1)",
+      "Scanner baseline analyzer cisco identity 2.0.14+uvlock.aaba1f326049 does not match pinned 2.1.0+uvlock.1e98c5679994",
     );
   });
 
@@ -547,7 +567,7 @@ describe("Core Scanner baseline consumer", () => {
       }),
     ).rejects.toThrow(/replayed evidence/);
 
-    const wrongResult = buildResult(fresh.root, freshRequest, { semgrep: "1.173.0+uvlock.wrong" });
+    const wrongResult = buildResult(fresh.root, freshRequest, { semgrep: "1.178.0+uvlock.wrong" });
     const wrongSigned = signedFixture(freshRequest, wrongResult);
     await expect(
       consumeVerifiedScannerBaseline({
