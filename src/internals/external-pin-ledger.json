@@ -216,11 +216,11 @@
     {
       "surface": "cisco-mcp-scanner",
       "identity": "cisco-ai-mcp-scanner",
-      "version": "4.8.2",
-      "commit": "94e61145a5bd6ae39eabcc52a686830e1ec73be0",
-      "integrity": "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
+      "version": "4.8.4",
+      "commit": "654fbb2803384dac03a18955a358823d09ff451b",
+      "integrity": "sha256:b679f3afa51977495cc378cbf7e42ebbe9ef68eda38056d72613e9970bd99c16",
       "disposition": "active",
-      "reason": "The governed cisco-ai-mcp-scanner pin remains 4.8.2 and MCP remains 2.0.0. On 2026-09-09, the exact governed uv 0.12.9 toolchain (commit 9f928602938ac5cf1cd6b294a725833c16f5720e) regenerated lock sha256:92846b24c170bcf8ab380d5743bcce4504d249268712f2443f181a9b6789694a with resolver-only constraints for httpx2 2.12.0, its required httpcore2 2.12.0, and pip 26.2. The universal lock also records required httpx2-jsfetch 1.0 only for Python >=3.12 on Emscripten, as declared by httpx2 2.12.0; it is not a native Windows dependency. This transitive-only repair resolves the seven recorded pip/httpx2/httpcore2 advisories without changing the governed scanner wheel, upstream commit, integrity, or disposition. Locked runtime help and static YARA checks remain required before release."
+      "reason": "Advance 4.8.2 -> 4.8.4 (tag 4.8.4 = commit 654fbb2803384dac03a18955a358823d09ff451b). The previous row recorded 4.8.2 (tag 4.8.2 = commit 51966cce214ae057e69c3a672307911f5026e255), not 94e61145a5bd6ae39eabcc52a686830e1ec73be0 as it stated, with integrity sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202 and lock sha256:92846b24c170bcf8ab380d5743bcce4504d249268712f2443f181a9b6789694a. The recorded integrity is the uv.lock @aihq/scan installs (tools/baseline-analyzers/cisco-mcp-scanner/uv.lock, sha256:b679f3afa51977495cc378cbf7e42ebbe9ef68eda38056d72613e9970bd99c16), which carries the py3-none-any wheel sha256:cd25f68d4f22c6e40b74578a8c28e2dfc350f69ebf4122801d9d05f804e769cd and the sdist sha256:d417e19e72bc0ebc26227ec4482527e8ca202c83e2559bcf4b4a28fd94f9a8b5. MCP remains 2.0.0, and the lock keeps the 2026-09-09 transitive resolutions (httpx2 2.12.0, httpcore2 2.12.0, pip 26.2). Scan runs the static mode's local yara analyzer, whose rules and threat names are unchanged from 4.8.2, so no rule id is new. The 4.8.2 pin did not execute its prompt_defense or readiness analyzers in static mode; that has not been re-verified at 4.8.4. Locked runtime help and static YARA checks remain required before release."
     },
     {
       "surface": "snyk-agent-scan",

@@ -521,14 +521,19 @@ describe("active external-pin ledger", () => {
       disposition: "active",
     });
     expect(entry("cisco-skill-scanner").reason).toMatch(/one lock serves both/i);
-    // The cisco-mcp-scanner row (and its 4.8.2 revision defect) moves at Q1 runbook
-    // step 11, not with the analyzer identities Core accepts.
-    expect(CISCO_MCP_SCANNER_VERSION).toBe("4.8.4");
-    expect(entry("cisco-mcp-scanner")).toMatchObject({
-      version: "4.8.2",
-      integrity: "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
+    const mcp = entry("cisco-mcp-scanner");
+    expect(mcp).toMatchObject({
+      version: CISCO_MCP_SCANNER_VERSION,
+      commit: "654fbb2803384dac03a18955a358823d09ff451b",
+      integrity: "sha256:b679f3afa51977495cc378cbf7e42ebbe9ef68eda38056d72613e9970bd99c16",
       disposition: "active",
     });
+    // The previous row named the wrong revision for 4.8.2; the history states the right one.
+    expect(mcp.reason).toContain(
+      "4.8.2 (tag 4.8.2 = commit 51966cce214ae057e69c3a672307911f5026e255",
+    );
+    expect(mcp.reason).toContain("not 94e61145a5bd6ae39eabcc52a686830e1ec73be0");
+    expect(mcp.reason).toMatch(/prompt_defense.*readiness.*not been re-verified at 4\.8\.4/);
     const snyk = entry("snyk-agent-scan");
     expect(snyk).toMatchObject({
       version: "0.6.4",
