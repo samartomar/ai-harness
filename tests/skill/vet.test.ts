@@ -795,7 +795,7 @@ describe("skillVetCommand", () => {
     expect(digest.data.reasons).toEqual(
       expect.arrayContaining([expect.stringContaining("trust.prompt-injection")]),
     );
-    expect(digest.text).toContain("Action: blocked");
+    expect(digest.text).toContain("Action: carries proven-danger findings");
   });
 
   it("grades a licence-less source UNKNOWN with a trust.license-missing check", async () => {
@@ -835,7 +835,7 @@ describe("skillVetCommand", () => {
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("YELLOW");
     expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);
-    expect(digest.text).toContain("Action: manual approval required");
+    expect(digest.text).toContain("Action: carries findings for review");
   });
 
   it("grades extensionless setup-script shape YELLOW with sandbox smoke evidence", async () => {

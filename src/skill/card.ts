@@ -14,11 +14,11 @@ import { skillNameSchema, sourceScopePathSchema } from "./lockfile.js";
  * COMMITTED (unlike the gitignored `.aih/skill-reports/` evidence they cite).
  */
 
-/** Approvable risk classes — RED/UNKNOWN sources never get a card. */
-const RiskClassSchema = z.enum(["green", "yellow"]);
+/** The vet verdict as the card's risk label; every vetted source can get a card (D50). */
+const RiskClassSchema = z.enum(["green", "yellow", "red", "unknown"]);
 
 const SkillCardApprovalSchema = z.object({
-  verdict: z.enum(["GREEN", "YELLOW"]),
+  verdict: z.enum(["GREEN", "YELLOW", "RED", "UNKNOWN"]),
   approvedBy: z.string().min(1),
   approvedAt: z.string().min(1),
 });

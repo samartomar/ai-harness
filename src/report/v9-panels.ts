@@ -1025,9 +1025,15 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     return undefined;
   }
   const { installed, approved, unapproved, stalePin, quarantined } = inv.counts;
-  const approvalVerdicts = {
-    GREEN: lock.skills.filter((entry) => entry.verdict === "GREEN").length,
-    YELLOW: lock.skills.filter((entry) => entry.verdict === "YELLOW").length,
+  const verdictCount = (verdict: string): number =>
+    lock.skills.filter((entry) => entry.verdict === verdict).length;
+  const approvalVerdicts: { GREEN: number; YELLOW: number; RED?: number; UNKNOWN?: number } = {
+    GREEN: verdictCount("GREEN"),
+    YELLOW: verdictCount("YELLOW"),
+    // Approvals record the consumer's decision on any vet verdict (D50).
+    ...(verdictCount("RED") + verdictCount("UNKNOWN") > 0
+      ? { RED: verdictCount("RED"), UNKNOWN: verdictCount("UNKNOWN") }
+      : {}),
   };
   const notable = inv.skills.filter((s) => s.status !== "approved");
   const rows = inv.skills.map((s) => ({
@@ -1127,7 +1133,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     "scanner & verdict evidence:",
     `  vet evidence reports: ${scanner.reports} · newest scan: ${scanner.newestAt ?? "missing"}`,
     `  scanner verdicts: GREEN ${scanner.verdicts.GREEN} · YELLOW ${scanner.verdicts.YELLOW} · RED ${scanner.verdicts.RED} · UNKNOWN ${scanner.verdicts.UNKNOWN}`,
-    `  approval verdicts: GREEN ${approvalVerdicts.GREEN} · YELLOW ${approvalVerdicts.YELLOW}`,
+    `  approval verdicts: GREEN ${approvalVerdicts.GREEN} · YELLOW ${approvalVerdicts.YELLOW}${approvalVerdicts.RED === undefined ? "" : ` · RED ${approvalVerdicts.RED} · UNKNOWN ${approvalVerdicts.UNKNOWN ?? 0}`}`,
     `  analyzers: ${scanner.analyzers.length > 0 ? scanner.analyzers.join(", ") : "missing"}`,
     ...scanner.gaps.map((gap) => `  gap: ${gap}`),
     ...(artifactLines.length > 0 ? ["", "distribution & audit:", ...artifactLines] : []),

@@ -1226,9 +1226,9 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "marketplace.unapproved-verdict": {
     audience: "developer",
     failSeverity: "blocking",
-    title: "marketplace skill carries a non-distributable verdict",
+    title: "marketplace skill carries a value that is not a vet verdict",
     action:
-      "Only GREEN/YELLOW skills are distributable; a RED/UNKNOWN (or unrecognized) verdict in marketplace.json means the artifact was not built from the approval lock. Rebuild with `aih marketplace build --apply` from a repo whose approvals are current.",
+      "A verdict other than GREEN, YELLOW, RED or UNKNOWN in marketplace.json means the artifact was not built from the approval lock. Rebuild with `aih marketplace build --apply` from a repo whose approvals are current.",
   },
   "marketplace.signature": {
     audience: "developer",

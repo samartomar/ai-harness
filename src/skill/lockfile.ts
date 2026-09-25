@@ -55,7 +55,8 @@ export const SkillLockEntrySchema = z.object({
   name: skillNameSchema,
   source: z.string().min(1),
   commit: z.string().min(1),
-  verdict: z.enum(["GREEN", "YELLOW"]),
+  /** The vet verdict the approval was recorded against: a label, never a gate. */
+  verdict: z.enum(["GREEN", "YELLOW", "RED", "UNKNOWN"]),
   pack: skillNameSchema.optional(),
   /** True when the approval is a first-party (repo-relative local) skill. */
   firstParty: z.boolean().optional(),

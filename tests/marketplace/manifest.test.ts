@@ -83,16 +83,24 @@ describe("MarketplaceManifestSchema — strict shape", () => {
     ).toBe(true);
   });
 
-  it("rejects unknown keys, non-approvable verdicts, and empty files", () => {
+  it("rejects unknown keys, a value that is not a vet verdict, and empty files", () => {
     expect(MarketplaceManifestSchema.safeParse({ ...validManifest(), extra: 1 }).success).toBe(
       false,
     );
-    expect(MarketplaceManifestSchema.safeParse(manifestWithSkill({ verdict: "RED" })).success).toBe(
-      false,
-    );
+    expect(
+      MarketplaceManifestSchema.safeParse(manifestWithSkill({ verdict: "BLOCKED" })).success,
+    ).toBe(false);
     expect(MarketplaceManifestSchema.safeParse(manifestWithSkill({ files: [] })).success).toBe(
       false,
     );
+  });
+
+  it("accepts every vet verdict as the skill's label", () => {
+    for (const verdict of ["GREEN", "YELLOW", "RED", "UNKNOWN"]) {
+      expect(MarketplaceManifestSchema.safeParse(manifestWithSkill({ verdict })).success).toBe(
+        true,
+      );
+    }
   });
 
   it("rejects a traversal path inside files[]", () => {
@@ -121,7 +129,7 @@ describe("readMarketplaceManifest — the fail-closed result read", () => {
   });
 
   it("reports a schema violation with the failing path", () => {
-    write(JSON.stringify(manifestWithSkill({ verdict: "RED" })));
+    write(JSON.stringify(manifestWithSkill({ verdict: "BLOCKED" })));
     const read = readMarketplaceManifest(dir);
     expect(read.ok).toBe(false);
     if (!read.ok) expect(read.reason).toContain("schema validation");

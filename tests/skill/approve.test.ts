@@ -219,22 +219,38 @@ describe("skillApproveCommand", () => {
     expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.verdict).toBe("YELLOW");
   });
 
-  it("refuses a RED verdict as blocked", () => {
+  it("records a RED verdict and its reasons, and approves", async () => {
     writeEvidence(
       evidence({
         verdict: "RED",
         reasons: ["proven-dangerous finding trust.prompt-injection: exfil prompt"],
       }),
     );
+    const c = ctx(approveOptions(), true);
 
-    expect(() => skillApproveCommand.plan(ctx(approveOptions()))).toThrow(
-      /RED — blocked[\s\S]*trust\.prompt-injection/,
-    );
+    const result = await executePlan(await skillApproveCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const card = readJson<SkillCard>(CARD_REL);
+    expect(card.riskClass).toBe("red");
+    expect(card.approval?.verdict).toBe("RED");
+    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.verdict).toBe("RED");
+    const summary = JSON.stringify(result);
+    expect(summary).toContain("Verdict: RED → riskClass red");
+    expect(summary).toContain("proven-dangerous finding trust.prompt-injection: exfil prompt");
   });
 
-  it("refuses an UNKNOWN verdict and names the evidence gaps", () => {
+  it("records an UNKNOWN verdict with its evidence gaps and an undetermined license, and approves", async () => {
     writeEvidence(
       evidence({
+        checks: [
+          {
+            name: "skill license",
+            verdict: "fail",
+            code: "trust.license-missing",
+            detail: "no LICENSE file at the source root",
+          },
+        ],
         verdict: "UNKNOWN",
         reasons: [
           "source was not fetched; scan evidence is insufficient",
@@ -242,10 +258,18 @@ describe("skillApproveCommand", () => {
         ],
       }),
     );
+    const c = ctx(approveOptions(), true);
 
-    expect(() => skillApproveCommand.plan(ctx(approveOptions()))).toThrow(
-      /UNKNOWN — evidence insufficient[\s\S]*source was not fetched[\s\S]*no license was found/,
-    );
+    const result = await executePlan(await skillApproveCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const card = readJson<SkillCard>(CARD_REL);
+    expect(card.riskClass).toBe("unknown");
+    expect(card.license).toBe("not determined");
+    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.verdict).toBe("UNKNOWN");
+    const summary = JSON.stringify(result);
+    expect(summary).toContain("source was not fetched; scan evidence is insufficient");
+    expect(summary).toContain("license recorded: not determined");
   });
 
   it("refuses when no evidence artifact exists, pointing at skill vet --apply", () => {
@@ -841,7 +865,7 @@ describe("skillCardCommand", () => {
     expect(() => skillCardCommand.plan(ctx({ source: "owner/repo" }))).toThrow(/--pin <full-sha>/);
   });
 
-  it("refuses evidence whose license is missing", () => {
+  it("records an undetermined license instead of refusing the card", async () => {
     writeEvidence(
       evidence({
         checks: [
@@ -857,9 +881,13 @@ describe("skillCardCommand", () => {
       }),
     );
 
-    expect(() => skillCardCommand.plan(ctx({ source: "owner/repo", pin: PIN }))).toThrow(
-      /no license recorded/,
-    );
+    const c = ctx({ source: "owner/repo", pin: PIN }, true);
+    const result = await executePlan(await skillCardCommand.plan(c), c);
+    expect(result.report?.ok).toBe(true);
+    expect(readJson<SkillCard>(CARD_REL)).toMatchObject({
+      license: "not determined",
+      riskClass: "yellow",
+    });
   });
 });
 

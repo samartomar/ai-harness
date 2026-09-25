@@ -908,7 +908,13 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
       : undefined;
   const approvalVerdicts =
     approvals !== undefined
-      ? { GREEN: numOr(approvals.GREEN, 0), YELLOW: numOr(approvals.YELLOW, 0) }
+      ? {
+          GREEN: numOr(approvals.GREEN, 0),
+          YELLOW: numOr(approvals.YELLOW, 0),
+          ...(approvals.RED === undefined && approvals.UNKNOWN === undefined
+            ? {}
+            : { RED: numOr(approvals.RED, 0), UNKNOWN: numOr(approvals.UNKNOWN, 0) }),
+        }
       : undefined;
   // Pack rollup — present only when the digest carried tags (pack-free stays absent).
   // `quarantined` rides through only when the digest emitted it (non-zero), so a

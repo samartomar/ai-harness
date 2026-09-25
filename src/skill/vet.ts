@@ -100,10 +100,10 @@ const FETCH_BLOCKED_SKIP: Check = {
 };
 
 const VERDICT_ACTION: Record<SkillVerdict, string> = {
-  GREEN: "install allowed under this policy (skill vet itself never installs)",
-  YELLOW: "manual approval required before install",
-  RED: "blocked — do not install",
-  UNKNOWN: "do not install — evidence insufficient",
+  GREEN: "no findings recorded (skill vet itself never installs)",
+  YELLOW: "carries findings for review; skill approve records the reviewer's decision",
+  RED: "carries proven-danger findings; skill approve records the consumer's decision",
+  UNKNOWN: "evidence is incomplete; skill approve records the consumer's decision",
 };
 
 function toPosix(path: string): string {

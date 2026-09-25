@@ -659,7 +659,7 @@ interface SkillGovData {
     analyzers: string[];
     gaps: string[];
   };
-  approvalVerdicts?: { GREEN: number; YELLOW: number };
+  approvalVerdicts?: { GREEN: number; YELLOW: number; RED?: number; UNKNOWN?: number };
 }
 
 describe("skillGovernanceDigest", () => {
@@ -825,6 +825,37 @@ describe("skillGovernanceDigest", () => {
     expect(html).toContain("newest scan 2026-07-02");
     expect(html).toContain("RED 1 · UNKNOWN 1");
     expect(html).toContain("GREEN 1 · YELLOW 1");
+  });
+
+  it("counts RED and UNKNOWN approvals as labels instead of dropping them", () => {
+    put(`${DIR}/skills/src/alpha/SKILL.md`, "# alpha\n");
+    put(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [
+          lockEntry("alpha", "docs"),
+          { ...lockEntry("risky", "docs"), verdict: "RED" },
+          { ...lockEntry("unscanned", "docs"), verdict: "UNKNOWN" },
+        ],
+      }),
+    );
+
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData;
+    expect(data.approvalVerdicts).toEqual({ GREEN: 1, YELLOW: 0, RED: 1, UNKNOWN: 1 });
+    expect(d?.text).toContain("approval verdicts: GREEN 1 · YELLOW 0 · RED 1 · UNKNOWN 1");
+    const html = renderSkillGovernance({
+      installed: data.installed,
+      approved: data.approved,
+      unapproved: data.unapproved,
+      stalePin: data.stalePin,
+      quarantined: 0,
+      rows: data.rows,
+      scanner: data.scanner,
+      approvalVerdicts: data.approvalVerdicts,
+    });
+    expect(html).toContain("GREEN 1 · YELLOW 0 · RED 1 · UNKNOWN 1");
   });
 
   it("counts a quarantined skill in the title breakdown and NEVER as clean (review high)", () => {
