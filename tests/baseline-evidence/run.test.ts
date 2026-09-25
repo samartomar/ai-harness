@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import {
-  BaselineEvidenceBlockedError,
+  BaselineEvidenceIntegrityError,
   baselineInstallPhasePlan,
   captureBaselineGate,
 } from "../../src/baseline-evidence/run.js";
@@ -146,7 +146,7 @@ describe("guarded baseline install phases", () => {
     ]);
   });
 
-  it("refuses to create a cleared gate when evidence blocks", () => {
+  it("refuses a gate when signed evidence does not match the component bytes", () => {
     expect(() =>
       captureBaselineGate({
         ctx: ctx(),
@@ -156,52 +156,65 @@ describe("guarded baseline install phases", () => {
         vendorLock: vendorLock("0".repeat(64)),
         vendorLockSha256: "f".repeat(64),
       }),
-    ).toThrow(BaselineEvidenceBlockedError);
+    ).toThrow(/signed baseline evidence does not cover or match the selected component bytes/);
   });
 
-  it("builds a mixed gate and installs only the authorized component subset", async () => {
+  it("installs a component with findings beside a clean one and hands its label to the builder", async () => {
     const gate = captureBaselineGate({
       ctx: ctx(),
-      allowPartial: true,
       sourceRoot: root,
       catalog: mixedCatalog(),
       componentIds: ["skill:clean", "skill:held"],
       vendorLock: mixedVendorLock(),
       vendorLockSha256: "f".repeat(64),
     });
-    expect(gate.authorizations).toEqual([expect.objectContaining({ componentId: "skill:clean" })]);
-    expect(gate.held).toEqual([
-      expect.objectContaining({
-        componentId: "skill:held",
-        routeCode: "baseline.evidence-blocked",
-        codes: ["trust.auto-exec-hook"],
-      }),
+    expect(gate.authorizations).toEqual([
+      expect.objectContaining({ componentId: "skill:clean" }),
+      expect.objectContaining({ componentId: "skill:held" }),
     ]);
-    const build = vi.fn(() => [doc("install", "verified partial install")]);
+    expect(gate.held).toEqual([]);
+    const build = vi.fn(() => [doc("install", "verified install with labels")]);
 
     const phase = await baselineInstallPhasePlan(ctx(), gate, build);
 
-    // Authorizations AND the records the gate held back, from the one
-    // verification this phase re-ran — so a builder can report why a requested
-    // component did not install without verifying it a second time.
+    // Authorizations, held records and finding labels come from the one
+    // verification this phase re-ran, so a builder reports each component's
+    // findings without verifying it a second time.
     expect(build).toHaveBeenCalledWith(
-      [expect.objectContaining({ componentId: "skill:clean" })],
-      [expect.objectContaining({ componentId: "skill:held" })],
+      [
+        expect.objectContaining({ componentId: "skill:clean" }),
+        expect.objectContaining({ componentId: "skill:held" }),
+      ],
+      [],
+      [
+        expect.objectContaining({ componentId: "skill:clean", verdict: "no-findings" }),
+        expect.objectContaining({
+          componentId: "skill:held",
+          verdict: "has-findings",
+          findings: [{ code: "trust.auto-exec-hook", count: 1 }],
+        }),
+      ],
     );
-    expect(phase.actions.map((action) => action.kind)).toEqual(["probe", "digest", "doc"]);
+    expect(phase.actions.map((action) => action.kind)).toEqual(["probe", "doc"]);
+    const probe = phase.actions[0];
+    if (probe?.kind !== "probe") throw new Error("missing evidence probe");
+    expect(await probe.run(ctx())).toMatchObject({ verdict: "pass" });
   });
 
-  it("keeps mixed evidence all-or-nothing unless the caller opts into partial mode", () => {
-    expect(() =>
-      captureBaselineGate({
+  it("never holds a component for its findings, with or without partial mode", () => {
+    for (const allowPartial of [false, true]) {
+      const gate = captureBaselineGate({
         ctx: ctx(),
+        allowPartial,
         sourceRoot: root,
         catalog: mixedCatalog(),
         componentIds: ["skill:clean", "skill:held"],
         vendorLock: mixedVendorLock(),
         vendorLockSha256: "f".repeat(64),
-      }),
-    ).toThrow(BaselineEvidenceBlockedError);
+      });
+      expect(gate.held).toEqual([]);
+      expect(gate.authorizations).toHaveLength(2);
+    }
   });
 
   it("rejects the whole mixed request when one component hash drifts", () => {
@@ -220,7 +233,7 @@ describe("guarded baseline install phases", () => {
         vendorLock: lock,
         vendorLockSha256: "f".repeat(64),
       }),
-    ).toThrow(BaselineEvidenceBlockedError);
+    ).toThrow(BaselineEvidenceIntegrityError);
   });
 
   it("builds install actions only after the same tree re-verifies", async () => {

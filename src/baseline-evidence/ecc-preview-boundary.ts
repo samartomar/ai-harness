@@ -171,9 +171,8 @@ export function generateAuthorizedEccInstallPreview(
   if (catalogRuntime === undefined || evidenceRuntime === undefined) {
     throw new Error("runtime:ecc-installer evidence is required before preview generation");
   }
-  if (evidenceRuntime.verdict !== "no-findings") {
-    throw new Error("runtime:ecc-installer must pass before preview generation");
-  }
+  // Findings on the runtime's evidence are labels, not a gate: exact signed
+  // evidence about these bytes is what lets the generator run.
   if (
     input.evidence.id !== input.catalog.id ||
     input.evidence.owner !== input.catalog.owner ||
@@ -188,7 +187,9 @@ export function generateAuthorizedEccInstallPreview(
   const identityPaths = componentIdentityPaths(input.eccRoot, catalogRuntime.paths);
   const before = hashComponentTree(input.eccRoot, identityPaths).treeSha256;
   if (before !== evidenceRuntime.treeSha256) {
-    throw new Error("runtime:ecc-installer changed after vet; preview generation refused");
+    throw new Error(
+      "runtime:ecc-installer changed after vet; its bytes no longer match the signed evidence tree",
+    );
   }
   assertPreviewGeneratorDependenciesCovered(input.eccRoot, catalogRuntime.paths);
   const generate = deps.generate ?? generateEccInstallPreviewArtifact;

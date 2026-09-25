@@ -25,7 +25,11 @@ import {
 import type { BaselineEvidenceLock, BaselineSourceEvidence } from "../baseline-evidence/schema.js";
 import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
-import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
+import {
+  type BaselineAuthorization,
+  type BaselineComponentLabels,
+  baselineComponentLabels,
+} from "../baseline-evidence/verify.js";
 import type { Posture } from "../config/posture.js";
 import { readEccInstallPreview } from "../ecc/install-preview.js";
 import {
@@ -64,6 +68,9 @@ const PREVIEW_ARTIFACT_BY_CATALOG: Partial<Record<BaselineCatalogId, true>> = { 
 export interface InstallablePostureResult {
   installed: number;
   installedComponentIds: string[];
+  /** What each installed component's evidence found: labels for the reader, never a gate. */
+  labels: BaselineComponentLabels[];
+  /** Components no signed evidence covers or matches (missing or mismatched evidence). */
   held: Array<{ componentId: string; codes: string[] }>;
   ledgerPath: string;
   previewEscapes: string[];
@@ -90,12 +97,13 @@ export interface CheckInstallableBaselineInput {
   fixtureOnly?: boolean;
   /** Target CLI to record in the fixture registration ledger. */
   cli?: string;
-  /** Signed accepted-with-conditions decisions; defaults to the shipped artifact. */
+  /** Signed organization decisions about findings; defaults to the shipped artifact. */
   acceptanceDecisions?: readonly AcceptanceDecision[];
 }
 
 interface CatalogEvaluation {
   authorizations: BaselineAuthorization[];
+  labels: BaselineComponentLabels[];
   held: Array<{ componentId: string; codes: string[] }>;
 }
 
@@ -139,10 +147,10 @@ function catalogPin(lock: BaselineEvidenceLock, catalog: BaselineCatalog): strin
 
 /**
  * Evaluate which catalog components the provided lock authorizes for install. A component is
- * authorized only when the lock is bound to the active catalog pin (same source id/owner/repo/sha),
- * the component matches by id + paths, and its signed verdict is `pass`. Everything else is held and
- * named with its blocking codes, so a lock that does not correspond to the active pin installs
- * nothing (the v2.8.0 regression) while the current pinned lock installs its passing subset. Runs
+ * authorized when the lock is bound to the active catalog pin (same source id/owner/repo/sha) and
+ * the component matches by id + paths, whatever its signed evidence found; the findings travel as
+ * labels. A component without such evidence is held and named with the evidence problem, so a lock
+ * that does not correspond to the active pin installs nothing (the v2.8.0 regression). Runs
  * identically for every catalog in `BASELINE_CATALOG_IDS` (issue #438) — only the pass criteria in
  * `postureOkForCatalog` differ per catalog.
  */
@@ -156,6 +164,7 @@ function evaluateCatalog(
 ): CatalogEvaluation {
   const source = boundSource(lock, catalog);
   const authorizations: BaselineAuthorization[] = [];
+  const labels: BaselineComponentLabels[] = [];
   const held: Array<{ componentId: string; codes: string[] }> = [];
 
   const selected = new Set(selectedComponentIds);
@@ -164,24 +173,12 @@ function evaluateCatalog(
     const exact =
       entry !== undefined && samePaths(entry.paths, component.paths) ? entry : undefined;
 
-    if (exact?.verdict === "no-findings") {
-      authorizations.push({
-        componentId: component.id,
-        source: `${catalog.owner}/${catalog.repo}`,
-        pinnedSha: catalog.pinnedSha,
-        treeSha256: exact.treeSha256,
-        tier: "vendor",
-        issuer: VENDOR_ISSUER,
-        evidenceSha256: lockSha256,
-      });
-      continue;
-    }
-    if (exact?.verdict === "has-findings") {
+    if (exact !== undefined) {
       const codes = [...new Set(exact.findings.map((finding) => finding.code))];
-      // Accepted-with-conditions join (W4 ruling (e)) — mirrors verify.ts's
+      // Organization decisions are attached as records, mirroring verify.ts's
       // runtime join against the LOCK's recorded component digest (the release
       // gate has no source tree to re-hash; the runtime path re-verifies
-      // against real bytes).
+      // against real bytes). Findings never hold a component.
       const fingerprints = exact.findings.flatMap(
         (finding) =>
           finding.fingerprints ?? (finding.fingerprint === undefined ? [] : [finding.fingerprint]),
@@ -190,7 +187,7 @@ function evaluateCatalog(
         (finding) => finding.fingerprints !== undefined || finding.fingerprint !== undefined,
       );
       const acceptance =
-        source?.sourceTreeSha256 === undefined || !fingerprintCoverage
+        source?.sourceTreeSha256 === undefined || codes.length === 0 || !fingerprintCoverage
           ? undefined
           : matchCorrectedComponentAcceptance(acceptances, {
               framework: catalog.id,
@@ -215,21 +212,17 @@ function evaluateCatalog(
                 .map((receipt) => `${receipt.name}@${receipt.version}`)
                 .sort((left, right) => left.localeCompare(right)),
             });
-      if (acceptance !== undefined) {
-        authorizations.push({
-          componentId: component.id,
-          source: `${catalog.owner}/${catalog.repo}`,
-          pinnedSha: catalog.pinnedSha,
-          treeSha256: exact.treeSha256,
-          tier: "vendor",
-          issuer: VENDOR_ISSUER,
-          evidenceSha256: lockSha256,
-          effective: "accepted-with-conditions",
-          acceptance,
-        });
-        continue;
-      }
-      held.push({ componentId: component.id, codes: codes.length > 0 ? codes : ["trust.finding"] });
+      authorizations.push({
+        componentId: component.id,
+        source: `${catalog.owner}/${catalog.repo}`,
+        pinnedSha: catalog.pinnedSha,
+        treeSha256: exact.treeSha256,
+        tier: "vendor",
+        issuer: VENDOR_ISSUER,
+        evidenceSha256: lockSha256,
+        ...(acceptance === undefined ? {} : { acceptance }),
+      });
+      labels.push(baselineComponentLabels(exact, "vendor"));
       continue;
     }
     held.push({
@@ -238,7 +231,7 @@ function evaluateCatalog(
     });
   }
 
-  return { authorizations, held };
+  return { authorizations, labels, held };
 }
 
 function buildLedger(
@@ -334,8 +327,7 @@ function previewPlanForCatalog(catalogId: BaselineCatalogId): CatalogPreviewPlan
  *   matches the authorized set, every held component is named with codes, and no install-preview
  *   destination escapes the fixture.
  * - Catalogs without an installer runtime (Superpowers today): zero authorized components is a
- *   LEGAL, GREEN state — honestly-blocked evidence is a truthful report, not a gate failure. The
- *   gate only turns red when the fixture ledger disagrees with what evidence authorized, a held
+ *   LEGAL, GREEN state. The check only turns red when the fixture ledger disagrees with what evidence authorized, a held
  *   component is missing its codes, or a held component's code names missing/drifted evidence
  *   (`baseline.evidence-missing` / `baseline.evidence-mismatch`). Preview-escape findings gate
  *   every catalog that ships a preview artifact, independent of the installer requirement.
@@ -418,7 +410,7 @@ export async function checkInstallableBaseline(
         mkdirSync(home, { recursive: true });
         mkdirSync(project, { recursive: true });
 
-        const { authorizations, held } = evaluateCatalog(
+        const { authorizations, labels, held } = evaluateCatalog(
           lock,
           catalog,
           lockSha256,
@@ -471,6 +463,7 @@ export async function checkInstallableBaseline(
         postures[posture] = {
           installed: authorizations.length,
           installedComponentIds,
+          labels,
           held,
           ledgerPath: registrationLedgerPath(home),
           previewEscapes: escapes,
@@ -507,7 +500,7 @@ function catalogSummaryLine(
 ): string {
   const requiresInstaller = INSTALLER_RUNTIME_COMPONENT_ID_BY_CATALOG[catalogId] !== undefined;
   const verdict = requiresInstaller
-    ? `${catalogReport.ok ? "installable" : "NOT installable"} from its own evidence`
+    ? `${catalogReport.ok ? "installable" : "not installable: evidence missing or mismatched, ledger mismatch, or preview escape"} from its own evidence`
     : `evidence ${catalogReport.ok ? "consistent" : "INCONSISTENT"} from its own lock`;
   return `${catalogId}/${catalogReport.profile}: ${verdict} (pin ${catalogReport.pin})`;
 }
@@ -525,7 +518,7 @@ async function main(): Promise<void> {
           ? "preview=skipped"
           : `preview-escapes=${result.previewEscapes.length}`;
       process.stdout.write(
-        `${catalogId}/${posture}: installed=${result.installed} [${result.installedComponentIds.join(", ")}] held=${result.held.length} ${previewNote}\n`,
+        `${catalogId}/${posture}: installed=${result.installed} [${result.installedComponentIds.join(", ")}] with-findings=${result.labels.filter((label) => label.verdict === "has-findings").length} held=${result.held.length} ${previewNote}\n`,
       );
     }
     process.stdout.write(`${catalogSummaryLine(catalogId, catalogReport)}\n`);

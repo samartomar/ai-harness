@@ -394,7 +394,6 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
   it("retains independent component-scoped acceptance decisions", () => {
     const selectedAuthorization: BaselineAuthorization = {
       ...authorization(),
-      effective: "accepted-with-conditions",
       acceptance: {
         decisionId: "selected-decision",
         recordSha256: "1".repeat(64),
@@ -402,7 +401,6 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
       },
     };
     const contentAuthorization = runtimeAuthorization({
-      effective: "accepted-with-conditions",
       acceptance: {
         decisionId: "runtime-decision",
         recordSha256: "2".repeat(64),

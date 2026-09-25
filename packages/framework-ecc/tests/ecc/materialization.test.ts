@@ -156,7 +156,6 @@ function verifiedKiroComponentForEngine(accepted = false) {
         .treeSha256,
       ...(accepted
         ? {
-            effective: "accepted-with-conditions" as const,
             acceptance: {
               decisionId: "selected-decision",
               recordSha256: "e".repeat(64),
@@ -170,7 +169,6 @@ function verifiedKiroComponentForEngine(accepted = false) {
       treeSha256: hashComponentTree(sourceRoot, [".kiro"]).treeSha256,
       ...(accepted
         ? {
-            effective: "accepted-with-conditions" as const,
             acceptance: {
               decisionId: "runtime-decision",
               recordSha256: "f".repeat(64),
@@ -584,7 +582,6 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     expect(ownedReceipt().components[0]).toMatchObject({
       id: "skill:tdd-workflow",
       authorization: {
-        effective: "accepted-with-conditions",
         acceptance: { decisionId: "selected-decision" },
       },
       provenance: { componentPath: "skills/tdd-workflow" },
@@ -605,16 +602,9 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     ) {
       throw new Error("expected two verified Kiro components");
     }
-    let effectiveReads = 0;
     let acceptanceReads = 0;
     const authorization = {
       ...passed.authorization,
-      get effective() {
-        effectiveReads += 1;
-        return effectiveReads === 1
-          ? passed.authorization.effective
-          : accepted.authorization.effective;
-      },
       get acceptance() {
         acceptanceReads += 1;
         return acceptanceReads === 1 ? undefined : accepted.authorization.acceptance;

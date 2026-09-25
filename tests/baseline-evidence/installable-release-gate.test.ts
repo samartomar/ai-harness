@@ -127,7 +127,7 @@ describe("shipped baseline installability", () => {
     expect(held?.codes).toEqual(["baseline.evidence-mismatch"]);
   });
 
-  it("fails the gate when the ECC installer runtime verdict flips to blocked (pins existing ECC behavior)", async () => {
+  it("keeps the ECC installer runtime installable when its evidence has findings, and labels them", async () => {
     const lock = structuredClone(readVendorBaselineLock());
     const source = lock.sources.find((candidate) => candidate.id === "ecc");
     const installer = source?.components.find(
@@ -136,21 +136,30 @@ describe("shipped baseline installability", () => {
     if (installer === undefined) throw new Error("ECC installer evidence missing from vendor lock");
     installer.verdict = "has-findings";
     installer.findings = [
-      { code: "trust.synthetic-test-block", detail: "synthetic test-only block for issue #438" },
+      {
+        code: "trust.synthetic-test-finding",
+        detail: "synthetic test-only finding for issue #438",
+      },
     ];
 
     const report = await checkInstallableBaseline({ lock, fixtureOnly: true });
 
-    expect(report.catalogs.ecc.ok).toBe(false);
-    expect(report.ok).toBe(false);
+    expect(report.catalogs.ecc.ok).toBe(true);
     for (const posture of ALL_POSTURES) {
-      expect(report.catalogs.ecc.postures[posture].installedComponentIds).not.toContain(
-        "runtime:ecc-installer",
+      const result = report.catalogs.ecc.postures[posture];
+      expect(result.installedComponentIds).toContain("runtime:ecc-installer");
+      expect(result.held).toEqual([]);
+      expect(result.labels).toContainEqual(
+        expect.objectContaining({
+          componentId: "runtime:ecc-installer",
+          verdict: "has-findings",
+          findings: [{ code: "trust.synthetic-test-finding", count: 1 }],
+        }),
       );
     }
   });
 
-  it("holds exactly one Superpowers component when its corrected evidence is changed to blocked", async () => {
+  it("installs a Superpowers component whose evidence has findings, with its label", async () => {
     const lock = structuredClone(readVendorBaselineLock());
     const source = lock.sources.find((candidate) => candidate.id === "superpowers");
     const component = source?.components.find(
@@ -161,7 +170,10 @@ describe("shipped baseline installability", () => {
     }
     component.verdict = "has-findings";
     component.findings = [
-      { code: "trust.synthetic-test-block", detail: "synthetic test-only active-profile block" },
+      {
+        code: "trust.synthetic-test-finding",
+        detail: "synthetic test-only active-profile finding",
+      },
     ];
 
     const report = await checkInstallableBaseline({ lock, fixtureOnly: true });
@@ -170,14 +182,15 @@ describe("shipped baseline installability", () => {
     expect(report.ok).toBe(true);
     for (const posture of ALL_POSTURES) {
       const result = report.catalogs.superpowers.postures[posture];
-      expect(result.installed).toBe(14);
-      expect(result.installedComponentIds).not.toContain("skill:brainstorming");
-      expect(result.held).toEqual([
+      expect(result.installed).toBe(15);
+      expect(result.installedComponentIds).toContain("skill:brainstorming");
+      expect(result.held).toEqual([]);
+      expect(result.labels).toContainEqual(
         expect.objectContaining({
           componentId: "skill:brainstorming",
-          codes: ["trust.synthetic-test-block"],
+          findings: [{ code: "trust.synthetic-test-finding", count: 1 }],
         }),
-      ]);
+      );
     }
   });
 });

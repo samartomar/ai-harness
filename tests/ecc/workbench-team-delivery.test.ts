@@ -126,7 +126,7 @@ function catalogFor(source: { owner: string; repo: string; pinnedSha: string }) 
 }
 function lockFor(sourceRoot: string, source: { owner: string; repo: string; pinnedSha: string }) {
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -139,9 +139,10 @@ function lockFor(sourceRoot: string, source: { owner: string; repo: string; pinn
               ".agents/skills/tdd-workflow",
               "skills/tdd-workflow",
             ]).treeSha256,
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "fixture-baseline", version: "1" }],
             findings: [],
+            evidenceProblems: [],
           },
         ],
       },

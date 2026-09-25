@@ -282,7 +282,7 @@ function verifiedLocalSource(): { lock: ReturnType<typeof parseBaselineEvidenceL
   const { sourceTreeSha256: _unused, ...source } = real;
   return {
     lock: parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [{ ...source, components }],
     }),
   };

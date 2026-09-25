@@ -119,7 +119,7 @@ describe("ECC install preview execution boundary", () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it("executes the generator only after passing evidence and an unchanged rehash", () => {
+  it("executes the generator only after exact signed evidence and an unchanged rehash", () => {
     const generate = vi.fn(() => artifact());
 
     const result = generateAuthorizedEccInstallPreview(
@@ -131,16 +131,16 @@ describe("ECC install preview execution boundary", () => {
     expect(result).toEqual(artifact());
   });
 
-  it("does not execute the generator when runtime authorization is blocked", () => {
+  it("executes the generator when the exact runtime evidence carries findings", () => {
     const generate = vi.fn(() => artifact());
 
-    expect(() =>
-      generateAuthorizedEccInstallPreview(
-        { eccRoot: root, catalog: catalog(), evidence: evidence(root, "has-findings") },
-        { generate },
-      ),
-    ).toThrow("must pass");
-    expect(generate).not.toHaveBeenCalled();
+    const result = generateAuthorizedEccInstallPreview(
+      { eccRoot: root, catalog: catalog(), evidence: evidence(root, "has-findings") },
+      { generate },
+    );
+
+    expect(generate).toHaveBeenCalledWith(root, PIN);
+    expect(result).toEqual(artifact());
   });
 
   it("requires runtime evidence before executing the generator", () => {

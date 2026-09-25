@@ -108,14 +108,12 @@ function heldReason(held: BaselineHeldComponent): {
  * held evidence is treated the same as "no evidence at the pin" — evidence
  * that says nothing is never read as a pass.
  *
- * Accepted-with-conditions evidence (`authorization.effective ===
- * "accepted-with-conditions"`) is included exactly like a plain pass: the
- * source's own vet pipeline (`verifyBaselineComponents`) already places it in
- * the same `authorizations` result as a pass — the raw blocked verdict stays
- * preserved on the authorization tuple, which this resolver carries through
- * unchanged — so treating it as anything other than evidence-passed here
- * would invent a second, stricter notion of "passed" the source data does not
- * express.
+ * Evidence that carries an organization decision (`authorization.acceptance`)
+ * is included exactly like any other authorization: the source's own vet
+ * pipeline (`verifyBaselineComponents`) places every exact signed component in
+ * the same `authorizations` result whatever it found, and this resolver
+ * carries the tuple through unchanged. Findings are labels for the reader,
+ * never a second, stricter notion of "passed" here.
  */
 export function resolveEccMaterializationSelection(
   policy: Pick<EffectiveOrgPolicy, "externalSelections">,

@@ -291,7 +291,6 @@ function sameAuthorization(left: BaselineAuthorization, right: BaselineAuthoriza
     left.tier === right.tier &&
     left.issuer === right.issuer &&
     left.evidenceSha256 === right.evidenceSha256 &&
-    left.effective === right.effective &&
     acceptanceMatches
   );
 }

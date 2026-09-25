@@ -4,51 +4,28 @@ import type { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 import acceptanceDecisionsJson from "./acceptance-decisions.json";
 
 /**
- * Signed accepted-with-conditions policy decisions (W4 maintainer ruling (e)).
+ * Signed accepted-with-conditions organization decisions (D50).
  *
- * A decision NEVER changes a signed vet verdict: blocked evidence stays
- * blocked-by-default in the vendor lock, findings intact. What it records is
- * that a named owner reviewed the EXACT findings on the EXACT pinned
- * components and accepts installing them for ONE exact
- * framework/profile/host/adapter tuple. The effective-eligibility join
- * (`verify.ts` at runtime; `check-baseline-installable.ts` at the release
- * gate) admits a blocked component only when every bound field matches and no
- * unwaivable finding is present; everything else stays held. Evidence
- * surfaces (checks, ledger authorizations, Framework Cards) carry the raw vet
- * outcome AND the acceptance side by side — an admitted component is never
- * reported as "vet passed".
+ * A decision is the organization's own record that a named owner reviewed the
+ * EXACT findings on the EXACT pinned components for ONE exact
+ * framework/profile/host/adapter tuple. It never changes a signed vet verdict
+ * and it admits nothing: signed evidence that matches the bytes authorizes
+ * them whatever it found, and the findings travel as labels. `verify.ts`
+ * attaches a matching decision to the component's authorization so the
+ * consumer sees the findings and the organization's record side by side.
  *
  * No wildcards, by construction: a decision binds exact repository, exact
  * 40-char commit, exact whole-tree digest, exact component ids WITH exact
- * component tree digests, and exact accepted finding codes. Any mismatch —
- * source, digest, component, extra finding code, expired or unsigned record —
- * leaves the component held.
+ * component tree digests, exact finding codes, occurrence fingerprints and
+ * analyzer versions. Any mismatch (source, digest, component, finding code,
+ * expired or unsigned record) means the decision is about other bytes and is
+ * not shown as being about these.
  */
 
+/** Legacy code-only policy. Records still parse; they are never attached. */
 export const ACCEPTANCE_POLICY_VERSION = 1;
 /** Corrected active-profile policy. No shipped record currently claims this version. */
 export const CORRECTED_ACCEPTANCE_POLICY_VERSION = 2;
-
-/**
- * Codes no acceptance decision may waive, ever: behavioral / supply-chain
- * danger classes where "reviewed the bytes" is not a sufficient basis to run
- * them. Mirrors the trust lane's danger floor at the next tier up.
- */
-export const UNWAIVABLE_FINDING_CODES: ReadonlySet<string> = new Set([
-  "trust.malicious-code",
-  "trust.auto-exec-hook",
-  "trust.prompt-injection",
-  "trust.hidden-unicode",
-  "trust.unpinned-dependency",
-  "trust.dependency-confusion",
-  "trust.typosquat",
-  "trust.source-changed",
-  "trust.source-drift",
-  "trust.unsigned-source",
-  "trust.detector-unavailable",
-  "trust.sandbox-smoke-unavailable",
-  "trust.sandbox-smoke-failed",
-]);
 
 const SHA40 = /^[0-9a-f]{40}$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -186,65 +163,6 @@ export interface ComponentAcceptanceMatch {
   acceptedFindingCodes: string[];
 }
 
-/**
- * Exact-tuple component admission over the EVIDENCE-side fields (the ECC
- * adapter separately asserts profile/host/adapter/treeDigest against the
- * resolved source — two enforcement points, each where its data natively
- * lives). Returns undefined — the component stays held — on any mismatch,
- * any finding code outside the accepted set, any unwaivable code, or an
- * expired decision.
- */
-export function matchComponentAcceptance(
-  decisions: readonly AcceptanceDecision[],
-  candidate: ComponentAcceptanceCandidate,
-  now: Date = new Date(),
-  tuple?: AcceptanceTuple,
-): ComponentAcceptanceMatch | undefined {
-  const codes = candidate.findingCodes.length > 0 ? candidate.findingCodes : ["trust.finding"];
-  if (codes.some((code) => UNWAIVABLE_FINDING_CODES.has(code))) return undefined;
-  for (const decision of decisions) {
-    if (
-      candidate.policyVersion !== undefined &&
-      decision.policyVersion !== candidate.policyVersion
-    ) {
-      continue;
-    }
-    // The legacy join cannot prove occurrence, analyzer, policy, and source-tree
-    // bindings. Never let it partially evaluate a corrected v2 decision.
-    if (decision.policyVersion !== ACCEPTANCE_POLICY_VERSION) continue;
-    // Defense in depth: an unsigned or content-tampered record never matches,
-    // regardless of how the decision list reached this function.
-    if (acceptanceRecordSha256(decision) !== decision.recordSha256) continue;
-    if (tuple !== undefined) {
-      // Profile isolation: a decision for another profile/host/adapter must
-      // never authorize this one, even over identical components.
-      if (decision.profile !== tuple.profile) continue;
-      if (decision.host !== tuple.host) continue;
-      if (decision.adapter !== tuple.adapter) continue;
-      if (decision.framework !== tuple.framework) continue;
-    }
-    if (decision.framework !== candidate.framework) continue;
-    if (decision.repository !== candidate.repository) continue;
-    if (decision.commitSha !== candidate.commitSha) continue;
-    if (decision.expiresAt !== undefined && now.getTime() >= Date.parse(decision.expiresAt)) {
-      continue;
-    }
-    const component = decision.components.find(
-      (entry) => entry.evidenceComponentId === candidate.componentId,
-    );
-    if (component === undefined) continue;
-    if (component.treeSha256 !== candidate.componentTreeSha256) continue;
-    const accepted = new Set(component.acceptedFindingCodes);
-    if (!codes.every((code) => accepted.has(code))) continue;
-    return {
-      decisionId: decision.decisionId,
-      recordSha256: decision.recordSha256,
-      acceptedFindingCodes: [...component.acceptedFindingCodes],
-    };
-  }
-  return undefined;
-}
-
 export interface AcceptanceTuple {
   framework: string;
   profile: string;
@@ -271,9 +189,10 @@ function sameSet(left: readonly string[], right: readonly string[]): boolean {
 }
 
 /**
- * Corrected active-profile acceptance. Legacy code-only decisions are
- * deliberately ineligible: a match requires the exact source/component trees,
- * profile tuple, policy version, analyzer versions, and occurrence fingerprints.
+ * The organization decision about exactly this component's findings, if any.
+ * Legacy code-only decisions are deliberately ineligible: a match requires the
+ * exact source/component trees, profile tuple, policy version, analyzer
+ * versions, and occurrence fingerprints. Any finding code may be recorded.
  */
 export function matchCorrectedComponentAcceptance(
   decisions: readonly AcceptanceDecision[],
@@ -281,7 +200,6 @@ export function matchCorrectedComponentAcceptance(
   now: Date = new Date(),
 ): ComponentAcceptanceMatch | undefined {
   const codes = candidate.findingCodes.length > 0 ? candidate.findingCodes : ["trust.finding"];
-  if (codes.some((code) => UNWAIVABLE_FINDING_CODES.has(code))) return undefined;
   for (const decision of decisions) {
     if (decision.policyVersion !== candidate.policyVersion) continue;
     if (decision.trustPolicyVersion !== candidate.trustPolicyVersion) continue;

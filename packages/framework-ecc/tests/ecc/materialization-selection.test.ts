@@ -157,10 +157,9 @@ describe("resolveEccMaterializationSelection", () => {
     expect(result.excluded.every((entry) => entry.reason !== "vet-blocked")).toBe(true);
   });
 
-  it("includes accepted-with-conditions evidence like a plain pass, preserving the acceptance record", () => {
+  it("includes evidence carrying an organization decision like any other, preserving the decision record", () => {
     const item = selectionItem("skill", "accepted-example");
     const auth = authorization(item.id, {
-      effective: "accepted-with-conditions",
       acceptance: {
         decisionId: "decision-1",
         recordSha256: "d".repeat(64),
@@ -188,7 +187,7 @@ describe("resolveEccMaterializationSelection", () => {
         },
       },
     ]);
-    expect(result.included[0]?.authorization.effective).toBe("accepted-with-conditions");
+    expect(result.included[0]?.authorization.acceptance?.decisionId).toBe("decision-1");
   });
 
   it("fails closed when evidence is self-contradictory, never defaulting to passed", () => {

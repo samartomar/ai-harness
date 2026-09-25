@@ -462,7 +462,7 @@ describe("administrator-protected policy-file authority", () => {
       components: [{ id: "runtime:ecc-kiro", paths: ["install.sh"] }],
     });
     const vendorLock = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "ecc",
@@ -474,9 +474,10 @@ describe("administrator-protected policy-file authority", () => {
               id: "runtime:ecc-kiro",
               paths: ["install.sh"],
               treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
-              verdict: "pass",
+              verdict: "no-findings",
               analyzers: [{ name: "aih-native", version: "test" }],
               findings: [],
+              evidenceProblems: [],
             },
           ],
         },
@@ -535,7 +536,7 @@ describe("administrator-protected policy-file authority", () => {
       components: componentIds.map((id) => ({ id, paths: ["install.sh"] })),
     });
     const vendorLock = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "ecc",
@@ -546,9 +547,10 @@ describe("administrator-protected policy-file authority", () => {
             id,
             paths: ["install.sh"],
             treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
-            verdict: "pass" as const,
+            verdict: "no-findings" as const,
             analyzers: [{ name: "aih-native", version: "test" }],
             findings: [],
+            evidenceProblems: [],
           })),
         },
       ],
