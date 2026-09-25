@@ -2,12 +2,17 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { emitCoreProductDeclarationsV1 } from "../../src/internals/emit-core-product-declarations.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { defaultNativeMcpServers } from "../../src/mcp/default-native-runtime.js";
+import {
+  ROOT_AWARE_LAUNCHER_IDS,
+  type RootAwareLauncherId,
+  rootAwareLauncherSubjectV1,
+} from "../../src/mcp/root-aware-launcher-identity.js";
 import { PLAYWRIGHT_MCP_PACKAGE_SPEC } from "../../src/mcp/servers.js";
 import {
   aihPolicyControls,
@@ -18,7 +23,12 @@ import {
   coreProductDeclarationsV1,
   coreProductDeclarationsV1Bytes,
 } from "../../src/org-policy/core-product-declarations.js";
-import { runtimeMcpCatalog, runtimeMcpIdentities } from "../../src/org-policy/runtime.js";
+import { reviewedControlDigest } from "../../src/org-policy/effective.js";
+import {
+  runtimeAihPolicyControls,
+  runtimeMcpCatalog,
+  runtimeMcpIdentities,
+} from "../../src/org-policy/runtime.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
@@ -243,55 +253,70 @@ describe("Catalog MCP subjects equal Core's runtime identity subjects", () => {
     };
   }
 
-  /**
-   * Replaced at run time by root-aware authenticated launchers (`runtimeMcpCatalog`, since
-   * #1016). Their runtime subjects name this machine's executable and paths, so no portable
-   * declaration can equal them: a Workbench selection of one of these ids is reported
-   * `runtime-mcp-identity-mismatch` and does not become effective. Surfaced for an owner
-   * decision (CR1 report); this list may only shrink.
-   */
-  const ROOT_AWARE_RUNTIME_MCP_IDS = ["code-review-graph", "codebase-memory-mcp", "serena"];
-
-  function divergence() {
+  function runtime() {
     const ctx = projectContext();
-    const declarations = coreProductDeclarationsV1(SOURCE);
-    const identities = runtimeMcpIdentities(runtimeMcpCatalog(ctx));
+    const catalog = runtimeMcpCatalog(ctx);
     return {
-      declarations,
-      identities,
-      native: Object.keys(defaultNativeMcpServers(ctx)),
-      divergent: declarations.mcp
-        .filter((entry) => {
-          const source = entry.control.source;
-          return source.type !== "mcp" || identities[entry.id]?.subject !== source.subject;
-        })
-        .map((entry) => entry.id),
+      catalog,
+      native: defaultNativeMcpServers(ctx),
+      identities: runtimeMcpIdentities(catalog),
+      controls: runtimeAihPolicyControls(catalog),
     };
   }
 
-  it("declares the runtime subject for every MCP control the runtime projects as declared", () => {
-    const { declarations, identities } = divergence();
-    const asDeclared = declarations.mcp.filter(
-      (entry) => !ROOT_AWARE_RUNTIME_MCP_IDS.includes(entry.id),
-    );
-    expect(asDeclared.map((entry) => entry.id)).toEqual(["sequential-thinking"]);
-    for (const entry of asDeclared) {
+  it("declares the runtime subject and reviewed control for every MCP control the runtime projects", () => {
+    const declarations = coreProductDeclarationsV1(SOURCE);
+    const { identities, controls } = runtime();
+    expect(declarations.mcp.map((entry) => entry.id)).toEqual([
+      "code-review-graph",
+      "codebase-memory-mcp",
+      "serena",
+      "sequential-thinking",
+    ]);
+    for (const entry of declarations.mcp) {
       expect(entry.control.source).toEqual({
         type: "mcp",
         server: entry.id,
         subject: identities[entry.id]?.subject,
       });
       expect(identities[entry.id]?.projectable).toBe(true);
+      const control = controls.find((candidate) => candidate.id === entry.id);
+      expect(control && reviewedControlDigest(control)).toBe(reviewedControlDigest(entry.control));
     }
     for (const entry of declarations.nonProjectableMcp)
       expect(identities[entry.id]?.projectable).toBe(false);
   });
 
-  it("differs from the runtime subject exactly where the runtime substitutes a root-aware launcher", () => {
-    const { declarations, divergent, native } = divergence();
-    expect(divergent).toEqual(ROOT_AWARE_RUNTIME_MCP_IDS);
-    expect(declarations.mcp.map((entry) => entry.id).filter((id) => native.includes(id))).toEqual(
-      ROOT_AWARE_RUNTIME_MCP_IDS,
+  it("declares each root-aware launcher by its portable identity, never by a machine path", () => {
+    const { native } = runtime();
+    const declarations = coreProductDeclarationsV1(SOURCE);
+    const rootAware = declarations.mcp.filter((entry) => Object.hasOwn(native, entry.id));
+    expect(rootAware.map((entry) => entry.id)).toEqual([...ROOT_AWARE_LAUNCHER_IDS]);
+    for (const entry of rootAware)
+      expect(entry.control.source).toMatchObject({
+        subject: rootAwareLauncherSubjectV1(entry.id as RootAwareLauncherId),
+      });
+    const text = Buffer.from(coreProductDeclarationsV1Bytes(SOURCE)).toString("utf8");
+    for (const server of Object.values(native))
+      if (server.type === "stdio")
+        for (const arg of [server.command, ...server.args].filter((value) => isAbsolute(value)))
+          expect(text).not.toContain(JSON.stringify(arg).slice(1, -1));
+  });
+
+  it("reports no identity or reviewed control for a launcher entry that is not Core's own", () => {
+    const { catalog } = runtime();
+    const server = catalog["code-review-graph"];
+    if (server?.type !== "stdio") throw new Error("expected the code-review-graph launcher");
+    const tampered = {
+      ...catalog,
+      "code-review-graph": { ...server, args: [...server.args, "--tools", "all"] },
+    };
+    expect(runtimeMcpIdentities(tampered)["code-review-graph"]).toBeUndefined();
+    expect(runtimeAihPolicyControls(tampered).map((control) => control.id)).not.toContain(
+      "code-review-graph",
+    );
+    expect(runtimeMcpIdentities(tampered)["sequential-thinking"]).toEqual(
+      runtimeMcpIdentities(catalog)["sequential-thinking"],
     );
   });
 });

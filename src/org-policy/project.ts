@@ -53,7 +53,6 @@ import {
   nativeMcpProjectionOnDisk,
   nativeMcpProjectionState,
 } from "../mcp/native-managed-projection.js";
-import { mcpApprovalSubject } from "../mcp/policy.js";
 import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
 import { type McpServer, mcpServers, type StdioServer } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
@@ -81,7 +80,11 @@ import {
 } from "./framework-hook-controls-projection.js";
 import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
 import { expectedHooksFromReceipt, readHookRegistrarReceipt } from "./hook-registrar-receipt.js";
-import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
+import {
+  type RuntimeOrgPolicyResolution,
+  resolveRuntimeOrgPolicy,
+  runtimeMcpIdentities,
+} from "./runtime.js";
 import {
   governanceOwnsAihSurfaces,
   type OrgPolicy,
@@ -2221,16 +2224,7 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
   const catalog = rootAwareMcpCatalog(ctx);
   const effective = resolveEffectiveOrgPolicy(policy, {
     targets: ctx.targets ?? ["claude"],
-    mcpIdentities: Object.fromEntries(
-      Object.entries(catalog).map(([name, server]) => [
-        name,
-        {
-          subject: mcpApprovalSubject(server),
-          projectable: server.type === "stdio",
-          kiroProjectable: server.type === "stdio",
-        },
-      ]),
-    ),
+    mcpIdentities: runtimeMcpIdentities(catalog),
   });
   if (readUserFrameworkHookControlsV1(ctx.root) !== undefined) {
     throw new OrgPolicyError(

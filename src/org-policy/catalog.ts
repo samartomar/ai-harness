@@ -8,6 +8,10 @@ import {
 } from "../internals/cli-registry.js";
 import { npxLaunchPins } from "../mcp/pins.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
+import {
+  isRootAwareLauncherId,
+  rootAwareLauncherSubjectV1,
+} from "../mcp/root-aware-launcher-identity.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import type {
@@ -260,16 +264,32 @@ function usageMeteringControl(): AihPolicyControl {
   };
 }
 
-/** Shared, runtime-independent AIH control identities for the engine and Studio. */
+/**
+ * The subject Core declares for an MCP control. A root-aware launcher id is declared by
+ * its portable launcher identity, because the runtime projects Core's root-aware launcher
+ * in place of the catalog entry; every other server by its approval subject.
+ */
+export function declaredMcpControlSubject(id: string, server: McpServer): string {
+  return isRootAwareLauncherId(id) ? rootAwareLauncherSubjectV1(id) : mcpApprovalSubject(server);
+}
+
+/**
+ * Shared AIH control identities for the engine and Studio. `subjectOf` names each MCP
+ * control's subject; the runtime passes its verifying resolver, and a server it reports
+ * no identity for has no control.
+ */
 export function aihPolicyControls(
   catalog: Record<string, McpServer> = policyAuthoringMcpCatalog(),
+  subjectOf: (id: string, server: McpServer) => string | undefined = declaredMcpControlSubject,
 ): AihPolicyControl[] {
   const unavailableMcpIds = new Set(
     policyAuthoringUnavailableMcpCatalog().map((entry) => entry.id),
   );
   return [
-    ...Object.entries(catalog).flatMap(([id, server]) =>
-      server.type !== "stdio" || unavailableMcpIds.has(id)
+    ...Object.entries(catalog).flatMap(([id, server]) => {
+      const subject =
+        server.type !== "stdio" || unavailableMcpIds.has(id) ? undefined : subjectOf(id, server);
+      return subject === undefined
         ? []
         : [
             {
@@ -278,14 +298,14 @@ export function aihPolicyControls(
               source: {
                 type: "mcp" as const,
                 server: id,
-                subject: mcpApprovalSubject(server),
+                subject,
               },
               targets: [...GOVERNED_MCP_TARGETS].sort(),
               projector: "mcp-managed-settings" as const,
               lifecycle: "supported" as const,
             },
-          ],
-    ),
+          ];
+    }),
     usageMeteringControl(),
   ];
 }

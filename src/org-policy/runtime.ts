@@ -1,10 +1,15 @@
 import type { PlanContext } from "../internals/plan.js";
-import { defaultNativeMcpServers } from "../mcp/default-native-runtime.js";
+import {
+  defaultNativeMcpServers,
+  verifiedRootAwareLauncherSubjectV1,
+} from "../mcp/default-native-runtime.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
+import { isRootAwareLauncherId } from "../mcp/root-aware-launcher-identity.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
 import { type PolicyAuthorityVerification, verifyPolicyAuthorityReceipt } from "./authority.js";
 import { aihPolicyControls } from "./catalog.js";
+import type { AihPolicyControl } from "./catalog-provider-types.js";
 import {
   type EffectiveOrgPolicy,
   type RuntimeMcpIdentity,
@@ -33,20 +38,43 @@ export function runtimeMcpCatalog(ctx: PlanContext): Record<string, McpServer> {
   });
 }
 
+/**
+ * The subject the runtime reports for a server. A root-aware launcher id reports its
+ * portable launcher identity only when the entry verifies as Core's own launcher, and no
+ * subject otherwise; every other server keeps its approval subject.
+ */
+export function runtimeMcpSubject(id: string, server: McpServer): string | undefined {
+  return isRootAwareLauncherId(id)
+    ? verifiedRootAwareLauncherSubjectV1(id, server)
+    : mcpApprovalSubject(server);
+}
+
 /** The identities the runtime check (`runtime-mcp-identity-mismatch`) compares selections with. */
 export function runtimeMcpIdentities(
   catalog: Record<string, McpServer>,
 ): Record<string, RuntimeMcpIdentity> {
   return Object.fromEntries(
-    Object.entries(catalog).map(([name, server]) => [
-      name,
-      {
-        subject: mcpApprovalSubject(server),
-        projectable: server.type === "stdio",
-        kiroProjectable: server.type === "stdio",
-      },
-    ]),
+    Object.entries(catalog).flatMap(([name, server]) => {
+      const subject = runtimeMcpSubject(name, server);
+      return subject === undefined
+        ? []
+        : [
+            [
+              name,
+              {
+                subject,
+                projectable: server.type === "stdio",
+                kiroProjectable: server.type === "stdio",
+              },
+            ],
+          ];
+    }),
   );
+}
+
+/** The AIH reviewed controls the runtime matches selections with, under the runtime subjects. */
+export function runtimeAihPolicyControls(catalog: Record<string, McpServer>): AihPolicyControl[] {
+  return aihPolicyControls(catalog, runtimeMcpSubject);
 }
 
 /**
@@ -85,7 +113,7 @@ export async function resolveRuntimeOrgPolicy(
     ...(governance?.catalog.custom ?? []),
   ];
   const aihReviewedControls: Record<string, RuntimeReviewedControl> = Object.fromEntries(
-    aihPolicyControls(catalog).map((control) => [
+    runtimeAihPolicyControls(catalog).map((control) => [
       control.id,
       { control, controlDigest: reviewedControlDigest(control) },
     ]),
