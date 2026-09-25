@@ -51,14 +51,15 @@ type DefinitionSourceId = keyof typeof SCANNER_DEFINITION_SOURCES_V1;
 
 const DEFINITION_MAX_BYTES = 64 * 1024 * 1024;
 const commitSchema = z.string().regex(/^[0-9a-f]{40}$/);
-const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+// Catalog's registered collections spell a file digest `sha256:<hex>`; bare hex is also read.
+const fileSha256Schema = z.string().regex(/^(?:sha256:)?[0-9a-f]{64}$/);
 const pinnedFileSchema = z
   .object({
     path: BaselineComponentPathSchema,
     bytesBase64: z
       .string()
       .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
-    sha256: sha256Schema.optional(),
+    sha256: fileSha256Schema.optional(),
     size: z.number().int().nonnegative().optional(),
   })
   .strict();
@@ -163,7 +164,7 @@ function collectionCatalog(value: Record<string, unknown>, id: DefinitionSourceI
     const bytes = Buffer.from(file.bytesBase64, "base64");
     if (
       file.sha256 !== undefined &&
-      createHash("sha256").update(bytes).digest("hex") !== file.sha256
+      createHash("sha256").update(bytes).digest("hex") !== file.sha256.replace(/^sha256:/, "")
     )
       fail(`${id} collection file ${file.path} sha256 disagrees with its bytes`);
     if (file.size !== undefined && file.size !== bytes.length)

@@ -486,6 +486,33 @@ describe("definition-driven Scanner catalog resolution", () => {
       });
     });
 
+    it("accepts the Catalog's prefixed file digests and checks them against the bytes", () => {
+      // Catalog's registered collections and its emitter spell file digests `sha256:<hex>`.
+      const prefixed = (text: string) => `sha256:${sha(text)}`;
+      const files = [
+        { path: "LICENSE", bytesBase64: base64("MIT\n"), sha256: prefixed("MIT\n"), size: 4 },
+        {
+          path: "skills/ponytail/SKILL.md",
+          bytesBase64: base64("# P\n"),
+          sha256: prefixed("# P\n"),
+          size: 4,
+        },
+      ];
+      expect(resolvePonytail(ponytail({ files })).catalog).toEqual(
+        resolvePonytail(ponytail()).catalog,
+      );
+      expect(() =>
+        resolvePonytail(
+          ponytail({
+            files: [{ ...files[0], sha256: `sha256:${"0".repeat(64)}` }, files[1]],
+          }),
+        ),
+      ).toThrow("ponytail collection file LICENSE sha256 disagrees with its bytes");
+      expect(() =>
+        resolvePonytail(ponytail({ files: [{ ...files[0], sha256: "sha256:ABC" }, files[1]] })),
+      ).toThrow("ponytail collection is malformed");
+    });
+
     it("derives the Scanner catalog from a pinned skill collection", () => {
       write("skills/tdd/SKILL.md", "# T\n");
       const resolved = resolveScannerDefinitionV1(
