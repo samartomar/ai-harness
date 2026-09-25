@@ -1,6 +1,6 @@
 import {
+  componentLabelSlotV1,
   dispositionForTrustFinding,
-  isFindingLevelV1,
   type NormalizedTrustFinding,
   TRUST_POLICY_VERSION,
   type TrustPolicyDisposition,
@@ -107,6 +107,14 @@ export interface ComponentInventoryStatus {
   installation: "NOT INSTALLED";
 }
 
+/** A selected component's evidence problem: evidence that is incomplete, not a finding. */
+export interface QualificationEvidenceProblem {
+  componentId: string;
+  code: string;
+  detail: string;
+  fingerprint: string;
+}
+
 export interface ActiveProfileQualification {
   profile: string;
   /** A label, never a gate: `has-findings` when a selected component carries any finding. */
@@ -115,6 +123,8 @@ export interface ActiveProfileQualification {
   componentCounts: { noFindings: number; hasFindings: number };
   findingCounts: { warn: number; review: number; block: number };
   genuineReasons: QualificationReason[];
+  /** Reported separately from findings, with the same classification as the lock. */
+  evidenceProblems: QualificationEvidenceProblem[];
   inventory: ComponentInventoryStatus[];
   policyDecision: string;
   runtimeRestrictions: string[];
@@ -146,6 +156,7 @@ export function qualifyActiveProfile(
   }
 
   const genuineReasons: QualificationReason[] = [];
+  const evidenceProblems: QualificationEvidenceProblem[] = [];
   let warn = 0;
   let review = 0;
   let block = 0;
@@ -191,12 +202,28 @@ export function qualifyActiveProfile(
     }
     let componentHasFindings = false;
     for (const disposition of component.dispositions) {
+      const finding = findingByFingerprint(component, disposition.findingFingerprint);
+      if (finding === undefined) continue;
+      // Classify the code before counting (same rule as the lock): a failed
+      // evidence-problem code is incomplete evidence, not a finding.
+      const slot = componentLabelSlotV1(
+        finding.code ?? "trust.detector-finding",
+        finding.checkVerdict,
+        disposition.level,
+      );
+      if (slot === "evidence-problem") {
+        evidenceProblems.push({
+          componentId,
+          code: finding.code ?? "trust.detector-finding",
+          detail: finding.detail,
+          fingerprint: finding.fingerprint,
+        });
+        continue;
+      }
+      if (slot !== "finding") continue;
       if (disposition.level === "WARN") warn++;
       if (disposition.level === "REVIEW") review++;
       if (disposition.level === "BLOCK") block++;
-      if (!isFindingLevelV1(disposition.level)) continue;
-      const finding = findingByFingerprint(component, disposition.findingFingerprint);
-      if (finding === undefined) continue;
       componentHasFindings = true;
       genuineReasons.push({
         componentId,
@@ -221,6 +248,7 @@ export function qualifyActiveProfile(
     componentCounts,
     findingCounts: { warn, review, block },
     genuineReasons,
+    evidenceProblems,
     inventory: catalog.components.map((component) => {
       return {
         id: component.id,

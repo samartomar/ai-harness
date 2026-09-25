@@ -10,7 +10,7 @@ import {
   plan,
 } from "../internals/plan.js";
 import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
-import { isFindingLevelV1 } from "../trust/evidence.js";
+import { componentLabelSlotV1 } from "../trust/evidence.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
@@ -300,11 +300,31 @@ export async function baselineVetPlanForSource(
                 components: catalog.components.map((component) => {
                   const scan = scans.get(component.id);
                   const dispositions = scan?.policyDispositions ?? [];
-                  const correctedVerdict = dispositions.some((disposition) =>
-                    isFindingLevelV1(disposition.level),
-                  )
+                  // Classify each code before counting, exactly as the lock does: a
+                  // failed evidence-problem code is incomplete evidence, not a finding.
+                  const slots = dispositions.map((disposition) => {
+                    const finding = scan?.normalizedFindings?.find(
+                      (entry) => entry.fingerprint === disposition.findingFingerprint,
+                    );
+                    return {
+                      code: finding?.code ?? "trust.detector-finding",
+                      slot: componentLabelSlotV1(
+                        finding?.code ?? "trust.detector-finding",
+                        finding?.checkVerdict,
+                        disposition.level,
+                      ),
+                    };
+                  });
+                  const correctedVerdict = slots.some((entry) => entry.slot === "finding")
                     ? "has-findings"
                     : "no-findings";
+                  const evidenceProblemCodes = [
+                    ...new Set(
+                      slots
+                        .filter((entry) => entry.slot === "evidence-problem")
+                        .map((entry) => entry.code),
+                    ),
+                  ].sort();
                   return {
                     id: component.id,
                     selected: profile.selectedComponentIds.includes(component.id),
@@ -315,6 +335,7 @@ export async function baselineVetPlanForSource(
                       previousSource?.components.find((entry) => entry.id === component.id)
                         ?.verdict ?? "not previously reported",
                     correctedVerdict,
+                    evidenceProblemCodes,
                     analyzers:
                       evidence.components.find((entry) => entry.id === component.id)?.analyzers ??
                       [],
@@ -349,6 +370,7 @@ export async function baselineVetPlanForSource(
               `component counts: no findings ${qualification.componentCounts.noFindings}, has findings ${qualification.componentCounts.hasFindings}`,
               `finding counts: warn ${qualification.findingCounts.warn}, review ${qualification.findingCounts.review}, block ${qualification.findingCounts.block}`,
               `genuine reasons: ${reasons.length === 0 ? "none" : reasons.join(" | ")}`,
+              `evidence problems: ${qualification.evidenceProblems.length === 0 ? "none" : [...new Set(qualification.evidenceProblems.map((problem) => `${problem.componentId} ${problem.code}`))].join(" | ")}`,
               `ungrouped review occurrences: ${groupedResidualReviewDecisions.find((decision) => decision.id === "ungrouped")?.occurrences.length ?? 0}`,
               `policy decision: ${qualification.policyDecision}`,
               `runtime restrictions: ${qualification.runtimeRestrictions.join("; ")}`,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import {
   ECC_LEAN_EVIDENCE_COMPONENTS,
@@ -77,6 +78,59 @@ describe("active baseline qualification profiles", () => {
       selection: "NOT SELECTED",
       installation: "NOT INSTALLED",
     });
+  });
+
+  it("reports a failed detector as an evidence problem, not a finding (Astra step-8 item 4)", () => {
+    // A self-contained catalog: this test needs no installed Catalog package.
+    const catalog = defineBaselineCatalog({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "d".repeat(40),
+      components: [
+        { id: "skill:a", paths: ["skills/a"] },
+        { id: "skill:b", paths: ["skills/b"] },
+      ],
+    });
+    const profile = {
+      id: "test-profile",
+      sourceId: "ecc",
+      origin: "AIH_CURATED" as const,
+      selectedComponentIds: ["skill:a", "skill:b"],
+    };
+    const first = "skill:a";
+    const fp = "problem:detector";
+    const evidence = catalog.components.map((component) => ({
+      id: component.id,
+      findings:
+        component.id === first
+          ? [
+              {
+                fingerprint: fp,
+                code: "trust.detector-unavailable" as const,
+                checkVerdict: "fail" as const,
+                detail: "required detector skillspector unavailable",
+                rawOccurrenceFingerprints: [],
+              },
+            ]
+          : [],
+      dispositions: component.id === first ? [disposition(fp, "BLOCK")] : [],
+    }));
+
+    const result = qualifyActiveProfile(catalog, profile, evidence);
+
+    expect(result.verdict).toBe("no-findings");
+    expect(result.findingCounts).toEqual({ warn: 0, review: 0, block: 0 });
+    expect(result.componentCounts).toEqual({ noFindings: 2, hasFindings: 0 });
+    expect(result.genuineReasons).toEqual([]);
+    expect(result.evidenceProblems).toEqual([
+      {
+        componentId: first,
+        code: "trust.detector-unavailable",
+        detail: "required detector skillspector unavailable",
+        fingerprint: fp,
+      },
+    ]);
   });
 
   it("reports the exact line and value for a selected review finding", () => {

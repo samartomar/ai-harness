@@ -120,6 +120,24 @@ const TRUST_CODE_CLASSES_V1: Readonly<Record<string, TrustCodeClassV1>> = {
 };
 
 /**
+ * Where an observation goes in component evidence (D62): a failed EVIDENCE-PROBLEM
+ * code is an evidence problem whatever its disposition level (a detector that did
+ * not run is not a finding about the component); any other code is a finding when
+ * its level is a finding level. Every reporter of component evidence uses this, so
+ * the lock, the qualification and the occurrence report agree.
+ */
+export function componentLabelSlotV1(
+  code: string,
+  checkVerdict: Check["verdict"] | undefined,
+  level: TrustPolicyLevel,
+): "finding" | "evidence-problem" | undefined {
+  if (trustCodeClassV1(code) === "evidence-problem") {
+    return checkVerdict === "fail" ? "evidence-problem" : undefined;
+  }
+  return isFindingLevelV1(level) ? "finding" : undefined;
+}
+
+/**
  * The organization's own configured requirements (D67): a skill approval record
  * its posture requires (`trust.unapproved-skill`), an MCP server its MCP policy
  * denies (`mcp.policy-denied`), and its policy file drifting from the pinned copy

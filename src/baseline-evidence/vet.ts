@@ -22,8 +22,8 @@ import {
   withCiscoShardJoinProjectionV1,
 } from "../trust/detectors.js";
 import {
+  componentLabelSlotV1,
   dispositionForTrustFinding,
-  isFindingLevelV1,
   type NormalizedTrustFinding,
   type TrustPolicyLevel,
   trustCodeClassV1,
@@ -540,8 +540,7 @@ function belongsInLock(
   checkVerdict: Check["verdict"] | undefined,
   level: TrustPolicyLevel,
 ): boolean {
-  if (trustCodeClassV1(code) === "evidence-problem") return checkVerdict === "fail";
-  return isFindingLevelV1(level);
+  return componentLabelSlotV1(code, checkVerdict, level) !== undefined;
 }
 
 function checkLabels(componentId: string, checks: readonly Check[]): ComponentLabels {
