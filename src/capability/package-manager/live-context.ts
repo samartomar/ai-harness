@@ -12,7 +12,7 @@ import { AIH_ORG_POLICY_FILE } from "../../org-policy/constants.js";
 import { resolveEffectiveOrgPolicy } from "../../org-policy/effective.js";
 import { parseOrgPolicy } from "../../org-policy/schema.js";
 import { AIH_PACKS_FILE, PacksFileSchema } from "../../pack/manifest.js";
-import { SkillCardSchema } from "../../skill/card.js";
+import { type SkillCard, StrictSkillCardSchema } from "../../skill/card.js";
 import { readSkillsLockExact } from "../../skill/lockfile.js";
 import { readTrustLockExact } from "../../trust/lock.js";
 import { projectBaselinePackageGraphAuthority } from "../package-graph/adapters/baseline.js";
@@ -374,9 +374,9 @@ function exactEvidence(
     const cardSource = readCapabilityPackageExactFile(root, entry.card);
     if (cardSource === undefined)
       return { state: "malformed", reason: "missing-or-unsafe-skill-card" };
-    let card: ReturnType<typeof SkillCardSchema.parse>;
+    let card: SkillCard;
     try {
-      card = SkillCardSchema.strict().parse(fatalJson(cardSource.bytes));
+      card = StrictSkillCardSchema.parse(fatalJson(cardSource.bytes));
     } catch {
       return { state: "malformed", reason: "invalid-skill-card" };
     }

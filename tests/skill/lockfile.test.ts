@@ -1,4 +1,4 @@
-import { linkSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { linkSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,6 +6,8 @@ import {
   AIH_SKILLS_LOCK_FILE,
   readSkillsLock,
   readSkillsLockExact,
+  readSkillsLockStrictForWrite,
+  removeSkillLockEntry,
   type SkillLockEntry,
   type SkillsLock,
   skillNameSchema,
@@ -129,13 +131,13 @@ describe("readSkillsLock", () => {
   });
 
   it("returns an empty lock when the file is absent", () => {
-    expect(readSkillsLock(root)).toEqual({ schemaVersion: 1, skills: [] });
+    expect(readSkillsLock(root)).toEqual({ schemaVersion: 2, skills: [] });
   });
 
   it("returns an empty lock on malformed JSON instead of throwing", () => {
     writeLock("{ broken");
 
-    expect(readSkillsLock(root)).toEqual({ schemaVersion: 1, skills: [] });
+    expect(readSkillsLock(root)).toEqual({ schemaVersion: 2, skills: [] });
   });
 
   it("returns an empty lock when skills is not an array", () => {
@@ -201,5 +203,64 @@ describe("upsertSkillLockEntry", () => {
     expect(next.skills).toHaveLength(2);
     expect(next.skills.find((s) => s.name === "clean")?.commit).toBe("c".repeat(40));
     expect(next.skills.find((s) => s.name === "other")).toBeDefined();
+  });
+});
+
+describe("skills lock schema versions (D50 upgrade)", () => {
+  // A 0.6.2-era lockfile: version 1, whose verdicts could only be GREEN or YELLOW.
+  const v1Bytes = `${JSON.stringify(
+    { schemaVersion: 1, skills: [entry(), entry({ name: "other", verdict: "YELLOW" })] },
+    null,
+    2,
+  )}\n`;
+
+  it("still loads a 0.6.2-era version-1 lockfile and never rewrites it on read", () => {
+    writeLock(v1Bytes);
+    expect(readSkillsLock(root)).toEqual({
+      schemaVersion: 1,
+      skills: [entry(), entry({ name: "other", verdict: "YELLOW" })],
+    });
+    const exact = readSkillsLockExact(root);
+    expect(exact.state).toBe("valid");
+    expect(exact.state === "valid" && exact.lock.schemaVersion).toBe(1);
+    expect(readSkillsLockStrictForWrite(root).schemaVersion).toBe(1);
+    expect(readFileSync(join(root, AIH_SKILLS_LOCK_FILE), "utf8")).toBe(v1Bytes);
+  });
+
+  it("rewrites a version-1 lockfile as version 2 only when aih writes it", () => {
+    writeLock(v1Bytes);
+    const written = upsertSkillLockEntry(
+      readSkillsLockStrictForWrite(root),
+      entry({ name: "risky", verdict: "RED" }),
+    );
+    expect(written.schemaVersion).toBe(2);
+    expect(written.skills.map(({ name, verdict }) => [name, verdict])).toEqual([
+      ["clean", "GREEN"],
+      ["other", "YELLOW"],
+      ["risky", "RED"],
+    ]);
+    expect(removeSkillLockEntry(readSkillsLock(root), "other").schemaVersion).toBe(2);
+    writeLock(JSON.stringify(written));
+    expect(readSkillsLockExact(root)).toMatchObject({ state: "valid", lock: written });
+  });
+
+  it("refuses a version-1 lockfile carrying a verdict outside version 1's value set", () => {
+    for (const verdict of ["RED", "UNKNOWN"] as const) {
+      writeLock(JSON.stringify({ schemaVersion: 1, skills: [entry({ verdict })] }));
+      expect(readSkillsLockExact(root)).toEqual({ state: "malformed" });
+      expect(() => readSkillsLockStrictForWrite(root)).toThrow(/cannot update/);
+      expect(readSkillsLock(root).skills).toEqual([]);
+    }
+  });
+
+  it("reads every vet verdict from a version-2 lockfile and refuses an unknown version", () => {
+    writeLock(JSON.stringify({ schemaVersion: 2, skills: [entry({ verdict: "UNKNOWN" })] }));
+    expect(readSkillsLockExact(root)).toMatchObject({
+      state: "valid",
+      lock: { schemaVersion: 2, skills: [{ verdict: "UNKNOWN" }] },
+    });
+    writeLock(JSON.stringify({ schemaVersion: 3, skills: [entry()] }));
+    expect(readSkillsLockExact(root)).toEqual({ state: "malformed" });
+    expect(() => readSkillsLockStrictForWrite(root)).toThrow(/cannot update/);
   });
 });

@@ -8,7 +8,7 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { EVIDENCE_DIR, skillApproveCommand, skillCardCommand } from "../../src/skill/approve.js";
-import { readSkillCard, type SkillCard } from "../../src/skill/card.js";
+import { buildCard, readSkillCard, type SkillCard } from "../../src/skill/card.js";
 import type { SkillsLock } from "../../src/skill/lockfile.js";
 import { type SkillVetEvidence, skillVetCommand } from "../../src/skill/vet.js";
 
@@ -134,7 +134,7 @@ describe("skillApproveCommand", () => {
     expect(result.report?.ok).toBe(true);
     const card = readJson<SkillCard>(CARD_REL);
     expect(card).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       name: "clean",
       source: `owner/repo@${PIN}`,
       commit: PIN,
@@ -154,7 +154,7 @@ describe("skillApproveCommand", () => {
     expect(card.firstParty).toBeUndefined(); // a GitHub source is not first-party
 
     const lock = readJson<SkillsLock>("aih-skills.lock.json");
-    expect(lock.schemaVersion).toBe(1);
+    expect(lock.schemaVersion).toBe(2);
     expect(lock.skills).toHaveLength(1);
     expect(lock.skills[0]).toMatchObject({
       name: "clean",
@@ -901,5 +901,48 @@ describe("readSkillCard", () => {
     expect(readSkillCard(workspace, "ai-coding", "missing")).toBeUndefined();
     write("ai-coding/skill-cards/broken.json", "{ nope");
     expect(readSkillCard(workspace, "ai-coding", "broken")).toBeUndefined();
+  });
+});
+
+describe("skill card schema versions (D50 upgrade)", () => {
+  // A 0.6.2-era card: version 1, whose risk class could only be green or yellow.
+  const v1Card = {
+    schemaVersion: 1,
+    name: "legacy",
+    source: `owner/repo@${"a".repeat(40)}`,
+    commit: "a".repeat(40),
+    license: "MIT License",
+    installScope: "repo",
+    riskClass: "yellow",
+    requiresMcp: false,
+    requiresShell: false,
+    scanEvidence: [".aih/skill-reports/legacy.json"],
+    approval: { verdict: "YELLOW" as const, approvedBy: "docs-platform", approvedAt: "2026-07-01" },
+  };
+
+  it("still loads a 0.6.2-era version-1 card and writes new cards as version 2", () => {
+    write("ai-coding/skill-cards/legacy.json", JSON.stringify(v1Card));
+    expect(readSkillCard(workspace, "ai-coding", "legacy")).toMatchObject({
+      schemaVersion: 1,
+      riskClass: "yellow",
+    });
+    expect(
+      buildCard({ ...v1Card, riskClass: "red", scanEvidence: v1Card.scanEvidence }),
+    ).toMatchObject({ schemaVersion: 2, riskClass: "red" });
+  });
+
+  it("refuses a version-1 card carrying a value outside version 1's value set", () => {
+    for (const card of [
+      { ...v1Card, riskClass: "red" },
+      { ...v1Card, approval: { ...v1Card.approval, verdict: "UNKNOWN" } },
+    ]) {
+      write("ai-coding/skill-cards/legacy.json", JSON.stringify(card));
+      expect(readSkillCard(workspace, "ai-coding", "legacy")).toBeUndefined();
+    }
+    write(
+      "ai-coding/skill-cards/legacy.json",
+      JSON.stringify({ ...v1Card, schemaVersion: 2, riskClass: "unknown" }),
+    );
+    expect(readSkillCard(workspace, "ai-coding", "legacy")?.riskClass).toBe("unknown");
   });
 });

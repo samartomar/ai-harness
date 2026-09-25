@@ -832,7 +832,7 @@ describe("skillGovernanceDigest", () => {
     put(
       "aih-skills.lock.json",
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         skills: [
           lockEntry("alpha", "docs"),
           { ...lockEntry("risky", "docs"), verdict: "RED" },

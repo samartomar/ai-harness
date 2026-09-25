@@ -84,7 +84,7 @@ function seedApproved(names: string[], verdict = "GREEN"): void {
   write(
     "aih-skills.lock.json",
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       skills: names.map((name) => ({
         name,
         source: `owner/repo@${PIN}`,

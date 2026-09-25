@@ -1,12 +1,6 @@
 import { createHash } from "node:crypto";
-import { z } from "zod";
 import { type Pack, PacksFileSchema } from "../../../pack/manifest.js";
-import {
-  type SkillLockEntry,
-  SkillLockEntrySchema,
-  skillNameSchema,
-  sourceScopePathSchema,
-} from "../../../skill/lockfile.js";
+import { ExactSkillsLockSchema, type SkillLockEntry } from "../../../skill/lockfile.js";
 import {
   type PackageGraphAuthorityDocument,
   PackageGraphAuthorityDocumentSchema,
@@ -20,25 +14,6 @@ import {
   SurfaceIdSchema,
 } from "../schema.js";
 import { normalizeGitHubRepository, parseGitHubSkillSource } from "./github.js";
-
-const StrictSkillSourceScopeSchema = z
-  .object({
-    selectedSkillNames: z.array(skillNameSchema).nonempty(),
-    includedPaths: z.array(sourceScopePathSchema).nonempty(),
-    excludedSkillPaths: z.array(sourceScopePathSchema),
-  })
-  .strict();
-
-const StrictSkillLockEntrySchema = SkillLockEntrySchema.strict().extend({
-  sourceScope: StrictSkillSourceScopeSchema.optional(),
-});
-
-const StrictSkillsLockSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    skills: z.array(StrictSkillLockEntrySchema),
-  })
-  .strict();
 
 export type SkillPackageGraphDiagnosticCode =
   | "package-graph.invalid-utf8"
@@ -201,7 +176,7 @@ function projectLock(input: SkillPackageGraphAdapterInput): ProjectedAuthority<S
   if (!decoded.success) {
     return { diagnostics: [diagnostic("lock", decoded.code)] };
   }
-  const parsed = StrictSkillsLockSchema.safeParse(decoded.value);
+  const parsed = ExactSkillsLockSchema.safeParse(decoded.value);
   if (!parsed.success) {
     return { diagnostics: [diagnostic("lock", "package-graph.invalid-schema")] };
   }
