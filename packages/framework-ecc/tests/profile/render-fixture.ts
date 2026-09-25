@@ -15,23 +15,17 @@ import { dirname, extname, join, posix } from "node:path";
 import { readRegularFileWithStats } from "../../../../src/internals/fsxn.js";
 import { deriveEccProfile, type ResolvedEccProfile } from "../../src/profile/index.js";
 import type { ProjectionSourceTrust } from "../../src/profile/render.js";
-import { AIH_ECC_PROFILE_TEMPLATE } from "./pinned-profile-fixture.js";
+import {
+  AIH_ECC_PROFILE_TEMPLATE,
+  PINNED_SOURCE_EVIDENCE,
+  pinnedFixtureDirectory,
+} from "./pinned-profile-fixture.js";
 
-export const fixtureDirectory = join(import.meta.dirname, "../../../../tests/fixtures/ecc-profile");
-export const evidence = JSON.parse(
-  await readFile(join(fixtureDirectory, "pinned-source-evidence.json"), "utf8"),
-) as unknown;
+export const fixtureDirectory = pinnedFixtureDirectory;
+export const evidence = PINNED_SOURCE_EVIDENCE;
 const receiptBytes = await readFile(join(fixtureDirectory, "review-receipt.json"));
-export const receipt = {
-  id: "pinned-source-evidence-v1",
-  evidencePath: "tests/fixtures/ecc-profile/review-receipt.json",
-  sourceCommit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-  evidenceSha256: "b4bc069efc8c5eca51e6426feb9d59cc469f2b49b681118a6fd26f5c8fab461c",
-};
-export const profile = {
-  ...AIH_ECC_PROFILE_TEMPLATE,
-  source: { ...AIH_ECC_PROFILE_TEMPLATE.source, reviewReceipt: receipt },
-};
+export const receipt = AIH_ECC_PROFILE_TEMPLATE.source.reviewReceipt;
+export const profile = AIH_ECC_PROFILE_TEMPLATE;
 
 const manifestNames = [
   "install-components.json",

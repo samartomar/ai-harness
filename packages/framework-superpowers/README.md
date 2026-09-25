@@ -55,7 +55,7 @@ Sections the plugin does not read are ignored.
 - `vendorLock` (required by every operation): the vendor-lock source entry,
   `{ "id": "superpowers", "owner": "obra", "repo": "Superpowers", "pinnedSha": "<40 hex>", "components": [{ "id": "runtime:…|skill:…", "paths": ["<contained POSIX path>", …], … }] }`.
   The pin must be the upstream this plugin version supports
-  (`obra/Superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797`, v6.3.0).
+  (`obra/Superpowers@5bf4e78011075bcfc0dc295f0724994cd123ee71`, v6.4.1).
 - `hookControlInventory` (required by hook operations):
 
   ```json
@@ -87,24 +87,28 @@ Sections the plugin does not read are ignored.
   }
   ```
 
-  Every declaration's `sourcePath` must be one of the recorded `sources`.
+  Every declaration's `sourcePath` must be one of the recorded `sources`. A
+  hook's logical `event` is a letter followed by letters, digits or `_`.
 
-## Hooks at the pinned commit (v6.3.0)
+## Hooks at the pinned commit (v6.4.1)
 
-One hook, `hook:session-start`: it injects the full `using-superpowers` skill
-into the agent's context when a session starts, is cleared, or compacts.
+Five hooks, each with no upstream switch:
 
-| Host | Declared in | Runs as |
-| --- | --- | --- |
-| claude, copilot, antigravity | `hooks/hooks.json` (`SessionStart`, matcher `startup\|clear\|compact`) | `hooks/run-hook.cmd session-start` → `hooks/session-start` (bash) |
-| cursor | `hooks/hooks-cursor.json` (`sessionStart`) | `./hooks/run-hook.cmd session-start` |
-| kimi | `.kimi-plugin/plugin.json` (`sessionStart.skill`) | declarative skill injection |
-| opencode | `.opencode/plugins/superpowers.js` (`experimental.chat.messages.transform`) | in-process message transform |
+| Hook | Event | Host: declared in | Runs as |
+| --- | --- | --- | --- |
+| `hook:session-start` — injects the full `using-superpowers` skill when a session starts, is cleared, or compacts | `SessionStart` | claude, copilot, antigravity: `hooks/hooks.json` (matcher `startup|clear|compact`); cursor: `hooks/hooks-cursor.json` (`sessionStart`); kimi: `.kimi-plugin/plugin.json` (`sessionStart`); muse: `.muse-plugin/plugin.json`; opencode: `.opencode/plugins/superpowers.js` (`experimental.chat.messages.transform`) | `hooks/run-hook.cmd session-start` → `hooks/session-start`; muse runs `sh hooks/session-start`; kimi is declarative; opencode is in-process |
+| `hook:skills-path` — adds the Superpowers skills directory to the host's skill search paths | `config` | opencode: `.opencode/plugins/superpowers.js` (`config`) | in-process |
+| `hook:skill-registration` — registers every skill with OpenCode V2's native registry | `setup` | opencode: `.opencode/plugins/superpowers.js` (`skill.transform`) | in-process |
+| `hook:session-context` — injects `using-superpowers` into each top-level OpenCode V2 session's first message | `context` | opencode: `.opencode/plugins/superpowers.js` (`session.hook.context`) | in-process |
+| `hook:first-turn-context` — appends `using-superpowers` and the Hermes skill guidance to the first turn | `pre_llm_call` | hermes: `.hermes-plugin/__init__.py` (`pre_llm_call`) | in-process |
 
-Codex (`.codex-plugin/plugin.json` declares `"hooks": {}`), Gemini, Windsurf,
-Zed and Kiro run no Superpowers hook. Each recorded file lies inside the vetted
-`runtime:superpowers-plugin` component whose tree digest matches the vendor
-lock.
+Muse and Hermes are hosts aih does not control: their declarations are
+selectable rows labelled `unenforced`, with the host's own hook controls as the
+next route. Devin's manifest (`.devin-plugin/plugin.json`) is metadata only at
+this commit: Catalog records its digest as a source, and it declares no hook, so
+there is no Devin row. Codex, Gemini, Windsurf, Zed and Kiro run no Superpowers
+hook. The inventory's provenance must name one of the vendor lock's components
+(`runtime:superpowers-plugin`).
 
 ## Hook controls
 

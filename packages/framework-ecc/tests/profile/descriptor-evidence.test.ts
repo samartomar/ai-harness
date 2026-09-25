@@ -13,48 +13,26 @@ import {
   materializeEccProfileEvidence,
 } from "../../src/profile/command.js";
 import {
-  ECC_PROFILE_EVIDENCE_FORMAT,
   EccProfileEvidenceRefusalError,
   readEccProfileEvidenceV1,
 } from "../../src/profile/descriptor-evidence.js";
-import { descriptorFromDocument, fixtureDescriptorDocument } from "../context.js";
-import { TRUSTED_PROJECTED_SOURCE } from "./pinned-profile-fixture.js";
-import { evidence, fixtureDirectory, profile, receipt } from "./render-fixture.js";
+import { descriptorFromDocument, pinnedDescriptorDocument } from "../context.js";
+import {
+  PINNED_PROFILE_EVIDENCE_SECTION,
+  PINNED_SOURCE_COMMIT,
+  TRUSTED_PROJECTED_SOURCE,
+} from "./pinned-profile-fixture.js";
+import { receipt } from "./render-fixture.js";
 
-const FIXTURE_COMMIT = "0c1d7be9a750627fb2a6534c78a998cc46d03f9c";
+const OTHER_COMMIT = "a".repeat(40);
 
 function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-/** The test evidence (ECC 0c1d7be9) in the descriptor section shape Catalog must carry. */
+/** Catalog's profileEvidence section at the pinned commit, as a private copy. */
 function fixtureSection(): Record<string, unknown> {
-  const receiptText = readFileSync(join(fixtureDirectory, "review-receipt.json"), "utf8");
-  const closureText = readFileSync(join(fixtureDirectory, "projected-source-closure.json"), "utf8");
-  return {
-    format: ECC_PROFILE_EVIDENCE_FORMAT,
-    version: 1,
-    repository: "affaan-m/ECC",
-    sourceCommit: FIXTURE_COMMIT,
-    profile: structuredClone(profile),
-    pinnedSourceEvidence: structuredClone(evidence),
-    projectedSource: {
-      id: TRUSTED_PROJECTED_SOURCE.id,
-      evidencePath: TRUSTED_PROJECTED_SOURCE.evidencePath,
-      evidenceSha256: sha256(closureText),
-      fileCount: TRUSTED_PROJECTED_SOURCE.fileCount,
-      totalBytes: TRUSTED_PROJECTED_SOURCE.totalBytes,
-      aggregateSha256: TRUSTED_PROJECTED_SOURCE.aggregateSha256,
-    },
-    documents: [
-      { path: receipt.evidencePath, sha256: sha256(receiptText), text: receiptText },
-      {
-        path: TRUSTED_PROJECTED_SOURCE.evidencePath,
-        sha256: sha256(closureText),
-        text: closureText,
-      },
-    ],
-  };
+  return structuredClone(PINNED_PROFILE_EVIDENCE_SECTION) as unknown as Record<string, unknown>;
 }
 
 function context(operation: string): { ctx: PlanContext; calls: () => number } {
@@ -101,17 +79,19 @@ describe("ECC profile evidence from the Catalog descriptor", () => {
   });
 
   it("requires the evidence commit to equal the plugin's one upstream commit", () => {
-    const refusal = refusalOf(() => readEccProfileEvidenceV1(fixtureSection()));
+    const refusal = refusalOf(() =>
+      readEccProfileEvidenceV1({ ...fixtureSection(), sourceCommit: OTHER_COMMIT }),
+    );
     expect(refusal.reason).toBe("framework-profile-evidence-incompatible");
-    expect(refusal.message).toContain(`affaan-m/ECC@${FIXTURE_COMMIT}`);
+    expect(refusal.message).toContain(`affaan-m/ECC@${OTHER_COMMIT}`);
     expect(refusal.message).toContain(`affaan-m/ECC@${UPSTREAM.commit}`);
   });
 
   it("accepts digest-bound documents whose every commit agrees", () => {
-    const verified = readEccProfileEvidenceV1(fixtureSection(), FIXTURE_COMMIT);
-    expect(verified.sourceCommit).toBe(FIXTURE_COMMIT);
+    const verified = readEccProfileEvidenceV1(fixtureSection());
+    expect(verified.sourceCommit).toBe(PINNED_SOURCE_COMMIT);
     expect(verified.trust).toMatchObject({
-      sourceCommit: FIXTURE_COMMIT,
+      sourceCommit: PINNED_SOURCE_COMMIT,
       aggregateSha256: TRUSTED_PROJECTED_SOURCE.aggregateSha256,
     });
     expect([...verified.documents.keys()].sort()).toEqual(
@@ -133,41 +113,44 @@ describe("ECC profile evidence from the Catalog descriptor", () => {
     const tampered = fixtureSection();
     const documents = tampered.documents as { text: string }[];
     documents[0] = { ...documents[0], text: `${documents[0]?.text} ` } as { text: string };
-    expect(() => readEccProfileEvidenceV1(tampered, FIXTURE_COMMIT)).toThrow(
-      /does not match its SHA-256/,
-    );
+    expect(() => readEccProfileEvidenceV1(tampered)).toThrow(/does not match its SHA-256/);
 
     const extra = fixtureSection();
     (extra.documents as unknown[]).push({ path: "other.json", sha256: sha256("{}"), text: "{}" });
-    expect(() => readEccProfileEvidenceV1(extra, FIXTURE_COMMIT)).toThrow(
+    expect(() => readEccProfileEvidenceV1(extra)).toThrow(
+      /framework-profile-evidence-incompatible/,
+    );
+
+    expect(() => readEccProfileEvidenceV1({ ...fixtureSection(), extra: true })).toThrow(
       /framework-profile-evidence-incompatible/,
     );
 
     expect(() =>
-      readEccProfileEvidenceV1({ ...fixtureSection(), extra: true }, FIXTURE_COMMIT),
-    ).toThrow(/framework-profile-evidence-incompatible/);
-
-    const other = "a".repeat(40);
-    expect(() =>
-      readEccProfileEvidenceV1({ ...fixtureSection(), sourceCommit: other }, other),
+      readEccProfileEvidenceV1({ ...fixtureSection(), sourceCommit: OTHER_COMMIT }, OTHER_COMMIT),
     ).toThrow(/framework-profile-evidence-incompatible/);
   });
 
   it("refuses an ordinary profile install before any acquisition when Catalog lacks the section", async () => {
+    const document = pinnedDescriptorDocument();
+    delete document.sections.profileEvidence;
+    const invocation = {
+      descriptor: descriptorFromDocument(document),
+      host: { runtime: currentEccInvocation().runtime },
+    };
     const { ctx, calls } = context("install");
-    await expect(executeEccProfileLifecycleCommand(ctx)).rejects.toThrow(
-      /framework-profile-evidence-unavailable/,
-    );
+    await expect(
+      withEccInvocation(invocation, () => executeEccProfileLifecycleCommand(ctx)),
+    ).rejects.toThrow(/framework-profile-evidence-unavailable/);
     const update = context("update");
-    await expect(executeEccProfileLifecycleCommand(update.ctx)).rejects.toThrow(
-      /framework-profile-evidence-unavailable/,
-    );
+    await expect(
+      withEccInvocation(invocation, () => executeEccProfileLifecycleCommand(update.ctx)),
+    ).rejects.toThrow(/framework-profile-evidence-unavailable/);
     expect(calls() + update.calls()).toBe(0);
   });
 
   it("refuses an ordinary profile install whose descriptor evidence names another commit", async () => {
-    const document = fixtureDescriptorDocument() as { sections: Record<string, unknown> };
-    document.sections.profileEvidence = fixtureSection();
+    const document = pinnedDescriptorDocument();
+    document.sections.profileEvidence = { ...fixtureSection(), sourceCommit: OTHER_COMMIT };
     const { ctx, calls } = context("install");
     const runtime = currentEccInvocation().runtime;
     await expect(
@@ -175,7 +158,7 @@ describe("ECC profile evidence from the Catalog descriptor", () => {
         executeEccProfileLifecycleCommand(ctx),
       ),
     ).rejects.toThrow(
-      new RegExp(`framework-profile-evidence-incompatible: .*affaan-m/ECC@${FIXTURE_COMMIT}`),
+      new RegExp(`framework-profile-evidence-incompatible: .*affaan-m/ECC@${OTHER_COMMIT}`),
     );
     expect(calls()).toBe(0);
   });
@@ -221,7 +204,7 @@ describe("ECC profile evidence strictness", () => {
   it.each(injections)("refuses an unknown key at %s, naming its path", (path, target) => {
     const section = fixtureSection();
     target(section.pinnedSourceEvidence as Mutable).unexpected = true;
-    const refusal = refusalOf(() => readEccProfileEvidenceV1(section, FIXTURE_COMMIT));
+    const refusal = refusalOf(() => readEccProfileEvidenceV1(section));
     expect(refusal.reason).toBe("framework-profile-evidence-incompatible");
     expect(refusal.label).toContain(`sections.profileEvidence.${path}`);
   });
@@ -229,7 +212,7 @@ describe("ECC profile evidence strictness", () => {
   it("refuses an unknown key in the profile document, naming its path", () => {
     const section = fixtureSection();
     at(at(section.profile, "source"), "reviewReceipt").unexpected = true;
-    const refusal = refusalOf(() => readEccProfileEvidenceV1(section, FIXTURE_COMMIT));
+    const refusal = refusalOf(() => readEccProfileEvidenceV1(section));
     expect(refusal.reason).toBe("framework-profile-evidence-incompatible");
     expect(refusal.label).toContain(
       "sections.profileEvidence.profile.source.reviewReceipt.unexpected",
@@ -239,7 +222,7 @@ describe("ECC profile evidence strictness", () => {
   it("refuses a supported field of the wrong type, naming its path", () => {
     const section = fixtureSection();
     at(at(at(section.pinnedSourceEvidence, "componentsManifest"), "components"), 0).family = 7;
-    const refusal = refusalOf(() => readEccProfileEvidenceV1(section, FIXTURE_COMMIT));
+    const refusal = refusalOf(() => readEccProfileEvidenceV1(section));
     expect(refusal.label).toContain(
       "sections.profileEvidence.pinnedSourceEvidence.componentsManifest.components.0.family",
     );

@@ -17,12 +17,14 @@ export const HOST_API_VERSION = 1;
  * against Catalog's plugins record, and the plugin requires Catalog's
  * `vendorLock.pinnedSha` to equal it). This is the plugin's only revision
  * datum: hook ids, profiles, eligibility and provenance all come from the
- * descriptor bytes, so moving revisions is this line plus Catalog's
- * regenerated descriptor.
+ * descriptor bytes. Moving revisions is this line, Catalog's regenerated
+ * descriptor, and a content review of what the new revision adds to the ECC
+ * profile's reviewed projection policy (profile/projection-policy.ts) and
+ * baseline accounting (profile/index.ts).
  */
 export const UPSTREAM: FrameworkUpstreamV1 = Object.freeze({
   repository: "affaan-m/ECC",
-  commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+  commit: "5064474d4d762dc9640234a41617cccb79185cec",
 });
 
 /**

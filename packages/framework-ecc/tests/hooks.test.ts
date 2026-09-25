@@ -2,39 +2,16 @@ import { describe, expect, it } from "vitest";
 import { hookInventory, planHookControls } from "../src/hooks.js";
 import {
   descriptorFromDocument,
-  fixtureDescriptorDocument,
   operationContext,
   PINNED_COMMIT,
+  pinnedDescriptorDocument,
 } from "./context.js";
 
-/** Catalog's descriptor plus the OpenCode plugin row Catalog's regeneration records. */
-function withOpenCodeRow() {
-  const document = fixtureDescriptorDocument() as {
-    sections: { hookControlInventory: { hooks: unknown[] } };
-  };
-  document.sections.hookControlInventory.hooks.push({
-    id: "opencode:ecc-hooks",
-    event: "tool.execute.after",
-    profiles: ["standard", "strict"],
-    disableEligible: true,
-    declarations: [
-      {
-        host: "opencode",
-        sourcePath: ".opencode/plugins/ecc-hooks.ts",
-        event: "tool.execute.after",
-        execution: "in-process",
-      },
-    ],
-    control: { kind: "none" },
-  });
-  return descriptorFromDocument(document);
-}
-
 describe("hookInventory", () => {
-  it("exposes the 43 reviewed hooks with profiles and ECC's own disable switch", () => {
+  it("exposes the 45 hooks Catalog recorded with profiles and ECC's own disable switch", () => {
     const inventory = hookInventory(operationContext());
     expect(inventory.upstream).toEqual({ repository: "affaan-m/ECC", commit: PINNED_COMMIT });
-    expect(inventory.hooks).toHaveLength(43);
+    expect(inventory.hooks).toHaveLength(45);
     expect(inventory.profiles?.map((profile) => profile.id)).toEqual([
       "minimal",
       "standard",
@@ -56,15 +33,37 @@ describe("hookInventory", () => {
     const count = (profile: string) =>
       eligible.filter((hook) => hook.profiles?.includes(profile)).length;
     expect([eligible.length, count("minimal"), count("standard"), count("strict")]).toEqual([
-      42, 11, 39, 42,
+      44, 12, 41, 44,
     ]);
+    const gateguard = inventory.hooks.find(
+      (hook) => hook.id === "pre:powershell:gateguard-fact-force",
+    );
+    expect(gateguard).toMatchObject({
+      event: "PreToolUse",
+      profiles: ["standard", "strict"],
+      disableEligible: true,
+      upstreamControl: {
+        kind: "environment",
+        name: "ECC_DISABLED_HOOKS",
+        value: "pre:powershell:gateguard-fact-force",
+      },
+    });
+    const opencode = inventory.hooks.find((hook) => hook.id === "opencode:ecc-hooks");
+    expect(opencode?.upstreamControl).toEqual({ kind: "none" });
+    expect(opencode?.profiles).toEqual(["minimal", "standard", "strict"]);
+    expect(opencode?.declarations).toHaveLength(11);
+    expect(
+      opencode?.declarations.every(
+        (declaration) => declaration.host === "opencode" && declaration.hostControl === undefined,
+      ),
+    ).toBe(true);
   });
 });
 
 describe("planHookControls", () => {
   it("keeps every hook enabled and patches no environment when nothing is requested", () => {
     const planned = planHookControls(operationContext(), { disabled: [] });
-    expect(planned.decisions).toHaveLength(43);
+    expect(planned.decisions).toHaveLength(45);
     expect(planned.decisions.every((decision) => decision.state === "enabled")).toBe(true);
     expect(planned.environment).toBeUndefined();
     expect(planned.actions).toEqual([]);
@@ -120,14 +119,13 @@ describe("planHookControls", () => {
   });
 
   it("plans an OpenCode plugin disable as unenforced with a next route, outside ECC_DISABLED_HOOKS", () => {
-    const ctx = operationContext({
-      descriptor: withOpenCodeRow(),
-      targets: ["claude", "opencode"],
-    });
+    const ctx = operationContext({ targets: ["claude", "opencode"] });
     const inventory = hookInventory(ctx);
     const row = inventory.hooks.find((hook) => hook.id === "opencode:ecc-hooks");
     expect(row?.upstreamControl).toEqual({ kind: "none" });
-    expect(row?.declarations.map((declaration) => declaration.host)).toEqual(["opencode"]);
+    expect(new Set(row?.declarations.map((declaration) => declaration.host))).toEqual(
+      new Set(["opencode"]),
+    );
 
     const planned = planHookControls(ctx, {
       disabled: [
@@ -151,7 +149,7 @@ describe("planHookControls", () => {
 describe("hosts aih does not control", () => {
   /** Catalog's descriptor plus a row an uncontrolled host (Muse) declares alongside Claude. */
   function withMuseRow() {
-    const document = fixtureDescriptorDocument() as {
+    const document = pinnedDescriptorDocument() as unknown as {
       sections: { hookControlInventory: { hooks: unknown[] } };
     };
     document.sections.hookControlInventory.hooks.push({

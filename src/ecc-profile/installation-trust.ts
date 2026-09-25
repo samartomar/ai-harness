@@ -59,4 +59,14 @@ export const ECC_PROFILE_INSTALLATION_TRUST_V1: readonly EccProfileInstallationT
     sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
     projectionSha256: "2d721b76c1986a020ababdc8c1a5bd87095ed97a127eab2e5c36d5bada922dab",
   },
+  // ECC v2.2.1, rendered stub-only from the start: no version-1 identity was
+  // ever anchored at this pin, so it needs no version-1 companion.
+  {
+    recoveryIdentityVersion: 2,
+    repository: "affaan-m/ECC",
+    commit: "5064474d4d762dc9640234a41617cccb79185cec",
+    sourceClosureId: "ecc-projected-source-closure-v1",
+    sourceClosureSha256: "17d2c510c63ce5566b48f96b3182e80f0e38b8262cdc191ae86e40dfa14f901b",
+    projectionSha256: "09bc71543f5b374e1a97971c7bbb46e796eeef3fbff7d6cfee3e7b2464a9eb1d",
+  },
 ]);

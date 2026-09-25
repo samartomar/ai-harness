@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   MAX_DESCRIPTOR_BYTES,
@@ -8,14 +9,17 @@ import {
   descriptorFromDocument,
   descriptorOf,
   fixtureDescriptorBytes,
-  fixtureDescriptorDocument,
   PINNED_COMMIT,
+  PINNED_SECTION_FIXTURE,
+  pinnedDescriptor,
+  pinnedDescriptorDocument,
+  pinnedSectionBytes,
 } from "./context.js";
 
 type Json = Record<string, unknown>;
 
 function withSections(mutate: (sections: Json) => void): Json {
-  const document = fixtureDescriptorDocument();
+  const document = pinnedDescriptorDocument() as unknown as Json;
   mutate(document.sections as Json);
   return document;
 }
@@ -64,18 +68,53 @@ describe("readSuperpowersDescriptor", () => {
     });
   });
 
+  it("accepts a descriptor carrying Catalog's hook inventory produced at the pinned commit", () => {
+    const digest = createHash("sha256").update(pinnedSectionBytes()).digest("hex");
+    expect(digest).toBe(PINNED_SECTION_FIXTURE.sha256);
+    const descriptor = readSuperpowersDescriptor(pinnedDescriptor());
+    expect(descriptor.source).toEqual({
+      owner: "obra",
+      repo: "Superpowers",
+      commit: PINNED_COMMIT,
+    });
+    expect(descriptor.components).toEqual([
+      {
+        id: "runtime:superpowers-plugin",
+        paths: [
+          ".cursor-plugin",
+          ".devin-plugin",
+          ".hermes-plugin",
+          ".kimi-plugin",
+          ".muse-plugin",
+          ".opencode",
+          "hooks",
+          "index.js",
+        ],
+      },
+    ]);
+  });
+
   it("ignores sections it does not read", () => {
     const document = withSections((sections) => {
       sections.contentMetadata = { version: 1 };
     });
-    expect(readSuperpowersDescriptor(descriptorFromDocument(document)).components).toHaveLength(15);
+    expect(readSuperpowersDescriptor(descriptorFromDocument(document)).components).toHaveLength(1);
   });
 
   const refusals: ReadonlyArray<readonly [string, () => Json]> = [
-    ["another format", () => ({ ...fixtureDescriptorDocument(), format: "aih-catalog-index" })],
-    ["another version", () => ({ ...fixtureDescriptorDocument(), version: 2 })],
-    ["another framework", () => ({ ...fixtureDescriptorDocument(), frameworkId: "ecc" })],
-    ["an extra top-level key", () => ({ ...fixtureDescriptorDocument(), extra: true })],
+    [
+      "another format",
+      () => ({ ...(pinnedDescriptorDocument() as unknown as Json), format: "aih-catalog-index" }),
+    ],
+    ["another version", () => ({ ...(pinnedDescriptorDocument() as unknown as Json), version: 2 })],
+    [
+      "another framework",
+      () => ({ ...(pinnedDescriptorDocument() as unknown as Json), frameworkId: "ecc" }),
+    ],
+    [
+      "an extra top-level key",
+      () => ({ ...(pinnedDescriptorDocument() as unknown as Json), extra: true }),
+    ],
     ["no vendorLock section", () => withSections((sections) => delete sections.vendorLock)],
     [
       "another source id",
@@ -90,7 +129,7 @@ describe("readSuperpowersDescriptor", () => {
       () =>
         withSections((sections) => {
           const components = (sections.vendorLock as Json).components as Json[];
-          (components[1] as Json).paths = ["../outside"];
+          (components[0] as Json).paths = ["../outside"];
         }),
     ],
     [
@@ -98,7 +137,7 @@ describe("readSuperpowersDescriptor", () => {
       () =>
         withSections((sections) => {
           const components = (sections.vendorLock as Json).components as Json[];
-          (components[1] as Json).paths = ["/etc"];
+          (components[0] as Json).paths = ["/etc"];
         }),
     ],
     [
@@ -106,7 +145,7 @@ describe("readSuperpowersDescriptor", () => {
       () =>
         withSections((sections) => {
           const components = (sections.vendorLock as Json).components as Json[];
-          (components[1] as Json).paths = ["skills\\brainstorming"];
+          (components[0] as Json).paths = ["skills\\brainstorming"];
         }),
     ],
     [
@@ -115,7 +154,7 @@ describe("readSuperpowersDescriptor", () => {
         withSections((sections) => {
           const lock = sections.vendorLock as Json;
           const components = lock.components as Json[];
-          lock.components = [...components, components[1]];
+          lock.components = [...components, components[0]];
         }),
     ],
     [
@@ -170,22 +209,65 @@ describe("readSuperpowersDescriptor", () => {
 });
 
 describe("readSuperpowersHookInventory", () => {
-  it("reads the SessionStart hook recorded from the pinned tree", () => {
-    const inventory = readSuperpowersHookInventory(
-      readSuperpowersDescriptor(descriptorOf(fixtureDescriptorBytes())),
-    );
+  it("reads the five hooks Catalog recorded from the pinned tree", () => {
+    const inventory = readSuperpowersHookInventory(readSuperpowersDescriptor(pinnedDescriptor()));
     expect(inventory.upstream).toEqual({ repository: "obra/Superpowers", commit: PINNED_COMMIT });
-    expect(inventory.hooks.map((hook) => hook.id)).toEqual(["hook:session-start"]);
-    const [hook] = inventory.hooks;
-    expect(hook?.upstreamControl).toEqual({ kind: "none" });
-    expect(hook?.declarations.map((declaration) => declaration.host)).toEqual([
+    expect(inventory.hooks.map((hook) => [hook.id, hook.event])).toEqual([
+      ["hook:session-start", "SessionStart"],
+      ["hook:skills-path", "config"],
+      ["hook:skill-registration", "setup"],
+      ["hook:session-context", "context"],
+      ["hook:first-turn-context", "pre_llm_call"],
+    ]);
+    expect(inventory.hooks.every((hook) => hook.upstreamControl.kind === "none")).toBe(true);
+    const [start] = inventory.hooks;
+    expect(start?.declarations.map((declaration) => declaration.host)).toEqual([
       "claude",
       "copilot",
       "antigravity",
       "cursor",
       "kimi",
+      "muse",
       "opencode",
     ]);
+  });
+
+  it("reads the Muse and Hermes declarations as unenforced rows and Devin as a recorded source only", () => {
+    const inventory = readSuperpowersHookInventory(readSuperpowersDescriptor(pinnedDescriptor()));
+    const declarations = inventory.hooks.flatMap((hook) =>
+      hook.declarations.map((declaration) => ({ hookId: hook.id, ...declaration })),
+    );
+    const muse = declarations.find((declaration) => declaration.host === "muse");
+    expect(muse).toMatchObject({
+      hookId: "hook:session-start",
+      sourcePath: ".muse-plugin/plugin.json",
+      event: "SessionStart",
+      command: "sh hooks/session-start",
+      execution: "process",
+      hostControl: { kind: "none", enforcement: "unenforced" },
+    });
+    expect(muse?.hostControl?.nextRoute).toMatch(/muse's own/);
+    const hermes = declarations.find((declaration) => declaration.host === "hermes");
+    expect(hermes).toMatchObject({
+      hookId: "hook:first-turn-context",
+      sourcePath: ".hermes-plugin/__init__.py",
+      event: "pre_llm_call",
+      execution: "in-process",
+      hostControl: { kind: "none", enforcement: "unenforced" },
+    });
+    expect(hermes?.hostControl?.nextRoute).toMatch(/hermes's own/);
+    // Devin's manifest declares no hook at the pinned commit: Catalog records
+    // the file's digest as a source, and there is no Devin row to label.
+    expect(declarations.some((declaration) => declaration.host === "devin")).toBe(false);
+    const document = pinnedDescriptorDocument();
+    const provenance = document.sections.hookControlInventory.provenance as {
+      sources: Array<{ path: string }>;
+    };
+    expect(provenance.sources.map((source) => source.path)).toContain(".devin-plugin/plugin.json");
+    const controlled = declarations.filter(
+      (declaration) => declaration.host !== "muse" && declaration.host !== "hermes",
+    );
+    expect(controlled.every((declaration) => declaration.hostControl === undefined)).toBe(true);
   });
 
   const inventoryRefusals: ReadonlyArray<readonly [string, (inventory: Json) => void]> = [
@@ -217,6 +299,13 @@ describe("readSuperpowersHookInventory", () => {
         const hooks = inventory.hooks as Json[];
         const declarations = (hooks[0] as Json).declarations as Json[];
         (declarations[0] as Json).host = "Notepad!";
+      },
+    ],
+    [
+      "a hook event outside the event grammar",
+      (inventory) => {
+        const hooks = inventory.hooks as Json[];
+        (hooks[0] as Json).event = "pre-llm call";
       },
     ],
     [

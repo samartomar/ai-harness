@@ -305,7 +305,8 @@ export function readSuperpowersHookInventory(
       );
       return Object.freeze({
         id: text(hook.id, `${where}.id`, /^hook:[a-z0-9][a-z0-9-]{0,63}$/),
-        event: text(hook.event, `${where}.event`, /^[A-Za-z][A-Za-z0-9]{0,63}$/),
+        // Logical events follow the upstream's own spelling (Hermes: pre_llm_call).
+        event: text(hook.event, `${where}.event`, /^[A-Za-z][A-Za-z0-9_]{0,63}$/),
         summary: visible(hook.summary, `${where}.summary`, 400),
         declarations: Object.freeze(declarations),
         upstreamControl: Object.freeze({ kind: "none" as const }),

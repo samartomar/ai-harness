@@ -8,12 +8,14 @@ import type {
   PlanResult,
 } from "@aihq/core/framework-host";
 
-export const PINNED_COMMIT = "5caf398a91599029a176ca6d806409b00d1052c4";
+export const PINNED_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
 
 /**
  * SHA-256 of Catalog's `./catalog-framework-ecc.json` bytes this fixture holds
  * (brotli-compressed to keep the 9.3 MB descriptor out of the diff). Core's
- * descriptor loader accepts exactly these bytes.
+ * descriptor loader accepts exactly these bytes. They pin the previous ECC
+ * commit until Core adopts the Catalog built at {@link PINNED_COMMIT}; tests
+ * that read this descriptor refuse with the commit mismatch until then.
  */
 export const CATALOG_DESCRIPTOR_SHA256 =
   "cc723716e8749862d8e76769a0475d6e788c31c711d98c94e2c9c47695861f47";
@@ -44,6 +46,60 @@ export function descriptorOf(bytes: Uint8Array): FrameworkDescriptorBytesV1 {
 
 export function descriptorFromDocument(document: unknown): FrameworkDescriptorBytesV1 {
   return descriptorOf(new TextEncoder().encode(`${JSON.stringify(document)}\n`));
+}
+
+/**
+ * Catalog's descriptor sections produced at {@link PINNED_COMMIT} (ECC v2.2.1),
+ * copied byte for byte from the Catalog evidence (CQ3 profileEvidence, CQ1
+ * hookControlInventory). Each file's SHA-256 is its serialized section digest.
+ */
+export const PINNED_SECTION_FIXTURES = Object.freeze({
+  profileEvidence: Object.freeze({
+    file: "ecc-profileEvidence-5064474d.json",
+    sha256: "83d2d2bc26afeb991130142ecd1b4566645e82f1eddb1c1fd274bcb07dbbccbe",
+  }),
+  hookControlInventory: Object.freeze({
+    file: "ecc-hookControlInventory-5064474d.json",
+    sha256: "7be2521e351ad46e62695e989e62b9f829cd72c639670ed672f0cdc6c8b35e67",
+  }),
+});
+
+/** The exact bytes of one pinned section fixture. */
+export function pinnedSectionBytes(section: keyof typeof PINNED_SECTION_FIXTURES): Uint8Array {
+  return new Uint8Array(
+    readFileSync(new URL(`./fixtures/${PINNED_SECTION_FIXTURES[section].file}`, import.meta.url)),
+  );
+}
+
+function pinnedSection(section: keyof typeof PINNED_SECTION_FIXTURES): unknown {
+  return JSON.parse(new TextDecoder().decode(pinnedSectionBytes(section)));
+}
+
+/**
+ * A descriptor holding only what exists at {@link PINNED_COMMIT}: the vendor
+ * lock's pin and Catalog's two sections, unmodified. Sections Catalog has not
+ * produced at this commit yet are absent, never carried over from the old pin.
+ */
+export function pinnedDescriptorDocument(): {
+  format: string;
+  version: number;
+  frameworkId: string;
+  sections: Record<string, unknown>;
+} {
+  return {
+    format: "aih-catalog-framework-descriptor",
+    version: 1,
+    frameworkId: "ecc",
+    sections: {
+      vendorLock: { id: "ecc", owner: "affaan-m", repo: "ECC", pinnedSha: PINNED_COMMIT },
+      hookControlInventory: pinnedSection("hookControlInventory"),
+      profileEvidence: pinnedSection("profileEvidence"),
+    },
+  };
+}
+
+export function pinnedDescriptor(): FrameworkDescriptorBytesV1 {
+  return descriptorFromDocument(pinnedDescriptorDocument());
 }
 
 export const EMPTY_RESULT: PlanResult = {
@@ -77,7 +133,7 @@ export function operationContext(
     root: "/repo",
     targets: ["claude"],
     mode: { apply: false, verify: true },
-    descriptor: descriptorOf(fixtureDescriptorBytes()),
+    descriptor: pinnedDescriptor(),
     policy: { posture: "vibe", hookControls: { disabled: [] } },
     options: {},
     env: {},
