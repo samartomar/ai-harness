@@ -489,7 +489,7 @@ export interface ScanFinding {
    * matched this finding exactly (code + path + content hash). */
   accepted?: boolean;
   /** Closure classification of this finding's file — present ONLY when a closure
-   * spec was applied. Absent ⇒ legacy full-tree behavior (every finding blocks). */
+   * spec was applied. Absent ⇒ legacy full-tree behavior (every finding counts toward the BLOCK label). */
   classification?: FindingClassification;
   /** Precise reachability under {@link classification} (audit granularity;
    * `unknown` rolls up INTO `closure` for the gate but is disclosed distinctly). */
@@ -730,7 +730,7 @@ function mintDisposition(
 /**
  * One maintainer-accepted content finding, pinned to the exact file content:
  * `fileSha256` is the sha256 of the file's UTF-8 text, so ANY edit to the file
- * voids the acceptance and the finding blocks again until re-reviewed.
+ * voids the acceptance and the finding counts toward the BLOCK label again until re-reviewed.
  * `repository` is audit metadata only — the match key is (code, path,
  * fileSha256), which is already content-exact without it.
  *
@@ -847,8 +847,9 @@ export interface FastScanPolicy {
   acceptedFindings?: readonly AcceptedContentFinding[];
   /**
    * The selected-profile closure spec (a2). ABSENT ⇒ legacy full-tree behavior:
-   * every finding blocks exactly as before. PRESENT ⇒ closure-aware disposition:
-   * findings are classified and only closure (+ unknown-reachability) findings gate.
+   * every finding counts toward the BLOCK label exactly as before. PRESENT ⇒ closure-aware
+   * disposition: findings are classified and only closure (+ unknown-reachability) findings
+   * count toward the gate label.
    */
   closureSpec?: ClosureSpec;
   /** Injected host-load facts for the closure's model-load axis. Absent ⇒ fail closed. */
@@ -890,9 +891,10 @@ function rankOf(severity: ScanSeverity): number {
   return SEVERITIES.indexOf(severity);
 }
 
-/** Whether a finding gates. Legacy (no closure) ⇒ every finding blocks; closure-aware
- * ⇒ only `classification === "closure"` blocks, and a visible-typography `advisory`
- * demotion is non-gating even though its file is in the closure. */
+/** Whether a finding counts toward the gate label. Legacy (no closure) ⇒ every finding
+ * counts; closure-aware ⇒ only `classification === "closure"` counts, and a
+ * visible-typography `advisory` demotion does not count even though its file is in the
+ * closure. The label never stops provisioning. */
 function isBlockingFinding(finding: ScanFinding, closureApplied: boolean): boolean {
   if (!closureApplied) return finding.advisory === undefined;
   return finding.classification === "closure" && finding.advisory === undefined;
@@ -1053,8 +1055,8 @@ function gatesAtPolicyThreshold(
  * The (a2) decision. Collects findings (+ coverage findings for missing
  * dimensions), applies profile-scoped acceptance, classifies each finding against
  * the closure (when one is supplied), then decides the tri-state selected-profile
- * gate. When no closure is supplied the classification step is skipped and every
- * finding blocks — byte-identical to the pre-a2 gate (the W4 safety property).
+ * gate label. When no closure is supplied the classification step is skipped and every
+ * finding counts toward the BLOCK label — byte-identical to the pre-a2 labelling.
  */
 function decide(
   reports: readonly DimensionReport[],
@@ -1124,7 +1126,7 @@ function decide(
     }
     // Acceptance only marks a BLOCKING finding — accepting an inert finding is a
     // structural no-op (it never gated), so the mark is withheld to keep the
-    // evidence honest. In legacy mode every finding blocks, so this is unchanged.
+    // evidence honest. In legacy mode every finding counts, so this is unchanged.
     if (
       blockingHere &&
       finding.path !== undefined &&
