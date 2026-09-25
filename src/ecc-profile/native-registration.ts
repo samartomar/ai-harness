@@ -288,8 +288,23 @@ function posixShellArg(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
-function windowsCommandArg(value: string): string {
-  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`;
+/**
+ * One Windows command-line argument: backslashes before a quote and at the end are
+ * doubled and the quote is escaped. One pass, linear in the input length.
+ */
+export function windowsCommandArg(value: string): string {
+  let quoted = "";
+  let backslashes = 0;
+  for (const char of value) {
+    if (char === "\\") {
+      backslashes += 1;
+      continue;
+    }
+    quoted +=
+      char === '"' ? `${"\\".repeat(backslashes * 2)}\\"` : `${"\\".repeat(backslashes)}${char}`;
+    backslashes = 0;
+  }
+  return `"${quoted}${"\\".repeat(backslashes * 2)}"`;
 }
 
 function packagedSerenaRuntimeRoot(): string {
