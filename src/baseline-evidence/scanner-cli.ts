@@ -119,10 +119,15 @@ function checkoutHead(root: string): string {
 
 /**
  * `--definition` stands in for the installed Catalog only at a pin that Catalog does not
- * carry; a carried pin keeps the installed route (and its coverage), a differing carried
- * definition is refused, and nothing falls back from one route to the other. A definition's
+ * carry; a carried pin keeps the installed route, and a definition that differs from the
+ * carried one is refused. Nothing falls back from one route to the other. A definition's
  * components must be disjoint unless `--definition-overlap compiler-catalog` names the
  * overlapping-views exception.
+ *
+ * D79: when a definition is supplied, the catalog it resolves to IS the definition authority
+ * for this checkout — request authoring, publication consumption and the install preview all
+ * use exactly it. The registered route (whose coverage compares the catalog against the
+ * sealed evidence lock) applies only when no definition is supplied.
  */
 function assertCheckout(root: string, catalogId: string, args: readonly string[]) {
   const definitionPath = optionalFlag(args, "--definition");
@@ -135,8 +140,7 @@ function assertCheckout(root: string, catalogId: string, args: readonly string[]
       head: checkoutHead(root),
       ...(overlap === undefined ? {} : { overlap }),
     });
-    if (resolved.route === "definition")
-      return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
+    return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
   }
   const prepared = prepareRegisteredScannerCatalogV1(root, catalogId);
   const { catalog } = prepared;
