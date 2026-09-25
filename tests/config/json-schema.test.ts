@@ -584,7 +584,7 @@ describe("committed JSON Schemas", () => {
     });
     const approval = {
       id: "vercel",
-      sourceContentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
+      sourceContentSha256: "d93be2b609a60035c7fdfc0b2bbeb228feb0a5f619c9de5ecf6b6d2acca5bd1f",
       state: "approved",
       approvedBy: "approver@example.com",
       authenticationMode: "oauth",

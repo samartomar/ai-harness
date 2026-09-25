@@ -6,7 +6,7 @@ export { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE };
 
 /** Canonical parsed-content digest used after the JSON is bundled into dist. */
 export const ECC_MCP_CATALOG_CANONICAL_SHA256 =
-  "5bd0b00f7051b54e07a821f1e1fd121fcd2e50fe5ec464895b321476bd7fbae6";
+  "bab2a851f40920effb15f8ca13c34d5699697ff3de16afd03bcb6b6c93c281b3";
 
 /** Upstream order is a reviewable part of the source-locked inventory. */
 export const ECC_MCP_CATALOG_IDS = [

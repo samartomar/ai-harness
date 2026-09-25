@@ -61,9 +61,9 @@ describe("source-locked ECC MCP catalog inventory", () => {
   it("preserves the exact ordered upstream catalog and provenance", () => {
     expect(ECC_MCP_CATALOG_PROVENANCE).toEqual({
       repository: "affaan-m/ECC",
-      commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+      commit: "5064474d4d762dc9640234a41617cccb79185cec",
       path: "mcp-configs/mcp-servers.json",
-      contentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
+      contentSha256: "d93be2b609a60035c7fdfc0b2bbeb228feb0a5f619c9de5ecf6b6d2acca5bd1f",
     });
     expect(ECC_MCP_CATALOG_IDS).toEqual(PINNED_IDS);
     expect(Object.keys(snapshot.mcpServers)).toEqual(PINNED_IDS);
