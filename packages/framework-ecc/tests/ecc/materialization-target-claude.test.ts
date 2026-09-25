@@ -304,7 +304,7 @@ const PASSED: readonly SelectionFixture[] = [
   { kind: "skill", id: "skill:tdd-workflow", path: "skills/tdd-workflow" },
   { kind: "baseline", id: "baseline:rules", path: "rules" },
 ];
-const BLOCKED: SelectionFixture = {
+const UNEVIDENCED: SelectionFixture = {
   kind: "agent",
   id: "agent:planner",
   path: "agents/planner.md",
@@ -328,7 +328,7 @@ function policyDocument(): Record<string, unknown> {
       externalSelections: [
         {
           framework: "ecc",
-          items: [...PASSED, BLOCKED, MCP].map((item) => ({
+          items: [...PASSED, UNEVIDENCED, MCP].map((item) => ({
             kind: item.kind,
             id: item.id,
             source: { repository: REPOSITORY, commit: COMMIT, path: item.path },
@@ -342,9 +342,9 @@ function policyDocument(): Record<string, unknown> {
 function held(componentId: string): BaselineHeldComponent {
   return {
     componentId,
-    routeCode: "baseline.evidence-blocked",
-    codes: ["malicious-code"],
-    details: [`${componentId} is blocked by signed evidence (malicious-code)`],
+    routeCode: "baseline.evidence-missing",
+    codes: ["baseline.evidence-missing"],
+    details: [`${componentId} is not covered by vendor or org evidence`],
   };
 }
 
@@ -385,13 +385,13 @@ describe("selection to evidence to AIH-direct materialization, end to end on a f
     const policy = resolveEffectiveOrgPolicy(parseOrgPolicy(policyDocument()));
     const selection = resolveEccMaterializationSelection(policy, {
       authorizations: [...PASSED, MCP].map((item) => authorization(item.id)),
-      held: [held(BLOCKED.id)],
+      held: [held(UNEVIDENCED.id)],
     });
     expect(selection.included.map((component) => component.id)).toEqual([
       ...PASSED.map((item) => item.id),
       MCP.id,
     ]);
-    expect(selection.excluded.map((entry) => entry.reason)).toEqual(["vet-blocked"]);
+    expect(selection.excluded.map((entry) => entry.reason)).toEqual(["no-evidence"]);
     return resolveEccClaudeMaterialization({ sourceRoot, components: selection.included });
   }
 
@@ -418,7 +418,7 @@ describe("selection to evidence to AIH-direct materialization, end to end on a f
     }
     expect(result.written).toHaveLength(6);
 
-    // The vet-blocked component never reaches a destination.
+    // The component no signed evidence covers never reaches a destination.
     expect(existsSync(join(root, ".claude", "agents", "planner.md"))).toBe(false);
     // Neither does the component this target does not own.
     expect(existsSync(join(root, ".mcp.json"))).toBe(false);

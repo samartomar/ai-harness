@@ -93,34 +93,22 @@ describe("resolveEccMaterializationSelection", () => {
     ]);
   });
 
-  it("excludes a vet-blocked component with its findings, and never includes it", () => {
+  it("includes a component whose exact evidence carries findings, like any other authorization", () => {
+    // Core authorizes exact signed evidence whatever it found (D50): the
+    // findings are labels on the verification, never a reason to exclude.
     const item = selectionItem("agent", "code-reviewer");
-    const heldEntry = held(
-      item.id,
-      "baseline.evidence-blocked",
-      ["malicious-code", "secrets"],
-      "agent:code-reviewer is blocked by signed evidence (malicious-code, secrets)",
-    );
+    const auth = authorization(item.id);
 
     const result = resolveEccMaterializationSelection(policyWith([item]), {
-      authorizations: [],
-      held: [heldEntry],
+      authorizations: [auth],
+      held: [],
     });
 
-    expect(result.included).toEqual([]);
-    expect(result.excluded).toEqual([
-      {
-        id: item.id,
-        kind: "agent",
-        framework: "ecc",
-        reason: "vet-blocked",
-        findingCodes: ["malicious-code", "secrets"],
-        detail: "agent:code-reviewer is blocked by signed evidence (malicious-code, secrets)",
-      },
-    ]);
+    expect(result.excluded).toEqual([]);
+    expect(result.included.map((component) => component.id)).toEqual([item.id]);
   });
 
-  it("excludes a component with no evidence at the pin, with a reason distinct from vet-blocked", () => {
+  it("excludes a component with no evidence at the pin, naming the evidence problem", () => {
     const heldMissing = selectionItem("skill", "verification-loop");
     const neverVetted = selectionItem("skill", "never-vetted");
     const heldEntry = held(
@@ -154,7 +142,6 @@ describe("resolveEccMaterializationSelection", () => {
         detail: `no evidence recorded for ${neverVetted.id} at ${REPOSITORY}@${COMMIT.slice(0, 12)}`,
       },
     ]);
-    expect(result.excluded.every((entry) => entry.reason !== "vet-blocked")).toBe(true);
   });
 
   it("includes evidence carrying an organization decision like any other, preserving the decision record", () => {
@@ -195,9 +182,9 @@ describe("resolveEccMaterializationSelection", () => {
     const auth = authorization(item.id);
     const heldEntry = held(
       item.id,
-      "baseline.evidence-blocked",
-      ["secrets"],
-      "skill:contradictory is blocked by signed evidence (secrets)",
+      "baseline.evidence-mismatch",
+      ["baseline.evidence-mismatch"],
+      "skill:contradictory bytes differ from its signed evidence",
     );
 
     const result = resolveEccMaterializationSelection(policyWith([item]), {
@@ -208,7 +195,7 @@ describe("resolveEccMaterializationSelection", () => {
     expect(result.included).toEqual([]);
     expect(result.excluded).toHaveLength(1);
     expect(result.excluded[0]?.reason).toBe("malformed-evidence");
-    expect(result.excluded[0]?.findingCodes).toEqual(["secrets"]);
+    expect(result.excluded[0]?.findingCodes).toEqual(["baseline.evidence-mismatch"]);
   });
 
   it("fails closed on a selection source path the materialization engine cannot accept", () => {
@@ -246,14 +233,14 @@ describe("resolveEccMaterializationSelection", () => {
     expect(result.excluded[0]?.reason).toBe("malformed-selection");
   });
 
-  it("removes a dependent component when one of its structural dependencies does not pass evidence", () => {
+  it("removes a dependent component when one of its structural dependencies has no matching evidence", () => {
     const dependent = selectionItem("module", "security", "modules/security");
     const dependency = selectionItem("module", "platform-configs", "modules/platform-configs");
     const heldDependency = held(
       dependency.id,
-      "baseline.evidence-blocked",
-      ["secrets"],
-      `${dependency.id} is blocked by signed evidence`,
+      "baseline.evidence-mismatch",
+      ["baseline.evidence-mismatch"],
+      `${dependency.id} bytes differ from its signed evidence`,
     );
 
     const result = resolveEccMaterializationSelection(policyWith([dependent, dependency]), {
@@ -263,7 +250,7 @@ describe("resolveEccMaterializationSelection", () => {
 
     expect(result.included).toEqual([]);
     expect(result.excluded.map((entry) => ({ id: entry.id, reason: entry.reason }))).toEqual([
-      { id: dependency.id, reason: "vet-blocked" },
+      { id: dependency.id, reason: "no-evidence" },
       { id: dependent.id, reason: "dependency-unavailable" },
     ]);
   });
@@ -291,19 +278,19 @@ describe("resolveEccMaterializationSelection driven against the real materializa
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("never materializes a vet-blocked or no-evidence component, even though both are present in the selection", () => {
+  it("never materializes a component whose evidence is mismatched or missing, even though both are present in the selection", () => {
     const passItem = selectionItem("skill", "tdd-workflow");
-    const blockedItem = selectionItem("agent", "code-reviewer");
+    const mismatchedItem = selectionItem("agent", "code-reviewer");
     const missingItem = selectionItem("skill", "verification-loop");
 
     const evidence: EccSelectionEvidence = {
       authorizations: [authorization(passItem.id)],
       held: [
         held(
-          blockedItem.id,
-          "baseline.evidence-blocked",
-          ["malicious-code"],
-          "agent:code-reviewer is blocked by signed evidence (malicious-code)",
+          mismatchedItem.id,
+          "baseline.evidence-mismatch",
+          ["baseline.evidence-mismatch"],
+          "agent:code-reviewer bytes differ from its signed evidence",
         ),
         held(
           missingItem.id,
@@ -315,7 +302,7 @@ describe("resolveEccMaterializationSelection driven against the real materializa
     };
 
     const result = resolveEccMaterializationSelection(
-      policyWith([passItem, blockedItem, missingItem]),
+      policyWith([passItem, mismatchedItem, missingItem]),
       evidence,
     );
 
@@ -323,18 +310,21 @@ describe("resolveEccMaterializationSelection driven against the real materializa
     // reaches `included`; the other two are reported, not dropped.
     expect(result.included.map((component) => component.id)).toEqual([passItem.id]);
     expect(result.excluded.map((entry) => ({ id: entry.id, reason: entry.reason }))).toEqual([
-      { id: blockedItem.id, reason: "vet-blocked" },
+      { id: mismatchedItem.id, reason: "no-evidence" },
       { id: missingItem.id, reason: "no-evidence" },
     ]);
 
     // Not enough on its own — drive the real engine with exactly what the
     // resolver produced, and prove the excluded components' bytes never land.
     const PASS_PATH = ".claude/skills/tdd-workflow/SKILL.md";
-    const BLOCKED_PATH = ".claude/agents/code-reviewer.md";
+    const MISMATCHED_PATH = ".claude/agents/code-reviewer.md";
     const MISSING_PATH = ".claude/skills/verification-loop/SKILL.md";
     const filesById = new Map<string, EccMaterializationFileInput[]>([
       [passItem.id, [{ path: PASS_PATH, kind: "copy-file", contents: "# tdd-workflow\n" }]],
-      [blockedItem.id, [{ path: BLOCKED_PATH, kind: "copy-file", contents: "# code-reviewer\n" }]],
+      [
+        mismatchedItem.id,
+        [{ path: MISMATCHED_PATH, kind: "copy-file", contents: "# code-reviewer\n" }],
+      ],
       [
         missingItem.id,
         [{ path: MISSING_PATH, kind: "copy-file", contents: "# verification-loop\n" }],
@@ -348,7 +338,7 @@ describe("resolveEccMaterializationSelection driven against the real materializa
     applyEccMaterialization({ root, components });
 
     expect(existsSync(join(root, PASS_PATH))).toBe(true);
-    expect(existsSync(join(root, BLOCKED_PATH))).toBe(false);
+    expect(existsSync(join(root, MISMATCHED_PATH))).toBe(false);
     expect(existsSync(join(root, MISSING_PATH))).toBe(false);
   });
 });

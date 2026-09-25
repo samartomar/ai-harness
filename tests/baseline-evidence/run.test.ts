@@ -195,10 +195,17 @@ describe("guarded baseline install phases", () => {
         }),
       ],
     );
-    expect(phase.actions.map((action) => action.kind)).toEqual(["probe", "doc"]);
+    expect(phase.actions.map((action) => action.kind)).toEqual(["probe", "digest", "doc"]);
     const probe = phase.actions[0];
     if (probe?.kind !== "probe") throw new Error("missing evidence probe");
     expect(await probe.run(ctx())).toMatchObject({ verdict: "pass" });
+    // The label digest names only the component that carries something.
+    expect(phase.actions[1]).toMatchObject({
+      kind: "digest",
+      describe: "baseline evidence labels",
+      text: "skill:held: has-findings; findings: trust.auto-exec-hook",
+      data: { labels: [expect.objectContaining({ componentId: "skill:held" })] },
+    });
   });
 
   it("never holds a component for its findings, with or without partial mode", () => {

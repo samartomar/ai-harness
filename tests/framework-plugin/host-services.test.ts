@@ -1,8 +1,14 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { FrameworkEvidenceGatedInstallRequestV1 } from "../../src/framework-plugin/contract-v1.js";
+import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import { componentIdentityPaths } from "../../src/baseline-evidence/license.js";
+import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
+import type {
+  FrameworkEvidenceGatedInstallRequestV1,
+  FrameworkVerifiedSourceV1,
+} from "../../src/framework-plugin/contract-v1.js";
 import { frameworkHostServicesV1 } from "../../src/framework-plugin/host-services.js";
 import {
   executeSuperpowersCommand,
@@ -160,6 +166,71 @@ describe("framework host services", () => {
     await expect(host.runEvidenceGatedInstall(bad)).rejects.toMatchObject({
       code: "AIH_FRAMEWORK_PLUGIN",
     });
+  });
+
+  it("hands the plugin a label for a component whose exact evidence carries findings", async () => {
+    const commit = "b".repeat(40);
+    const tree = join(root, "obra", "Superpowers");
+    mkdirSync(join(tree, "skills", "x"), { recursive: true });
+    writeFileSync(join(tree, "LICENSE"), "MIT\n");
+    writeFileSync(
+      join(tree, "skills", "x", "SKILL.md"),
+      "---\nname: x\ndescription: fixture skill\n---\n# x\n",
+    );
+    const lock = parseBaselineEvidenceLock({
+      schemaVersion: 2,
+      sources: [
+        {
+          id: "superpowers",
+          owner: "obra",
+          repo: "Superpowers",
+          pinnedSha: commit,
+          components: [
+            {
+              id: "skill:x",
+              paths: ["skills/x"],
+              treeSha256: hashComponentTree(tree, componentIdentityPaths(tree, ["skills/x"]))
+                .treeSha256,
+              verdict: "has-findings",
+              analyzers: [{ name: "aih-native", version: "2.7.0" }],
+              findings: [{ code: "trust.prompt-injection", detail: "finding fixture" }],
+              evidenceProblems: [],
+            },
+          ],
+        },
+      ],
+    });
+    let seen: FrameworkVerifiedSourceV1 | undefined;
+    const host = frameworkHostServicesV1({
+      frameworkId: "superpowers",
+      ctx: ctx({ apply: true }),
+      policy: undefined,
+      transactionPins: {},
+      produced: new WeakSet(),
+      pipelineDeps: { vendorLock: lock, vendorLockSha256: "e".repeat(64) },
+    });
+
+    await host.runEvidenceGatedInstall(
+      request({
+        source: { owner: "obra", repo: "Superpowers", commit },
+        buildInstallPlan: (verified) => {
+          seen = verified;
+          return plan("gated", doc("guidance", "verified"));
+        },
+      }),
+    );
+
+    expect(seen?.authorizations.map((entry) => entry.componentId)).toEqual(["skill:x"]);
+    expect(seen?.held).toEqual([]);
+    expect(seen?.labels).toEqual([
+      {
+        componentId: "skill:x",
+        tier: "vendor",
+        verdict: "has-findings",
+        findings: [{ code: "trust.prompt-injection", count: 1 }],
+        evidenceProblems: [],
+      },
+    ]);
   });
 
   it("keeps control characters out of plugin progress lines", () => {

@@ -112,6 +112,41 @@ function heldDigest(held: readonly BaselineHeldComponent[]): Action {
   );
 }
 
+function countList(counts: readonly { code: string; count: number }[]): string {
+  return counts
+    .map((entry) => (entry.count === 1 ? entry.code : `${entry.code} x${entry.count}`))
+    .join(", ");
+}
+
+/**
+ * What the evidence found in the components being installed, for the reader.
+ * Present only when some component carries findings or evidence problems; it
+ * never changes what is installed.
+ */
+function labelDigest(labels: readonly BaselineComponentLabels[]): Action[] {
+  const labelled = labels.filter(
+    (label) => label.findings.length > 0 || label.evidenceProblems.length > 0,
+  );
+  if (labelled.length === 0) return [];
+  return [
+    digest(
+      "baseline evidence labels",
+      labelled
+        .map((label) =>
+          [
+            `${label.componentId}: ${label.verdict}`,
+            ...(label.findings.length > 0 ? [`findings: ${countList(label.findings)}`] : []),
+            ...(label.evidenceProblems.length > 0
+              ? [`evidence problems: ${countList(label.evidenceProblems)}`]
+              : []),
+          ].join("; "),
+        )
+        .join("\n"),
+      { labels: labelled },
+    ),
+  ];
+}
+
 function verificationProbe(checks: readonly Check[]): ProbeAction {
   const all = [...checks];
   const action = structuredChecksProbe("baseline evidence gate", () => all);
@@ -224,6 +259,7 @@ export async function baselineInstallPhasePlan(
     "baseline install: evidence re-check + install",
     evidenceProbe,
     ...(verification.held.length > 0 ? [heldDigest(verification.held)] : []),
+    ...labelDigest(verification.labels),
     ...actions,
   );
 }

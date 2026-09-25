@@ -132,12 +132,12 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ["src/framework-host/index.ts", 17, "export const FRAMEWORK_HOST_API_VERSION = 1;"],
   [
     "src/framework-plugin/contract-v1.ts",
-    40,
+    44,
     "export const FRAMEWORK_PLUGIN_CONTRACT_VERSION = 1;",
   ],
   [
     "src/framework-plugin/contract-v1.ts",
-    48,
+    52,
     "export const FRAMEWORK_PLUGIN_PACKAGE_NAMES = Object.freeze({",
   ],
   [

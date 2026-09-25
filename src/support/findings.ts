@@ -950,13 +950,6 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Upgrade aih to a build that parses the evidence lock's declared schema version, then re-run. Do not install against older evidence to work around it, and do not hand-edit the lock's schemaVersion — the signature covers the bytes you would be changing.",
   },
-  "baseline.evidence-blocked": {
-    audience: "developer",
-    failSeverity: "blocking",
-    title: "signed baseline evidence records a blocking trust verdict",
-    action:
-      "Do not install this component. Fix the recorded trust-danger or required-coverage findings at the source and vet a new pin; org evidence cannot waive a blocked danger verdict.",
-  },
   "trust.hidden-unicode": {
     audience: "developer",
     failSeverity: "blocking",

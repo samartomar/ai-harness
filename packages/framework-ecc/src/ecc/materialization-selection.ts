@@ -2,7 +2,6 @@ import {
   assertComponentSourcePath,
   assertMaterializedComponentId,
   type BaselineAuthorization,
-  type BaselineHeldComponent,
   type BaselineVerificationResult,
   displaySafe,
   type EccComponentProvenance,
@@ -12,21 +11,21 @@ import type { EccComponentId } from "./components.js";
 import { type EccStructuralRelationView, eccMandatoryRequirementIds } from "./selection-closure.js";
 
 /**
- * F2: the policy's evidence-passed effective selection.
+ * F2: the policy's evidence-matched effective selection.
  *
  * Ruling 6 makes selection an intent stage: select, then evidence, then
  * install. This module is the resolver in between — it takes the org policy's
  * effective per-component selection (`governance.externalSelections`, carried
  * on `EffectiveOrgPolicy.externalSelections`) and the already-computed
- * evidence/vet state (`verifyBaselineComponents`'s `authorizations`/`held`),
- * and reports exactly which selected components are authorized to
- * materialize.
+ * evidence state (`verifyBaselineComponents`'s `authorizations`/`held`), and
+ * reports exactly which selected components have signed evidence matching
+ * their bytes. Findings never exclude a component (D50): exact signed evidence
+ * is authorized whatever it found, and its findings travel as labels.
  *
- * A component that is selected but vet-blocked, or selected with no evidence
- * recorded at its pin, is never returned in `included` — the lifecycle's
- * input is the evidence-passed effective selection and nothing else — but it
- * is reported in `excluded` with its reason, so a caller can still show it:
- * visible and selectable, never materialized.
+ * A component selected with no signed evidence covering or matching its bytes
+ * is never returned in `included`, but it is reported in `excluded` with its
+ * reason, so a caller can still show it: visible and selectable, never
+ * materialized.
  *
  * `included` carries the id, authorization tuple, and provenance the
  * materialization engine's `EccMaterializationComponentInput` needs, copied
@@ -38,7 +37,6 @@ import { type EccStructuralRelationView, eccMandatoryRequirementIds } from "./se
  */
 
 export type EccSelectionExclusionReason =
-  | "vet-blocked"
   | "no-evidence"
   | "malformed-selection"
   | "malformed-evidence"
@@ -50,7 +48,11 @@ export interface EccSelectionExclusion {
   kind: string;
   framework: "ecc" | "superpowers";
   reason: EccSelectionExclusionReason;
-  /** Vet finding codes for a blocked component; empty for every other reason. */
+  /**
+   * The codes on the component's held evidence record (evidence missing or
+   * mismatched); empty for every other reason. The name is the V1 wire
+   * field; these are evidence codes, never findings.
+   */
   findingCodes: readonly string[];
   detail: string;
 }
@@ -82,25 +84,15 @@ function excluded(
   return { id: item.id, kind: item.kind, framework, reason, findingCodes, detail };
 }
 
-/** Reason and finding codes for a component evidence held back from passing. */
-function heldReason(held: BaselineHeldComponent): {
-  reason: EccSelectionExclusionReason;
-  detail: string;
-} {
-  const reason: EccSelectionExclusionReason =
-    held.routeCode === "baseline.evidence-blocked" ? "vet-blocked" : "no-evidence";
-  return { reason, detail: held.details.join("; ") };
-}
-
 /**
- * Resolve the policy's evidence-passed effective selection: filter
- * `policy.externalSelections` down to the components whose evidence/vet state
- * passed, carrying each one's authorization tuple and provenance through
- * unchanged. Everything else is reported in `excluded` with a reason — never
- * silently dropped and never silently materialized.
+ * Resolve the policy's evidence-matched effective selection: filter
+ * `policy.externalSelections` down to the components with signed evidence
+ * matching their bytes, carrying each one's authorization tuple and provenance
+ * through unchanged. Everything else is reported in `excluded` with a reason —
+ * never silently dropped and never silently materialized.
  *
  * Fails closed throughout. Three cases exclude a selected component: its
- * evidence is held (blocked or missing/mismatched at the pin); its evidence
+ * evidence is held (missing or mismatched at the pin); its evidence
  * state is self-contradictory (both an authorization AND a held record exist
  * for the same id — never resolved by guessing which is current); or the
  * selection entry itself cannot resolve to a component id and source path the
@@ -148,8 +140,9 @@ export function resolveEccMaterializationSelection(
       }
 
       if (held !== undefined) {
-        const { reason, detail } = heldReason(held);
-        excludedItems.push(excluded(item, selection.framework, reason, held.codes, detail));
+        excludedItems.push(
+          excluded(item, selection.framework, "no-evidence", held.codes, held.details.join("; ")),
+        );
         continue;
       }
 
@@ -233,7 +226,7 @@ export function resolveEccMaterializationSelection(
         framework: "ecc",
         reason: "dependency-unavailable",
         findingCodes: [],
-        detail: `${displaySafe(component.id)} requires evidence-passed structural component(s) ${missing
+        detail: `${displaySafe(component.id)} requires structural component(s) not included in this selection: ${missing
           .map((dependency) => displaySafe(dependency))
           .join(", ")}`,
       });

@@ -301,7 +301,9 @@ function assertCurrentSelectedEvidence(request: ParsedRequest, component: Parsed
     (entry) => entry.componentId === component.id,
   );
   if (held.length > 0 || authorized.length !== 1) {
-    fail("selected component requires exactly one current unheld authorization");
+    fail(
+      "selected component requires exactly one current authorization matching its bytes, and no missing or mismatched evidence record",
+    );
   }
   if (
     !sameAuthorization(
@@ -321,7 +323,9 @@ function runtimeAuthorization(request: ParsedRequest): BaselineAuthorization {
     (entry) => entry.componentId === ECC_KIRO_RUNTIME_COMPONENT_ID,
   );
   if (held.length > 0 || authorized.length !== 1) {
-    fail("exactly one unheld runtime:ecc-kiro authorization is required");
+    fail(
+      "exactly one runtime:ecc-kiro authorization matching its bytes is required, with no missing or mismatched evidence record",
+    );
   }
   return authorized[0] as BaselineAuthorization;
 }

@@ -593,7 +593,6 @@ describe("Check.code — invariants", () => {
       "baseline.evidence-missing": true,
       "baseline.org-evidence-required": true,
       "baseline.evidence-mismatch": true,
-      "baseline.evidence-blocked": true,
       "baseline.evidence-schema-unsupported": true,
       "trust.fetch-blocked": true,
       "trust.fetch-metadata-missing": true,

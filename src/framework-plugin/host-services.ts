@@ -151,12 +151,13 @@ export function frameworkHostServicesV1(
             source,
             componentIds: [...request.componentIds],
             ...(policy === undefined ? {} : { policy }),
-            buildInstallPlan: (sourceRoot, authorizations, held) =>
+            buildInstallPlan: (sourceRoot, authorizations, held, labels) =>
               request.buildInstallPlan(
                 Object.freeze({
                   sourceRoot,
                   authorizations: Object.freeze([...authorizations]),
                   held: Object.freeze([...held]),
+                  labels: Object.freeze([...labels]),
                 }),
               ),
             transactionPins,

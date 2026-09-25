@@ -190,7 +190,11 @@ describe("verifiedEccInstallPlan", () => {
         { clis: ["claude"], profile: "full", packs: [], selection: requested },
         everything.filter((id) => id !== withheld).map(authorization),
       ),
-    ).toThrow(new RegExp(`refusing partial ECC Full install.*${withheld}`));
+    ).toThrow(
+      new RegExp(
+        `ECC Full install not planned: no signed evidence covers or matches .*${withheld}`,
+      ),
+    );
   });
 
   it("does not report a downgrade when the full profile is fully authorized", () => {
@@ -210,7 +214,7 @@ describe("verifiedEccInstallPlan", () => {
     expect(text).not.toMatch(/reduced to scoped/);
   });
 
-  it("refuses before runtime preparation when ecc-installer is not authorized", () => {
+  it("refuses before runtime preparation when no signed evidence matches ecc-installer", () => {
     expect(() =>
       verifiedEccInstallPlan(
         ctx(),
@@ -228,7 +232,9 @@ describe("verifiedEccInstallPlan", () => {
         },
         [authorization("baseline:rules")],
       ),
-    ).toThrow(/unauthorized ECC runtime runtime:ecc-installer/);
+    ).toThrow(
+      /no signed evidence covers or matches the bytes of ECC runtime runtime:ecc-installer/,
+    );
   });
 
   it("refuses before runtime preparation when only the helper runtime is authorized", () => {
@@ -249,10 +255,10 @@ describe("verifiedEccInstallPlan", () => {
         },
         [authorization()],
       ),
-    ).toThrow(/no selected ECC component has authorization/);
+    ).toThrow(/no selected ECC component has signed evidence matching its bytes/);
   });
 
-  it("refuses an unscoped Kiro installer without its runtime authorization", () => {
+  it("refuses an unscoped Kiro installer when no signed evidence matches its runtime", () => {
     expect(() =>
       verifiedEccInstallPlan(
         ctx(),
@@ -260,7 +266,7 @@ describe("verifiedEccInstallPlan", () => {
         { clis: ["kiro"], profile: "core", packs: [] },
         [authorization("runtime:ecc-installer")],
       ),
-    ).toThrow(/unauthorized ECC runtime runtime:ecc-kiro/);
+    ).toThrow(/no signed evidence covers or matches the bytes of ECC runtime runtime:ecc-kiro/);
   });
 
   it("records only authorized installed components while retaining project intent", () => {

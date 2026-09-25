@@ -117,8 +117,11 @@ const PASSED: readonly SelectionFixture[] = [
   },
 ];
 
-/** Selected and blocked by signed evidence: visible, selectable, never materialized. */
-const BLOCKED: SelectionFixture = {
+/**
+ * Selected, and no signed evidence covers it: visible, selectable, never
+ * materialized. (Findings never exclude a component; missing evidence does.)
+ */
+const UNEVIDENCED: SelectionFixture = {
   kind: "agent",
   id: "agent:planner",
   path: "agents/planner.md",
@@ -303,7 +306,7 @@ const KIRO_RUNTIME: SelectionFixture = {
 
 const CATALOGUED: readonly SelectionFixture[] = [
   ...PASSED,
-  BLOCKED,
+  UNEVIDENCED,
   OTHER_LIFECYCLE,
   SHARED_ONLY,
   KIRO_RUNTIME,
@@ -319,7 +322,8 @@ function catalog() {
   });
 }
 
-function vendorLock() {
+/** Signed evidence for every catalogued component except UNEVIDENCED; `findingsOn` carries a finding. */
+function vendorLock(findingsOn?: string) {
   return parseBaselineEvidenceLock({
     schemaVersion: 2,
     sources: [
@@ -328,15 +332,15 @@ function vendorLock() {
         owner: "affaan-m",
         repo: "ECC",
         pinnedSha: COMMIT,
-        components: CATALOGUED.map((item) => ({
+        components: CATALOGUED.filter((item) => item.id !== UNEVIDENCED.id).map((item) => ({
           id: item.id,
           paths: item.paths,
           treeSha256: hashComponentTree(sourceRoot, componentIdentityPaths(sourceRoot, item.paths))
             .treeSha256,
-          verdict: item.id === BLOCKED.id ? "has-findings" : "no-findings",
+          verdict: item.id === findingsOn ? "has-findings" : "no-findings",
           analyzers: [{ name: "aih-native", version: "2.7.0" }],
           findings:
-            item.id === BLOCKED.id ? [{ code: "malicious-code", detail: "blocked by vet" }] : [],
+            item.id === findingsOn ? [{ code: "malicious-code", detail: "finding fixture" }] : [],
           evidenceProblems: [],
         })),
       },
@@ -413,7 +417,7 @@ function materializationDigest(result: PlanResult): {
 
 describe("F6 — the governed framework lifecycle reached through `aih ecc`", () => {
   it("previews the governed install without --apply and writes nothing", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
     const before = snapshot(root);
 
     const result = await runLifecycle("install", false);
@@ -437,7 +441,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
   });
 
   it("materializes the evidence-passed selection with its receipt under --apply", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
 
     const result = await runLifecycle("install", true);
 
@@ -455,20 +459,54 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
       ).toBe(true);
     }
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
-    // The vet-blocked component is reported by name and never reached a
-    // destination — evidence, not selection, is what admits a component.
+    // The component no signed evidence covers is reported by name and never
+    // reached a destination.
     expect(
       reported.excluded.map((entry) => ({
         id: entry.id,
         reason: entry.reason,
         findingCodes: entry.findingCodes,
       })),
-    ).toEqual([{ id: BLOCKED.id, reason: "vet-blocked", findingCodes: ["malicious-code"] }]);
+    ).toEqual([
+      { id: UNEVIDENCED.id, reason: "no-evidence", findingCodes: ["baseline.evidence-missing"] },
+    ]);
     expect(existsSync(join(root, ".claude", "agents", "planner.md"))).toBe(false);
     // Operator content the lifecycle does not own survives untouched.
     for (const path of Object.keys(OPERATOR_TREE)) {
       expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
     }
+  });
+
+  it("materializes a selected component whose evidence carries findings, and labels it", async () => {
+    const labelled = PASSED[0] as SelectionFixture;
+    writeGovernedPolicy([...PASSED]);
+
+    const result = await runLifecycle("install", true, undefined, vendorLock(labelled.id));
+
+    const reported = materializationDigest(result);
+    expect(reported.applied).toBe(true);
+    expect(reported.excluded).toEqual([]);
+    for (const file of MATERIALIZED) {
+      expect(
+        bytesAt(root, file.destination).equals(bytesAt(sourceRoot, file.source)),
+        file.destination,
+      ).toBe(true);
+    }
+    expect(
+      result.digests.find((entry) => entry.describe === "baseline evidence labels"),
+    ).toMatchObject({
+      text: `${labelled.id}: has-findings; findings: malicious-code`,
+      data: {
+        labels: [
+          {
+            componentId: labelled.id,
+            verdict: "has-findings",
+            findings: [{ code: "malicious-code", count: 1 }],
+            evidenceProblems: [],
+          },
+        ],
+      },
+    });
   });
 
   it("delivers required ECC content from the normal policy project apply", async () => {
@@ -692,7 +730,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     vi.setSystemTime(new Date("2026-08-26T12:00:00Z"));
     const policyPath = join(adminRoot, "policies", "policy-bundle.json");
     mkdirSync(dirname(policyPath), { recursive: true });
-    writeFileSync(policyPath, protectedGovernedPolicyBundle([...PASSED, BLOCKED]), "utf8");
+    writeFileSync(policyPath, protectedGovernedPolicyBundle([...PASSED, UNEVIDENCED]), "utf8");
     const before = snapshot(root);
     const lock = vendorLock();
 
@@ -708,7 +746,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
             // The evidence phase is the last asynchronous boundary before the
             // direct writer. Replace A with valid B there: the original A pin
             // must still guard the later materialization transaction.
-            writeFileSync(policyPath, protectedGovernedPolicyBundle([BLOCKED]), "utf8");
+            writeFileSync(policyPath, protectedGovernedPolicyBundle([UNEVIDENCED]), "utf8");
             return {
               checks: [],
               evidence: {
@@ -758,7 +796,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
    * wrote. It must instead say plainly that file-level preview needs the source.
    */
   it("gives an honest dry run on the default remote source, fetching and writing nothing", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
     const source = resolveTrustSource("affaan-m/ECC", { root, pin: COMMIT });
     if (source.kind !== "github") throw new Error("expected a GitHub source");
     const before = snapshot(root);
@@ -776,7 +814,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     // Names the pin the bytes would come from...
     expect(digest?.text).toContain(`affaan-m/ECC@${COMMIT}`);
     // ...every selected component id...
-    for (const item of [...PASSED, BLOCKED]) {
+    for (const item of [...PASSED, UNEVIDENCED]) {
       expect(digest?.text, item.id).toContain(item.id);
     }
     // ...and states plainly why this is not a file-level preview.
@@ -1138,7 +1176,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
   });
 
   it("previews `--cli codex` against the Codex rows and writes nothing", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
     const before = snapshot(root);
 
     const reported = materializationDigest(await runLifecycle("install", false, "codex"));
@@ -1152,7 +1190,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
   });
 
   it("applies, receipts and then uninstalls the Codex materialization", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
 
     const reported = materializationDigest(await runLifecycle("install", true, "codex"));
 
@@ -1203,7 +1241,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     const digest = result.digests.find((entry) =>
       entry.describe.includes("governed ECC framework materialization"),
     );
-    expect(digest?.text).toContain("Evidence-passed, and refused by the Codex target:");
+    expect(digest?.text).toContain("Evidence-matched, and refused by the Codex target:");
     expect(digest?.text).toContain(
       `[unowned-destination] ${OTHER_LIFECYCLE.id} - the Codex target owns no content destination for .mcp.json`,
     );
@@ -1342,7 +1380,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
       const digest = result.digests.find((entry) =>
         entry.describe.includes("governed ECC framework materialization"),
       );
-      expect(digest?.text).toContain("Evidence-passed, and refused by the Codex target:");
+      expect(digest?.text).toContain("Evidence-matched, and refused by the Codex target:");
       expect(digest?.text).toContain("[duplicate-destination] skill:tdd-workflow");
       expect(digest?.text).toContain("two pinned sources claim one Codex destination");
       // Positive control: the other components still materialize, so the
@@ -1395,7 +1433,7 @@ describe("F4 — the governed framework lifecycle for the Kimi target", () => {
   ];
 
   it("previews `--cli kimi` against the .kimi-code rows and writes nothing", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
     const before = snapshot(root);
 
     const reported = materializationDigest(await runLifecycle("install", false, "kimi"));
@@ -1409,7 +1447,7 @@ describe("F4 — the governed framework lifecycle for the Kimi target", () => {
   });
 
   it("applies, receipts and then uninstalls the Kimi materialization", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
 
     const reported = materializationDigest(await runLifecycle("install", true, "kimi"));
 
@@ -1445,7 +1483,7 @@ describe("F4 — the governed framework lifecycle for the Kimi target", () => {
     const digest = result.digests.find((entry) =>
       entry.describe.includes("governed ECC framework materialization"),
     );
-    expect(digest?.text).toContain("Evidence-passed, and refused by the Kimi target:");
+    expect(digest?.text).toContain("Evidence-matched, and refused by the Kimi target:");
     expect(digest?.text).toContain(
       `[unowned-destination] ${OTHER_LIFECYCLE.id} - the Kimi target owns no content destination for .mcp.json`,
     );
@@ -1563,7 +1601,7 @@ describe("F4 — the governed framework lifecycle for the Cursor target", () => 
   ];
 
   it("previews `--cli cursor` against the .cursor rows and writes nothing", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
     const before = snapshot(root);
 
     const reported = materializationDigest(await runLifecycle("install", false, "cursor"));
@@ -1577,7 +1615,7 @@ describe("F4 — the governed framework lifecycle for the Cursor target", () => 
   });
 
   it("applies, receipts and then uninstalls the Cursor materialization", async () => {
-    writeGovernedPolicy([...PASSED, BLOCKED]);
+    writeGovernedPolicy([...PASSED, UNEVIDENCED]);
 
     const reported = materializationDigest(await runLifecycle("install", true, "cursor"));
 
@@ -1614,7 +1652,7 @@ describe("F4 — the governed framework lifecycle for the Cursor target", () => 
     const digest = result.digests.find((entry) =>
       entry.describe.includes("governed ECC framework materialization"),
     );
-    expect(digest?.text).toContain("Evidence-passed, and refused by the Cursor target:");
+    expect(digest?.text).toContain("Evidence-matched, and refused by the Cursor target:");
     expect(digest?.text).toContain(
       `[unowned-destination] ${OTHER_LIFECYCLE.id} - the Cursor target owns no content destination for .mcp.json`,
     );
@@ -1736,7 +1774,7 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
   ];
 
   it("materializes only the shared rows for `--cli opencode`, and nothing under .opencode/", async () => {
-    writeGovernedPolicy([...PASSED, SHARED_ONLY, BLOCKED]);
+    writeGovernedPolicy([...PASSED, SHARED_ONLY, UNEVIDENCED]);
 
     const reported = materializationDigest(await runLifecycle("install", true, "opencode"));
 
@@ -1764,7 +1802,7 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     const digest = result.digests.find((entry) =>
       entry.describe.includes("governed ECC framework materialization"),
     );
-    expect(digest?.text).toContain("Evidence-passed, and refused by the OpenCode target:");
+    expect(digest?.text).toContain("Evidence-matched, and refused by the OpenCode target:");
     expect(digest?.text).toContain(
       "[unowned-destination] agent:code-reviewer - the OpenCode target owns no content destination for agents/code-reviewer.md",
     );
@@ -1795,7 +1833,7 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     const digest = result.digests.find((entry) =>
       entry.describe.includes("governed ECC framework materialization"),
     );
-    expect(digest?.text).toContain("Evidence-passed, and refused by the OpenCode target:");
+    expect(digest?.text).toContain("Evidence-matched, and refused by the OpenCode target:");
     expect(digest?.text).not.toContain("refused by the Claude target");
     expect(reported.refused.map((entry) => entry.id).sort()).toEqual(
       PASSED.filter((item) => item.id !== "skill:tdd-workflow")
@@ -1873,26 +1911,6 @@ describe("the governed framework lifecycle for the Kiro target", () => {
       sources: lock.sources.map((source) => ({
         ...source,
         components: source.components.filter((component) => component.id !== KIRO_RUNTIME.id),
-      })),
-    });
-  }
-
-  function lockWithHeldRuntime() {
-    const lock = vendorLock();
-    return parseBaselineEvidenceLock({
-      ...lock,
-      sources: lock.sources.map((source) => ({
-        ...source,
-        components: source.components.map((component) =>
-          component.id === KIRO_RUNTIME.id
-            ? {
-                ...component,
-                verdict: "has-findings" as const,
-                findings: [{ code: "malicious-code", detail: "runtime held by vet" }],
-                evidenceProblems: [],
-              }
-            : component,
-        ),
       })),
     });
   }
@@ -2033,19 +2051,34 @@ describe("the governed framework lifecycle for the Kiro target", () => {
     );
   });
 
-  it("preserves prior Kiro ownership when runtime evidence is absent or held", async () => {
+  it("preserves prior Kiro ownership when runtime evidence is absent", async () => {
     writeGovernedPolicy([PASSED[1] as SelectionFixture]);
     await runLifecycle("install", true, "claude,kiro");
     const settled = snapshot(root);
 
-    for (const lock of [lockWithoutRuntime(), lockWithHeldRuntime()]) {
-      const failure = await runLifecycle("install", true, "claude,kiro", lock).then(
-        () => undefined,
-        (error: Error) => error,
-      );
-      expect(failure?.message).toMatch(/runtime:ecc-kiro|runtime evidence/i);
-      expect(snapshot(root)).toEqual(settled);
-    }
+    const failure = await runLifecycle("install", true, "claude,kiro", lockWithoutRuntime()).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+    expect(failure?.message).toMatch(/runtime:ecc-kiro|runtime evidence/i);
+    expect(snapshot(root)).toEqual(settled);
+  });
+
+  it("applies Kiro through a runtime whose evidence carries findings, and labels it", async () => {
+    writeGovernedPolicy([...PASSED]);
+
+    const result = await runLifecycle("install", true, "kiro", vendorLock(KIRO_RUNTIME.id));
+
+    expect(
+      materializationDigest(result)
+        .write.map((file) => file.path)
+        .sort(),
+    ).toEqual([...KIRO_MATERIALIZED].sort());
+    expect(
+      result.digests.find((entry) => entry.describe === "baseline evidence labels")?.data,
+    ).toMatchObject({
+      labels: [{ componentId: KIRO_RUNTIME.id, verdict: "has-findings" }],
+    });
   });
 });
 

@@ -700,7 +700,7 @@ export function resolveEccTargetMaterialization(
       request.evidence?.held.filter((held) => held.componentId === "runtime:ecc-kiro") ?? [];
     if (runtimeAuthorizations.length !== 1 || runtimeHeld.length > 0) {
       throw new AihError(
-        "governed Kiro materialization requires exactly one current unheld runtime:ecc-kiro authorization",
+        "governed Kiro materialization requires exactly one runtime:ecc-kiro authorization matching its bytes, and no missing or mismatched evidence record for it",
         "AIH_TRUST",
       );
     }

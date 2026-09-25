@@ -131,8 +131,12 @@ const PASSED: readonly SelectionFixture[] = [
   { kind: "skill", id: "skill:tdd-workflow", path: "skills/tdd-workflow" },
   { kind: "baseline", id: "baseline:rules", path: "rules" },
 ];
-/** Selected, vetted, and blocked by the vet: visible, selectable, never materialized. */
-const BLOCKED: SelectionFixture = {
+/**
+ * Selected, and its bytes differ from the signed evidence: visible, selectable,
+ * never materialized. (Findings never exclude a component; only evidence that
+ * does not cover or match the bytes does.)
+ */
+const MISMATCHED: SelectionFixture = {
   kind: "agent",
   id: "agent:planner",
   path: "agents/planner.md",
@@ -242,12 +246,12 @@ function authorization(componentId: string): BaselineAuthorization {
   };
 }
 
-function blockedEvidence(componentId: string): BaselineHeldComponent {
+function mismatchedEvidence(componentId: string): BaselineHeldComponent {
   return {
     componentId,
-    routeCode: "baseline.evidence-blocked",
-    codes: ["malicious-code"],
-    details: [`${componentId} is blocked by signed evidence (malicious-code)`],
+    routeCode: "baseline.evidence-mismatch",
+    codes: ["baseline.evidence-mismatch"],
+    details: [`${componentId} bytes differ from its signed evidence`],
   };
 }
 
@@ -274,7 +278,7 @@ function resolveChain(): {
 
   const selection = resolveEccMaterializationSelection(effective, {
     authorizations: [...PASSED, OTHER_LIFECYCLE].map((item) => authorization(item.id)),
-    held: [blockedEvidence(BLOCKED.id)],
+    held: [mismatchedEvidence(MISMATCHED.id)],
   });
   const target = resolveEccClaudeMaterialization({ sourceRoot, components: selection.included });
   return { selection, target };
@@ -283,8 +287,8 @@ function resolveChain(): {
 describe("acceptance — the governed framework lifecycle on a temporary fixture root", () => {
   it("author → parse → evidence-passed selection → Claude target → preview → apply → re-apply → uninstall", () => {
     // ── 1. Author. One framework, six selected components: three whose
-    // evidence passed, one the vet blocked, one with no evidence recorded at
-    // the pin, and one whose content lands on a surface another AIH lifecycle
+    // evidence matches, one whose bytes differ from its evidence, one with no
+    // evidence recorded at the pin, and one whose content lands on a surface another AIH lifecycle
     // owns. Selecting records intent; nothing about selection installs.
     writeFileSync(
       orgPolicyPath(root, {}),
@@ -300,7 +304,7 @@ describe("acceptance — the governed framework lifecycle on a temporary fixture
             externalSelections: [
               {
                 framework: "ecc",
-                items: [...PASSED, BLOCKED, UNVETTED, OTHER_LIFECYCLE].map((item) => ({
+                items: [...PASSED, MISMATCHED, UNVETTED, OTHER_LIFECYCLE].map((item) => ({
                   kind: item.kind,
                   id: item.id,
                   source: { repository: REPOSITORY, commit: COMMIT, path: item.path },
@@ -325,10 +329,8 @@ describe("acceptance — the governed framework lifecycle on a temporary fixture
       ...PASSED.map((item) => item.id),
       OTHER_LIFECYCLE.id,
     ]);
-    // Each excluded component reports WHY, and the two reasons stay distinct:
-    // a vet-blocked component is not the same thing as one whose evidence was
-    // never recorded, and collapsing them would hide a real finding behind a
-    // missing one. Both keep their vet finding codes.
+    // Each excluded component reports WHY: the mismatched one keeps the code
+    // its held evidence record carries, the unvetted one has none.
     expect(
       selection.excluded.map((entry) => ({
         id: entry.id,
@@ -336,11 +338,11 @@ describe("acceptance — the governed framework lifecycle on a temporary fixture
         findingCodes: entry.findingCodes,
       })),
     ).toEqual([
-      { id: BLOCKED.id, reason: "vet-blocked", findingCodes: ["malicious-code"] },
+      { id: MISMATCHED.id, reason: "no-evidence", findingCodes: ["baseline.evidence-mismatch"] },
       { id: UNVETTED.id, reason: "no-evidence", findingCodes: [] },
     ]);
     expect(selection.excluded.map((entry) => entry.detail)).toEqual([
-      `${BLOCKED.id} is blocked by signed evidence (malicious-code)`,
+      `${MISMATCHED.id} bytes differ from its signed evidence`,
       `no evidence recorded for ${UNVETTED.id} at ${REPOSITORY}@${COMMIT.slice(0, 12)}`,
     ]);
 

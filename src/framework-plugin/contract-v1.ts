@@ -1,6 +1,10 @@
 import type { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import type { executeBaselineEvidencePipeline } from "../baseline-evidence/pipeline.js";
-import type { BaselineAuthorization, BaselineHeldComponent } from "../baseline-evidence/verify.js";
+import type {
+  BaselineAuthorization,
+  BaselineComponentLabels,
+  BaselineHeldComponent,
+} from "../baseline-evidence/verify.js";
 import type { loadCatalogPackageV1 } from "../catalog-package/load-catalog-package.js";
 import type { Posture } from "../config/posture.js";
 import type { Cli } from "../internals/clis.js";
@@ -297,13 +301,22 @@ export interface FrameworkEvidenceComponentV1 {
 
 export type FrameworkEvidenceAuthorizationV1 = BaselineAuthorization;
 export type FrameworkEvidenceHeldComponentV1 = BaselineHeldComponent;
+/** What the evidence found in one authorized component: a label, never a gate. */
+export type FrameworkEvidenceLabelsV1 = BaselineComponentLabels;
 
 /** The verified source a plugin builds its install plan from. */
 export interface FrameworkVerifiedSourceV1 {
   /** Absolute path of the acquired, evidence-verified source tree (removed after the command). */
   readonly sourceRoot: string;
   readonly authorizations: readonly FrameworkEvidenceAuthorizationV1[];
+  /** Components no signed evidence covers or matches; findings never hold a component. */
   readonly held: readonly FrameworkEvidenceHeldComponentV1[];
+  /**
+   * One label per authorization: the findings and evidence problems its
+   * evidence recorded. Core always sets it; optional so a plugin built against
+   * the earlier V1 shape still compiles.
+   */
+  readonly labels?: readonly FrameworkEvidenceLabelsV1[];
 }
 
 /**

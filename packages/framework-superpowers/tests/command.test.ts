@@ -122,6 +122,41 @@ describe("the superpowers command", () => {
     expect(JSON.stringify(actions)).toContain("not evidence-covered");
   });
 
+  it("names each component's findings in its evidence receipt line and keeps its guidance", async () => {
+    const ctx = operationContext({ targets: ["claude"] });
+    await executeSuperpowers(ctx);
+    const request = ctx.host.requests[0];
+    const ids = request?.componentIds ?? [];
+    const labelled = ids[0];
+    if (labelled === undefined) throw new Error("expected a component");
+    const built = await request?.buildInstallPlan({
+      sourceRoot: "/quarantine/tree",
+      authorizations: ids.map((id) => authorization(id)),
+      held: [],
+      labels: ids.map((id) => ({
+        componentId: id,
+        tier: "vendor" as const,
+        verdict: id === labelled ? ("has-findings" as const) : ("no-findings" as const),
+        findings: id === labelled ? [{ code: "trust.prompt-injection", count: 2 }] : [],
+        evidenceProblems: id === labelled ? [{ code: "trust.detector-unavailable", count: 1 }] : [],
+      })),
+    });
+    const actions: Action[] = built?.actions ?? [];
+    expect(actions.map((action) => action.describe)).toContain(
+      "Install Superpowers for Claude Code (plugin)",
+    );
+    const receipts = actions.find(
+      (action): action is DigestAction =>
+        action.kind === "digest" &&
+        action.describe === "Superpowers baseline evidence authorizations",
+    );
+    const lines = receipts?.text?.split("\n") ?? [];
+    expect(lines.find((line) => line.startsWith(`- ${labelled} `))).toMatch(
+      / · findings: trust\.prompt-injection x2 · evidence problems: trust\.detector-unavailable$/,
+    );
+    expect(lines.filter((line) => line.includes("findings:"))).toHaveLength(1);
+  });
+
   it("labels a policy-disabled hook in the verified guidance and keeps the guidance", async () => {
     const ctx = operationContext({
       targets: ["claude"],

@@ -59,6 +59,24 @@ export function identifyComponents(ctx: FrameworkOperationContextV1): FrameworkC
   return componentsFor(ctx, readSuperpowersDescriptor(ctx.descriptor));
 }
 
+function countList(counts: readonly { code: string; count: number }[]): string {
+  return counts
+    .map((entry) => (entry.count === 1 ? entry.code : `${entry.code} x${entry.count}`))
+    .join(", ");
+}
+
+/** What the evidence found in one component, appended to its receipt line; a label, never a gate. */
+function labelSuffix(verified: FrameworkVerifiedSourceV1, componentId: string): string {
+  const label = verified.labels?.find((entry) => entry.componentId === componentId);
+  if (label === undefined) return "";
+  return [
+    ...(label.findings.length > 0 ? [` · findings: ${countList(label.findings)}`] : []),
+    ...(label.evidenceProblems.length > 0
+      ? [` · evidence problems: ${countList(label.evidenceProblems)}`]
+      : []),
+  ].join("");
+}
+
 /** The guidance plan, built only after Core's evidence gate verified the exact source. */
 function verifiedGuidancePlan(
   ctx: FrameworkOperationContextV1,
@@ -94,7 +112,7 @@ function verifiedGuidancePlan(
         "Superpowers component evidence receipts:",
         ...verified.authorizations.map(
           (receipt) =>
-            `- ${receipt.componentId} — ${receipt.tier} · ${receipt.pinnedSha.slice(0, 12)} · ${receipt.treeSha256.slice(0, 12)}`,
+            `- ${receipt.componentId} — ${receipt.tier} · ${receipt.pinnedSha.slice(0, 12)} · ${receipt.treeSha256.slice(0, 12)}${labelSuffix(verified, receipt.componentId)}`,
         ),
       ),
       { authorizations: [...verified.authorizations] },

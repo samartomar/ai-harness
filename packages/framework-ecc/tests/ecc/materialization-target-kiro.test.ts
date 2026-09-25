@@ -82,8 +82,8 @@ function runtimeAuthorization(
 function heldRuntime(): BaselineHeldComponent {
   return {
     componentId: "runtime:ecc-kiro",
-    routeCode: "baseline.evidence-blocked",
-    codes: ["malicious-code"],
+    routeCode: "baseline.evidence-mismatch",
+    codes: ["baseline.evidence-mismatch"],
     details: ["held runtime detail must not become projected content"],
   };
 }
@@ -316,7 +316,7 @@ describe("the verified-source Kiro projection", () => {
     }
   });
 
-  it("joins every selected component to one exact current unheld authorization", () => {
+  it("joins every selected component to exactly one current authorization that matches its bytes", () => {
     const skill = selected("skill:tdd-workflow", "skills/tdd-workflow");
     const current = request([skill]);
     const runtime = current.evidence.authorizations.find(
@@ -325,8 +325,8 @@ describe("the verified-source Kiro projection", () => {
     if (runtime === undefined) throw new Error("test fixture is missing runtime evidence");
     const selectedHeld: BaselineHeldComponent = {
       componentId: skill.id,
-      routeCode: "baseline.evidence-blocked",
-      codes: ["malicious-code"],
+      routeCode: "baseline.evidence-mismatch",
+      codes: ["baseline.evidence-mismatch"],
       details: ["selected component held"],
     };
     const cases = [
@@ -358,12 +358,12 @@ describe("the verified-source Kiro projection", () => {
     }
   });
 
-  it("requires exactly one unheld runtime:ecc-kiro authorization", () => {
+  it("requires exactly one runtime:ecc-kiro authorization matching its bytes", () => {
     const skill = selected("skill:tdd-workflow", "skills/tdd-workflow");
     const runtime = runtimeAuthorization();
     const cases = [
       ["missing", request([skill], [])],
-      ["held", request([skill], [runtime], [heldRuntime()])],
+      ["mismatched", request([skill], [runtime], [heldRuntime()])],
       ["duplicate", request([skill], [runtime, { ...runtime }])],
     ] as const;
     for (const [label, input] of cases) {

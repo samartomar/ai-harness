@@ -189,10 +189,12 @@ export function authorizedEccSelection(
         targets.flatMap((target) => eccEvidenceComponentIdsForSelection(target, selection)),
       ),
     ];
+    // Findings never remove an authorization, so a missing id here means no
+    // signed evidence covers or matches that component's bytes.
     const missing = required.filter((componentId) => !authorizedIds.has(componentId));
     if (missing.length > 0) {
       throw new AihError(
-        `refusing partial ECC ${selection.scope === "full" ? "Full" : "Core"} install; held evidence components: ${missing.join(", ")}`,
+        `ECC ${selection.scope === "full" ? "Full" : "Core"} install not planned: no signed evidence covers or matches the bytes of ${missing.join(", ")}`,
         "AIH_TRUST",
       );
     }

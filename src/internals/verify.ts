@@ -166,7 +166,6 @@ export type CheckCode =
   | "baseline.evidence-missing"
   | "baseline.org-evidence-required"
   | "baseline.evidence-mismatch"
-  | "baseline.evidence-blocked"
   // A signed baseline evidence lock this build cannot read — most often one
   // produced by a NEWER build, now that the lock ships on its own cadence. Kept
   // distinct from `evidence-missing`/`evidence-mismatch` because the remedy is

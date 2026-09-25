@@ -394,7 +394,10 @@ function requireAuthorizedRuntime(
   componentId: "runtime:ecc-installer" | "runtime:ecc-kiro",
 ): void {
   if (!authorizations.some((authorization) => authorization.componentId === componentId)) {
-    throw new AihError(`refusing unauthorized ECC runtime ${componentId}`, "AIH_TRUST");
+    throw new AihError(
+      `no signed evidence covers or matches the bytes of ECC runtime ${componentId}`,
+      "AIH_TRUST",
+    );
   }
 }
 
@@ -476,7 +479,7 @@ export function verifiedEccInstallPlan(
     (selection.moduleIds?.length ?? 0) === 0
   ) {
     throw new AihError(
-      "refusing ECC install because no selected ECC component has authorization",
+      "ECC install not planned: no selected ECC component has signed evidence matching its bytes",
       "AIH_TRUST",
     );
   }

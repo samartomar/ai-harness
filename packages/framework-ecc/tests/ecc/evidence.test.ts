@@ -63,13 +63,13 @@ describe("ECC evidence component selection", () => {
     });
   });
 
-  it("refuses a partially authorized full request", () => {
+  it("refuses a full request when signed evidence does not cover every required component", () => {
     const requested = scopedSelection();
     requested.scope = "full";
 
     expect(() =>
       authorizedEccSelection(requested, [authorization("baseline:rules")], ["claude"]),
-    ).toThrow(/refusing partial ECC Full install/);
+    ).toThrow(/ECC Full install not planned: no signed evidence covers or matches the bytes of /);
   });
 
   it("preserves a fully authorized full request", () => {
@@ -123,7 +123,9 @@ describe("ECC evidence component selection", () => {
           .map(authorization),
         ["claude"],
       ),
-    ).toThrow(/refusing partial ECC Core install.*module:hooks-runtime/);
+    ).toThrow(
+      /ECC Core install not planned: no signed evidence covers or matches the bytes of .*module:hooks-runtime/,
+    );
   });
 
   it("adds the framework-language module for current stack pack aliases", () => {

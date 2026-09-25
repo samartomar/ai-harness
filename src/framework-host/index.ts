@@ -44,6 +44,7 @@ export {
   type FrameworkEvidenceComponentV1,
   type FrameworkEvidenceGatedInstallRequestV1,
   type FrameworkEvidenceHeldComponentV1,
+  type FrameworkEvidenceLabelsV1,
   type FrameworkExplicitMcpReceiptStateV1,
   type FrameworkGovernedSelectionV1,
   type FrameworkHookControlAuthorityV1,
@@ -186,6 +187,7 @@ export type { BaselineEvidencePipelineDeps } from "../baseline-evidence/pipeline
 export type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 export type {
   BaselineAuthorization,
+  BaselineComponentLabels,
   BaselineHeldComponent,
   BaselineVerificationResult,
 } from "../baseline-evidence/verify.js";

@@ -481,7 +481,7 @@ describe("ECC baseline evidence pipeline", () => {
     expect(result.report?.exitCode()).toBe(0);
   });
 
-  it("uses packaged vendor evidence for an authorized Vibe subset and held components", async () => {
+  it("authorizes a Vibe selection whose evidence carries findings, and labels them", async () => {
     const partialRequest: VerifiedEccRequest = {
       clis: ["claude" as const],
       profile: "core",
@@ -514,43 +514,45 @@ describe("ECC baseline evidence pipeline", () => {
       [
         expect.objectContaining({ componentId: "runtime:ecc-installer" }),
         expect.objectContaining({ componentId: "baseline:rules" }),
+        expect.objectContaining({ componentId: "baseline:hooks" }),
       ],
-      // The held records ride alongside the authorizations, from the same
-      // verification the gate acted on — so a builder can report WHY a
-      // requested component did not install without re-verifying it.
-      [expect.objectContaining({ componentId: "baseline:hooks" })],
+      // Findings never hold a component: nothing is held back.
+      [],
     );
     expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
     expect(result.report?.exitCode()).toBe(0);
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          verdict: "skip",
-          code: "baseline.evidence-blocked",
-          detail: expect.stringContaining("baseline:hooks"),
+          verdict: "pass",
+          name: "baseline evidence baseline:hooks",
+          detail: expect.stringContaining("carries 1 finding: trust.auto-exec-hook"),
         }),
       ]),
     );
     expect(result.digests).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          describe: "held baseline components",
+          describe: "baseline evidence labels",
           data: {
-            held: [
-              expect.objectContaining({
+            labels: [
+              {
                 componentId: "baseline:hooks",
-                routeCode: "baseline.evidence-blocked",
-                codes: ["trust.auto-exec-hook"],
-              }),
+                tier: "vendor",
+                verdict: "has-findings",
+                findings: [{ code: "trust.auto-exec-hook", count: 1 }],
+                evidenceProblems: [],
+              },
             ],
           },
         }),
       ]),
     );
+    expect(result.digests.map((entry) => entry.describe)).not.toContain("held baseline components");
   });
 
-  it("never constructs install actions when signed evidence blocks", async () => {
-    const buildInstallPlan = vi.fn(() => plan("must not build"));
+  it("constructs install actions when the signed evidence carries findings", async () => {
+    const buildInstallPlan = vi.fn(() => plan("verified install", doc("install", "labelled")));
     const context = ctx();
     context.posture = "vibe";
     const result = await executeEccEvidencePipeline(context, request, {
@@ -561,9 +563,13 @@ describe("ECC baseline evidence pipeline", () => {
       buildInstallPlan,
     });
 
-    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(buildInstallPlan).toHaveBeenCalledTimes(1);
+    expect(result.report?.exitCode()).toBe(0);
     expect(result.report?.checks).toEqual([
-      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
+      expect.objectContaining({
+        verdict: "pass",
+        detail: expect.stringContaining("carries 1 finding: prompt-injection"),
+      }),
     ]);
   });
 

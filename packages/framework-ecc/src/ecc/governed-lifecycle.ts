@@ -73,9 +73,10 @@ import { eccMandatoryRequirementIds, eccSelectionSourcePaths } from "./selection
  * `executeBaselineEvidencePipeline`, which acquires the exact pinned source,
  * verifies it, and hands this module the sourceRoot plus the authorizations and
  * held records from that one verification. `allowPartial` is set because a
- * governed selection is expected to contain components the vet blocked or never
- * recorded: the resolver reports each one with its reason instead of failing the
- * whole run, which is what "visible and selectable, never materialized" means.
+ * governed selection may contain components no signed evidence covers: the
+ * resolver reports each one with its reason instead of failing the whole run,
+ * which is what "visible and selectable, never materialized" means. Findings
+ * never hold a component; they travel as labels.
  *
  * Preview-first is the harness's own `--apply` gate and nothing else: with the
  * pinned source on disk the chain plans and reports without it, and applies with
@@ -435,7 +436,7 @@ function refusalRows(report: GovernedMaterializationReport): string[] {
     if (rows.length === 0) return [];
     return [
       "",
-      `Evidence-passed, and refused by the ${eccMaterializationTargetName(target)} target:`,
+      `Evidence-matched, and refused by the ${eccMaterializationTargetName(target)} target:`,
       ...rows.map((entry) => `  [${entry.reason}] ${entry.id} - ${entry.detail}`),
     ];
   });
@@ -474,7 +475,7 @@ function reportBody(report: GovernedMaterializationReport): string {
     ...(report.excluded.length > 0
       ? [
           "",
-          "Selected, and not materialized - evidence is what admits a component:",
+          "Selected, and not materialized - each row names why:",
           ...report.excluded.map((entry) => `  [${entry.reason}] ${entry.id} - ${entry.detail}`),
         ]
       : []),
@@ -777,9 +778,9 @@ export async function executeGovernedEccMaterialization(
       componentIds: evidenceComponentIds,
       policy: input.policy,
       transactionPins: input.transactionGuard,
-      // A governed selection is expected to carry components the vet blocked or
-      // never recorded. Each is reported with its reason by the resolver; one of
-      // them must not take the whole install down with it.
+      // A governed selection may carry components no signed evidence covers.
+      // Each is reported with its reason by the resolver; one of them must not
+      // take the whole install down with it.
       allowPartial: true,
       buildInstallPlan: (sourceRoot, authorizations, held) =>
         governedMaterializationPlan(
