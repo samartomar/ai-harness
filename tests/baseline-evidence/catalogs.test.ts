@@ -111,6 +111,7 @@ describe("production baseline catalogs", () => {
     expect(catalog.components.map((component) => component.id)).toEqual([
       "runtime:superpowers-plugin",
       "skill:brainstorming",
+      "skill:diagnosing-superpowers",
       "skill:dispatching-parallel-agents",
       "skill:executing-plans",
       "skill:finishing-a-development-branch",

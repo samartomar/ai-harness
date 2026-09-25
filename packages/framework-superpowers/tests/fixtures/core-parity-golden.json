@@ -267,7 +267,7 @@
       {
         "kind": "digest",
         "describe": "Superpowers baseline evidence authorizations",
-        "text": "Superpowers component evidence receipts:\n- runtime:superpowers-plugin — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:brainstorming — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:dispatching-parallel-agents — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:executing-plans — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:finishing-a-development-branch — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:receiving-code-review — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:requesting-code-review — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:subagent-driven-development — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:systematic-debugging — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:test-driven-development — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:using-git-worktrees — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:using-superpowers — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:verification-before-completion — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:writing-plans — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:writing-skills — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n",
+        "text": "Superpowers component evidence receipts:\n- runtime:superpowers-plugin — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:brainstorming — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:diagnosing-superpowers — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:dispatching-parallel-agents — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:executing-plans — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:finishing-a-development-branch — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:receiving-code-review — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:requesting-code-review — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:subagent-driven-development — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:systematic-debugging — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:test-driven-development — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:using-git-worktrees — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:using-superpowers — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:verification-before-completion — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:writing-plans — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:writing-skills — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n",
         "data": {
           "authorizations": [
             {
@@ -281,6 +281,15 @@
             },
             {
               "componentId": "skill:brainstorming",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:diagnosing-superpowers",
               "source": "obra/Superpowers",
               "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

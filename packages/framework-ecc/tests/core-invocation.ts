@@ -27,7 +27,7 @@ import {
 import { consumeWorkbenchPolicy } from "../../../src/org-policy/workbench/policy-consumption.js";
 import { cleanupQuarantine, resolveTrustSource } from "../../../src/trust/fetch.js";
 import { eccDescriptorFor, setEccTestInvocation } from "../src/invocation.js";
-import { pinnedDescriptor } from "./context.js";
+import { descriptorOf, fixtureDescriptorBytes } from "./context.js";
 
 // Each member calls the imported binding at call time, so a test's vi.mock of
 // a Core module still applies.
@@ -53,6 +53,6 @@ const runtime: FrameworkCoreRuntimeV1 = {
 };
 
 setEccTestInvocation({
-  descriptor: eccDescriptorFor(pinnedDescriptor()),
+  descriptor: eccDescriptorFor(descriptorOf(fixtureDescriptorBytes())),
   runtime,
 });

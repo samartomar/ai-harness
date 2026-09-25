@@ -51,7 +51,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
-const PIN = "b36e0829c6d0140e93cfef2ca599b1b07d4a7797";
+const PIN = "5bf4e78011075bcfc0dc295f0724994cd123ee71";
 const PLUGIN = "@aihq/framework-superpowers";
 /** Identifiers that exist only in the plugin's sources, never in Core's. */
 const PLUGIN_ONLY_MARKERS = [

@@ -264,12 +264,12 @@ describe("definition-route Scanner coverage", () => {
       );
 
     it.each([
-      // The installed Catalog's own compiled bundle at its own pin, and the same compiled
-      // partition re-pinned to the new-pin inventories T1 authored from.
-      ["ponytail-356918eb", false, "https://github.com/DietrichGebert/ponytail", 28],
-      ["mattpocock-3cca18b3", false, "https://github.com/mattpocock/skills", 21],
-      ["ponytail-1d95ff7d", true, "https://github.com/DietrichGebert/ponytail", 28],
-      ["mattpocock-c55ee460", true, "https://github.com/mattpocock/skills", 22],
+      // The installed Catalog's own compiled bundle at its own (new) pin, and the same
+      // compiled partition re-pinned to the previous-pin inventories.
+      ["ponytail-1d95ff7d", false, "https://github.com/DietrichGebert/ponytail", 28],
+      ["mattpocock-c55ee460", false, "https://github.com/mattpocock/skills", 22],
+      ["ponytail-356918eb", true, "https://github.com/DietrichGebert/ponytail", 28],
+      ["mattpocock-3cca18b3", true, "https://github.com/mattpocock/skills", 21],
     ] as const)(
       "binds %s's real compiled assets zero-to-many and keeps every component's scan (re-pinned: %s)",
       (name, repin, locator, withoutAssets) => {
@@ -345,7 +345,7 @@ describe("definition-route Scanner coverage", () => {
       },
     );
 
-    it("binds several compiled assets to one component: the three ponytail hooks", () => {
+    it("binds several compiled assets to one component: the five ponytail hooks", () => {
       const catalog = inventory("ponytail-1d95ff7d");
       const bundle = installedSingleSourceBundle(catalog.id, catalog.pinnedSha);
       const hooks = prepareInventory(
@@ -354,6 +354,8 @@ describe("definition-route Scanner coverage", () => {
         bundle,
       ).coverage.components.find((component) => component.paths.join() === "hooks");
       expect(subjectsOf(hooks ?? {}).map((subject) => subject.assetId)).toEqual([
+        "ponytail/hook:cursor-before-submit-prompt",
+        "ponytail/hook:cursor-session-start",
         "ponytail/hook:session-start",
         "ponytail/hook:subagent-start",
         "ponytail/hook:user-prompt-submit",

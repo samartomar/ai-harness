@@ -258,9 +258,11 @@ catalog's dependency or approval facts merely because names match.
 
 Ordinary upstream installation, the separate AIH profile lifecycle, governed ECC
 materialization and governed MCP support have different target and source
-contracts. In this build the separate profile uses
+contracts. In this build the separate profile renders new installations at
+`affaan-m/ECC@5064474d4d762dc9640234a41617cccb79185cec` and keeps repair, rollback and
+uninstall anchors for installations rendered at
 `affaan-m/ECC@0c1d7be9a750627fb2a6534c78a998cc46d03f9c`; the packaged current
-governed catalog uses `affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`.
+governed catalog uses `affaan-m/ECC@5064474d4d762dc9640234a41617cccb79185cec`.
 Saved historical selections can name another qualified revision. Inspect the
 selected source in the actual preview; these identities are not interchangeable.
 Use a validated schema-v3 policy with verified source bindings to retain a historical source's

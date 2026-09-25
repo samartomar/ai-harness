@@ -36,7 +36,7 @@ describe("identifyComponents", () => {
       operationContext({ targets: ["claude", "kiro"], descriptor: catalogDescriptor() }),
     );
     expect(identified.upstream).toEqual({ repository: "obra/Superpowers", commit: PINNED_COMMIT });
-    expect(identified.components).toHaveLength(15);
+    expect(identified.components).toHaveLength(16);
     expect(identified.components.every((component) => component.hosts.join() === "claude")).toBe(
       true,
     );
@@ -50,7 +50,7 @@ describe("the superpowers command", () => {
     expect(ctx.host.requests).toHaveLength(1);
     const [request] = ctx.host.requests;
     expect(request?.source).toEqual({ owner: "obra", repo: "Superpowers", commit: PINNED_COMMIT });
-    expect(request?.componentIds).toHaveLength(15);
+    expect(request?.componentIds).toHaveLength(16);
     expect(request?.componentIds[0]).toBe("runtime:superpowers-plugin");
     expect(request?.componentIds).toContain("skill:test-driven-development");
     expect(request?.components.find((component) => component.id === "skill:writing-plans")).toEqual(

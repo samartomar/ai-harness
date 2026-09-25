@@ -52,7 +52,7 @@ describe("shipped baseline installability", () => {
     expect(report.catalogs.ecc.ok).toBe(true);
   });
 
-  it("evaluates the corrected Superpowers standard profile at every posture: 15 installed, none held", async () => {
+  it("evaluates the corrected Superpowers standard profile at every posture: 16 installed, none held", async () => {
     const lock = readVendorBaselineLock();
     const superpowersPin = lock.sources.find((source) => source.id === "superpowers")?.pinnedSha;
 
@@ -62,8 +62,8 @@ describe("shipped baseline installability", () => {
     expect(report.catalogs.superpowers.profile).toBe("superpowers-standard-v1");
     for (const posture of ALL_POSTURES) {
       const result = report.catalogs.superpowers.postures[posture];
-      expect(result.installed).toBe(15);
-      expect(result.installedComponentIds).toHaveLength(15);
+      expect(result.installed).toBe(16);
+      expect(result.installedComponentIds).toHaveLength(16);
       expect(result.held).toEqual([]);
     }
 
@@ -82,7 +82,7 @@ describe("shipped baseline installability", () => {
     for (const posture of ALL_POSTURES) {
       const result = report.catalogs.superpowers.postures[posture];
       expect(result.installed).toBe(0);
-      expect(result.held).toHaveLength(15);
+      expect(result.held).toHaveLength(16);
       for (const entry of result.held) {
         expect(entry.codes).toEqual(["baseline.evidence-missing"]);
       }
@@ -182,7 +182,7 @@ describe("shipped baseline installability", () => {
     expect(report.ok).toBe(true);
     for (const posture of ALL_POSTURES) {
       const result = report.catalogs.superpowers.postures[posture];
-      expect(result.installed).toBe(15);
+      expect(result.installed).toBe(16);
       expect(result.installedComponentIds).toContain("skill:brainstorming");
       expect(result.held).toEqual([]);
       expect(result.labels).toContainEqual(

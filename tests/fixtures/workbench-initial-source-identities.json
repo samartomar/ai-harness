@@ -13,8 +13,8 @@
         "locator": "https://github.com/anthropics/skills"
       },
       "revision": {
-        "id": "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
-        "contentDigest": "sha256:cf4edd95c290ab0d5a1beb937dc761e8c3cee88d74e7cd4fa3166b884ed3b5b5"
+        "id": "34040c9c568585f6929bedeaad110ad08f079624",
+        "contentDigest": "sha256:efe80ad4932204a669c7919357ef3202b832e5bbd416cac716f06eb180fa1a10"
       }
     },
     {
@@ -45,8 +45,8 @@
         "locator": "https://github.com/DietrichGebert/ponytail"
       },
       "revision": {
-        "id": "356918eba965ee1eac64bd3a7f0dd02108350de5",
-        "contentDigest": "sha256:af84897049a0f740a4c405d3c7d1e2ef1b48f644b9bc7385e140637812d4ea75"
+        "id": "1d95ff7d39de12d87014ea40d4e22201bddc501b",
+        "contentDigest": "sha256:c6f02b0fe42ce4861c54eb4df1ea0fa77207b57868f6864720f609aee1b7164e"
       }
     },
     {
@@ -61,8 +61,8 @@
         "locator": "obra/Superpowers"
       },
       "revision": {
-        "id": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
-        "contentDigest": "sha256:3420d68292184fe345d2e3121ed2b3cb192d367ea6fb5f23d9d0fb3629a284b5"
+        "id": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+        "contentDigest": "sha256:1e08b5076772c1cd96f62464f4e451cbc227013f553a2212281d4c18e2694165"
       }
     }
   ]

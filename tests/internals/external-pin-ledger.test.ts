@@ -159,14 +159,17 @@ describe("active external-pin ledger", () => {
     expect(ledger.verifiedAtPolicy).toMatch(/does not move this field/i);
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
-    // Canonical upstream retains the same exact v2.2.0 descendant.
+    // The annotated v2.2.1 release, consumed from the D49 publisher.
     expect(entry("ecc")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "v2.2.0-1-g5caf398a",
-      commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+      version: "v2.2.1",
+      commit: "5064474d4d762dc9640234a41617cccb79185cec",
       disposition: "active",
     });
-    expect(entry("ecc").reason).toMatch(/canonical upstream.*unchanged/i);
+    expect(entry("ecc").reason).toMatch(/tree 9d448bb479cc1af55c488357556ac24d8cd932d2/);
+    expect(entry("ecc").reason).toMatch(/42885cd87e65520da5e47494d344d4a600e79ff9/);
+    expect(entry("ecc").reason).toMatch(/as information/i);
+    expect(ledger.entries.some((e) => e.surface === "ecc-latest-stable-candidate")).toBe(false);
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
       version: "v2.2.0-147-ge04ea0b9",
@@ -178,12 +181,14 @@ describe("active external-pin ledger", () => {
     expect(entry("ecc-candidate").reason).toMatch(/nothing was promoted/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
-      commit: "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      version: "v6.4.1",
+      commit: "5bf4e78011075bcfc0dc295f0724994cd123ee71",
       disposition: "active",
     });
-    // The previous reconciliation deliberately did NOT promote the refresh
-    // candidate; this one does, so the recorded reason has to say so.
-    expect(entry("superpowers").reason).toMatch(/rebound from v6\.2\.0 to v6\.3\.0/i);
+    expect(entry("superpowers").reason).toMatch(/rebound from v6\.3\.0 to v6\.4\.1/i);
+    expect(entry("superpowers").reason).toMatch(
+      /664cbb82d8fbb8cd4726f9d4ec09fd57bc600248a351528cf6211a869439450d/,
+    );
     const servers = mcpServers("standard", webStack, { selfHost: true });
     expect(entry("code-review-graph").version).toBe(
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
@@ -692,26 +697,21 @@ describe("active external-pin ledger", () => {
     expect(entry("ecc-candidate").reason).not.toMatch(
       /UNQUALIFIED|recorded blocked|consent gate failed|prior blocked candidate/,
     );
-    expect(entry("ecc-latest-stable-candidate")).toMatchObject({
-      version: "v2.2.1",
-      commit: "5064474d4d762dc9640234a41617cccb79185cec",
-      disposition: "not-adopted",
-    });
-    expect(entry("ecc-latest-stable-candidate").reason).toMatch(
-      /The OpenCode hook-consent gap remains:/,
-    );
-    expect(entry("ecc-latest-stable-candidate").reason).not.toMatch(/UNQUALIFIED/);
-    // The consumption summary uses the neutral v2 vocabulary.
+    // The consumption summaries use the neutral v2 vocabulary; the OpenCode consent
+    // observation carries forward as information, never as a gate code.
     expect(entry("ecc").reason).toContain(
-      "ECC retains exactly 411 components, 369 with no findings and 42 with findings",
+      "411 components, 345 with no findings and 66 with findings (103 findings, WARN included), 0 with evidence problems, recorded as information",
     );
-    expect(entry("ecc").reason).toContain(
-      "Superpowers retains its identical 15 components with no findings",
+    expect(entry("ecc").reason).toMatch(/OpenCode hook-runtime consent: .*stated as information/);
+    expect(entry("ecc").reason).toContain("The e04ea0b9 candidate stays recorded as not adopted");
+    expect(entry("superpowers").reason).toContain(
+      "16 components, 12 with no findings and 4 with findings, recorded as information",
     );
-    expect(entry("ecc").reason).toContain(
-      "The newer e04ea0b9 candidate remains not adopted under #961",
-    );
-    expect(entry("ecc").reason).not.toMatch(/\bpass\b|\bblocked\b|passing components/);
+    for (const surface of ["ecc", "superpowers"]) {
+      expect(entry(surface).reason).not.toMatch(
+        /\bpass\b|\bblocked\b|passing components|UNQUALIFIED/,
+      );
+    }
     // `blocked` stays only where the record is immutable history or the pin's own
     // provenance or release state fails.
     expect(

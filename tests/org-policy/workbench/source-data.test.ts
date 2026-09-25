@@ -184,8 +184,10 @@ describe("authenticated versioned Workbench source data", () => {
   it("caps dated display at source expiry while preserving original Scanner report facts", () => {
     const root = store();
     const payload = bundle();
-    payload.expiresAt = "2026-09-10T00:00:00.000Z";
     payload.sourceBundle.evidence = packagedScannerCollectionOverlayV1(payload.sourceBundle);
+    // Expire the source one day after the packaged scan, inside the scan's own validity.
+    const scanned = payload.sourceBundle.evidence["evidence:mattpocock/skill:tdd"]!.verification;
+    payload.expiresAt = new Date(Date.parse(scanned.verifiedAt!) + 86_400_000).toISOString();
     payload.sourceBundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...payload.sourceBundle, provenance: {} })}`;
     importWorkbenchSourceDataV1(root, signed(payload), now);
     const displayed = applyWorkbenchSourceDataV1(base, { root, now: "2026-09-11T00:00:00.000Z" });

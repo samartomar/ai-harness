@@ -2,7 +2,7 @@ import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-d
 
 export const ECC_CONTENT_METADATA_PROVENANCE = {
   repository: "affaan-m/ECC",
-  commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+  commit: "5064474d4d762dc9640234a41617cccb79185cec",
 } as const;
 
 export interface EccContentMetadataEntry {

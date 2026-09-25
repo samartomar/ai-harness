@@ -149,7 +149,7 @@ export const ACCEPTED_CATALOG_ECC_RUNTIME_DESCRIPTORS_V1 = Object.freeze([
     format: "ecc-runtime-descriptor/v1",
     repository: "affaan-m/ECC",
     commit: "5064474d4d762dc9640234a41617cccb79185cec",
-    sha256: "158f63e265f1ca18a7e65c97e372b1259200d6fb60eab87d70c20600d9d9abf0",
+    sha256: "52e67554115b2300932fc3976e190364c4c3cd037cdb7877b388a95f74a1df02",
   } as const),
 ]);
 

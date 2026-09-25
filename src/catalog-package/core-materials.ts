@@ -17,12 +17,12 @@ const MATERIALS = {
   scanner: {
     format: "aih-catalog-scanner-evidence",
     subpath: "./catalog-scanner-evidence.json",
-    sha256: "bad4ce1e961225be117a3c64abccf1babb63974471c14eb94fcda2fbc0129ddd",
+    sha256: "a8c7a79550f0f322fe7289c4642cdfc23cf7a4c57ca69b1914b0994e74885e3e",
   },
   scannerProviders: {
     format: "aih-catalog-scanner-providers",
     subpath: "./catalog-scanner-providers.json",
-    sha256: "19a05fd8c86652aa3b01f27109ad182a11b07697fcdd45ac684af3d217e5f32f",
+    sha256: "1cf62de4482b1151ab691d919ca8980199e7b6c1173f0986e4052b5c52b73a0b",
   },
   publicBaseline: {
     format: "aih-catalog-public-baseline",

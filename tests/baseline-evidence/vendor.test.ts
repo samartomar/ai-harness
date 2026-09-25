@@ -14,24 +14,12 @@ import {
 } from "../../src/baseline-evidence/vendor.js";
 import { loadFrameworkDescriptorSectionV1 } from "../../src/catalog-package/framework-descriptors.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
-import { SEMGREP_ANALYZER } from "../../src/trust/scanner-runtime-identity.js";
 
 /**
- * The installed Catalog fixture's lock was vetted before the U1 analyzer upgrade:
- * these are the receipts it carries. Core no longer accepts them (pin currency
- * reports them as drift) until the requalified Catalog replaces the fixture at
- * Q1 runbook step 11. Only Semgrep's label names its version.
+ * The installed Catalog fixture's lock is the requalified one, vetted with the U1
+ * analyzers: each receipt names the analyzer identity Core requires today.
  */
-const PRE_U1_FIXTURE_ANALYZERS: Readonly<Record<string, { name: string; version: string }>> = {
-  "aih-native": { name: "aih-native", version: "native.014fbd614a5a" },
-  "cisco@uvx": { name: "cisco@uvx", version: "2.0.14+uvlock.aaba1f326049" },
-  [SEMGREP_ANALYZER]: { name: "semgrep@uv:1.173.0", version: "1.173.0+uvlock.77f2bf3e7525" },
-  "skillspector@docker": {
-    name: "skillspector@docker",
-    version:
-      "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
-  },
-};
+const CURRENT_ANALYZERS = baselineAnalyzerVersions();
 
 function requiredAnalyzerReceipts(
   sourceId: string,
@@ -42,14 +30,14 @@ function requiredAnalyzerReceipts(
   );
   if (canonical === undefined) throw new Error(`missing canonical component ${component.id}`);
   return [...requiredBaselineAnalyzersForComponent(canonical)]
-    .map((name) => PRE_U1_FIXTURE_ANALYZERS[name] ?? { name, version: "" })
+    .map((name) => ({ name, version: CURRENT_ANALYZERS[name] ?? "" }))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 describe("shipped vendor baseline lock", () => {
   it("strictly parses and mirrors every pinned production catalog component", () => {
     const lock = readVendorBaselineLock();
-    expect(lock.schemaVersion).toBe(1);
+    expect(lock.schemaVersion).toBe(2);
     expect(lock.sources.map((source) => source.id)).toEqual(["ecc", "superpowers"]);
 
     for (const id of ["ecc", "superpowers"] as const) {
@@ -69,18 +57,15 @@ describe("shipped vendor baseline lock", () => {
     }
   });
 
-  it("names the fixture's pre-U1 receipts by every analyzer Core requires today", () => {
-    const current = baselineAnalyzerVersions();
-    expect(Object.keys(PRE_U1_FIXTURE_ANALYZERS).sort()).toEqual(
-      ["aih-native", "cisco@uvx", SEMGREP_ANALYZER, "skillspector@docker"].sort(),
+  it("carries every receipt at the analyzer identity Core requires today", () => {
+    const receipts = readVendorBaselineLock().sources.flatMap((source) =>
+      source.components.flatMap((component) => component.analyzers),
     );
-    for (const [name, receipt] of Object.entries(PRE_U1_FIXTURE_ANALYZERS)) {
-      if (name === "aih-native") expect(current[name]).toBe(receipt.version);
-      else expect(current[name]).not.toBe(receipt.version);
-    }
+    expect(receipts.length).toBeGreaterThan(0);
+    for (const receipt of receipts) expect(receipt.version).toBe(CURRENT_ANALYZERS[receipt.name]);
   });
 
-  it("retains honest pass and blocked verdicts from the vet-once scan", () => {
+  it("retains the no-findings and has-findings verdicts from the vet-once scan", () => {
     const lock = readVendorBaselineLock();
     const ecc = lock.sources.find((source) => source.id === "ecc");
     const verificationLoop = ecc?.components.find(
@@ -93,8 +78,15 @@ describe("shipped vendor baseline lock", () => {
       analyzers: requiredAnalyzerReceipts("ecc", verificationLoop),
       findings: [],
     });
+    // The WARN-inclusive lock records a Cisco WARN on tdd-workflow, as information.
     const tddWorkflow = ecc?.components.find((component) => component.id === "skill:tdd-workflow");
-    expect(tddWorkflow).toMatchObject({ verdict: "no-findings", findings: [] });
+    expect(tddWorkflow).toMatchObject({ verdict: "has-findings" });
+    expect(tddWorkflow?.findings).toEqual([
+      expect.objectContaining({
+        code: "trust.cisco-finding",
+        detail: expect.stringMatching(/^WARN: /),
+      }),
+    ]);
     const documentProcessing = ecc?.components.find(
       (component) => component.id === "module:document-processing",
     );

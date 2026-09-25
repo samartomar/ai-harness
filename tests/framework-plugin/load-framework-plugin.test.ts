@@ -20,7 +20,7 @@ import {
   loadFrameworkPluginV1,
 } from "../../src/framework-plugin/load-framework-plugin.js";
 
-const COMMIT = "b36e0829c6d0140e93cfef2ca599b1b07d4a7797";
+const COMMIT = "5bf4e78011075bcfc0dc295f0724994cd123ee71";
 
 let install: string;
 let manifestPath: string;

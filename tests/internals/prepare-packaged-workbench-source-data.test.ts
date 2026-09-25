@@ -33,7 +33,7 @@ import {
 } from "../catalog-package/candidate-catalog-fixture.js";
 
 const PIN = "c".repeat(40);
-const PUBLISHER = "3510a267916dbbe102e5d18094b0de5332aab02b";
+const PUBLISHER = "42885cd87e65520da5e47494d344d4a600e79ff9";
 const locator = (digest: string, commit = PUBLISHER) =>
   `https://github.com/samartomar/aih-scan/releases/download/baseline-v1-${commit}-${digest}/publication.json`;
 const sha = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
@@ -219,7 +219,7 @@ describe("prepare-packaged-workbench-source-data", () => {
   });
 
   it("refuses batches from more than one publisher", async () => {
-    batch("batch-002", "b".repeat(64), "981d50f19ec8923974597de28c4c7b7acf684ded");
+    batch("batch-002", "b".repeat(64), "349fcadac4bdb20807c0f3451f91178a3b5911cd");
     await expect(preparePackagedWorkbenchSourceDataCommandV1(args)).rejects.toThrow(
       /one publisher commit/,
     );

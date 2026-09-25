@@ -12,8 +12,8 @@ import {
 export type CatalogFrameworkIdV1 = "ecc" | "superpowers";
 
 export const ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1 = Object.freeze({
-  ecc: "cc723716e8749862d8e76769a0475d6e788c31c711d98c94e2c9c47695861f47",
-  superpowers: "2a5e0b8f6fca6b89640200052ab17cd78e8c943aa24fbaf5bb1195591b19f61c",
+  ecc: "db4bb0b87e3fc5c9370ea6cb48cd4935a93f333c9ed927aab9fdd8eb8afcde84",
+  superpowers: "2cc5fb6688e08aa25a7b271ae4b32b86c9e9e07df8a148f2b1805b50cdfc1b34",
 } as const);
 
 export type FrameworkDescriptorLoadV1 =

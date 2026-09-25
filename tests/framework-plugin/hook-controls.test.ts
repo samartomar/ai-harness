@@ -265,21 +265,12 @@ describe("frameworkHookControlPlansV1", () => {
     const document = JSON.parse(new TextDecoder().decode(eccDescriptorBytes())) as {
       sections: { hookControlInventory: { hooks: unknown[] } };
     };
-    document.sections.hookControlInventory.hooks.push({
-      id: "opencode:ecc-hooks",
-      event: "tool.execute.after",
-      profiles: ["standard", "strict"],
-      disableEligible: true,
-      declarations: [
-        {
-          host: "opencode",
-          sourcePath: ".opencode/plugins/ecc-hooks.ts",
-          event: "tool.execute.after",
-          execution: "in-process",
-        },
-      ],
-      control: { kind: "none" },
-    });
+    // Catalog carries the OpenCode plugin row itself from ECC v2.2.1.
+    expect(
+      document.sections.hookControlInventory.hooks.filter(
+        (hook) => (hook as { id: string }).id === "opencode:ecc-hooks",
+      ),
+    ).toHaveLength(1);
     const bytes = new TextEncoder().encode(`${JSON.stringify(document)}
 `);
     const withOpenCode = {

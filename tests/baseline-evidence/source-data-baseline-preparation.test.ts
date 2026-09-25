@@ -66,7 +66,7 @@ function admittedSuperpowers() {
     readFileSync(
       join(
         import.meta.dirname,
-        "../fixtures/baseline-evidence/superpowers-b36e0829-pinned-sources.json",
+        "../fixtures/baseline-evidence/superpowers-5bf4e780-pinned-sources.json",
       ),
       "utf8",
     ),

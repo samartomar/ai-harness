@@ -75,7 +75,7 @@ import { gunzipSync } from "node:zlib";
 const toolRepo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ECC_REPOSITORY = "affaan-m/ECC";
 const ECC_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
-const PINNED_SHA256 = "158f63e265f1ca18a7e65c97e372b1259200d6fb60eab87d70c20600d9d9abf0";
+const PINNED_SHA256 = "52e67554115b2300932fc3976e190364c4c3cd037cdb7877b388a95f74a1df02";
 const DESCRIPTOR_PATH = `defaults/runtime-descriptors/github.com/${ECC_REPOSITORY}/${ECC_COMMIT}/ecc-runtime-descriptor-v1.json`;
 const PROVENANCE = `historical ECC runtime descriptor ${ECC_REPOSITORY}@${ECC_COMMIT} sha256:${PINNED_SHA256} from `;
 /** String literals that exist only inside Catalog's implementation, never in Core's source. */

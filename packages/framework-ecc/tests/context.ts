@@ -13,12 +13,10 @@ export const PINNED_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
 /**
  * SHA-256 of Catalog's `./catalog-framework-ecc.json` bytes this fixture holds
  * (brotli-compressed to keep the 9.3 MB descriptor out of the diff). Core's
- * descriptor loader accepts exactly these bytes. They pin the previous ECC
- * commit until Core adopts the Catalog built at {@link PINNED_COMMIT}; tests
- * that read this descriptor refuse with the commit mismatch until then.
+ * descriptor loader accepts exactly these bytes, built at {@link PINNED_COMMIT}.
  */
 export const CATALOG_DESCRIPTOR_SHA256 =
-  "cc723716e8749862d8e76769a0475d6e788c31c711d98c94e2c9c47695861f47";
+  "db4bb0b87e3fc5c9370ea6cb48cd4935a93f333c9ed927aab9fdd8eb8afcde84";
 
 let cached: Uint8Array | undefined;
 
@@ -133,7 +131,7 @@ export function operationContext(
     root: "/repo",
     targets: ["claude"],
     mode: { apply: false, verify: true },
-    descriptor: pinnedDescriptor(),
+    descriptor: descriptorOf(fixtureDescriptorBytes()),
     policy: { posture: "vibe", hookControls: { disabled: [] } },
     options: {},
     env: {},

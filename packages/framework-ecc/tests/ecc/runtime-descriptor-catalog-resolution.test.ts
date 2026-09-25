@@ -59,11 +59,12 @@ const { packagedEccRuntimeDescriptorsV1 } = await import(
 );
 
 const ECC_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
-const PINNED_SHA256 = "158f63e265f1ca18a7e65c97e372b1259200d6fb60eab87d70c20600d9d9abf0";
+const PINNED_SHA256 = "52e67554115b2300932fc3976e190364c4c3cd037cdb7877b388a95f74a1df02";
 const DESCRIPTOR_PATH = `defaults/runtime-descriptors/github.com/affaan-m/ECC/${ECC_COMMIT}/ecc-runtime-descriptor-v1.json`;
 const SIDECAR_PATH = "defaults/catalog-runtime-descriptors-v1.json";
 const INDEX_PATH = "defaults/catalog-index-v1.json";
-const NOW = "2026-09-22T00:00:00.000Z";
+// After the descriptor custody publications (signed and attested 2026-09-25).
+const NOW = "2026-09-26T00:00:00.000Z";
 
 const requireFromTest = createRequire(import.meta.url);
 const installedRoot = dirname(requireFromTest.resolve("@aihq/catalog/package.json"));

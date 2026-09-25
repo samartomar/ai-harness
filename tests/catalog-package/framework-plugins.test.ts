@@ -20,7 +20,7 @@ function entry(frameworkId: "ecc" | "superpowers", over: Record<string, unknown>
     upstream:
       frameworkId === "ecc"
         ? { repository: "affaan-m/ECC", commit: "5064474d4d762dc9640234a41617cccb79185cec" }
-        : { repository: "obra/Superpowers", commit: "b36e0829c6d0140e93cfef2ca599b1b07d4a7797" },
+        : { repository: "obra/Superpowers", commit: "5bf4e78011075bcfc0dc295f0724994cd123ee71" },
     supportedCore: ">=0.7.0 <0.8.0",
     supportedHosts: ["claude", "codex"],
     status: "candidate",
@@ -57,7 +57,7 @@ describe("parseFrameworkPluginIdentitiesV1 (Core-owned schema)", () => {
     [
       "a short commit",
       document([
-        entry("superpowers", { upstream: { repository: "obra/Superpowers", commit: "b36e0829" } }),
+        entry("superpowers", { upstream: { repository: "obra/Superpowers", commit: "5bf4e780" } }),
       ]),
     ],
     ["an unknown host", document([entry("superpowers", { supportedHosts: ["notepad"] })])],

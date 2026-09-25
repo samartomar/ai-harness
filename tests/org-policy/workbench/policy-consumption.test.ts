@@ -85,8 +85,9 @@ describe("schema-v3 policy consumption", () => {
   });
   it("restores package-sealed ECC compiler bindings and rejects forged legacy mirrors", () => {
     const prepared = defaultPreparedWorkbenchCatalog();
-    const asset = prepared.bundle.assets["ecc/mcp:supabase"];
-    const binding = prepared.bindings["ecc/mcp:supabase"];
+    // The K1 vendor lock carries evidence for six ECC MCP servers; github is one of them.
+    const asset = prepared.bundle.assets["ecc/mcp:github"];
+    const binding = prepared.bindings["ecc/mcp:github"];
     if (asset === undefined || binding?.kind !== "external-selection" || !binding.external)
       throw new Error("expected package-sealed ECC MCP binding");
     expect(

@@ -45,18 +45,22 @@ describe("readSuperpowersDescriptor", () => {
       repo: "Superpowers",
       commit: PINNED_COMMIT,
     });
-    expect(descriptor.components).toHaveLength(15);
+    expect(descriptor.components).toHaveLength(16);
     expect(descriptor.components[0]).toEqual({
       id: "runtime:superpowers-plugin",
       paths: [
         ".claude-plugin",
         ".codex-plugin",
         ".cursor-plugin",
+        ".devin-plugin",
+        ".hermes-plugin",
         ".kimi-plugin",
+        ".muse-plugin",
         ".opencode",
         ".pi",
         "gemini-extension.json",
         "hooks",
+        "index.js",
         "package.json",
         "scripts",
       ],

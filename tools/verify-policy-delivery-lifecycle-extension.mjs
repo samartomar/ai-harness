@@ -22,7 +22,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-const PIN = "5caf398a91599029a176ca6d806409b00d1052c4";
+const PIN = "5064474d4d762dc9640234a41617cccb79185cec";
 const MATERIALIZATION_RECEIPT = ".aih/ecc/materialization-v1.json";
 const GUIDANCE = "ai-coding/policy-required-guidance.md";
 const GUIDANCE_RECEIPT = "ai-coding/policy-required-guidance.receipt.json";

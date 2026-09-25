@@ -22,7 +22,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 import { loadSuperpowersFromSource } from "./plugin-source.js";
 
-const PIN = "b36e0829c6d0140e93cfef2ca599b1b07d4a7797";
+const PIN = "5bf4e78011075bcfc0dc295f0724994cd123ee71";
 let root: string;
 
 beforeEach(() => {
@@ -305,7 +305,7 @@ describe("aih superpowers — through Core's real evidence gate", () => {
     if (receipts === undefined) throw new Error("no evidence receipts digest");
     const authorizations = (receipts.data as { authorizations: Array<Record<string, string>> })
       .authorizations;
-    expect(authorizations).toHaveLength(15);
+    expect(authorizations).toHaveLength(16);
     expect(
       authorizations.every((entry) => entry.tier === "vendor" && entry.pinnedSha === PIN),
     ).toBe(true);

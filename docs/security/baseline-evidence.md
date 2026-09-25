@@ -473,8 +473,8 @@ follow, and both are load-bearing:
 
 1. **Vet what you ship, at its exact named source.** The ECC product source is
    canonical upstream
-   `affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`, alongside
-   `obra/Superpowers@b36e0829…`, in `src/internals/baseline-sources.ts` and
+   `affaan-m/ECC@5064474d4d762dc9640234a41617cccb79185cec` (v2.2.1), alongside
+   `obra/Superpowers@5bf4e780…` (v6.4.1), in `src/internals/baseline-sources.ts` and
    recorded with their acceptance disposition in
    `src/internals/external-pin-ledger.json`. Any working checkout used to
    reproduce a baseline — a local clone, a personal fork, a CI runner tree —

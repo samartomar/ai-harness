@@ -53,7 +53,7 @@ import { runScannerBridge } from "../../src/baseline-evidence/scanner-cli.js";
 
 const PIN = "a".repeat(40);
 const RETAINED_PUBLISHER = "f6189c0211fe27369fb15672f00da76c2072361c";
-const WEEKLY_PUBLISHER = "981d50f19ec8923974597de28c4c7b7acf684ded";
+const WEEKLY_PUBLISHER = "349fcadac4bdb20807c0f3451f91178a3b5911cd";
 const discoveryBytes = (commit = RETAINED_PUBLISHER, request = "d".repeat(64), renewal = "") =>
   Buffer.from(
     JSON.stringify({

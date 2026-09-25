@@ -37,12 +37,12 @@ it("keeps the authenticated ECC runtime descriptor within package and receipt bo
   };
   const descriptor = parsed.runtimeDescriptor;
   if (!descriptor) throw new Error("Missing packaged ECC runtime descriptor");
-  expect(record.sha256).toBe("85d3f1c437bf5ba719588ec2aad512b53c89e6ce7562bf491cef6eb00d6fffde");
-  expect(Buffer.byteLength(record.bytes)).toBe(8_709_096);
+  expect(record.sha256).toBe("785d733ffbd09de31ecc9c46da01e6b698dd62919f5f42d311d316681b9fe7a8");
+  expect(Buffer.byteLength(record.bytes)).toBe(8_780_269);
   expect(Buffer.byteLength(record.bytes)).toBeLessThanOrEqual(16 * 1024 * 1024);
   expect(descriptor.sha256).toBe(
-    "sha256:158f63e265f1ca18a7e65c97e372b1259200d6fb60eab87d70c20600d9d9abf0",
+    "sha256:52e67554115b2300932fc3976e190364c4c3cd037cdb7877b388a95f74a1df02",
   );
-  expect(Buffer.byteLength(descriptor.bytesBase64)).toBe(6_431_736);
+  expect(Buffer.byteLength(descriptor.bytesBase64)).toBe(6_519_944);
   expect(Buffer.byteLength(descriptor.bytesBase64)).toBeLessThanOrEqual(16 * 1024 * 1024);
 });

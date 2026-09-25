@@ -178,7 +178,7 @@ describe("baseline vet command plan", () => {
     const c = ctx(false);
     c.options = {
       source: "samartomar/ECC",
-      pin: "5caf398a91599029a176ca6d806409b00d1052c4",
+      pin: baselineCatalogById("ecc").pinnedSha,
       catalog: "ecc",
       components: "runtime:ecc-installer",
     };
