@@ -1,6 +1,6 @@
 {
   "name": "@aihq/core",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "AI Development Assurance governance core for exact tools, skills, MCP servers, packages, evidence, approval, observation, and audit history",
   "repository": {
     "type": "git",
@@ -103,7 +103,8 @@
     "format": "biome format --write src tests packages",
     "typecheck": "tsc --noEmit",
     "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
-    "verify:packed-catalog-boundary": "node tools/verify-packed-catalog-boundary.mjs"
+    "verify:packed-catalog-boundary": "node tools/verify-packed-catalog-boundary.mjs",
+    "emit:core-product-declarations": "tsx tools/emit-core-product-declarations.mjs"
   },
   "keywords": [
     "ai",

@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { windowsCommandArg } from "../ecc-profile/native-registration.js";
 import { readBoundedFileDescriptor } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
@@ -1627,9 +1628,9 @@ function parseSupportedHookCommand(
   return undefined;
 }
 
-function quoteWindowsHookArg(value: string): string {
-  if (!/[\s"]/.test(value)) return value;
-  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`;
+/** Quoted only when needed, in one linear pass (`windowsCommandArg`). */
+export function quoteWindowsHookArg(value: string): string {
+  return /[\s"]/.test(value) ? windowsCommandArg(value) : value;
 }
 
 function quotePosixHookArg(value: string): string {

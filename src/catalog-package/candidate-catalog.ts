@@ -3,6 +3,7 @@ import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
 import {
   CATALOG_PACKAGE_NAME,
   type CatalogPackageAccessV1,
@@ -206,9 +207,17 @@ function directoryFiles(root: string): Map<string, Buffer> {
       if (stat.isSymbolicLink()) fail(`holds symbolic link ${path}`);
       if (stat.isDirectory()) walk(path);
       else if (stat.isFile()) {
-        total += stat.size;
-        if (total > LIMITS.expandedBytes) fail("directory exceeds its size limit");
-        add(files, path, readFileSync(join(root, path)));
+        if (total + stat.size > LIMITS.expandedBytes) fail("directory exceeds its size limit");
+        // One no-follow descriptor, bounded by what the limit leaves: the bytes listed are the checked file's.
+        const bytes = readRegularFileWithStats(join(root, path), {
+          maxBytes: LIMITS.expandedBytes - total,
+        })?.contents;
+        if (bytes === undefined)
+          fail(
+            `holds ${path}, which is no longer the regular file that was checked, within the directory size limit`,
+          );
+        total += bytes.length;
+        add(files, path, bytes);
       } else fail(`holds ${path}, which is not a regular file`);
     }
   };
@@ -229,7 +238,10 @@ export function openCandidateCatalogV1(path: string, sha256: string): CandidateC
   let identity: Omit<CandidateCatalogV1, "version">;
   if (stat.isFile() && path.endsWith(".tgz")) {
     if (stat.size > LIMITS.tarballBytes) fail("tarball exceeds its size limit");
-    const bytes = readFileSync(path);
+    // One no-follow descriptor, bounded: the bytes digested are the checked file's.
+    const bytes = readRegularFileWithStats(path, { maxBytes: LIMITS.tarballBytes })?.contents;
+    if (bytes === undefined)
+      fail(`${path} is no longer the regular file that was checked, within its size limit`);
     const observed = digest(bytes);
     if (observed !== sha256) fail(`tarball sha256 ${observed} does not match ${sha256}`);
     files = tarballFiles(bytes);

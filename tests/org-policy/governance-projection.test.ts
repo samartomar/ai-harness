@@ -25,14 +25,13 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { defaultNativeMcpServers } from "../../src/mcp/default-native-runtime.js";
 import { command as mcpCommand } from "../../src/mcp/index.js";
 import { managedMcpProjectionState } from "../../src/mcp/managed-projection.js";
-import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { mcpServers } from "../../src/mcp/servers.js";
 import {
   isVerifiedPolicyAuthority,
   PolicyAuthorityReceiptSchema,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
-import { aihPolicyControls } from "../../src/org-policy/catalog.js";
+import { aihPolicyControls, declaredMcpControlSubject } from "../../src/org-policy/catalog.js";
 import {
   approvalAttestationDigest,
   candidateIdentityDigest,
@@ -577,7 +576,7 @@ function reviewedMcpPolicy({
   const source = {
     type: "mcp" as const,
     server: serverId,
-    subject: mcpApprovalSubject(server),
+    subject: declaredMcpControlSubject(serverId, server),
   };
   return parseOrgPolicy({
     schemaVersion: 2,
@@ -2550,7 +2549,7 @@ describe("governed candidate projection", () => {
     const source = {
       type: "mcp" as const,
       server: "code-review-graph",
-      subject: mcpApprovalSubject(server),
+      subject: declaredMcpControlSubject("code-review-graph", server),
     };
     const policy = parseOrgPolicy({
       schemaVersion: 2,
