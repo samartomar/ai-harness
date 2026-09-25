@@ -59,8 +59,34 @@ function sourceFiles(): SourceFile[] {
 }
 
 // A finding label: vet verdicts, evidence verdicts, gate and disposition levels.
-const LABEL =
-  '(?:"has-findings"|"no-findings"|"blocked"|"BLOCK"|"block"|"RED"|"UNKNOWN"|"GREEN"|"YELLOW"|"REVIEW"|"fail"|"failed"|"pass"|"allow"|"ALLOW")';
+// The vocabulary is read from the declarations themselves, so a value added to
+// any of them (a new verdict) is covered without editing this test.
+const LABEL_DECLARATIONS: readonly (readonly [string, RegExp])[] = [
+  ["src/baseline-evidence/schema.ts", /verdict: z\.enum\(\[([^\]]*)\]\)/],
+  ["src/org-policy/workbench/contracts.ts", /outcome: z\.enum\(\[([^\]]*)\]\)/],
+  ["src/capability/package-graph/schema.ts", /verdict: z\.enum\(\[([^\]]*)\]\)/],
+  ["src/skill/verdict.ts", /export type SkillVerdict =([^;]*);/],
+  ["src/skill/card.ts", /const RiskClassSchema = z\.enum\(\[([^\]]*)\]\)/],
+  ["src/trust/evidence.ts", /export type TrustPolicyLevel =([^;]*);/],
+  ["src/internals/verify.ts", /export type Verdict =([^;]*);/],
+  ["src/binding/scan-gate.ts", /export type SelectedProfileGate =([^;]*);/],
+];
+// Pre-D50 values no current declaration carries; kept so history stays detectable.
+const LEGACY_LABELS = ["blocked", "block", "failed", "allow"];
+
+function labelVocabulary(): string[] {
+  const values = new Set<string>(LEGACY_LABELS);
+  for (const [file, pattern] of LABEL_DECLARATIONS) {
+    const match = pattern.exec(readFileSync(join(root, file), "utf8"));
+    if (match === null) throw new Error(`label declaration not found in ${file}`);
+    for (const value of (match[1] ?? "").matchAll(/"([^"]+)"/g)) values.add(value[1] as string);
+  }
+  return [...values];
+}
+
+const LABEL = `(?:${labelVocabulary()
+  .map((value) => `"${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`)
+  .join("|")})`;
 const LABEL_TEST = String.raw`(?:[!=]==\s*${LABEL}|${LABEL}\s*[!=]==|findings\.length\s*>\s*0|hasFindings|!\s*[\w.]*(?:report|scan|result|vet|grade|trust)\.ok\b|[\w.]*(?:report|scan|result|vet|grade|trust)\.ok\s*===\s*false|dangerCodes|DANGER|isDanger|riskClass|\.some\([^)]*${LABEL})`;
 const GATE_BRANCH = new RegExp(
   String.raw`if\s*\([^;{}]{0,300}?${LABEL_TEST}[^;{}]{0,200}?\)\s*(\{[^{}]{0,600}?\}|[^;]{0,300};)`,
@@ -75,6 +101,12 @@ const STOPS =
 const STOP_EXPR = String.raw`(?:\(\s*\(\)\s*=>\s*\{\s*throw\b|throw\b|new \w*Error\(|refus\w*\(|fail\w*\(|process\.exit\()`;
 const EXPR_STOP = new RegExp(
   String.raw`${LABEL_TEST}\s*\)?\s*(?:\?\s*${STOP_EXPR}|&&\s*${STOP_EXPR}|\?[^:;?]{0,160}:\s*${STOP_EXPR})`,
+  "g",
+);
+
+// A stop written as a `switch` over a label: `case "has-findings": throw …`.
+const SWITCH_CASE = new RegExp(
+  String.raw`\bcase\s+${LABEL}\s*:([\s\S]{0,400}?)(?=\bcase\b|\bdefault\s*:|\n\s*\})`,
   "g",
 );
 
@@ -102,6 +134,18 @@ function lineOf(text: string, index: number): number {
 function findGateBranches(files: readonly SourceFile[]): Hit[] {
   return files.flatMap((file) =>
     [...file.text.matchAll(GATE_BRANCH)]
+      .filter((match) => STOPS.test(match[1] ?? ""))
+      .map((match) => ({
+        path: file.path,
+        line: lineOf(file.text, match.index ?? 0),
+        text: match[0].replace(/\s+/g, " "),
+      })),
+  );
+}
+
+function findSwitchStops(files: readonly SourceFile[]): Hit[] {
+  return files.flatMap((file) =>
+    [...file.text.matchAll(SWITCH_CASE)]
       .filter((match) => STOPS.test(match[1] ?? ""))
       .map((match) => ({
         path: file.path,
@@ -335,6 +379,11 @@ const SYNTHETIC_EXIT_BRANCHES: readonly string[] = [
   "if (hasFindings) process.exit(EXIT_FINDINGS);",
 ];
 
+const SYNTHETIC_SWITCH_STOPS: readonly string[] = [
+  'switch (report.verdict) {\n  case "has-findings":\n    throw new AihError("refusing");\n}',
+  'switch (level) {\n  case "BLOCK":\n    process.exitCode = 3;\n    break;\n  default:\n    break;\n}',
+];
+
 /** The trust code class table, read from its source text. */
 function trustCodeTable(): { code: string; trustClass: string }[] {
   const text = readFileSync(join(root, "src/trust/evidence.ts"), "utf8");
@@ -368,6 +417,26 @@ describe("nothing blocks (D50 sweep)", () => {
 
   it("has no ternary or short-circuit where a finding label stops the consumer", () => {
     expect(unexplained(findMatches(files, EXPR_STOP), [])).toEqual([]);
+  });
+
+  it("has no switch case where a finding label stops the consumer", () => {
+    expect(unexplained(findSwitchStops(files), [])).toEqual([]);
+  });
+
+  it("reads its label vocabulary from every verdict declaration", () => {
+    const vocabulary = labelVocabulary();
+    for (const value of [
+      "has-findings",
+      "no-findings",
+      "unknown",
+      "RED",
+      "red",
+      "SUPPRESSED",
+      "skip",
+      "ALLOW_WITH_CONDITIONS",
+    ]) {
+      expect(vocabulary, value).toContain(value);
+    }
   });
 
   it("drops no item from a list because of its finding label", () => {
@@ -404,6 +473,9 @@ describe("nothing blocks (D50 sweep)", () => {
     }
     for (const [index, text] of SYNTHETIC_EXIT_BRANCHES.entries()) {
       expect(findGateBranches([{ path: `exit-${index}.ts`, text }]), text).toHaveLength(1);
+    }
+    for (const [index, text] of SYNTHETIC_SWITCH_STOPS.entries()) {
+      expect(findSwitchStops([{ path: `switch-${index}.ts`, text }]), text).toHaveLength(1);
     }
   });
 
