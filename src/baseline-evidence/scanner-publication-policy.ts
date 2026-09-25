@@ -21,6 +21,10 @@ export const SCANNER_BASELINE_PUBLICATION_PUBLISHERS_V1 = Object.freeze([
     ...SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
     commit: "42885cd87e65520da5e47494d344d4a600e79ff9",
   }),
+  Object.freeze({
+    ...SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+    commit: "938db3516001f43b1abf118b15fc12b5e2d8bbfb",
+  }),
 ]);
 
 /** Select policy, never trust, from an immutable locator; signature verification still follows. */
