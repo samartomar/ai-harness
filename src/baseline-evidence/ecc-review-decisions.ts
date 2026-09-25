@@ -2,7 +2,9 @@ export type ResidualSurfaceClass =
   | "instructional-example"
   | "declarative-configuration"
   | "installed-executable"
-  | "automatically-activated-behavior";
+  | "automatically-activated-behavior"
+  /** The ungrouped group: no recorded grouping says what these occurrences are. */
+  | "not-classified";
 
 export interface EccReviewOccurrence {
   findingFingerprint: string;
@@ -15,7 +17,7 @@ export interface EccResidualReviewDecision {
   id: string;
   title: string;
   surfaceClass: ResidualSurfaceClass;
-  automaticActivation: boolean;
+  automaticActivation: boolean | "not-determined";
   decision: string;
   occurrenceFingerprints: string[];
   occurrences: EccReviewOccurrence[];
@@ -24,7 +26,7 @@ export interface EccResidualReviewDecision {
 interface DecisionDefinition {
   id: string;
   title: string;
-  surfaceClass: ResidualSurfaceClass;
+  surfaceClass: Exclude<ResidualSurfaceClass, "not-classified">;
   automaticActivation: boolean;
   decision: string;
   matches: (occurrence: EccReviewOccurrence) => boolean;
@@ -179,15 +181,23 @@ export function groupEccResidualReviewDecisions(
   if (groupedFingerprints.length !== groupedSet.size) {
     throw new Error("an ECC review occurrence matched more than one residual decision");
   }
+  // A new REVIEW occurrence that no recorded grouping matches is a finding like
+  // any other (D64): it is shown in an explicit "ungrouped" group, never a stop.
   const ungrouped = occurrences.filter(
     (occurrence) => !groupedSet.has(occurrence.findingFingerprint),
   );
-  if (ungrouped.length > 0) {
-    throw new Error(
-      `ungrouped ECC review occurrence(s): ${ungrouped
-        .map((occurrence) => occurrence.findingFingerprint)
-        .join(", ")}`,
-    );
-  }
-  return grouped;
+  if (ungrouped.length === 0) return grouped;
+  return [
+    ...grouped,
+    {
+      id: "ungrouped",
+      title: "REVIEW occurrences with no recorded grouping",
+      surfaceClass: "not-classified",
+      automaticActivation: "not-determined",
+      decision:
+        "No recorded grouping matches these REVIEW occurrences. They are shown as findings for the consumer to decide on; a maintainer can add a grouping.",
+      occurrenceFingerprints: ungrouped.map((occurrence) => occurrence.findingFingerprint),
+      occurrences: ungrouped,
+    },
+  ];
 }

@@ -349,6 +349,7 @@ export async function baselineVetPlanForSource(
               `component counts: no findings ${qualification.componentCounts.noFindings}, has findings ${qualification.componentCounts.hasFindings}`,
               `finding counts: warn ${qualification.findingCounts.warn}, review ${qualification.findingCounts.review}, block ${qualification.findingCounts.block}`,
               `genuine reasons: ${reasons.length === 0 ? "none" : reasons.join(" | ")}`,
+              `ungrouped review occurrences: ${groupedResidualReviewDecisions.find((decision) => decision.id === "ungrouped")?.occurrences.length ?? 0}`,
               `policy decision: ${qualification.policyDecision}`,
               `runtime restrictions: ${qualification.runtimeRestrictions.join("; ")}`,
               `full occurrence evidence: ${occurrenceRel}`,
