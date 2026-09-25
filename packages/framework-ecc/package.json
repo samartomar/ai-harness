@@ -1,6 +1,7 @@
 {
   "name": "@aihq/framework-ecc",
   "version": "0.1.0",
+  "private": true,
   "description": "affaan-m/ECC framework plugin for @aihq/core: ECC component selection, evidence-gated install and governed materialization, ECC MCP add/remove, hook inventory and hook controls",
   "repository": {
     "type": "git",
@@ -38,8 +39,5 @@
   ],
   "peerDependencies": {
     "@aihq/core": ">=0.7.0 <0.8.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

@@ -25,7 +25,12 @@ const PLUGINS = [
   { name: "@aihq/framework-superpowers", directory: "packages/framework-superpowers" },
 ] as const;
 
-function pluginManifest(directory: string): { files: string[] } {
+function pluginManifest(directory: string): {
+  name: string;
+  version: string;
+  private?: boolean;
+  files: string[];
+} {
   return JSON.parse(readFileSync(join(repo, directory, "package.json"), "utf8"));
 }
 
@@ -157,11 +162,20 @@ describe("Core tarball and framework plugins", () => {
     },
   );
 
-  it("declares both framework plugins as optional peers, never dependencies", () => {
+  it("declares no dependency or peer on the bundled plugins", () => {
     for (const { name } of PLUGINS) {
-      expect(manifest.peerDependencies[name]).toBe(">=0.1.0 <0.2.0");
-      expect(manifest.peerDependenciesMeta[name]).toEqual({ optional: true });
+      expect(manifest.peerDependencies[name]).toBeUndefined();
+      expect(manifest.peerDependenciesMeta[name]).toBeUndefined();
       expect(manifest.dependencies[name]).toBeUndefined();
+    }
+  });
+
+  it("keeps each bundled plugin's name and version and marks it never publishable", () => {
+    for (const { name, directory } of PLUGINS) {
+      const plugin = pluginManifest(directory);
+      expect(plugin.name).toBe(name);
+      expect(plugin.version).toBe("0.1.0");
+      expect(plugin.private).toBe(true);
     }
   });
 

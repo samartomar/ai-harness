@@ -1,6 +1,7 @@
 {
   "name": "@aihq/framework-superpowers",
   "version": "0.1.0",
+  "private": true,
   "description": "obra/Superpowers framework plugin for @aihq/core: evidence-gated guidance, Kiro methodology steering, hook inventory and hook controls",
   "repository": {
     "type": "git",
@@ -37,8 +38,5 @@
   ],
   "peerDependencies": {
     "@aihq/core": ">=0.7.0 <0.8.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }
