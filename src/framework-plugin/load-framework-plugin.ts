@@ -1,7 +1,6 @@
-import { readFileSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import {
   type CatalogFrameworkPluginIdentitiesLoadV1,
@@ -11,7 +10,8 @@ import { catalogPackageRefusalMessage } from "../catalog-package/load-catalog-pa
 import { AihError } from "../errors.js";
 import { FRAMEWORK_HOST_API_VERSION } from "../framework-host/index.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
-import { allowedPluginRoots, sanitizeLabel } from "../plugins/registry.js";
+import { sanitizeLabel } from "../plugins/registry.js";
+import { PACKAGE_NAME } from "../version.js";
 import {
   FRAMEWORK_PLUGIN_COMMANDS,
   FRAMEWORK_PLUGIN_CONTRACT_VERSION,
@@ -26,22 +26,25 @@ import {
 /**
  * The one place Core loads a framework plugin (C3).
  *
- * `@aihq/framework-ecc` and `@aihq/framework-superpowers` are optional peers
- * of `@aihq/core`, imported ONLY here and ONLY by their literal specifiers, so
- * nothing user-controlled can point the import at other code. Before importing,
- * the installed package must resolve inside Core's own install tree and carry
- * its own `package.json`, and the real path of the module file that literal
- * import loads (its `exports` "import" entry) must lie inside that package's
- * own real directory, so no link can make Core execute code from elsewhere.
+ * `@aihq/framework-ecc` and `@aihq/framework-superpowers` ship INSIDE
+ * `@aihq/core` (D71): Core's tarball carries each plugin's built package at its
+ * source layout, {@link BUNDLED_FRAMEWORK_PLUGIN_DIRECTORIES}, and they are
+ * imported ONLY here and ONLY from Core's own package root at those closed-set
+ * paths, so nothing user-controlled can point the import at other code. Before
+ * importing, the bundled package's `package.json` must lie inside Core's own
+ * package directory, and the real path of the module file the import loads (its
+ * build entry, `dist/index.js`) must lie inside that package's own real
+ * directory, so no link can make Core execute code from elsewhere.
  * After importing, its `aihFrameworkPluginV1` export
  * must implement contract 1 against this Core's host API, name the installed
  * package and version, and implement every command Core dispatches to it. When
  * Catalog is installed, the installed version must also equal Catalog's plugin
  * identity record (Catalog describes; it never authorizes).
  *
- * `framework-plugin-unavailable` means exactly one thing: the package is not
- * installed. Everything else is `framework-plugin-incompatible`, which callers
- * surface as a refusal. There is no embedded fallback.
+ * `framework-plugin-unavailable` means exactly one thing: the bundled package
+ * is missing from this Core install (a damaged install; reinstalling
+ * `@aihq/core` restores it). Everything else is `framework-plugin-incompatible`,
+ * which callers surface as a refusal. There is no other copy to fall back to.
  *
  * Unlike the enterprise command registry there is no environment kill switch:
  * a framework plugin is imported only when its own command runs, the refusal
@@ -85,17 +88,17 @@ export type FrameworkPluginLoadV1 =
     }
   | { readonly ok: false; readonly refusal: FrameworkPluginRefusalV1 };
 
-/** Test seam: how the installed package is reached. Production always uses the installed peers. */
+/** Test seam: how the package is reached. Production always uses the copies bundled in Core. */
 export interface FrameworkPluginAccessV1 {
-  /** Import the plugin package by its literal specifier. */
+  /** Import the plugin package's entry module. */
   readonly importPlugin: (frameworkId: FrameworkIdV1) => Promise<unknown>;
-  /** Resolve `<package>/package.json` through the package's `exports` to an absolute path. */
+  /** The package's `package.json` as an absolute path; throws MODULE_NOT_FOUND when it is missing. */
   readonly resolvePackageJson: (frameworkId: FrameworkIdV1) => string;
-  /** Resolve the module file the literal import loads (the package's "import" entry) to an absolute path. */
+  /** The module file the import loads, as an absolute path. */
   readonly resolveEntry: (frameworkId: FrameworkIdV1) => string;
   readonly readFile: (path: string) => Uint8Array;
   readonly realpath: (path: string) => string;
-  /** Real directories the plugin must resolve under: Core's own install tree. */
+  /** Real directories the plugin must resolve under: Core's own package directory. */
   readonly allowedRoots: () => readonly string[];
   readonly loadCatalogIdentities: () => Promise<CatalogFrameworkPluginIdentitiesLoadV1>;
 }
@@ -106,37 +109,64 @@ export interface FrameworkPluginLoadOptionsV1 {
   readonly timeoutMs?: number;
 }
 
-function importInstalledPlugin(frameworkId: FrameworkIdV1): Promise<unknown> {
-  switch (frameworkId) {
-    case "ecc":
-      return import("@aihq/framework-ecc");
-    case "superpowers":
-      return import("@aihq/framework-superpowers");
+/** Where Core's own package ships each plugin's build (D71): the plugin's source layout. */
+export const BUNDLED_FRAMEWORK_PLUGIN_DIRECTORIES = Object.freeze({
+  ecc: "packages/framework-ecc",
+  superpowers: "packages/framework-superpowers",
+} as const satisfies Record<FrameworkIdV1, string>);
+
+/** The one entry every plugin build emits (its package's `exports["."].import`). */
+const BUNDLED_FRAMEWORK_PLUGIN_ENTRY = "dist/index.js";
+
+/** The `@aihq/core` package this module was loaded from, found by installation layout alone. */
+function corePackageRoot(): string {
+  let current = dirname(realpathSync(fileURLToPath(import.meta.url)));
+  for (;;) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(current, "package.json"), "utf8")) as {
+        name?: unknown;
+      };
+      if (manifest.name === PACKAGE_NAME) return current;
+    } catch {
+      // A missing or malformed nearer manifest must not redirect the package root.
+    }
+    const parent = dirname(current);
+    if (parent === current) throw new Error(`the ${PACKAGE_NAME} package root was not found`);
+    current = parent;
   }
 }
 
-/** The same resolver, from the same module, as the literal import above. */
-function resolveInstalledEntry(frameworkId: FrameworkIdV1): string {
-  switch (frameworkId) {
-    case "ecc":
-      return fileURLToPath(import.meta.resolve("@aihq/framework-ecc"));
-    case "superpowers":
-      return fileURLToPath(import.meta.resolve("@aihq/framework-superpowers"));
-  }
+/** Reach the plugins shipped inside the `@aihq/core` package rooted at `coreRoot()`. */
+export function bundledFrameworkPluginAccessV1(
+  coreRoot: () => string = corePackageRoot,
+): FrameworkPluginAccessV1 {
+  const pluginRoot = (frameworkId: FrameworkIdV1) =>
+    join(coreRoot(), BUNDLED_FRAMEWORK_PLUGIN_DIRECTORIES[frameworkId]);
+  const entry = (frameworkId: FrameworkIdV1) =>
+    join(pluginRoot(frameworkId), BUNDLED_FRAMEWORK_PLUGIN_ENTRY);
+  return {
+    importPlugin: (frameworkId) => import(pathToFileURL(entry(frameworkId)).href),
+    resolvePackageJson: (frameworkId) => {
+      const manifest = join(pluginRoot(frameworkId), "package.json");
+      if (!existsSync(manifest)) {
+        throw Object.assign(
+          new Error(
+            `Cannot find module '${FRAMEWORK_PLUGIN_PACKAGE_NAMES[frameworkId]}/package.json'`,
+          ),
+          { code: "MODULE_NOT_FOUND" },
+        );
+      }
+      return manifest;
+    },
+    resolveEntry: entry,
+    readFile: (path) => readFileSync(path),
+    realpath: (path) => realpathSync(path),
+    allowedRoots: () => [realpathSync(coreRoot())],
+    loadCatalogIdentities: () => loadFrameworkPluginIdentitiesV1(),
+  };
 }
 
-const requireFromCore = createRequire(import.meta.url);
-
-const installedPluginAccess: FrameworkPluginAccessV1 = {
-  importPlugin: importInstalledPlugin,
-  resolvePackageJson: (frameworkId) =>
-    requireFromCore.resolve(`${FRAMEWORK_PLUGIN_PACKAGE_NAMES[frameworkId]}/package.json`),
-  resolveEntry: resolveInstalledEntry,
-  readFile: (path) => readFileSync(path),
-  realpath: (path) => realpathSync(path),
-  allowedRoots: allowedPluginRoots,
-  loadCatalogIdentities: () => loadFrameworkPluginIdentitiesV1(),
-};
+const bundledPluginAccess = bundledFrameworkPluginAccessV1();
 
 export function frameworkPluginInstallCommand(frameworkId: FrameworkIdV1): string {
   return `npm install -g @aihq/core ${FRAMEWORK_PLUGIN_PACKAGE_NAMES[frameworkId]}`;
@@ -183,7 +213,7 @@ function incompatible(frameworkId: FrameworkIdV1, problem: string) {
   );
 }
 
-/** Only a package that is genuinely absent is unavailable; anything else is installed but broken. */
+/** Only a bundled package that is genuinely absent is unavailable; anything else is present but broken. */
 function isAbsent(error: unknown, name: string): boolean {
   const code = codeOf(error);
   if (code !== "MODULE_NOT_FOUND" && code !== "ERR_MODULE_NOT_FOUND") return false;
@@ -344,7 +374,7 @@ function underAllowedRoot(path: string, roots: readonly string[]): boolean {
 }
 
 /**
- * Load the installed framework plugin for `frameworkId` and verify it against
+ * Load the framework plugin bundled in Core for `frameworkId` and verify it against
  * contract 1, this Core's host API, its own package.json and, when Catalog is
  * installed, Catalog's identity record. Never throws.
  */
@@ -352,7 +382,7 @@ export async function loadFrameworkPluginV1(
   frameworkId: FrameworkIdV1,
   options: FrameworkPluginLoadOptionsV1 = {},
 ): Promise<FrameworkPluginLoadV1> {
-  const access = options.access ?? installedPluginAccess;
+  const access = options.access ?? bundledPluginAccess;
   const timeoutMs = options.timeoutMs ?? FRAMEWORK_PLUGIN_DEFAULT_TIMEOUT_MS;
   const name = FRAMEWORK_PLUGIN_PACKAGE_NAMES[frameworkId];
 
@@ -382,7 +412,7 @@ export async function loadFrameworkPluginV1(
     if (!underAllowedRoot(realManifest, access.allowedRoots())) {
       return incompatible(
         frameworkId,
-        `resolves outside @aihq/core's own install tree (${sanitizeLabel(realManifest, 200)})`,
+        `resolves outside @aihq/core's own package directory (${sanitizeLabel(realManifest, 200)})`,
       );
     }
   } catch (error) {

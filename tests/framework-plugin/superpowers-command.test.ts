@@ -22,6 +22,13 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 import { loadSuperpowersFromSource } from "./plugin-source.js";
 
+// The real loader sees a Core install without its bundled plugins (D71): the
+// one route to framework-plugin-unavailable, whether or not packages/*/dist is built.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const { withBundledPluginsMissing } = await import("./missing-bundled-plugins.js");
+  return withBundledPluginsMissing(await importOriginal());
+});
+
 const PIN = "5bf4e78011075bcfc0dc295f0724994cd123ee71";
 let root: string;
 

@@ -46,8 +46,9 @@ export const FRAMEWORK_PLUGIN_CONTRACT_VERSION = 1;
 /**
  * The closed set of framework plugins Core loads. Literal by design: nothing
  * user-controlled (environment, flag, configuration, Catalog data) can add or
- * change a package name. `src/framework-plugin/load-framework-plugin.ts` imports
- * each package by exactly this literal specifier.
+ * change a package name. Each package ships inside `@aihq/core`, and
+ * `src/framework-plugin/load-framework-plugin.ts` imports it only from Core's own
+ * package root at the closed-set directory named for it there.
  */
 export const FRAMEWORK_PLUGIN_PACKAGE_NAMES = Object.freeze({
   ecc: "@aihq/framework-ecc",

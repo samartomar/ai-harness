@@ -137,17 +137,22 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/framework-plugin/contract-v1.ts",
-    52,
+    53,
     "export const FRAMEWORK_PLUGIN_PACKAGE_NAMES = Object.freeze({",
   ],
   [
     "src/framework-plugin/load-framework-plugin.ts",
-    53,
+    56,
     "export type FrameworkPluginRefusalReasonV1 =",
   ],
   [
     "src/framework-plugin/load-framework-plugin.ts",
-    351,
+    113,
+    "export const BUNDLED_FRAMEWORK_PLUGIN_DIRECTORIES = Object.freeze({",
+  ],
+  [
+    "src/framework-plugin/load-framework-plugin.ts",
+    381,
     "export async function loadFrameworkPluginV1(",
   ],
   [

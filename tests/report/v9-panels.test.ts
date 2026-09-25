@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import { sha256Hex } from "../../src/bundle/index.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
@@ -23,6 +23,15 @@ import { escHtml, renderSkillGovernance, renderWins } from "../../src/report/v9-
 import type { SupportTemplate } from "../../src/support/render.js";
 import { loadEccFromSource } from "../framework-plugin/plugin-source.js";
 import { eccDescriptorLoad } from "../framework-plugin/source-plugin-mocks.js";
+
+// The real loader sees a Core install without its bundled plugins (D71): the
+// one route to framework-plugin-unavailable, whether or not packages/*/dist is built.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const { withBundledPluginsMissing } = await import(
+    "../framework-plugin/missing-bundled-plugins.js"
+  );
+  return withBundledPluginsMissing(await importOriginal());
+});
 
 describe("escHtml — attribute-safe HTML escaping", () => {
   it("escapes all five significant characters incl. quotes (attribute-safe)", () => {

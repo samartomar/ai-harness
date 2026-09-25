@@ -44,10 +44,12 @@ export default defineConfig({
   // @aihq/catalog is the same arrangement, loaded only through
   // src/catalog-package/load-catalog-package.ts; Core pins the descriptor bytes
   // it accepts from it, so a bundled copy would add nothing but a stale Catalog.
-  // The framework plugins are the same arrangement, loaded only through
-  // src/framework-plugin/load-framework-plugin.ts; Core's tarball must never
-  // carry framework plugin code.
-  external: ["@aihq/scan", "@aihq/catalog", "@aihq/framework-ecc", "@aihq/framework-superpowers"],
+  // The framework plugins are not dependencies: each is built by its own
+  // packages/*/tsup.config.ts, shipped beside dist/ in Core's tarball and imported
+  // at run time from Core's own package root by
+  // src/framework-plugin/load-framework-plugin.ts, so Core's chunks never carry
+  // framework plugin code.
+  external: ["@aihq/scan", "@aihq/catalog"],
   // YAML's bundled CommonJS distribution requires Node's built-in process module.
   // Keep that built-in resolution available in each standalone ESM chunk.
   banner: {
