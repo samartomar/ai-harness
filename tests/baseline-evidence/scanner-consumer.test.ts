@@ -238,7 +238,7 @@ function publishedAnnexStating(
     SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
     root,
     { origin: "scanner-baseline-vet" },
-  ) as {
+  ) as unknown as {
     runs: { invocations: { properties: Record<string, { analyzer: { version: string } }> }[] }[];
   };
   for (const run of annex.runs) {
