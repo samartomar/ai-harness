@@ -119,6 +119,25 @@ const TRUST_CODE_CLASSES_V1: Readonly<Record<string, TrustCodeClassV1>> = {
   "trust.fetch-metadata-mismatched": "integrity",
 };
 
+/**
+ * The organization's own configured requirements (D67): a skill approval record
+ * its posture requires (`trust.unapproved-skill`), an MCP server its MCP policy
+ * denies (`mcp.policy-denied`), and its policy file drifting from the pinned copy
+ * (`org-policy.drift`). They say nothing about the scanned component, so they are
+ * outside TRUST_CODE_CLASSES_V1; the consumer's own policy keeps its stop. Every
+ * other trust code must be classified.
+ */
+export const CONSUMER_POLICY_CODES_V1: ReadonlySet<string> = new Set([
+  "trust.unapproved-skill",
+  "mcp.policy-denied",
+  "org-policy.drift",
+]);
+
+/** Whether a code is one of the organization's own configured requirements (D67). */
+export function isConsumerPolicyCodeV1(code: string | undefined): boolean {
+  return code !== undefined && CONSUMER_POLICY_CODES_V1.has(code);
+}
+
 /** The class of a trust code, or undefined for a code outside the trust lane. */
 export function trustCodeClassV1(code: string | undefined): TrustCodeClassV1 | undefined {
   return code === undefined || !Object.hasOwn(TRUST_CODE_CLASSES_V1, code)

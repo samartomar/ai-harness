@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Check } from "../../src/internals/verify.js";
 import {
+  CONSUMER_POLICY_CODES_V1,
   dispositionForTrustFinding,
+  isConsumerPolicyCodeV1,
   isFindingLevelV1,
   normalizeTrustFindings,
   type RawScannerOccurrence,
@@ -387,5 +389,35 @@ describe("trust code classes (D50)", () => {
     expect(unclassified).toEqual(["trust.unapproved-skill"]);
     const scanSource = readFileSync(new URL("../../src/trust/scan.ts", import.meta.url), "utf8");
     expect(scanSource).not.toContain("trust.unapproved-skill");
+  });
+
+  it("classifies every trust CheckCode or names it as the consumer's own policy (D67)", () => {
+    const verifySource = readFileSync(
+      new URL("../../src/internals/verify.ts", import.meta.url),
+      "utf8",
+    );
+    const union = /export type CheckCode =([\s\S]*?)\nexport /.exec(verifySource)?.[1] ?? "";
+    const codes = [...union.matchAll(/^\s*\| "([a-z0-9-]+\.[a-z0-9-]+)";?$/gm)].map(
+      (m) => m[1] ?? "",
+    );
+    // The organization's own configured requirements, which the owner keeps as stops.
+    expect([...CONSUMER_POLICY_CODES_V1].sort()).toEqual([
+      "mcp.policy-denied",
+      "org-policy.drift",
+      "trust.unapproved-skill",
+    ]);
+    for (const code of CONSUMER_POLICY_CODES_V1) {
+      expect(codes, code).toContain(code);
+      expect(trustCodeClassV1(code), code).toBeUndefined();
+    }
+    // A new trust code must be classified: an unclassified one would silently stop
+    // workspace promotion, which fails closed on it.
+    const unaccounted = codes.filter(
+      (code) =>
+        code.startsWith("trust.") &&
+        trustCodeClassV1(code) === undefined &&
+        !isConsumerPolicyCodeV1(code),
+    );
+    expect(unaccounted).toEqual([]);
   });
 });

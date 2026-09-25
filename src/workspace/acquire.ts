@@ -32,7 +32,7 @@ import {
   hasAcknowledgementRequest,
 } from "../trust/acknowledge.js";
 import { policyWithApprovedSourceReason } from "../trust/commands.js";
-import { trustCodeClassV1 } from "../trust/evidence.js";
+import { isConsumerPolicyCodeV1, trustCodeClassV1 } from "../trust/evidence.js";
 import {
   cleanupQuarantine,
   readTrustFetchMetadata,
@@ -308,8 +308,8 @@ const ORG_CONFIGURED_SOURCE_REQUIREMENTS = new Set([
 
 /**
  * The failures that stop promotion: integrity failures, the organization's own
- * configured source requirements, and any failure outside the trust
- * classification. Findings and evidence problems are recorded in the trust lock as
+ * configured source requirements and consumer-policy codes (D67), and any failure
+ * outside the trust classification (fail closed). Findings and evidence problems are recorded in the trust lock as
  * labels and never stop promotion (D50).
  */
 export function promotionBlockingChecks(checks: readonly Check[]): Check[] {
@@ -317,6 +317,7 @@ export function promotionBlockingChecks(checks: readonly Check[]): Check[] {
     if (check.verdict !== "fail") return [];
     const code = check.code ?? (check.name.startsWith("trust.") ? check.name : undefined);
     if (code !== undefined && ORG_CONFIGURED_SOURCE_REQUIREMENTS.has(code)) return [check];
+    if (isConsumerPolicyCodeV1(code)) return [check];
     const trustClass = trustCodeClassV1(code);
     return trustClass === "finding" || trustClass === "evidence-problem" ? [] : [check];
   });
