@@ -18,10 +18,16 @@ describe("independent Scanner publication lifecycle", () => {
     const workflow = read(".github/workflows/baseline-publication-consume.yml");
     expect(workflow).toMatch(/^on:\n {2}workflow_dispatch:\s*$/m);
     expect(workflow).not.toMatch(/^ {2}(push|pull_request|schedule):/m);
-    expect(workflow).toContain("f6189c0211fe27369fb15672f00da76c2072361c");
+    expect(workflow).toContain("349fcadac4bdb20807c0f3451f91178a3b5911cd");
     expect(workflow).toMatch(/SCANNER_PUBLISHER_COMMIT: \$\{\{ matrix\.publisherCommit \}\}/);
     expect(workflow).toMatch(
-      /id: ecc\n\s+repository: affaan-m\/ECC\n\s+sha: 5caf398a91599029a176ca6d806409b00d1052c4\n\s+publisherCommit: f6189c0211fe27369fb15672f00da76c2072361c/,
+      /id: ecc\n\s+repository: affaan-m\/ECC\n\s+sha: 5064474d4d762dc9640234a41617cccb79185cec\n\s+publisherCommit: 349fcadac4bdb20807c0f3451f91178a3b5911cd/,
+    );
+    expect(workflow).toMatch(
+      /id: superpowers\n\s+repository: obra\/Superpowers\n\s+sha: 5bf4e78011075bcfc0dc295f0724994cd123ee71\n\s+publisherCommit: 349fcadac4bdb20807c0f3451f91178a3b5911cd/,
+    );
+    expect(workflow).toMatch(
+      /repository: affaan-m\/ECC\n\s+ref: 5064474d4d762dc9640234a41617cccb79185cec\n\s+path: \.baseline-ecc/,
     );
     expect(workflow).toContain('tag="baseline-v1-$SCANNER_PUBLISHER_COMMIT-$request_sha256"');
     expect(workflow).not.toContain('tag="baseline-v1-$request_sha256"');
