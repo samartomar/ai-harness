@@ -215,6 +215,40 @@ function buildResult(
   } as BaselineVetBatchResultV1;
 }
 
+/**
+ * A baseline-vet SARIF annex as Scan 0.5.0 publishes it (S2j): completion evidence for the
+ * baseline subject of `root` under the batch profile's lock, stating `version`.
+ */
+function publishedAnnexStating(
+  root: string,
+  analyzer: ScannerBaselineAnalyzer,
+  version: string,
+): Record<string, unknown> {
+  const annex = selfDerivedPrecomputedCompletionForTests(
+    {
+      version: "2.1.0",
+      runs: [
+        {
+          tool: { driver: { name: analyzer } },
+          invocations: [{ executionSuccessful: true }],
+          results: [],
+        },
+      ],
+    },
+    SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+    root,
+    { origin: "scanner-baseline-vet" },
+  ) as {
+    runs: { invocations: { properties: Record<string, { analyzer: { version: string } }> }[] }[];
+  };
+  for (const run of annex.runs) {
+    const evidence = run.invocations[0]?.properties.aihScanCompletionV1;
+    if (evidence === undefined) throw new Error("fixture annex carries no completion evidence");
+    evidence.analyzer = { ...evidence.analyzer, version };
+  }
+  return annex;
+}
+
 function signedFixture(request: BaselineVetRequestV1, result: BaselineVetBatchResultV1) {
   const keys = generateKeyPairSync("ed25519");
   const keyId = ed25519KeyIdV2(keys.publicKey);
@@ -495,10 +529,37 @@ describe("Core Scanner baseline consumer", () => {
     ]);
   });
 
-  it("refuses a Cisco annex naming a pre-upgrade Cisco lock", async () => {
+  it("never receives a Cisco annex naming a pre-upgrade Cisco lock: Scan 0.5.0 refuses to sign it (S2j)", () => {
+    // Scan's receipt verification binds every SARIF annex to exactly the batch profile's lock,
+    // named by the receipt's analyzer version; the pre-upgrade lock is not that lock.
     const { root, catalog } = sourceFixture();
     const request = createCoreBaselineVetRequest(root, catalog);
-    const result = buildResult(root, request, { cisco: "2.0.14+uvlock.aaba1f326049" });
+    const version = "2.0.14+uvlock.aaba1f326049";
+    const result = buildResult(
+      root,
+      request,
+      { cisco: version },
+      {},
+      {},
+      { cisco: publishedAnnexStating(root, "cisco", version) },
+    );
+    expect(() => signedFixture(request, result)).toThrow(
+      "invalid BaselineVetAttestationV1: receipt and annex verification",
+    );
+  });
+
+  it("refuses a signed Cisco identity Core does not pin, under the batch profile's lock", async () => {
+    const { root, catalog } = sourceFixture();
+    const request = createCoreBaselineVetRequest(root, catalog);
+    const version = "2.0.14+uvlock.1e98c5679994";
+    const result = buildResult(
+      root,
+      request,
+      { cisco: version },
+      {},
+      {},
+      { cisco: publishedAnnexStating(root, "cisco", version) },
+    );
     const signed = signedFixture(request, result);
 
     await expect(
@@ -512,7 +573,7 @@ describe("Core Scanner baseline consumer", () => {
         expected: signed.expected,
       }),
     ).rejects.toThrow(
-      "Scanner baseline analyzer cisco identity 2.0.14+uvlock.aaba1f326049 does not match pinned 2.1.0+uvlock.1e98c5679994",
+      `Scanner baseline analyzer cisco identity ${version} does not match pinned 2.1.0+uvlock.1e98c5679994`,
     );
   });
 
@@ -575,7 +636,17 @@ describe("Core Scanner baseline consumer", () => {
       }),
     ).rejects.toThrow(/replayed evidence/);
 
-    const wrongResult = buildResult(fresh.root, freshRequest, { semgrep: "1.178.0+uvlock.wrong" });
+    // Signed as Scan 0.5.0 signs it: the annex states the receipt's version, which names the
+    // batch profile's lock (S2j); the upstream version is one Core does not pin.
+    const unpinned = "1.177.0+uvlock.5fae6a8598f7";
+    const wrongResult = buildResult(
+      fresh.root,
+      freshRequest,
+      { semgrep: unpinned },
+      {},
+      {},
+      { semgrep: publishedAnnexStating(fresh.root, "semgrep", unpinned) },
+    );
     const wrongSigned = signedFixture(freshRequest, wrongResult);
     await expect(
       consumeVerifiedScannerBaseline({
@@ -626,11 +697,12 @@ function vectorAnnexes(
 async function consumeVector(
   annexes: Partial<Record<ScannerBaselineAnalyzer, unknown>>,
   arrange: (root: string) => void = () => {},
+  versions: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
 ) {
   const { root, catalog } = vectorFixture();
   arrange(root);
   const request = createCoreBaselineVetRequest(root, catalog);
-  const result = buildResult(root, request, {}, {}, {}, annexes);
+  const result = buildResult(root, request, versions, {}, {}, annexes);
   const signed = signedFixture(request, result);
   return consumeVerifiedScannerBaseline({
     sourceRoot: root,
@@ -683,13 +755,15 @@ describe("verified Scanner-publication annexes follow Scan's baseline rule (D24,
     );
   });
 
-  it("keeps an evidence-less annex completion-evidence-absent (D17)", async () => {
+  it("never receives an evidence-less annex: Scan 0.5.0 refuses to sign it (S2j)", async () => {
+    // D17's completion-evidence-absent stays Core's reading of such SARIF; a Scanner
+    // publication cannot carry one, because Scan's receipt verification requires the evidence.
     await expect(consumeVector(vectorAnnexes({ semgrep: vectorAnnex() }))).rejects.toThrow(
-      "precomputed SARIF for detector.semgrep carries no completion evidence v1 (completion-evidence-absent)",
+      "invalid BaselineVetAttestationV1: receipt and annex verification",
     );
   });
 
-  it("refuses a SkillSpector annex naming an image digest Core does not accept", async () => {
+  it("refuses a signed SkillSpector identity naming an image digest Core does not accept", async () => {
     const other = `${SKILLSPECTOR_SOURCE_REVISION}@sha256:${"0".repeat(64)}`;
     await expect(
       consumeVector(
@@ -698,9 +772,11 @@ describe("verified Scanner-publication annexes follow Scan's baseline rule (D24,
             vectorEvidence("detector.skillspector", BASELINE, { version: other, lockSha256: null }),
           ),
         }),
+        () => {},
+        { skillspector: other },
       ),
     ).rejects.toThrow(
-      `precomputed SARIF for detector.skillspector is refused: completion evidence for analyzer "${other}"`,
+      `Scanner baseline analyzer skillspector identity ${other} does not match pinned`,
     );
   });
 });
