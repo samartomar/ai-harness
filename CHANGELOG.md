@@ -87,6 +87,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Core accepts the analyzers `@aihq/scan` installs after the U1 upgrade, each by version and
+  uv.lock digest: Semgrep 1.178.0, Cisco skill-scanner 2.1.0 (one lock under every profile, so
+  the host-profile known gap is gone), cisco-ai-mcp-scanner 4.8.4, snyk-agent-scan 0.6.4, and
+  SkillSpector v2.12.0 (`c7958a32…`, image `sha256:efe47bd7…`). The previous identities are
+  refused with the existing typed refusals. Rule ids new at those releases (19 SkillSpector, 24
+  Cisco, listed with provenance in `src/trust/unreviewed-analyzer-rules.ts`) report
+  `trust.unreviewed-analyzer-rule`, a WARN labelled "new analyzer rule, not yet reviewed" that
+  never blocks; any other unmapped id keeps its route. The installed Catalog's vendor lock was
+  vetted at the previous analyzers, so pin currency reports its receipts as drift until the
+  requalified Catalog is adopted. `prepare:workbench-collection-evidence` takes
+  `--definition-overlap <disjoint|compiler-catalog>` (default `disjoint`), as the scanner
+  bridge already did.
 - **Breaking:** `aih ecc --lifecycle install|update` (the ordinary ECC profile lifecycle) now
   renders only from profile evidence in the installed Catalog's ECC framework descriptor
   (`sections.profileEvidence`), bound to the plugin's one upstream commit. `@aihq/framework-ecc`
