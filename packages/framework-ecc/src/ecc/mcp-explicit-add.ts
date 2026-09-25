@@ -75,6 +75,9 @@ function approvedHttpsEntry(policyInput: unknown, id: string, target: string): E
     throw new Error(`CLI ${target} is not sanctioned by governance.supportedClis`);
   }
   const approval = resolveEccMcpApproval(policy.governance?.eccMcpApprovals ?? [], id);
+  if (approval.state === "stale") {
+    throw new Error(`ECC MCP ${id} approval is ${approval.label}; explicit Add is refused`);
+  }
   if (approval.state !== "approved") {
     throw new Error(`ECC MCP ${id} is ${approval.state}; explicit Add is refused`);
   }
@@ -162,6 +165,7 @@ export type ExplicitEccMcpReceiptState =
   | "absent"
   | "altered"
   | "revoked"
+  | "stale"
   | "malformed"
   | "unsafe-path";
 
@@ -357,6 +361,14 @@ function sameRecord(record: EccMcpExplicitAddRecord, rendered: ExplicitEccMcpRen
   );
 }
 
+/** A record made for other ECC content than the pinned catalog (D74). */
+function isStaleRecord(record: EccMcpExplicitAddRecord): boolean {
+  return (
+    record.catalog.commit !== ECC_MCP_CATALOG_PROVENANCE.commit ||
+    record.catalog.contentSha256 !== ECC_MCP_CATALOG_PROVENANCE.contentSha256
+  );
+}
+
 function removalReport(detail: string): Plan {
   return plan(
     "explicit ECC MCP remove",
@@ -382,6 +394,15 @@ export function readExplicitEccMcpReceiptStates(options: {
   if (receiptState.source === undefined)
     return [{ state: "absent", detail: "explicit ECC MCP receipt is absent" }];
   return receiptState.receipt.records.map((record) => {
+    // Kept and labelled, never counted as current ownership (D74).
+    if (isStaleRecord(record)) {
+      return {
+        id: record.id,
+        target: record.target,
+        state: "stale",
+        detail: `recorded for ECC content ${record.catalog.contentSha256}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-add with aih ecc mcp add ${record.id} --cli ${record.target}`,
+      };
+    }
     let rendered: ExplicitEccMcpRenderPlan;
     let config: ResolvedConfig;
     try {
@@ -463,6 +484,9 @@ export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
   const record = receiptState.receipt.records.find(
     (candidate) => candidate.id === rendered.id && candidate.target === rendered.target,
   );
+  // A record made for other ECC content is replaced by this Add when its entry is
+  // still exactly what that record wrote (the re-add route, D74).
+  const stale = record !== undefined && isStaleRecord(record) ? record : undefined;
   let configAction: WriteAction;
   if (rendered.config.format === "json") {
     if (typeof rendered.rendered === "string") throw new Error("JSON renderer returned TOML");
@@ -479,11 +503,11 @@ export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
         explicitAddDigest(existing) === rendered.renderedDigest
       )
         return plan("explicit ECC MCP add");
-      throw new Error(
-        `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
-      );
-    }
-    if (record !== undefined)
+      if (stale === undefined || explicitAddDigest(existing) !== stale.config.renderedSha256)
+        throw new Error(
+          `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
+        );
+    } else if (record !== undefined && stale === undefined)
       throw new Error(
         `explicit ECC MCP ${rendered.id} receipt no longer matches its config; Add is refused`,
       );
@@ -502,7 +526,8 @@ export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
     );
   } else {
     const body = rendered.rendered as string;
-    const existing = tomlServerSection(config.source ?? "", rendered.id);
+    let base = config.source;
+    const existing = tomlServerSection(base ?? "", rendered.id);
     if (existing !== undefined) {
       if (
         record !== undefined &&
@@ -510,24 +535,25 @@ export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
         explicitAddDigest(existing) === rendered.renderedDigest
       )
         return plan("explicit ECC MCP add");
-      throw new Error(
-        `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
-      );
-    }
-    if (record !== undefined)
+      if (stale === undefined || explicitAddDigest(existing) !== stale.config.renderedSha256)
+        throw new Error(
+          `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
+        );
+      base = removeMcpTomlServers(base ?? "", [rendered.id]);
+    } else if (record !== undefined && stale === undefined)
       throw new Error(
         `explicit ECC MCP ${rendered.id} receipt no longer matches its config; Add is refused`,
       );
-    if (hasTomlServerTree(config.source ?? "", rendered.id)) {
+    if (hasTomlServerTree(base ?? "", rendered.id)) {
       throw new Error(`explicit ECC MCP ${rendered.id} is operator-owned; Add is refused`);
     }
-    if (existingMcpTomlNames(config.source ?? "", "__explicit_ecc__").has(rendered.id)) {
+    if (existingMcpTomlNames(base ?? "", "__explicit_ecc__").has(rendered.id)) {
       throw new Error(`explicit ECC MCP ${rendered.id} is operator-owned; Add is refused`);
     }
     configAction = withExpectedSource(
       writeText(
         config.path,
-        appendToml(config.source, body),
+        appendToml(base, body),
         `add approved ECC MCP ${rendered.id} to ${rendered.target}`,
         writeOptions(config),
       ),
@@ -536,7 +562,10 @@ export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
   }
   const nextReceipt = {
     ...receiptState.receipt,
-    records: [...receiptState.receipt.records, explicitEccMcpReceiptRecord(rendered)],
+    records: [
+      ...receiptState.receipt.records.filter((candidate) => candidate !== stale),
+      explicitEccMcpReceiptRecord(rendered),
+    ],
   };
   const receiptAction = withExpectedSource(
     writeText(

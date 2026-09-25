@@ -21,7 +21,7 @@ import {
   ECC_EXTERNAL_MCP_APPROVAL_IDS,
   POLICY_APPROVER_EMAIL_PATTERN,
 } from "./ecc-mcp-approval.js";
-import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-contract.js";
+import { AIH_OWNED_ECC_MCP_EXCLUSIONS } from "./ecc-mcp-contract.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 import { safePolicyCommandArgument as safeBrowserPolicyCommandArgument } from "./workbench/command-arguments.js";
 import {
@@ -423,12 +423,14 @@ const RemoteMcpApprovalSchema = z
 /**
  * An administrator's declaration over an external ECC MCP from the exact
  * source-locked snapshot. It is neither a client configuration nor a grant to
- * contact, scan, inspect, project, or install that MCP.
+ * contact, scan, inspect, project, or install that MCP. It names the ECC content
+ * it was made for; one made for other content stays valid policy and is labelled
+ * stale at use, authorizing nothing (D74).
  */
 const EccMcpApprovalSchema = z
   .object({
     id: z.enum(ECC_EXTERNAL_MCP_APPROVAL_IDS),
-    sourceContentSha256: z.literal(ECC_MCP_CATALOG_PROVENANCE.contentSha256),
+    sourceContentSha256: z.string().regex(/^[0-9a-f]{64}$/),
     state: z.enum(["approved", "revoked"]),
     approvedBy: PolicyApproverIdentitySchema,
     authenticationMode: SafePolicyTextSchema,

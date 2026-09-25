@@ -59,6 +59,7 @@ export interface EccMcpApprovalRecord {
 export type EccMcpApprovalResolution =
   | { state: "approved"; approval: EccMcpApprovalRecord }
   | { state: "revoked"; approval: EccMcpApprovalRecord }
+  | { state: "stale"; approval: EccMcpApprovalRecord; label: string }
   | { state: "source-mismatch" }
   | { state: "unapproved" };
 
@@ -111,6 +112,7 @@ function isExactApprovalRecord(value: unknown): value is EccMcpApprovalRecord {
     isStableId(value.id) &&
     EXTERNAL_IDS.has(value.id) &&
     typeof value.sourceContentSha256 === "string" &&
+    /^[0-9a-f]{64}$/.test(value.sourceContentSha256) &&
     (value.state === "approved" || value.state === "revoked") &&
     isApproverIdentity(value.approvedBy) &&
     isSafePolicyText(value.authenticationMode) &&
@@ -125,6 +127,8 @@ function isExactApprovalRecord(value: unknown): value is EccMcpApprovalRecord {
  * Resolves only an administrator's declaration over the exact pinned source.
  * It deliberately returns no launcher, configuration, projection, scan, or
  * endpoint/tool-surface fact; a future explicit Add flow must do that separately.
+ * An approval made for other ECC content is stale (D74): kept, labelled with the
+ * content it was made for and the route to re-approve, and never approved.
  */
 export function resolveEccMcpApproval(
   approvals: readonly unknown[],
@@ -137,10 +141,13 @@ export function resolveEccMcpApproval(
     return { state: "source-mismatch" };
   }
   const approval = matching[0];
+  if (approval.state === "revoked") return { state: "revoked", approval };
   if (approval.sourceContentSha256 !== ECC_MCP_CATALOG_PROVENANCE.contentSha256) {
-    return { state: "source-mismatch" };
+    return {
+      state: "stale",
+      approval,
+      label: `recorded for ECC content ${approval.sourceContentSha256}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-approve`,
+    };
   }
-  return approval.state === "approved"
-    ? { state: "approved", approval }
-    : { state: "revoked", approval };
+  return { state: "approved", approval };
 }

@@ -596,9 +596,19 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-org-policy.schema.json",
       governance([{ ...approval, approvedBy: "security-admin" }]),
     );
+    // An approval recorded for other ECC content stays valid policy; it is labelled stale (D74).
+    validateCommittedSchema(
+      "schemas/aih-org-policy.schema.json",
+      governance([
+        {
+          ...approval,
+          sourceContentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
+        },
+      ]),
+    );
     for (const invalid of [
       { ...approval, id: "github" },
-      { ...approval, sourceContentSha256: "0".repeat(64) },
+      { ...approval, sourceContentSha256: "0".repeat(63) },
       { ...approval, allowedDataClasses: [] },
       { ...approval, approvedBy: "Samar" },
       { ...approval, unexpected: true },

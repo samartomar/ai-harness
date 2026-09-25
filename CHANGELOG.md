@@ -132,10 +132,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The ECC review records move to v2.2.1 (`5064474d`): the hook-control inventory gains
   `pre:powershell:gateguard-fact-force` (44 rows, 43 disable-eligible) and binds the OpenCode
   plugin source `.opencode/plugins/ecc-hooks.ts`; the skill-name set is unchanged; the MCP
-  contract digest is `d93be2b6…` (only the ito-compute description changed). **Upgrade
-  note:** saved `governance.eccMcpApprovals` recorded against `a4426254…` and ECC MCP
-  explicit-add receipts recorded at `5caf398a` no longer match and must be recorded again from
-  the new Catalog.
+  contract digest is `d93be2b6…` (only the ito-compute description changed). A saved
+  `governance.eccMcpApprovals` entry or an ECC MCP explicit-add receipt record made for other
+  ECC content (a 0.6.2 approval at `a4426254…`, a receipt at `5caf398a`) no longer makes the
+  policy or the receipt invalid (D74): it is kept and labelled "recorded for ECC content <old>;
+  current is <new>; re-approve" (a receipt record reads `stale` with its `aih ecc mcp add`
+  route), and it never authorizes content it was not made for. Re-approving the MCP, or re-running
+  Add under a current approval, replaces it.
 - Core accepts the analyzers `@aihq/scan` installs after the U1 upgrade, each by version and
   uv.lock digest: Semgrep 1.178.0, Cisco skill-scanner 2.1.0 (one lock under every profile, so
   the host-profile known gap is gone), cisco-ai-mcp-scanner 4.8.4, snyk-agent-scan 0.6.4, and

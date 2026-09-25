@@ -31,6 +31,10 @@ import {
 
 const roots: string[] = [];
 
+// The ECC MCP content and commit a 0.6.2 install recorded (v2.2.0-1), before the v2.2.1 pin.
+const PREVIOUS_CONTENT = "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57";
+const PREVIOUS_COMMIT = "5caf398a91599029a176ca6d806409b00d1052c4";
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -108,6 +112,14 @@ describe("explicit ECC HTTPS MCP render plan", () => {
     );
     expect(() => explicitEccMcpRenderPlan(policy(), "vercel", "claude")).toThrow(/unapproved/);
     expect(() => explicitEccMcpRenderPlan(policy(), "memxus", "cursor")).toThrow(/not sanctioned/);
+    // An approval recorded for other ECC content authorizes nothing and names its route (D74).
+    const stale = policy();
+    const approvals = (stale.governance as { eccMcpApprovals: Record<string, unknown>[] })
+      .eccMcpApprovals;
+    approvals[0] = { ...approvals[0], sourceContentSha256: PREVIOUS_CONTENT };
+    expect(() => explicitEccMcpRenderPlan(stale, "memxus", "claude")).toThrow(
+      `ECC MCP memxus approval is recorded for ECC content ${PREVIOUS_CONTENT}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-approve; explicit Add is refused`,
+    );
     const withoutSupportedClis = policy();
     delete (withoutSupportedClis.governance as Record<string, unknown>).supportedClis;
     expect(explicitEccMcpRenderPlan(withoutSupportedClis, "memxus", "claude").id).toBe("memxus");
@@ -141,6 +153,28 @@ describe("explicit ECC HTTPS MCP render plan", () => {
         records: [{ ...record, config: { ...record.config, path: "operator/path" } }],
       }),
     ).toThrow(/records/);
+    // A record made for other ECC content is kept, never dropping the whole receipt (D74).
+    const previous = {
+      ...record,
+      catalog: { ...record.catalog, commit: PREVIOUS_COMMIT, contentSha256: PREVIOUS_CONTENT },
+    };
+    expect(parseExplicitAddReceipt({ ...emptyExplicitAddReceipt(), records: [previous] })).toEqual({
+      ...emptyExplicitAddReceipt(),
+      records: [previous],
+    });
+    for (const catalog of [
+      { ...record.catalog, contentSha256: "0".repeat(63) },
+      { ...record.catalog, commit: "short" },
+      { ...record.catalog, repository: "someone/else" },
+      { ...record.catalog, path: "other.json" },
+    ]) {
+      expect(() =>
+        parseExplicitAddReceipt({
+          ...emptyExplicitAddReceipt(),
+          records: [{ ...record, catalog }],
+        }),
+      ).toThrow(/records/);
+    }
   });
 });
 
@@ -490,6 +524,53 @@ describe("project-local explicit ECC MCP lifecycle", () => {
     );
     symlinkSync(join(root, "outside"), config);
     expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("unsafe-path");
+  });
+
+  it("labels a receipt record made for other ECC content stale, and re-Add replaces it (D74)", async () => {
+    const { root, home } = fixture();
+    const receiptPath = join(root, ".aih", "ecc-mcp-explicit-add-v1.json");
+    await executePlan(
+      planExplicitEccMcpAdd({ root, policy: policy(), id: "memxus", target: "claude" }),
+      context(root, home, true),
+    );
+    const current = JSON.parse(readFileSync(receiptPath, "utf8"));
+    const record = current.records[0];
+    writeFileSync(
+      receiptPath,
+      JSON.stringify({
+        ...current,
+        records: [
+          {
+            ...record,
+            catalog: {
+              ...record.catalog,
+              commit: PREVIOUS_COMMIT,
+              contentSha256: PREVIOUS_CONTENT,
+            },
+          },
+        ],
+      }),
+    );
+    expect(readExplicitEccMcpReceiptStates({ root, home })).toEqual([
+      {
+        id: "memxus",
+        target: "claude",
+        state: "stale",
+        detail: `recorded for ECC content ${PREVIOUS_CONTENT}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-add with aih ecc mcp add memxus --cli claude`,
+      },
+    ]);
+    // A stale record authorizes nothing: Remove reports and leaves the configuration.
+    const config = readFileSync(join(root, ".mcp.json"), "utf8");
+    const remove = planExplicitEccMcpRemove({ root, home, id: "memxus", target: "claude" });
+    expect(JSON.stringify(remove.actions)).toContain("no exact receipt-owned ECC MCP record");
+    expect(readFileSync(join(root, ".mcp.json"), "utf8")).toBe(config);
+    // Re-Add under a current approval replaces the stale record and its unchanged entry.
+    await executePlan(
+      planExplicitEccMcpAdd({ root, policy: policy(), id: "memxus", target: "claude" }),
+      context(root, home, true),
+    );
+    expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toEqual(current);
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("clean");
   });
 
   it("pins add against a plan-to-apply config race and writes no receipt", async () => {
