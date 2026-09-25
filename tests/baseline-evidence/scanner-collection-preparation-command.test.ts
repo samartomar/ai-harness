@@ -387,6 +387,35 @@ describe("definition route (a pin the installed Catalog does not carry)", () => 
     );
   });
 
+  it.each(["disjoint", "compiler-catalog"] as const)(
+    "forwards the named %s overlap mode to the definition coverage",
+    async (overlap) => {
+      const current = fixture();
+      current.args[1] = "ecc";
+      mocks.gitHead.mockReturnValue("c".repeat(40));
+      mocks.definitionCoverage.mockReturnValue({ catalog: { id: "ecc" } });
+      mocks.prepare.mockResolvedValue({ kind: "opaque-test-fixture" });
+      mocks.author.mockReturnValue(sealedReport);
+      await prepareWorkbenchCollectionEvidenceCommandV1([
+        ...current.args,
+        "--definition-overlap",
+        overlap,
+        "--definition",
+        "definition.json",
+        "--source-bundle",
+        "bundle.json",
+      ]);
+      expect(mocks.definitionCoverage).toHaveBeenCalledWith({
+        sourceRoot: current.args[3],
+        catalogId: "ecc",
+        definitionPath: resolve("definition.json"),
+        head: "c".repeat(40),
+        sourceBundlePath: resolve("bundle.json"),
+        overlap,
+      });
+    },
+  );
+
   it("stops before any publication is read when the definition is refused", async () => {
     const current = fixture();
     mocks.gitHead.mockReturnValue("c".repeat(40));
@@ -410,6 +439,11 @@ describe("definition route (a pin the installed Catalog does not carry)", () => 
     ["a definition without its candidate bundle", ["--definition", "d.json"]],
     ["a candidate bundle without its definition", ["--source-bundle", "b.json"]],
     ["a vendor lock without a definition", ["--vendor-lock", "l.json"]],
+    ["an overlap mode without a definition", ["--definition-overlap", "compiler-catalog"]],
+    [
+      "an unknown overlap mode",
+      ["--definition", "d.json", "--source-bundle", "b.json", "--definition-overlap", "any"],
+    ],
     [
       "a repeated definition flag",
       ["--definition", "d.json", "--source-bundle", "b.json", "--definition", "e.json"],

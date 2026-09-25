@@ -25,12 +25,13 @@ import { packagedPreparedWorkbenchCatalogV1 } from "../org-policy/workbench/prep
 import { readRegularFileWithStats } from "./fsxn.js";
 
 const usage =
-  "Usage: prepare-workbench-collection-evidence --catalog <aih|mattpocock|ponytail|ecc|superpowers> --source <pinned-checkout> --publication-root <batch-directories> --output <new-json-file> [--qualification-output <new-json-file>] [--definition <baseline-definition> --source-bundle <catalog-compiled-single-source-bundle> [--vendor-lock <assembled-lock>]]";
+  "Usage: prepare-workbench-collection-evidence --catalog <aih|mattpocock|ponytail|ecc|superpowers> --source <pinned-checkout> --publication-root <batch-directories> --output <new-json-file> [--qualification-output <new-json-file>] [--definition <baseline-definition> --source-bundle <catalog-compiled-single-source-bundle> [--vendor-lock <assembled-lock>] [--definition-overlap <disjoint|compiler-catalog>]]";
 const optionalFlags = [
   "--qualification-output",
   "--definition",
   "--source-bundle",
   "--vendor-lock",
+  "--definition-overlap",
 ];
 const releaseFiles = ["SHA256SUMS", "discovery.json", "inspection.json", "publication.json"];
 const MAX_QUALIFICATION_DRAFT_BYTES = 1024 * 1024;
@@ -252,9 +253,14 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
   const definitionPath = optional.get("--definition");
   const sourceBundlePath = optional.get("--source-bundle");
   const vendorLockPath = optional.get("--vendor-lock");
+  // Absent, the definition coverage keeps its default (`disjoint`); `compiler-catalog`
+  // must be named, and it still refuses overlap inside one component.
+  const overlap = optional.get("--definition-overlap");
   if (
     (definitionPath === undefined) !== (sourceBundlePath === undefined) ||
-    (vendorLockPath !== undefined && definitionPath === undefined)
+    (vendorLockPath !== undefined && definitionPath === undefined) ||
+    (overlap !== undefined &&
+      (definitionPath === undefined || (overlap !== "disjoint" && overlap !== "compiler-catalog")))
   )
     throw new TypeError(usage);
   const catalogId = args[1];
@@ -290,6 +296,7 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
           head: gitHead(args[3] as string),
           sourceBundlePath: resolve(sourceBundlePath),
           ...(vendorLockPath === undefined ? {} : { vendorLockPath: resolve(vendorLockPath) }),
+          ...(overlap === undefined ? {} : { overlap }),
         });
   const material = readWorkbenchCollectionPublicationMaterialV1(
     args[3] as string,
