@@ -337,8 +337,21 @@ function catalogIdentity(catalog: BaselineCatalog): string {
   })}`;
 }
 
-function installedCarriedCatalog(id: DefinitionSourceId): BaselineCatalog | undefined {
-  if (SCANNER_DEFINITION_SOURCES_V1[id].kind === "framework") return baselineCatalogById(id);
+/**
+ * The installed Catalog's catalog for one subject. A framework's is the DECLARED definition
+ * the accepted descriptor states for that pin (D79), read at the checkout that decides which
+ * components its material makes skill content; the resolver always has that checkout.
+ */
+function installedCarriedCatalog(
+  id: DefinitionSourceId,
+  sourceRoot: string | undefined,
+): BaselineCatalog | undefined {
+  if (SCANNER_DEFINITION_SOURCES_V1[id].kind === "framework")
+    return sourceRoot === undefined
+      ? baselineCatalogById(id)
+      : baselineCatalogById(id, undefined, {
+          sourceRoot,
+        });
   const input = registeredCollectionInputV1(id);
   return input === undefined ? undefined : collectionBaselineCatalogV1(input);
 }
@@ -399,7 +412,10 @@ function resolveDefinition(
     fail(`unknown overlap mode ${JSON.stringify(overlap)}`);
   assertComponentPaths(input.sourceRoot, catalog, overlap);
 
-  const carried = (deps.carriedCatalog ?? installedCarriedCatalog)(id);
+  const carried = (
+    deps.carriedCatalog ??
+    ((carriedId: DefinitionSourceId) => installedCarriedCatalog(carriedId, input.sourceRoot))
+  )(id);
   const collectionInput = collection === undefined ? {} : { collection: collection.input };
   if (carried === undefined || carried.pinnedSha !== catalog.pinnedSha)
     return { resolution: { route: "definition", catalog }, id, ...collectionInput };
