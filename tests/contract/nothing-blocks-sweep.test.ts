@@ -310,6 +310,16 @@ describe("nothing blocks (D50 sweep)", () => {
     }
   });
 
+  it("decides a requested org-policy candidate's effect from no finding label", () => {
+    const text = readFileSync(join(root, "src/org-policy/effective.ts"), "utf8");
+    const match = text.match(/const hasFencedDanger = ([^;]+);\s*const effective =([^;]+);/);
+    expect(match, "effective computation not found in src/org-policy/effective.ts").not.toBeNull();
+    expect(match?.[1]).toContain("isFencedPrerequisite");
+    expect(match?.[2]).not.toMatch(
+      /\b(findings|evidenceProblems|decisionNotes|uniqueDangerCodes|verdict|riskState)\b/,
+    );
+  });
+
   it("promotes past every finding and evidence problem in the trust class table", () => {
     const orgConfigured = new Set(["trust.untrusted-publisher", "trust.unsigned-source"]);
     const table = trustCodeTable();
