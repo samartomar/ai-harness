@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
+import { candidateCatalogActiveV1 } from "../catalog-package/load-catalog-package.js";
 import { type BaselineEvidenceLock, parseBaselineEvidenceLock } from "./schema.js";
 
 interface VendorLockDocumentV1 {
@@ -23,7 +24,8 @@ export function admitCatalogVendorLockDocumentV1(carried: VendorLockDocumentV1):
   if (observed !== carried.sha256) {
     throw new TypeError("Catalog ECC vendor-lock document digest mismatch");
   }
-  if (observed !== ACCEPTED_CATALOG_VENDOR_LOCK_SHA256_V1) {
+  // An activated candidate's named digest stands in for Core's (internal preparation only).
+  if (!candidateCatalogActiveV1() && observed !== ACCEPTED_CATALOG_VENDOR_LOCK_SHA256_V1) {
     throw new TypeError(`Catalog ECC vendor-lock authority sha256 ${observed} is not accepted`);
   }
   return decoded;

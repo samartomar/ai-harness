@@ -5,6 +5,8 @@ import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-d
 import {
   assertStrictJsonValueV1,
   canonicalStrictJsonSha256V1,
+  cloneJsonValueStructureV1,
+  STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
 import { POLICY_AUTHORING_ASSET_KINDS } from "../org-policy/catalog-provider-types.js";
 import { packagedPreparedWorkbenchCatalogV1 } from "../org-policy/workbench/prepared-catalog.js";
@@ -74,7 +76,13 @@ function closurePaths(paths: readonly string[]) {
 }
 
 /** Bind existing baseline compiler declarations to actual bytes, never to claimed verdicts. */
-export function prepareSourceDataBaselineCoverageV1(sourceRoot: string, input: unknown) {
+export function prepareSourceDataBaselineCoverageV1(sourceRoot: string, supplied: unknown) {
+  // A copy read through descriptors, so schema parsing never invokes a caller's getter.
+  const input = cloneJsonValueStructureV1(
+    supplied,
+    "Baseline source data",
+    STRICT_JSON_MAX_DEPTH_V1,
+  );
   assertStrictJsonValueV1(input, "Baseline source data");
   const parsed = SourceDataBaselineInputV1Schema.parse(input);
   const framework = parsed.framework;

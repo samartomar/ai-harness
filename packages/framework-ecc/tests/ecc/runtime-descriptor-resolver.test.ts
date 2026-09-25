@@ -155,7 +155,16 @@ const catalog: CatalogPackageAccessV1 = {
       code: "MODULE_NOT_FOUND",
     });
   },
+  rootManifestPath: () => {
+    // No enclosing node_modules holds the package.
+    throw Object.assign(new Error("Cannot find package '@aihq/catalog' imported from /fixture"), {
+      code: "ERR_MODULE_NOT_FOUND",
+    });
+  },
   readFile: () => {
+    throw new Error("unreachable");
+  },
+  listDirectory: () => {
     throw new Error("unreachable");
   },
 };

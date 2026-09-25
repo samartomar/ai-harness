@@ -1,0 +1,249 @@
+{
+  "components": [
+    {
+      "id": "runtime:agents-2b6873defee3",
+      "paths": [
+        ".agents"
+      ]
+    },
+    {
+      "id": "runtime:assets-8bf729ffe074",
+      "paths": [
+        "assets"
+      ]
+    },
+    {
+      "id": "runtime:benchmarks-cb1d2fdcc86c",
+      "paths": [
+        "benchmarks"
+      ]
+    },
+    {
+      "id": "runtime:claude-plugin-216ddf49c509",
+      "paths": [
+        ".claude-plugin"
+      ]
+    },
+    {
+      "id": "runtime:clinerules-327ad2697caf",
+      "paths": [
+        ".clinerules"
+      ]
+    },
+    {
+      "id": "runtime:codex-plugin-22d18f2daf51",
+      "paths": [
+        ".codex-plugin"
+      ]
+    },
+    {
+      "id": "runtime:commands-10f5f77eef9a",
+      "paths": [
+        "commands"
+      ]
+    },
+    {
+      "id": "runtime:cursor-86ec29493134",
+      "paths": [
+        ".cursor"
+      ]
+    },
+    {
+      "id": "runtime:devin-plugin-84ef37c38a65",
+      "paths": [
+        ".devin-plugin"
+      ]
+    },
+    {
+      "id": "runtime:docs-46b42b4229cd",
+      "paths": [
+        "docs"
+      ]
+    },
+    {
+      "id": "runtime:examples-c590b3c924c3",
+      "paths": [
+        "examples"
+      ]
+    },
+    {
+      "id": "runtime:github-bdcc6a2a85f6",
+      "paths": [
+        ".github"
+      ]
+    },
+    {
+      "id": "runtime:grok-plugin-a49f62293fd0",
+      "paths": [
+        ".grok-plugin"
+      ]
+    },
+    {
+      "id": "runtime:hooks-a9fa9fda98d7",
+      "paths": [
+        "hooks"
+      ]
+    },
+    {
+      "id": "runtime:kiro-0b4f1539bf94",
+      "paths": [
+        ".kiro"
+      ]
+    },
+    {
+      "id": "runtime:opencode-5e2dd251c591",
+      "paths": [
+        ".opencode"
+      ]
+    },
+    {
+      "id": "runtime:pi-extension-48fb599660de",
+      "paths": [
+        "pi-extension"
+      ]
+    },
+    {
+      "id": "runtime:ponytail-mcp-1ec79541862c",
+      "paths": [
+        "ponytail-mcp"
+      ]
+    },
+    {
+      "id": "runtime:qoder-953838d6a07c",
+      "paths": [
+        ".qoder"
+      ]
+    },
+    {
+      "id": "runtime:qoder-plugin-8c9bc0997a06",
+      "paths": [
+        ".qoder-plugin"
+      ]
+    },
+    {
+      "id": "runtime:root-4813494d137e",
+      "paths": [
+        ".env.example",
+        ".gitignore",
+        "AGENTS.md",
+        "LICENSE",
+        "README.es.md",
+        "README.ko.md",
+        "README.md",
+        "__init__.py",
+        "after-install.md",
+        "gemini-extension.json",
+        "opencode.json",
+        "package.json",
+        "plugin.json",
+        "plugin.yaml"
+      ]
+    },
+    {
+      "id": "runtime:scripts-8c5967fd8486",
+      "paths": [
+        "scripts"
+      ]
+    },
+    {
+      "id": "runtime:tests-59830ebc3a41",
+      "paths": [
+        "tests"
+      ]
+    },
+    {
+      "id": "runtime:windsurf-3dea8547906d",
+      "paths": [
+        ".windsurf"
+      ]
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-339f269e7984",
+      "paths": [
+        ".openclaw/skills/ponytail"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-audit-c2801ddb4e92",
+      "paths": [
+        ".openclaw/skills/ponytail-audit"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-debt-623362e6e5df",
+      "paths": [
+        ".openclaw/skills/ponytail-debt"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-gain-521ca1b047c4",
+      "paths": [
+        ".openclaw/skills/ponytail-gain"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-help-3b3c11679135",
+      "paths": [
+        ".openclaw/skills/ponytail-help"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-review-0b7db4e60dc1",
+      "paths": [
+        ".openclaw/skills/ponytail-review"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-ponytail-audit-0d2f67855434",
+      "paths": [
+        "skills/ponytail-audit"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-ponytail-bff0420d5308",
+      "paths": [
+        "skills/ponytail"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-ponytail-debt-4239beda66e5",
+      "paths": [
+        "skills/ponytail-debt"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-ponytail-gain-ad9decf3912a",
+      "paths": [
+        "skills/ponytail-gain"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-ponytail-help-6d8337128315",
+      "paths": [
+        "skills/ponytail-help"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-ponytail-review-69a9d8ab505b",
+      "paths": [
+        "skills/ponytail-review"
+      ],
+      "skillContent": true
+    }
+  ],
+  "id": "ponytail",
+  "owner": "DietrichGebert",
+  "pinnedSha": "1d95ff7d39de12d87014ea40d4e22201bddc501b",
+  "repo": "ponytail"
+}

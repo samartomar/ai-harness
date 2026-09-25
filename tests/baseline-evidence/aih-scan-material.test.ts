@@ -1168,6 +1168,34 @@ describe("AIH scan material", () => {
     });
   });
 
+  it("refuses a deeply nested discovery document typed, before any recursive parse or attestation", async () => {
+    const outputParent = temporaryDirectory("aih-scan-material-deep-discovery-");
+    let refusal: unknown;
+    try {
+      await prepareAihScannerPublicationsV1({
+        packageRoot: resolve("."),
+        materialOutputParent: outputParent,
+        coreRevision: { pinnedSha: currentRevision() },
+        catalog: policyAuthoringCatalog(),
+        compiled: aihScannerCompilationFromCatalogV1(),
+        // 8,000 opening brackets fit the discovery byte limit.
+        batches: [
+          {
+            discoveryBytes: Buffer.from(`{"x":${"[".repeat(8_000)}`),
+            publicationBytes: Buffer.from("{}"),
+          },
+        ],
+        now: "2026-09-07T12:10:00.000Z",
+      });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(TypeError);
+    expect((refusal as Error).message).toBe("publication discovery nests deeper than 32 levels");
+    expect(readdirSync(outputParent)).toEqual([]);
+    expect(mocks.defaultRunner).not.toHaveBeenCalled();
+  });
+
   it("uses the process-owned attestation verifier after materializing from a real Core pin", async () => {
     const outputParent = temporaryDirectory("aih-scan-material-preparation-");
     const catalog = policyAuthoringCatalog();

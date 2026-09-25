@@ -9,10 +9,17 @@ import {
   assertAcquiredGithubSourceMaterialPathsV1,
   isKnownAcquiredGithubSourceRootV1,
 } from "../internals/bounded-github-source-archive.js";
-import { defineBaselineCatalog } from "./catalog.js";
+import { restoreSourceCompilerTemplateV1 } from "../internals/workbench-source-data-material.js";
+import { verifyAuthoringCatalogBundleIntegrityV1 } from "../org-policy/workbench/catalog-integrity.js";
+import {
+  type AuthoringCatalogBundleV1,
+  AuthoringCatalogBundleV1Schema,
+} from "../org-policy/workbench/contracts.js";
+import { type BaselineCatalog, defineBaselineCatalog } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { hashComponentTree, hashSourceTree } from "./hash.js";
 import { componentIdentityPaths } from "./license.js";
+import type { BaselineSourceEvidence } from "./schema.js";
 import { readVendorBaselineLock } from "./vendor.js";
 
 interface PinnedFileV1 {
@@ -35,7 +42,7 @@ export interface CollectionInput {
     readonly fileRefs: readonly string[];
   }[];
 }
-type BaselineProviderId = "ecc" | "superpowers";
+export type BaselineProviderId = "ecc" | "superpowers";
 
 function collectionInputsV1(): Readonly<Record<string, CollectionInput>> {
   const material = loadCatalogCoreMaterialV1("scannerProviders");
@@ -46,12 +53,42 @@ function collectionInputsV1(): Readonly<Record<string, CollectionInput>> {
   return structuredClone(collections) as Readonly<Record<string, CollectionInput>>;
 }
 
-function admittedSourceV1(sourceId: string) {
-  const bundle = loadCatalogAuthoringBundleV1().prepared.bundle;
+function admittedFromBundleV1(bundle: AuthoringCatalogBundleV1, sourceId: string) {
   const source = bundle.sources[sourceId];
   if (source === undefined) fail(`missing admitted source ${sourceId}`);
   const assets = Object.values(bundle.assets).filter((asset) => asset.sourceId === sourceId);
   return { source, assets };
+}
+
+/** One source and its compiled assets, as a Catalog authoring bundle admits them. */
+export type AdmittedCatalogSourceV1 = ReturnType<typeof admittedFromBundleV1>;
+
+function admittedSourceV1(sourceId: string): AdmittedCatalogSourceV1 {
+  return admittedFromBundleV1(loadCatalogAuthoringBundleV1().prepared.bundle, sourceId);
+}
+
+/**
+ * A Catalog-compiled single-source bundle supplied as a file (a candidate at a pin the
+ * installed Catalog does not carry). Core's own schema and integrity checks apply; the
+ * bundle must carry exactly the one requested source and no other.
+ */
+export function admittedSourceFromCandidateBundleV1(
+  value: unknown,
+  sourceId: string,
+): AdmittedCatalogSourceV1 {
+  let bundle: AuthoringCatalogBundleV1;
+  try {
+    bundle = AuthoringCatalogBundleV1Schema.parse(value);
+    verifyAuthoringCatalogBundleIntegrityV1(bundle);
+  } catch (error) {
+    return fail(
+      `candidate source bundle is malformed or unsealed (${error instanceof Error ? error.message : error})`,
+    );
+  }
+  const ids = Object.keys(bundle.sources);
+  if (ids.length !== 1 || ids[0] !== sourceId)
+    fail(`candidate source bundle must carry exactly ${sourceId}, not ${ids.join(", ") || "none"}`);
+  return admittedFromBundleV1(bundle, sourceId);
 }
 
 function fail(message: string): never {
@@ -61,14 +98,29 @@ function fail(message: string): never {
 function exactPinnedBaselineCoverageV1(sourceRoot: string, id: BaselineProviderId) {
   const sourceSnapshot = readVendorBaselineLock().sources.find((source) => source.id === id);
   if (sourceSnapshot === undefined) fail("missing vetted source snapshot");
-  const catalog = baselineCatalogById(id, sourceSnapshot.pinnedSha);
+  return baselineCoverageV1(
+    sourceRoot,
+    id,
+    baselineCatalogById(id, sourceSnapshot.pinnedSha),
+    sourceSnapshot,
+    admittedSourceV1(`source:${id}`),
+  );
+}
+
+/** Framework coverage: the checkout must equal the vetted snapshot, component by component. */
+export function baselineCoverageV1(
+  sourceRoot: string,
+  id: BaselineProviderId,
+  catalog: BaselineCatalog,
+  sourceSnapshot: BaselineSourceEvidence,
+  admitted: AdmittedCatalogSourceV1,
+) {
   if (
     catalog.owner !== sourceSnapshot.owner ||
     catalog.repo !== sourceSnapshot.repo ||
     catalog.pinnedSha !== sourceSnapshot.pinnedSha
   )
     fail("baseline source identity");
-  const admitted = admittedSourceV1(`source:${id}`);
   const sourceTreeSha256 = hashSourceTree(sourceRoot).treeSha256;
   if (sourceTreeSha256 !== sourceSnapshot.sourceTreeSha256)
     fail("source tree differs from vetted snapshot");
@@ -150,7 +202,7 @@ function exactPinnedBaselineCoverageV1(sourceRoot: string, id: BaselineProviderI
     coverageDigest: `sha256:${canonicalStrictJsonSha256V1(coverage)}`,
   };
 }
-function enforceAcquiredCoveragePathsV1<
+export function enforceAcquiredCoveragePathsV1<
   T extends Readonly<{
     catalog: Readonly<{ owner: string; repo: string; pinnedSha: string }>;
     coverage: Readonly<{ components: readonly Readonly<{ paths: readonly string[] }>[] }>;
@@ -171,26 +223,18 @@ function enforceAcquiredCoveragePathsV1<
     fail("declared source material overlaps an omitted archive link");
   return prepared;
 }
-/**
- * Verify the selected snapshot bytes against a materialized upstream checkout.
- * The Scanner source hash describes the WHOLE supplied tree; component hashes
- * describe the declared file sets. Neither is the compiler's collection digest.
- * The returned mapping is a non-authoritative input to later verified consumption.
- */
-export function prepareCollectionScannerCoverageV1(sourceRoot: string, input: CollectionInput) {
-  const repository = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(
-    input.source.repository,
-  );
-  if (!repository)
-    throw new TypeError("Scanner collection requires an exact GitHub source repository.");
-  const files =
-    input.version === "pinned-skill-collection/v1"
-      ? [
-          ...(input.license === undefined ? [] : [input.license]),
-          ...(input.skills ?? []).flatMap((skill) => skill.files),
-        ]
-      : (input.files ?? []);
-  for (const file of files) {
+export function collectionFilesV1(input: CollectionInput): readonly PinnedFileV1[] {
+  return input.version === "pinned-skill-collection/v1"
+    ? [
+        ...(input.license === undefined ? [] : [input.license]),
+        ...(input.skills ?? []).flatMap((skill) => skill.files),
+      ]
+    : (input.files ?? []);
+}
+
+/** Reject a checkout whose bytes differ from the reviewed snapshot, before any hashing of the tree. */
+export function assertCollectionSnapshotBytesV1(sourceRoot: string, input: CollectionInput): void {
+  for (const file of collectionFilesV1(input)) {
     // Reject linked ancestors as well as linked leaf files before hashing.
     let path = resolve(sourceRoot);
     for (const part of file.path.split("/")) {
@@ -208,6 +252,15 @@ export function prepareCollectionScannerCoverageV1(sourceRoot: string, input: Co
     )
       throw new TypeError(`Scanner source differs from reviewed snapshot bytes: ${file.path}`);
   }
+}
+
+/** The Scanner catalog a pinned collection declares; it reads no checkout bytes. */
+export function collectionBaselineCatalogV1(input: CollectionInput): BaselineCatalog {
+  const repository = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(
+    input.source.repository,
+  );
+  if (!repository)
+    throw new TypeError("Scanner collection requires an exact GitHub source repository.");
   const components =
     input.version === "pinned-skill-collection/v1"
       ? (input.skills ?? []).map((skill) => ({
@@ -223,7 +276,7 @@ export function prepareCollectionScannerCoverageV1(sourceRoot: string, input: Co
             ? { skillContent: true as const }
             : {}),
         }));
-  const catalog = defineBaselineCatalog({
+  return defineBaselineCatalog({
     id: input.source.id,
     owner: repository[1],
     repo: repository[2],
@@ -232,25 +285,146 @@ export function prepareCollectionScannerCoverageV1(sourceRoot: string, input: Co
       .map((component) => ({ ...component, paths: [...component.paths].sort(codeUnitCompare) }))
       .sort((a, b) => codeUnitCompare(a.id, b.id)),
   });
-  const admitted = admittedSourceV1(`source:${input.source.id}`);
+}
+
+/**
+ * Verify the selected snapshot bytes against a materialized upstream checkout.
+ * The Scanner source hash describes the WHOLE supplied tree; component hashes
+ * describe the declared file sets. Neither is the compiler's collection digest.
+ * The returned mapping is a non-authoritative input to later verified consumption.
+ */
+export function prepareCollectionScannerCoverageV1(sourceRoot: string, input: CollectionInput) {
+  assertCollectionSnapshotBytesV1(sourceRoot, input);
+  return collectionCoverageV1(sourceRoot, input, admittedSourceV1(`source:${input.source.id}`));
+}
+
+/** Collection coverage over already verified snapshot bytes and one admitted Catalog source. */
+export function collectionCoverageV1(
+  sourceRoot: string,
+  input: CollectionInput,
+  admitted: AdmittedCatalogSourceV1,
+) {
+  const catalog = collectionBaselineCatalogV1(input);
   if (admitted.source.revision.id !== input.source.commit) {
     throw new TypeError("Scanner source differs from the admitted Catalog revision.");
   }
+  return declaredCollectionCoverageV1(
+    sourceRoot,
+    catalog,
+    `sha256:${canonicalStrictJsonSha256V1(input)}`,
+    input.source.repository,
+    admitted,
+  );
+}
+
+/**
+ * Collection coverage when the Scanner requests were authored from the disjoint
+ * whole-repository inventory (`--definition` in inventory form). The coverage partition is
+ * that inventory itself, so the expected publication layout equals the requests T1 authored,
+ * and every inventory component keeps its scan coverage whatever its asset count. Compiled
+ * assets bind zero-to-many: each upstream asset of the admitted source belongs to the one
+ * component whose scanned files hold its original path, and an asset no component scans is
+ * refused, never mapped. A documentation or runtime component with no asset is still
+ * covered by its scan; derived assets stay unmapped.
+ */
+export function inventoryCollectionCoverageV1(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+  admitted: AdmittedCatalogSourceV1,
+) {
+  if (admitted.source.revision.id !== catalog.pinnedSha) {
+    throw new TypeError("Scanner source differs from the admitted Catalog revision.");
+  }
+  const components = catalog.components.map((component) => {
+    const material = hashComponentTree(sourceRoot, component.paths);
+    return {
+      componentId: component.id,
+      componentTreeSha256: material.treeSha256,
+      paths: component.paths,
+      files: material.files.map((file) => ({ path: file.path, digest: `sha256:${file.sha256}` })),
+      subjects: [] as ReturnType<typeof assetSubjectV1>[],
+    };
+  });
+  const upstream = admitted.assets
+    .filter((asset) => asset.derivation === "upstream")
+    .sort((left, right) => codeUnitCompare(left.id, right.id));
+  for (const asset of upstream) {
+    const owners = components.filter((component) =>
+      component.files.some((file) => file.path === asset.originalPath),
+    );
+    if (owners.length !== 1)
+      fail(
+        `admitted upstream asset ${asset.id} names ${asset.originalPath}, which ${owners.length === 0 ? "no inventory component scans" : "more than one inventory component scans"}`,
+      );
+    owners[0]?.subjects.push(assetSubjectV1(asset));
+  }
   const coverage = {
+    ...collectionCoverageHeaderV1(
+      sourceRoot,
+      catalog,
+      `sha256:${canonicalStrictJsonSha256V1(catalog)}`,
+      `https://github.com/${catalog.owner}/${catalog.repo}`,
+      admitted,
+    ),
+    components,
+    unmappedDerivedAssets: unmappedDerivedAssetsV1(admitted),
+  };
+  return { catalog, coverage, coverageDigest: `sha256:${canonicalStrictJsonSha256V1(coverage)}` };
+}
+
+/** A compiled asset's identity, as a coverage component names it. */
+function assetSubjectV1(declaration: AdmittedCatalogSourceV1["assets"][number]) {
+  return {
+    assetId: declaration.id,
+    sourceId: declaration.sourceId,
+    sourceRevisionId: declaration.sourceRevisionId,
+    contentDigest: declaration.contentDigest,
+  };
+}
+
+// Derived compositions need their own Core composition check. Never invent
+// another upstream component or silently inherit a constituent's scan pass.
+function unmappedDerivedAssetsV1(admitted: AdmittedCatalogSourceV1): string[] {
+  return admitted.assets
+    .filter((declaration) => declaration.derivation !== "upstream")
+    .map((declaration) => declaration.id)
+    .sort(codeUnitCompare);
+}
+
+function collectionCoverageHeaderV1(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+  compilerInputDigest: string,
+  repository: string,
+  admitted: AdmittedCatalogSourceV1,
+) {
+  return {
     version: "workbench-scanner-coverage/v1" as const,
     authority: "none" as const,
     scope: "declared-source-files" as const,
-    compilerInputDigest: `sha256:${canonicalStrictJsonSha256V1(input)}`,
+    compilerInputDigest,
     source: {
       id: admitted.source.id,
       revisionId: admitted.source.revision.id,
       contentDigest: admitted.source.revision.contentDigest,
-      repository: input.source.repository,
+      repository,
       inputFormat: admitted.source.inputFormat,
     },
     repository: `${catalog.owner}/${catalog.repo}`,
     pinnedCommit: catalog.pinnedSha,
     sourceTreeSha256: hashSourceTree(sourceRoot).treeSha256,
+  };
+}
+
+function declaredCollectionCoverageV1(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+  compilerInputDigest: string,
+  repository: string,
+  admitted: AdmittedCatalogSourceV1,
+) {
+  const coverage = {
+    ...collectionCoverageHeaderV1(sourceRoot, catalog, compilerInputDigest, repository, admitted),
     components: catalog.components.map((component) => {
       const declaration = admitted.assets.find(
         (candidate) => candidate.id === `${catalog.id}/${component.id}`,
@@ -266,22 +440,33 @@ export function prepareCollectionScannerCoverageV1(sourceRoot: string, input: Co
           path: file.path,
           digest: `sha256:${file.sha256}`,
         })),
-        subject: {
-          assetId: declaration.id,
-          sourceId: declaration.sourceId,
-          sourceRevisionId: declaration.sourceRevisionId,
-          contentDigest: declaration.contentDigest,
-        },
+        subject: assetSubjectV1(declaration),
       };
     }),
-    // Derived compositions need their own Core composition check. Never invent
-    // another upstream component or silently inherit a constituent's scan pass.
-    unmappedDerivedAssets: admitted.assets
-      .filter((declaration) => declaration.derivation !== "upstream")
-      .map((declaration) => declaration.id)
-      .sort(codeUnitCompare),
+    unmappedDerivedAssets: unmappedDerivedAssetsV1(admitted),
   };
   return { catalog, coverage, coverageDigest: `sha256:${canonicalStrictJsonSha256V1(coverage)}` };
+}
+
+/** The collection input the installed Catalog registers for an id, if any. */
+export function registeredCollectionInputV1(id: string): CollectionInput | undefined {
+  const collections = collectionInputsV1();
+  return Object.hasOwn(collections, id) ? collections[id] : undefined;
+}
+
+/**
+ * The Catalog may register a collection as a compiler template whose file bytes are
+ * references (path, size, sha256) into the upstream checkout. Restore them from the
+ * checkout, size- and digest-checked, so the snapshot comparison sees real bytes.
+ */
+function restoredCollectionInputV1(sourceRoot: string, input: CollectionInput): CollectionInput {
+  try {
+    return restoreSourceCompilerTemplateV1(input, sourceRoot) as CollectionInput;
+  } catch (error) {
+    throw new TypeError(
+      `Scanner source differs from reviewed snapshot bytes (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
 }
 
 export function prepareRegisteredScannerCatalogV1(sourceRoot: string, id: string) {
@@ -290,7 +475,10 @@ export function prepareRegisteredScannerCatalogV1(sourceRoot: string, id: string
   if (collection)
     return enforceAcquiredCoveragePathsV1(
       sourceRoot,
-      prepareCollectionScannerCoverageV1(sourceRoot, collection),
+      prepareCollectionScannerCoverageV1(
+        sourceRoot,
+        restoredCollectionInputV1(sourceRoot, collection),
+      ),
     );
   if (id === "ecc" || id === "superpowers")
     return enforceAcquiredCoveragePathsV1(

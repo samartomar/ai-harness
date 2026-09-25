@@ -127,7 +127,86 @@ function sealedFixture(bundle: AuthoringCatalogBundleV1) {
   };
 }
 
+/**
+ * The same record as an inventory partition: the first component's scan covers both compiled
+ * assets, the second covers none and is still a scanned, observed component.
+ */
+function inventoryFixture(
+  bundle: AuthoringCatalogBundleV1,
+  subjects?: (all: unknown[]) => unknown[][],
+) {
+  const record = sealedFixture(bundle);
+  const all = record.coverage.components.map((component) => component.subject);
+  const bound = subjects?.(all) ?? [all, []];
+  const coverage = {
+    ...record.coverage,
+    components: record.coverage.components.map(({ subject: _subject, ...component }, index) => ({
+      ...component,
+      subjects: bound[index],
+    })),
+  };
+  return {
+    ...record,
+    catalog: {
+      ...record.catalog,
+      coverageProjectionDigest: `sha256:${canonicalStrictJsonSha256V1({ version: "packaged-coverage-projection/v1", coverage })}`,
+    },
+    coverage,
+  };
+}
+
 beforeEach(() => records.splice(0));
+
+describe("packaged collection evidence for an inventory partition", () => {
+  it("projects each compiled asset from the one component whose scan covers it", () => {
+    const bundle = tinyBackendCatalogFixture().workbenchBundle;
+    records.push(encodePackagedScannerCollectionEvidenceRecordV1(inventoryFixture(bundle)));
+    const overlay = packagedScannerCollectionOverlayV1(bundle);
+    expect(Object.keys(overlay).sort()).toEqual([
+      "evidence:fixture:control",
+      "evidence:fixture:external",
+    ]);
+    for (const id of ["fixture:control", "fixture:external"])
+      expect(overlay[`evidence:${id}`]).toMatchObject({
+        subjects: [expect.objectContaining({ assetId: id })],
+        coveredPaths: ["catalog.json"],
+        scan: { outcome: "pass", coverage: "complete", reportSignedAt: "2026-06-01T00:00:00.000Z" },
+      });
+    expect(overlay["evidence:fixture:control"]?.evidenceDigest).not.toBe(
+      overlay["evidence:fixture:external"]?.evidenceDigest,
+    );
+  });
+
+  it("refuses an asset bound twice, out-of-order subjects, and both subject forms at once", () => {
+    const bundle = tinyBackendCatalogFixture().workbenchBundle;
+    expect(() =>
+      encodePackagedScannerCollectionEvidenceRecordV1(
+        inventoryFixture(bundle, (all) => [all, [all[0]]]),
+      ),
+    ).toThrow(/coverage asset bound twice/);
+    expect(() =>
+      encodePackagedScannerCollectionEvidenceRecordV1(
+        inventoryFixture(bundle, (all) => [[all[0], all[0]], []]),
+      ),
+    ).toThrow(/coverage asset bound twice/);
+    expect(() =>
+      encodePackagedScannerCollectionEvidenceRecordV1(
+        inventoryFixture(bundle, (all) => [[...all].reverse(), []]),
+      ),
+    ).toThrow(/coverage subjects out of order/);
+    const record = inventoryFixture(bundle);
+    const [first, second] = record.coverage.components;
+    expect(() =>
+      encodePackagedScannerCollectionEvidenceRecordV1({
+        ...record,
+        coverage: {
+          ...record.coverage,
+          components: [{ ...first, subject: first?.subjects?.[0] }, second],
+        },
+      }),
+    ).toThrow(/unrecognized_keys|Unrecognized key/);
+  });
+});
 
 describe("packaged collection evidence", () => {
   it("leaves external publisher authorization to raw-proof verification while keeping package admission pinned", () => {
