@@ -107,7 +107,10 @@ export function extendCatalogBundleWithOrganizationInputsV1(
       baseline.evidence,
       inputs.map((input) => input.evidence ?? {}),
     ),
-    qualifications: structuredClone(baseline.qualifications),
+    // Optional in the bundle schema: a Catalog without summaries carries no key.
+    ...(baseline.qualifications === undefined
+      ? {}
+      : { qualifications: structuredClone(baseline.qualifications) }),
     detailChunks,
   };
   const bundle = parseAuthoringCatalogBundleV1({
