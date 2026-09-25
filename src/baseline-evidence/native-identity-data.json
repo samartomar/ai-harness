@@ -33,7 +33,8 @@
     "src/trust/scanner-runtime-identity.ts",
     "src/trust/script-files.ts",
     "src/trust/smoke.ts",
-    "src/trust/trust-lint-sarif.ts"
+    "src/trust/trust-lint-sarif.ts",
+    "src/trust/unreviewed-analyzer-rules.ts"
   ],
-  "digest": "b6c99bebe70d"
+  "digest": "5bfbcdcc13fb"
 }

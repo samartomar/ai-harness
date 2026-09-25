@@ -1062,6 +1062,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Review the Cisco AI Defense finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
   },
+  "trust.unreviewed-analyzer-rule": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "new analyzer rule, not yet reviewed",
+    action:
+      "Next: review the rule at the analyzer's pinned release, then map it to a trust code in Core's detector rule map or confirm its generic route, and remove it from src/trust/unreviewed-analyzer-rules.ts. Until then it warns and never blocks.",
+  },
   "trust.skill-metadata-license": {
     audience: "developer",
     failSeverity: "blocking",

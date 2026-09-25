@@ -220,6 +220,15 @@ export function dispositionForTrustFinding(
       policyVersion: TRUST_POLICY_VERSION,
     };
   }
+  if (finding.code === "trust.unreviewed-analyzer-rule") {
+    return {
+      findingFingerprint: finding.fingerprint,
+      level: "WARN",
+      reason:
+        "new analyzer rule, not yet reviewed; next: review it at the analyzer's pinned release, then map it in Core's detector rule map or confirm its generic route and remove it from src/trust/unreviewed-analyzer-rules.ts; it never blocks until then",
+      policyVersion: TRUST_POLICY_VERSION,
+    };
+  }
   if (finding.code !== undefined && WARN_CODES.has(finding.code)) {
     return {
       findingFingerprint: finding.fingerprint,

@@ -606,6 +606,7 @@ describe("Check.code — invariants", () => {
       "trust.sandbox-smoke-unavailable": true,
       "trust.sandbox-smoke-failed": true,
       "trust.cisco-finding": true,
+      "trust.unreviewed-analyzer-rule": true,
       "trust.skill-metadata-license": true,
       "trust.hidden-unicode": true,
       "trust.visible-unicode": true,

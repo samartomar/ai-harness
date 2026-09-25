@@ -83,6 +83,7 @@ import {
   trustLintChecksFromSarifV1,
   type UnicodeRiskV1,
 } from "./trust-lint-sarif.js";
+import { isUnreviewedAnalyzerRuleV1 } from "./unreviewed-analyzer-rules.js";
 
 // Detector names land here only when Scan can at least surface an honest
 // availability result. A required-but-unavailable detector fails closed at
@@ -203,6 +204,7 @@ export interface TrustDetectorResult {
 }
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
+const UNREVIEWED_ANALYZER_RULE = "trust.unreviewed-analyzer-rule";
 
 export {
   CISCO_MCP_SCANNER_ANALYZER,
@@ -1106,6 +1108,9 @@ function ruleCode(
       code: mapped,
     };
   }
+  // An unmapped id an analyzer upgrade introduced warns until reviewed. Only the
+  // explicit list qualifies: any other unmapped id keeps its generic route below.
+  if (isUnreviewedAnalyzerRuleV1(detector.name, raw)) return { code: UNREVIEWED_ANALYZER_RULE };
   // Only an UNMAPPED Cisco rule id reaches the benign missing-license reclass.
   const metadataLicense = ciscoMetadataLicenseClassification(result, detector, facts, location);
   if (metadataLicense !== undefined) return metadataLicense;
@@ -1169,6 +1174,15 @@ function isNarrowReviewableRoleDefinition(
 function unicodeResultMessage(message: string, risk: UnicodeRiskV1 | undefined): string {
   if (risk === undefined) return message;
   return `${message}; character category: ${risk.category}; reason: ${risk.reason}`;
+}
+
+function unreviewedRuleMessage(
+  message: string,
+  code: CheckCode,
+  ruleId: string | undefined,
+): string {
+  if (code !== UNREVIEWED_ANALYZER_RULE) return message;
+  return `new analyzer rule, not yet reviewed (${ruleId ?? "unknown-rule"}): ${message}`;
 }
 
 function legalTextResultMessage(message: string, code: CheckCode): string {
@@ -1345,9 +1359,13 @@ function sarifChecks(
         code === "trust.hidden-unicode" || code === "trust.visible-unicode"
           ? hiddenUnicodeRiskForDetectorResult(classified, detector, facts, location)
           : undefined;
-      const detail = legalTextResultMessage(
-        unicodeResultMessage(resultMessage(classified, detector), risk),
+      const detail = unreviewedRuleMessage(
+        legalTextResultMessage(
+          unicodeResultMessage(resultMessage(classified, detector), risk),
+          code,
+        ),
         code,
+        resultRuleId(classified),
       );
       checks.push(
         gradeTrustCheck(

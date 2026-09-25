@@ -184,6 +184,9 @@ export type CheckCode =
   | "trust.sandbox-smoke-unavailable"
   | "trust.sandbox-smoke-failed"
   | "trust.cisco-finding"
+  // A rule id an analyzer upgrade introduced that Core has not reviewed yet
+  // (src/trust/unreviewed-analyzer-rules.ts): a WARN that never blocks.
+  | "trust.unreviewed-analyzer-rule"
   // Cisco metadata-hygiene "missing license field" finding, reclassified out of
   // the generic cisco-finding block into a graded, acknowledgeable trust-origin
   // finding (advisory at vibe, blocking-but-acknowledgeable at enterprise).
