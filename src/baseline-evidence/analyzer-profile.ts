@@ -1,5 +1,3 @@
-import { lstatSync, readdirSync, type Stats } from "node:fs";
-import { basename, join } from "node:path";
 import type { Platform } from "../platform/base.js";
 import {
   loadScanExecutionAdapterV1,
@@ -33,6 +31,7 @@ import {
 import type { BaselineCatalogComponent } from "./catalog.js";
 import { nativeAnalyzerIdentity } from "./native-identity.js";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "./scanner-profile.js";
+import { componentContainsSkillContentV1 } from "./skill-content.js";
 import type { VetBaselineCatalogOptions } from "./vet.js";
 
 export {
@@ -57,45 +56,11 @@ export const REQUIRED_BASELINE_ANALYZERS = [
   "cisco@uvx",
 ] as const;
 
-function treeContainsSkillFile(path: string): boolean {
-  let stats: Stats;
-  try {
-    stats = lstatSync(path);
-  } catch {
-    return false;
-  }
-  if (stats.isSymbolicLink()) return false;
-  if (stats.isFile()) return basename(path) === "SKILL.md";
-  if (!stats.isDirectory()) return false;
-  return readdirSync(path, { withFileTypes: true }).some((entry) => {
-    if (entry.isSymbolicLink()) return false;
-    return treeContainsSkillFile(join(path, entry.name));
-  });
-}
-
-function containsSkillContent(
-  component: Pick<BaselineCatalogComponent, "paths" | "skillContent">,
-  sourceRoot?: string,
-): boolean {
-  if (component.skillContent === true) return true;
-  if (
-    component.paths.some((path) =>
-      path.split("/").some((segment) => segment === "skills" || segment === "SKILL.md"),
-    )
-  ) {
-    return true;
-  }
-  return (
-    sourceRoot !== undefined &&
-    component.paths.some((path) => treeContainsSkillFile(join(sourceRoot, ...path.split("/"))))
-  );
-}
-
 export function requiredBaselineAnalyzersForComponent(
   component: Pick<BaselineCatalogComponent, "paths" | "skillContent">,
   sourceRoot?: string,
 ): readonly string[] {
-  return containsSkillContent(component, sourceRoot)
+  return componentContainsSkillContentV1(component, sourceRoot)
     ? REQUIRED_BASELINE_ANALYZERS
     : REQUIRED_BASELINE_ANALYZERS.filter((name) => name !== "cisco@uvx");
 }
@@ -104,7 +69,7 @@ export function requiredBaselineDetectorsForComponent(
   component: Pick<BaselineCatalogComponent, "paths" | "skillContent">,
   sourceRoot?: string,
 ): readonly TrustDetectorName[] {
-  return containsSkillContent(component, sourceRoot)
+  return componentContainsSkillContentV1(component, sourceRoot)
     ? REQUIRED_BASELINE_DETECTORS
     : REQUIRED_BASELINE_DETECTORS.filter((name) => name !== "cisco");
 }
