@@ -712,9 +712,9 @@ the exact Node/AIH launcher bytes plus each owned config fragment in
 `.aih/ecc-profile/native-registration-v1.json`. Native state stays outside the project under the
 platform state directory; set `AIH_ECC_STATE_ROOT` to an absolute external directory to override
 that location. That machine state root is shared by every project on the machine and survives
-uninstall, so once it exists `aih uninstall` and `aih prune` in any project refuse without
-`@aihq/framework-ecc` (`framework-plugin-unavailable`) and name the root in full with the manual
-route: install `@aihq/framework-ecc`, or, once no project on this machine uses the ECC native
+uninstall, so once it exists `aih uninstall` and `aih prune` in any project refuse when the
+`@aihq/framework-ecc` bundled in `@aihq/core` is missing (`framework-plugin-unavailable`) and name
+the root in full with the manual route: reinstall `@aihq/core`, or, once no project on this machine uses the ECC native
 registration, remove that root by hand. Conflicting server identities, linked launchers, overlapping state roots, modified
 managed fragments, and partial second-phase installs fail closed; a failed registration after a
 projection install triggers compensating projection recovery. Repair and rollback preflight the
@@ -812,10 +812,10 @@ marks those selections as not evidence-covered. The Kiro methodology steering br
 first-party content, not mislabeled Superpowers vendor evidence. `AIH_SUPERPOWERS_REF` accepts only
 an exact commit with matching vendor or org evidence.
 
-The Superpowers behaviour ships in the separate `@aihq/framework-superpowers` package, installed
-beside `@aihq/core` (`npm install -g @aihq/core @aihq/framework-superpowers`). Without it the command
-refuses with `framework-plugin-unavailable` and names that install command; an installed plugin that
-fails its contract, version or Catalog identity check refuses with `framework-plugin-incompatible`.
+The Superpowers behaviour ships inside `@aihq/core` as its bundled `@aihq/framework-superpowers`
+package; there is nothing extra to install. If an install lacks it, the command refuses with
+`framework-plugin-unavailable` and names the reinstall: `npm install -g @aihq/core`, or in a project delete `node_modules/@aihq/core` and run `npm install`. A bundled plugin that fails
+its contract, version or Catalog identity check refuses with `framework-plugin-incompatible`.
 
 ## aih crispy
 

@@ -1,7 +1,7 @@
 /**
  * The Node.js release Core requires: 20.6, the first with a synchronous, unflagged
- * `import.meta.resolve`. The framework-plugin loader needs it to prove that a plugin's
- * ESM entry resolves inside the plugin's own install tree. `engines.node` in
+ * `import.meta.resolve`. The command-plugin registry (`src/plugins/registry.ts`) needs
+ * it to prove that its plugin's ESM entry resolves inside the harness's own install tree. `engines.node` in
  * package.json states the same floor.
  */
 export const NODE_RUNTIME_FLOOR_TEXT = "20.6";

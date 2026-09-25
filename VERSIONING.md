@@ -130,6 +130,6 @@ removing major (mechanics in
 ## Node.js support
 
 `aih` supports the Node.js versions in `package.json` `engines` (currently `>=20.6.0`:
-the framework-plugin loader needs the synchronous `import.meta.resolve` of Node 20.6).
+the command-plugin registry needs the synchronous `import.meta.resolve` of Node 20.6).
 Dropping a Node major is a breaking change and follows the same announce → grace → remove
 path.
