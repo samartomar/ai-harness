@@ -135,7 +135,7 @@ export function parseFrameworkPluginIdentitiesV1(
   }
   let document: Record<string, unknown>;
   try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
     document = parseNativeStrictJsonObjectV1(text, "framework plugin identities");
   } catch (error) {
     return { ok: false, detail: `is not strict JSON (${(error as Error).message})` };

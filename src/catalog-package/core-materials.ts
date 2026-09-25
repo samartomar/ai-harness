@@ -56,7 +56,9 @@ export function loadCatalogCoreMaterialV1<K extends keyof typeof MATERIALS>(
   }
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.from(loaded.file.bytes).toString("utf8"));
+    value = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(loaded.file.bytes),
+    );
   } catch {
     return incompatible(kind, "is not JSON");
   }

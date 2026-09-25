@@ -190,6 +190,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   integrity check, not authority. Policy bindings are derived by Core from the admitted authoring
   bundle; bindings shipped by Catalog are ignored. Migration: use the Catalog release this Core
   release accepts.
+- Core decodes every Catalog document and the Catalog package manifest as exact UTF-8: a
+  byte order mark or invalid UTF-8 is refused with `catalog-package-incompatible` instead of
+  being stripped or replaced with U+FFFD.
 - **Breaking:** Core no longer compiles Catalog-owned content. The `built-in/v1`,
   `pinned-baseline/v1`, `pinned-skill-collection/v1` and `pinned-component-collection/v1`
   producers, the Matt Pocock and Ponytail scanner providers and the embedded Workbench

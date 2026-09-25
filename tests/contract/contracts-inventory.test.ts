@@ -126,7 +126,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    350,
+    354,
     "export async function loadCatalogPackageV1<",
   ],
   ["src/framework-host/index.ts", 17, "export const FRAMEWORK_HOST_API_VERSION = 1;"],

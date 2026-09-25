@@ -41,7 +41,7 @@ function parse(
 } {
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.from(bytes).toString("utf8"));
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
   } catch {
     return incompatible("is not JSON");
   }

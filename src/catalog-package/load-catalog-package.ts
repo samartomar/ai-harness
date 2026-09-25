@@ -253,7 +253,11 @@ function exportIsFunction(namespace: object, name: string): boolean {
 
 function packageManifest(access: CatalogPackageAccessV1, manifestPath: string): unknown {
   try {
-    return JSON.parse(Buffer.from(access.readFile(manifestPath)).toString("utf8"));
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+        access.readFile(manifestPath),
+      ),
+    );
   } catch {
     return undefined;
   }
