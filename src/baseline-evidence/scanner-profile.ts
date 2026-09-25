@@ -1,8 +1,8 @@
 /**
  * Exact analyzer identities a protected Scanner publication names for the
  * `aih-baseline-v1` profile: the U1 analyzer upgrade (aih-scan 391b04d). The
- * native identity is the one the protected publisher emitted before U1; it moves
- * only with the first new publication's report.
+ * native identity is the one the protected publisher emitted before U1, and U1
+ * did not move it: every publication of publisher 349fcadac4bd reports it.
  *
  * These values are a consumer-side allow-list, not facts copied from an
  * incoming receipt. A Scanner bundle with any other identity fails closed
