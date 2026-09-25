@@ -34,6 +34,12 @@ import {
 
 const catalog = baselineCatalogById("ecc");
 const repository = `${catalog.owner}/${catalog.repo}`;
+/**
+ * SYNTHETIC: not an ECC commit. The Catalog keeps one current ECC copy (D70), so
+ * the packaged selection is the current revision and a historical pin is shown
+ * by activating the governed boundary at this other pin instead.
+ */
+const SYNTHETIC_ACTIVE_ECC_COMMIT = "5e1f00000000000000000000000000000000c0de";
 
 function tinyEccPreparedCatalog() {
   const model = tinyBackendCatalogFixture();
@@ -97,13 +103,13 @@ function tinyEccPreparedCatalog() {
   return { bundle: sealed, bindings };
 }
 
-let admittedHistoricalEcc: ReturnType<typeof tinyEccPreparedCatalog>;
+let admittedEcc: ReturnType<typeof tinyEccPreparedCatalog>;
 
 beforeAll(() => {
-  // The V3 guard receives an already sealed historical catalog snapshot. Its
+  // The V3 guard receives an already sealed packaged catalog snapshot. Its
   // assertions begin with selection and consumption, not package admission.
   packagedPreparedWorkbenchCatalogV1();
-  admittedHistoricalEcc = tinyEccPreparedCatalog();
+  admittedEcc = tinyEccPreparedCatalog();
 });
 
 function selectedPolicyIds(policy: OrgPolicy): string[] {
@@ -280,7 +286,7 @@ function withTypescriptLanguageAndCore(includeRider = true) {
 
 describe("schema-v3 Workbench ECC guard", () => {
   it("refuses a historical V3 pin without its sealed runtime context, and refuses stale or missing intent", () => {
-    const prepared = structuredClone(admittedHistoricalEcc);
+    const prepared = structuredClone(admittedEcc);
     const asset = prepared.bundle.assets["ecc/module:rules-core"];
     if (!asset) throw new Error("expected pinned ECC rules-core asset");
     const selected = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
@@ -298,7 +304,10 @@ describe("schema-v3 Workbench ECC guard", () => {
     expect(compiled.diagnostics).toEqual([]);
     expect(compiled.accepted).toBe(true);
     const valid = OrgPolicySchema.parse(compiled.policy) as OrgPolicy;
-    expect(() => governedEccComponentIds(valid, catalog)).toThrow(
+    // The selection pins the packaged revision; bytes from any other active pin
+    // are refused without that revision's sealed runtime context.
+    const activeElsewhere = { ...catalog, pinnedSha: SYNTHETIC_ACTIVE_ECC_COMMIT };
+    expect(() => governedEccComponentIds(valid, activeElsewhere)).toThrow(
       /claims commit .* but its bytes would come from/i,
     );
     const exactMirror = structuredClone(valid.governance?.externalSelections);

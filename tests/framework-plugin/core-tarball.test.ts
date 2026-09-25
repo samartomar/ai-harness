@@ -4,18 +4,43 @@ import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Core's tarball never carries framework plugin code: the plugins are separate
- * packages under packages/, optional peers of @aihq/core, loaded at run time.
+ * The framework plugins ship INSIDE Core's tarball (D71): each plugin's built
+ * package at its source layout under packages/, loaded at run time from Core's
+ * own package root. Core's own dist never carries plugin code, and nothing but
+ * each plugin's manifest and its own `files` is packed: no sources, no tests.
  */
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
   files: string[];
   exports: Record<string, unknown>;
+  scripts: Record<string, string>;
   peerDependencies: Record<string, string>;
   peerDependenciesMeta: Record<string, { optional?: boolean }>;
   dependencies: Record<string, string>;
 };
+
+const PLUGINS = [
+  { name: "@aihq/framework-ecc", directory: "packages/framework-ecc" },
+  { name: "@aihq/framework-superpowers", directory: "packages/framework-superpowers" },
+] as const;
+
+function pluginManifest(directory: string): {
+  name: string;
+  version: string;
+  private?: boolean;
+  files: string[];
+} {
+  return JSON.parse(readFileSync(join(repo, directory, "package.json"), "utf8"));
+}
+
+/** Each plugin's manifest plus exactly what the plugin's own `files` lists. */
+function bundledEntries(): string[] {
+  return PLUGINS.flatMap(({ directory }) => [
+    `${directory}/package.json`,
+    ...pluginManifest(directory).files.map((entry) => `${directory}/${entry}`),
+  ]);
+}
 
 /**
  * The ECC implementation modules phase 2 moved into @aihq/framework-ecc (or
@@ -89,17 +114,34 @@ function npmCli(): string {
 }
 
 describe("Core tarball and framework plugins", () => {
-  it("never lists packages/ in Core's files", () => {
+  it("lists each plugin's manifest and its own files in Core's files, nothing else under packages/", () => {
     expect(
       manifest.files.filter((entry) => entry.replace(/^!/, "").split("/")[0] === "packages"),
-    ).toEqual([]);
+    ).toEqual(bundledEntries());
   });
 
-  it("packs no framework plugin file and none of the moved ECC implementation paths", () => {
+  it("builds both plugins as part of Core's build", () => {
+    for (const { directory } of PLUGINS) {
+      expect(manifest.scripts.build).toContain(`npm run build --prefix ${directory}`);
+    }
+  });
+
+  it("packs only the bundled plugin entries and none of the moved ECC implementation paths", () => {
     const paths = packedPaths();
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths.filter((path) => path.startsWith("packages/"))).toEqual([]);
-    expect(paths.filter((path) => /framework-(superpowers|ecc)/.test(path))).toEqual([]);
+    const allowed = bundledEntries();
+    const unexpected = paths.filter(
+      (path) =>
+        path.startsWith("packages/") &&
+        !allowed.some((entry) => path === entry || path.startsWith(`${entry}/`)),
+    );
+    expect(unexpected).toEqual([]);
+    for (const { directory } of PLUGINS) {
+      expect(paths).toContain(`${directory}/package.json`);
+      if (existsSync(join(repo, directory, "dist", "index.js")))
+        expect(paths).toContain(`${directory}/dist/index.js`);
+    }
+    expect(paths.filter((path) => /(^|\/)tests?\//.test(path))).toEqual([]);
     expect(paths.filter((path) => ABSENT_ECC_IMPLEMENTATION_PATHS.includes(path))).toEqual([]);
   }, 60_000);
 
@@ -120,11 +162,20 @@ describe("Core tarball and framework plugins", () => {
     },
   );
 
-  it("declares both framework plugins as optional peers, never dependencies", () => {
-    for (const name of ["@aihq/framework-ecc", "@aihq/framework-superpowers"]) {
-      expect(manifest.peerDependencies[name]).toBe(">=0.1.0 <0.2.0");
-      expect(manifest.peerDependenciesMeta[name]).toEqual({ optional: true });
+  it("declares no dependency or peer on the bundled plugins", () => {
+    for (const { name } of PLUGINS) {
+      expect(manifest.peerDependencies[name]).toBeUndefined();
+      expect(manifest.peerDependenciesMeta[name]).toBeUndefined();
       expect(manifest.dependencies[name]).toBeUndefined();
+    }
+  });
+
+  it("keeps each bundled plugin's name and version and marks it never publishable", () => {
+    for (const { name, directory } of PLUGINS) {
+      const plugin = pluginManifest(directory);
+      expect(plugin.name).toBe(name);
+      expect(plugin.version).toBe("0.1.0");
+      expect(plugin.private).toBe(true);
     }
   });
 

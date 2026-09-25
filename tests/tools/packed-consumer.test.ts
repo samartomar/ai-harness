@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expect, it } from "vitest";
 import {
+  globalNodeModules,
   packedConsumerInstallFiles,
   packedNpmChild,
   productionClosure,
@@ -131,6 +132,38 @@ it("isolates packed npm from poisoned script and user config while preserving tr
     });
     expect(actual.status, actual.stderr).toBe(0);
     expect(resolve(actual.stdout.trim())).toBe(resolve(emptyUserConfig));
+  } finally {
+    removeTemporaryDirectory(directory);
+  }
+});
+
+it("places a --prefix global install where npm does on each platform", () => {
+  expect(globalNodeModules("C:\\work\\global", "win32")).toBe("C:\\work\\global\\node_modules");
+  expect(globalNodeModules("/tmp/work/global", "linux")).toBe("/tmp/work/global/lib/node_modules");
+  expect(globalNodeModules("/tmp/work/global", "darwin")).toBe("/tmp/work/global/lib/node_modules");
+});
+
+it("agrees with npm's own global root for a --prefix on this platform", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aih-packed-global-root-"));
+  try {
+    const emptyUserConfig = join(directory, "empty.npmrc");
+    writeFileSync(emptyUserConfig, "");
+    const npmCandidate = process.env.npm_execpath?.replace(/npx-cli\.js$/u, "npm-cli.js");
+    const npmCli =
+      npmCandidate && existsSync(npmCandidate)
+        ? npmCandidate
+        : resolve(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
+    if (!existsSync(npmCli)) throw new Error("npm CLI is required for the global root test");
+    const prefix = join(directory, "global");
+    const child = packedNpmChild([npmCli, "root", "--global", "--prefix", prefix], emptyUserConfig);
+    const actual = spawnSync(process.execPath, child.args, {
+      cwd: directory,
+      env: child.environment,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    expect(actual.status, actual.stderr).toBe(0);
+    expect(resolve(actual.stdout.trim())).toBe(resolve(globalNodeModules(prefix)));
   } finally {
     removeTemporaryDirectory(directory);
   }

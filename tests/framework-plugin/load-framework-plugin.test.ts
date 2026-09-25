@@ -14,6 +14,8 @@ import type { CatalogFrameworkPluginIdentitiesLoadV1 } from "../../src/catalog-p
 import { FRAMEWORK_HOST_API_VERSION } from "../../src/framework-host/index.js";
 import type { FrameworkIdV1 } from "../../src/framework-plugin/contract-v1.js";
 import {
+  BUNDLED_FRAMEWORK_PLUGIN_DIRECTORIES,
+  bundledFrameworkPluginAccessV1,
   type FrameworkPluginAccessV1,
   FrameworkPluginRefusalError,
   frameworkPluginRefusalMessage,
@@ -166,7 +168,7 @@ describe("loadFrameworkPluginV1 — success", () => {
 });
 
 describe("loadFrameworkPluginV1 — framework-plugin-unavailable", () => {
-  it("refuses by name with the install command when the package is not installed", async () => {
+  it("refuses by name and says to reinstall @aihq/core when the bundled package is missing", async () => {
     const refusal = await refusalOf({
       resolveError: withCode(
         "Cannot find module '@aihq/framework-superpowers/package.json'",
@@ -175,15 +177,15 @@ describe("loadFrameworkPluginV1 — framework-plugin-unavailable", () => {
     });
     expect(refusal.reason).toBe("framework-plugin-unavailable");
     expect(refusal.packageName).toBe("@aihq/framework-superpowers");
-    expect(refusal.detail).toContain("npm install -g @aihq/core @aihq/framework-superpowers");
-    expect(refusal.detail).toContain("npm install @aihq/core @aihq/framework-superpowers");
+    expect(refusal.detail).toBe(
+      "@aihq/framework-superpowers ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core (in a project, npm keeps a package it already has, so delete node_modules/@aihq/core, then run: npm install).",
+    );
   });
 
-  it("reports the real installed state: this checkout has no plugin package installed", async () => {
-    const loaded = await loadFrameworkPluginV1("superpowers");
-    expect(loaded.ok).toBe(false);
-    if (loaded.ok) return;
-    expect(loaded.refusal.reason).toBe("framework-plugin-unavailable");
+  it("never names a separate plugin install in an incompatible refusal", async () => {
+    const refusal = await refusalOf({ namespace: { somethingElse: true } });
+    expect(refusal.detail).toContain("Reinstall @aihq/core with: npm install -g @aihq/core");
+    expect(refusal.detail).not.toMatch(/npm install (-g )?@aihq\/core @aihq\/framework-/);
   });
 });
 
@@ -291,10 +293,10 @@ describe("loadFrameworkPluginV1 — framework-plugin-incompatible", () => {
     expect(refusal.detail).toContain("did not finish loading within 20ms");
   });
 
-  it("refuses a package resolved outside Core's own install tree", async () => {
+  it("refuses a package resolved outside Core's own package directory", async () => {
     const refusal = await refusalOf({ allowedRoots: [join(install, "elsewhere")] });
     expect(refusal.reason).toBe("framework-plugin-incompatible");
-    expect(refusal.detail).toContain("resolves outside @aihq/core's own install tree");
+    expect(refusal.detail).toContain("resolves outside @aihq/core's own package directory");
   });
 
   it.each([
@@ -389,6 +391,146 @@ describe("FrameworkPluginRefusalError", () => {
     expect(error.code).toBe("AIH_FRAMEWORK_PLUGIN");
     expect(error.message).toBe(frameworkPluginRefusalMessage(refusal));
     expect(error.message.startsWith("framework-plugin-unavailable: ")).toBe(true);
+  });
+});
+
+describe("bundledFrameworkPluginAccessV1 — the plugins shipped inside @aihq/core", () => {
+  const PLUGIN_SOURCE = [
+    "const describe = () => ({",
+    '  frameworkId: "superpowers",',
+    '  displayName: "Superpowers",',
+    `  upstream: { repository: "obra/Superpowers", commit: "${COMMIT}" },`,
+    '  supportedHosts: ["claude"],',
+    '  catalogSubpath: "./catalog-framework-superpowers.json",',
+    "  descriptorSections: [],",
+    "  environment: [],",
+    "  ownedArtifacts: [],",
+    "});",
+    "const noop = () => ({});",
+    "export const aihFrameworkPluginV1 = {",
+    "  contractVersion: 1,",
+    `  hostApiVersion: ${FRAMEWORK_HOST_API_VERSION},`,
+    '  frameworkId: "superpowers",',
+    '  packageName: "@aihq/framework-superpowers",',
+    '  packageVersion: "0.1.0",',
+    "  describe,",
+    "  identifyComponents: noop,",
+    "  hookInventory: noop,",
+    "  planHookControls: noop,",
+    "  commands: { superpowers: { execute: async () => ({}) } },",
+    "};",
+    "",
+  ].join("\n");
+
+  function writePlugin(directory: string): void {
+    mkdirSync(join(directory, "dist"), { recursive: true });
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify({
+        name: "@aihq/framework-superpowers",
+        version: "0.1.0",
+        private: true,
+        type: "module",
+        exports: { ".": { import: "./dist/index.js" }, "./package.json": "./package.json" },
+      }),
+    );
+    writeFileSync(join(directory, "dist", "index.js"), PLUGIN_SOURCE);
+  }
+
+  /** A Core package root carrying the bundled Superpowers plugin, none, or a link to one. */
+  function coreRoot(options: { plugin: boolean; linkPluginFrom?: string }): string {
+    const root = join(install, "node_modules", "@aihq", "core");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "@aihq/core", version: "0.7.0" }),
+    );
+    const plugin = join(root, BUNDLED_FRAMEWORK_PLUGIN_DIRECTORIES.superpowers);
+    if (options.linkPluginFrom !== undefined) {
+      mkdirSync(dirname(plugin), { recursive: true });
+      // A directory junction on Windows needs no symlink privilege; elsewhere it is a symlink.
+      symlinkSync(options.linkPluginFrom, plugin, "junction");
+    } else if (options.plugin) {
+      writePlugin(plugin);
+    }
+    return root;
+  }
+
+  function bundled(root: string): FrameworkPluginAccessV1 {
+    return {
+      ...bundledFrameworkPluginAccessV1(() => root),
+      loadCatalogIdentities: async () => CATALOG_ABSENT,
+    };
+  }
+
+  it("ships each plugin at its source layout inside Core's package", () => {
+    expect(BUNDLED_FRAMEWORK_PLUGIN_DIRECTORIES).toEqual({
+      ecc: "packages/framework-ecc",
+      superpowers: "packages/framework-superpowers",
+    });
+  });
+
+  it("loads the bundled plugin from Core's own package root through every check", async () => {
+    const root = coreRoot({ plugin: true });
+    const loaded = await loadFrameworkPluginV1("superpowers", { access: bundled(root) });
+    if (!loaded.ok) throw new Error(loaded.refusal.detail);
+    expect(loaded.root).toBe(realpathSync(join(root, "packages", "framework-superpowers")));
+    expect(loaded.version).toBe("0.1.0");
+    expect(loaded.description.upstream.commit).toBe(COMMIT);
+  });
+
+  it("refuses a bundled version that does not equal Catalog's identity record", async () => {
+    const root = coreRoot({ plugin: true });
+    const loaded = await loadFrameworkPluginV1("superpowers", {
+      access: {
+        ...bundled(root),
+        loadCatalogIdentities: async () => catalogRecord({ version: "0.1.9" }),
+      },
+    });
+    if (loaded.ok) throw new Error("expected a refusal");
+    expect(loaded.refusal.reason).toBe("framework-plugin-incompatible");
+    expect(loaded.refusal.detail).toContain("identity record @aihq/framework-superpowers 0.1.9");
+  });
+
+  it("refuses as unavailable, naming the reinstall, when the bundled package is missing", async () => {
+    const loaded = await loadFrameworkPluginV1("superpowers", {
+      access: bundled(coreRoot({ plugin: false })),
+    });
+    if (loaded.ok) throw new Error("expected a refusal");
+    expect(loaded.refusal.reason).toBe("framework-plugin-unavailable");
+    expect(loaded.refusal.detail).toContain("Reinstall @aihq/core with: npm install -g @aihq/core");
+  });
+
+  it("refuses a bundled package whose manifest is present but entry is missing as incompatible", async () => {
+    const root = coreRoot({ plugin: true });
+    rmSync(join(root, "packages", "framework-superpowers", "dist"), { recursive: true });
+    const loaded = await loadFrameworkPluginV1("superpowers", { access: bundled(root) });
+    if (loaded.ok) throw new Error("expected a refusal");
+    expect(loaded.refusal.reason).toBe("framework-plugin-incompatible");
+    expect(loaded.refusal.detail).toContain("entry point could not be resolved");
+  });
+
+  it("refuses a bundled directory linked to code outside Core's own package", async () => {
+    const outside = join(install, "outside", "framework-superpowers");
+    writePlugin(outside);
+    const loaded = await loadFrameworkPluginV1("superpowers", {
+      access: bundled(coreRoot({ plugin: false, linkPluginFrom: outside })),
+    });
+    if (loaded.ok) throw new Error("expected a refusal");
+    expect(loaded.refusal.reason).toBe("framework-plugin-incompatible");
+    expect(loaded.refusal.detail).toContain("resolves outside @aihq/core's own package directory");
+  });
+
+  it("finds this checkout's own package root in production", () => {
+    const access = bundledFrameworkPluginAccessV1();
+    const repo = realpathSync(join(import.meta.dirname, "..", ".."));
+    expect(access.allowedRoots()).toEqual([repo]);
+    expect(access.resolvePackageJson("ecc")).toBe(
+      join(repo, "packages", "framework-ecc", "package.json"),
+    );
+    expect(access.resolveEntry("superpowers")).toBe(
+      join(repo, "packages", "framework-superpowers", "dist", "index.js"),
+    );
   });
 });
 

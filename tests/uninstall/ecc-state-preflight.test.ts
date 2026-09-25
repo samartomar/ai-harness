@@ -88,7 +88,7 @@ const unavailable = async (): Promise<FrameworkPluginLoadV1> => ({
     frameworkId: "ecc",
     packageName: "@aihq/framework-ecc",
     detail:
-      "@aihq/framework-ecc is not installed next to @aihq/core. Install it with: npm install -g @aihq/core @aihq/framework-ecc",
+      "@aihq/framework-ecc ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core",
   },
 });
 const incompatible = async (): Promise<FrameworkPluginLoadV1> => ({

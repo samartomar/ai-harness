@@ -22,6 +22,13 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 import { loadSuperpowersFromSource } from "./plugin-source.js";
 
+// The real loader sees a Core install without its bundled plugins (D71): the
+// one route to framework-plugin-unavailable, whether or not packages/*/dist is built.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const { withBundledPluginsMissing } = await import("./missing-bundled-plugins.js");
+  return withBundledPluginsMissing(await importOriginal());
+});
+
 const PIN = "5bf4e78011075bcfc0dc295f0724994cd123ee71";
 let root: string;
 
@@ -79,7 +86,7 @@ describe("aih superpowers — the Core command shell", () => {
     expect(command.alwaysVerify).toBe(true);
   });
 
-  it("refuses by name and names the install command when the plugin is not installed", async () => {
+  it("refuses by name and names the reinstall command when the bundled plugin is missing", async () => {
     const { stdout, exitCode } = await runCli([
       "superpowers",
       "--json",
@@ -91,9 +98,7 @@ describe("aih superpowers — the Core command shell", () => {
     expect(exitCode).toBe(1);
     expect(payload.error.code).toBe("AIH_FRAMEWORK_PLUGIN");
     expect(payload.error.message).toMatch(/^framework-plugin-unavailable: /);
-    expect(payload.error.message).toContain(
-      "npm install -g @aihq/core @aihq/framework-superpowers",
-    );
+    expect(payload.error.message).toContain("Reinstall @aihq/core with: npm install -g @aihq/core");
     expect(existsSync(join(root, ".aih"))).toBe(false);
   }, 20_000);
 
@@ -366,7 +371,7 @@ describe("aih init — the Superpowers phase", () => {
       (entry) => entry.code === "framework-plugin.unavailable",
     );
     expect(check?.verdict).toBe("skip");
-    expect(check?.detail).toContain("npm install -g @aihq/core @aihq/framework-superpowers");
+    expect(check?.detail).toContain("Reinstall @aihq/core with: npm install -g @aihq/core");
     expect(result.report?.ok).toBe(true);
   });
 

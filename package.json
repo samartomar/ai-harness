@@ -35,6 +35,15 @@
     "src/ecc-profile/default-mcp-runtime",
     "src/ecc-profile/markitdown-runtime",
     "src/tools/headroom-runtime",
+    "packages/framework-ecc/package.json",
+    "packages/framework-ecc/dist",
+    "packages/framework-ecc/src/ecc/chrome-devtools-opt-out.cjs",
+    "packages/framework-ecc/README.md",
+    "packages/framework-ecc/LICENSE",
+    "packages/framework-superpowers/package.json",
+    "packages/framework-superpowers/dist",
+    "packages/framework-superpowers/README.md",
+    "packages/framework-superpowers/LICENSE",
     "packs",
     "!packs/**/__pycache__",
     "!packs/**/*.py[cod]",
@@ -53,7 +62,7 @@
     "node": ">=20.6.0"
   },
   "scripts": {
-    "build": "tsup && tsc -p tsconfig.dts.json",
+    "build": "tsup && tsc -p tsconfig.dts.json && npm run build --prefix packages/framework-ecc && npm run build --prefix packages/framework-superpowers",
     "dev": "tsx src/cli.ts",
     "repo:init": "node tools/repo-ai-tools.mjs setup-codex",
     "repo:doctor": "node tools/repo-ai-tools.mjs doctor-codex",
@@ -128,21 +137,13 @@
   },
   "peerDependencies": {
     "@aihq/catalog": ">=0.3.0 <0.4.0",
-    "@aihq/scan": ">=0.5.0 <0.6.0",
-    "@aihq/framework-ecc": ">=0.1.0 <0.2.0",
-    "@aihq/framework-superpowers": ">=0.1.0 <0.2.0"
+    "@aihq/scan": ">=0.5.0 <0.6.0"
   },
   "peerDependenciesMeta": {
     "@aihq/catalog": {
       "optional": true
     },
     "@aihq/scan": {
-      "optional": true
-    },
-    "@aihq/framework-ecc": {
-      "optional": true
-    },
-    "@aihq/framework-superpowers": {
       "optional": true
     }
   },

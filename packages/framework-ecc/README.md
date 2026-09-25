@@ -8,22 +8,24 @@ Claude/Codex profile, the ECC hook inventory and the hook control plan. Core
 keeps the `aih ecc` command surface, the policy decisions, the Catalog access,
 the evidence gate and every executor.
 
+This package ships inside `@aihq/core` (under `packages/framework-ecc`); there
+is nothing extra to install, and it is never published on its own:
+
 ```sh
-npm install -g @aihq/core @aihq/framework-ecc
-# in a project
-npm install @aihq/core @aihq/framework-ecc
+npm install -g @aihq/core
 ```
 
-Without this package, `aih ecc`, governed delivery that selects ECC components
+If an install lacks it, `aih ecc`, governed delivery that selects ECC components
 and ECC uninstall/prune refuse with `framework-plugin-unavailable` and name the
-install command; `aih doctor` and `aih report` state that ECC checks were not
+reinstall: `npm install -g @aihq/core`, or in a project delete `node_modules/@aihq/core` and run
+`npm install`; `aih doctor` and `aih report` state that ECC checks were not
 run. ECC itself is third party: aih records its components with provenance and
 ECC's own installer runs them.
 
 ## How Core loads it (framework plugin contract 1)
 
-- Core imports this package only by its literal name, from its own install
-  tree, and checks the `aihFrameworkPluginV1` export: contract version 1,
+- Core imports this package only from its bundled directory inside Core's own
+  package directory, and checks the `aihFrameworkPluginV1` export: contract version 1,
   framework host API version 1, and this package's own `package.json` name and
   version. When `@aihq/catalog` is installed, the installed version must equal
   Catalog's identity record. Anything else wrong is

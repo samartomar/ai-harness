@@ -7,6 +7,7 @@ import {
   coreProductDeclarationsV1Bytes,
 } from "../org-policy/core-product-declarations.js";
 import { PACKAGE_NAME } from "../version.js";
+import { hermeticGitEnv } from "./git-env.js";
 
 export interface EmitCoreProductDeclarationsV1Input {
   /** The Core checkout whose package version and HEAD name the declarations. */
@@ -44,11 +45,14 @@ export function coreCheckoutSourceV1(checkout: string): CoreProductDeclarationsS
   const status = execFileSync(
     "git",
     ["-C", checkout, "status", "--porcelain", "--untracked-files=all"],
-    GIT,
+    { ...GIT, env: hermeticGitEnv() },
   );
   if (status.trim() !== "")
     throw new Error(`${LABEL}: the Core checkout must be clean so HEAD names what was rendered`);
-  const commit = execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], GIT).trim();
+  const commit = execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], {
+    ...GIT,
+    env: hermeticGitEnv(),
+  }).trim();
   return { version, commit };
 }
 

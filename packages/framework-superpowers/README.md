@@ -7,20 +7,21 @@ Kiro methodology steering bridge, the Superpowers hook inventory and the hook
 control plan. Core keeps the `aih superpowers` command, the policy decisions,
 the Catalog access and the evidence gate.
 
+This package ships inside `@aihq/core` (under `packages/framework-superpowers`);
+there is nothing extra to install, and it is never published on its own:
+
 ```sh
-npm install -g @aihq/core @aihq/framework-superpowers
-# in a project
-npm install @aihq/core @aihq/framework-superpowers
+npm install -g @aihq/core
 ```
 
-Without this package, `aih superpowers` refuses with
-`framework-plugin-unavailable` and names the install command, and `aih init`
-reports its Superpowers phase as refused with that reason.
+If an install lacks it, `aih superpowers` refuses with
+`framework-plugin-unavailable` and names the reinstall: `npm install -g @aihq/core`, or in a project delete `node_modules/@aihq/core` and run
+`npm install`. `aih init` reports its Superpowers phase as refused with that reason.
 
 ## How Core loads it (framework plugin contract 1)
 
-- Core imports this package only by its literal name, from its own install
-  tree, and checks the `aihFrameworkPluginV1` export by `typeof`: contract
+- Core imports this package only from its bundled directory inside Core's own
+  package directory, and checks the `aihFrameworkPluginV1` export by `typeof`: contract
   version 1, framework host API version 1, and this package's own
   `package.json` name and version. When `@aihq/catalog` is installed, the
   installed version must equal Catalog's identity record in

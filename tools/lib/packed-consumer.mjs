@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -13,6 +13,17 @@ export function packedNpmChild(args, userconfig, inherited = process.env) {
   );
   environment.npm_config_userconfig = userconfig;
   return { args: [...args, "--userconfig", userconfig], environment };
+}
+
+/**
+ * Where `npm install --global --prefix <prefix>` puts packages: npm's global
+ * layout is `<prefix>/node_modules` on Windows and `<prefix>/lib/node_modules`
+ * elsewhere.
+ */
+export function globalNodeModules(prefix, platform = process.platform) {
+  return platform === "win32"
+    ? win32.join(prefix, "node_modules")
+    : posix.join(prefix, "lib", "node_modules");
 }
 
 function clone(value) {

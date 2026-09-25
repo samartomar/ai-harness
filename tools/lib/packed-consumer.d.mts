@@ -19,6 +19,7 @@ export type PackedCoreEntry = {
   integrity: string;
 };
 
+export function globalNodeModules(prefix: string, platform?: NodeJS.Platform): string;
 export function productionClosure(lock: NpmLock): Record<string, NpmLockPackageRecord>;
 export function packedNpmChild(
   args: readonly string[],

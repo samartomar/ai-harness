@@ -166,7 +166,7 @@ function refusalDetail(ctx: PlanContext, detail: string, heading: string, state:
   const routes = nativeStateRoots(ctx).map(({ root }) =>
     root === undefined
       ? " AIH_ECC_STATE_ROOT is not an absolute path: set it to the absolute state root the ECC native registration used, or unset it."
-      : ` The ECC native registration's machine state root ${controlFree(root)} is shared by every project on this machine: install @aihq/framework-ecc, or, once no project on this machine uses the ECC native registration, remove ${controlFree(root)} by hand.`,
+      : ` The ECC native registration's machine state root ${controlFree(root)} is shared by every project on this machine: reinstall @aihq/core, which ships @aihq/framework-ecc, or, once no project on this machine uses the ECC native registration, remove ${controlFree(root)} by hand.`,
   );
   return `${`${detail}${found}`.slice(0, 2000)}${[...new Set(routes)].join("")}`;
 }

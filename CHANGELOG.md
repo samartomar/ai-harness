@@ -8,23 +8,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
-- **Breaking:** the ECC implementation moved out of `@aihq/core` into
-  `@aihq/framework-ecc`, an optional peer (`npm install -g @aihq/core @aihq/framework-ecc`).
-  Without it, `aih ecc`, `aih ecc mcp add|remove`, governed delivery of a policy that
+- **Breaking:** the ECC implementation moved out of Core's own code into
+  `@aihq/framework-ecc`, which ships inside `@aihq/core` (see Changed). If that bundled plugin
+  is missing from an install, `aih ecc`, `aih ecc mcp add|remove`, governed delivery of a policy that
   selects ECC content (`aih policy project`, `aih init` on a bound project), and
   uninstall/prune with any aih ECC state (project `.aih/ecc/` receipts, the explicit MCP
   receipt, the ECC profile lifecycle state and receipts under `.aih/ecc-profile/`, the native
   registration's machine state root (`AIH_ECC_STATE_ROOT` and the platform default, resolved by
   one Core function the plugin also uses; a relative `AIH_ECC_STATE_ROOT` counts as state), the
   machine registration ledger, aih's Codex install state) refuse before any cleanup with
-  `framework-plugin-unavailable` (or `-incompatible`), naming the state found and the install
-  command; nothing is skipped silently. Each state path is inspected with `lstat` component by
+  `framework-plugin-unavailable` (or `-incompatible`), naming the state found and the
+  `@aihq/core` reinstall; nothing is skipped silently. Each state path is inspected with `lstat` component by
   component from the file-system root, including everything above a supplied base such as
   `AIH_ECC_STATE_ROOT`, `HOME`, `XDG_STATE_HOME`, `USERPROFILE` or `LOCALAPPDATA`: a dangling
   symbolic link or junction, an inaccessible entry or a component that is not a directory counts
   as state and is named with its condition, never treated as absent. When the state includes the
   native registration's machine state root, the refusal also names that root in full, never
-  truncated, with the manual route: install `@aihq/framework-ecc`, or, once no project on this
+  truncated, with the manual route: reinstall `@aihq/core`, or, once no project on this
   machine uses the ECC native registration, remove the root by hand. `aih doctor`, `aih report` and
   `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
   report blocks while it needs ECC's knowledge and cannot get it.
@@ -95,6 +95,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   new opt-in `--fail-on findings|evidence-problems` (comma-separated or repeated) exits 1 when the
   named condition is present; an unknown value is a usage error. **Upgrade note:** a CI that relied
   on exit 1 for findings adds `--fail-on findings`.
+- ECC and Superpowers support ships inside `@aihq/core`; nothing extra to install.
+  `@aihq/framework-ecc` and `@aihq/framework-superpowers` 0.1.0 are built into Core's package
+  under `packages/` and loaded only from Core's own package directory, with every identity check
+  kept: package name and version, framework plugin contract and host API versions, and the
+  installed Catalog's identity record. They are private, never published on their own, and Core
+  no longer declares them as peers. A plugin missing from an install refuses with
+  `framework-plugin-unavailable` and names the reinstall: `npm install -g @aihq/core`, or in a project delete `node_modules/@aihq/core` and run `npm install` (npm reports a
+  project's existing package as up to date without checking its files).
 - **Findings are labels; nothing blocks on them (D50).** Exact signed evidence about a
   component's bytes authorizes it whatever the analyzers found, and its findings and evidence
   problems travel as labels on the verification result, the install plan, receipts, and the
