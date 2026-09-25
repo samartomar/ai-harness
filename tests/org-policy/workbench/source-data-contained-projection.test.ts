@@ -140,7 +140,10 @@ describe("source-level report projection after independent consumption", () => {
           index === 0
             ? []
             : [{ code: "helper-finding", detail: "Original helper finding remains" }],
-        evidenceProblems: [],
+        evidenceProblems:
+          index === 0
+            ? []
+            : [{ code: "trust.detector-unavailable", detail: "Original helper problem remains" }],
       }));
       const publication = input.consumed.provenance[0];
       const request = input.requests[0];
@@ -176,6 +179,11 @@ describe("source-level report projection after independent consumption", () => {
       const result = Object.values(projectContainedScannerEvidenceV1(input));
       expect(result[0]?.scan).toMatchObject({ coverage: "complete", outcome: "has-findings" });
       expect(result[0]?.findings.join(" ")).toContain("Original helper finding remains");
+      // Evidence problems are their own label (D56), never folded into findings.
+      expect(result[0]?.evidenceProblems).toEqual([
+        "[runtime:helper] trust.detector-unavailable: Original helper problem remains",
+      ]);
+      expect(result[0]?.findings.join(" ")).not.toContain("detector-unavailable");
       expect(result[0]?.scan.reportSignedAt).toBe(publication.reportSignedAt);
       expect(result[0]?.scan.publishedAt).toBe(publication.attestedAt);
       expect(JSON.stringify(input.consumed)).toBe(original);

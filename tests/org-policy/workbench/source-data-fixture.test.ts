@@ -243,6 +243,7 @@ describe("authenticated versioned Workbench source data with a sealed fixture ba
       scan: { outcome: "no-findings", coverage: "complete" },
       qualification: { state: "unknown" },
       findings: [],
+      evidenceProblems: [],
     };
     next.sourceBundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({
       ...next.sourceBundle,

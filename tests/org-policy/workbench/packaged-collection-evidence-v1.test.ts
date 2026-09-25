@@ -294,6 +294,26 @@ describe("packaged collection evidence", () => {
       );
     },
   );
+  it("projects a report's evidence problems as their own label, apart from findings (D56)", () => {
+    const bundle = tinyBackendCatalogFixture().workbenchBundle;
+    const record = sealedFixture(bundle);
+    Object.assign(record.report.components[0]!, {
+      evidenceProblems: [{ code: "trust.detector-unavailable", detail: "Cisco did not run" }],
+    });
+    record.observations[0]!.reportComponentDigest =
+      `sha256:${canonicalStrictJsonSha256V1({ version: "packaged-report-component/v1", component: record.report.components[0] })}`;
+    records.push(encodePackagedScannerCollectionEvidenceRecordV1(record));
+
+    const overlay = packagedScannerCollectionOverlayV1(bundle);
+
+    expect(overlay["evidence:fixture:control"]).toMatchObject({
+      scan: { outcome: "no-findings" },
+      findings: [],
+      evidenceProblems: ["trust.detector-unavailable: Cisco did not run"],
+    });
+    expect(overlay["evidence:fixture:external"]?.evidenceProblems).toEqual([]);
+  });
+
   it("projects an exact current report and retains an expired report's historical outcome", () => {
     const bundle = tinyBackendCatalogFixture().workbenchBundle;
     records.push(encodePackagedScannerCollectionEvidenceRecordV1(sealedFixture(bundle)));

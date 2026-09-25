@@ -685,6 +685,7 @@ describe("Workbench reducer", () => {
           scan: { outcome: "unknown", coverage: "none" },
           qualification: { state: "unknown" },
           findings: [],
+          evidenceProblems: [],
         },
       },
     };

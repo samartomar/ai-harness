@@ -186,8 +186,9 @@ export function prepareOrganizationManifestWithFreshScanV1(
           ? { outcome: "has-findings", coverage }
           : { outcome: "unknown", coverage: "none" },
       qualification: { state: "unknown" },
-      findings: [
-        ...(matchingRecord?.findings ?? []),
+      findings: [...(matchingRecord?.findings ?? [])].sort().slice(0, 50),
+      // What kept the evidence from being complete: its own label (D56).
+      evidenceProblems: [
         ...missingDetectors.map((id) => `required detector is unavailable: ${id}`),
         ...(matchingRecord === undefined ? ["fresh scan evidence is missing"] : []),
         ...(matchingRecord?.state === "missing" ? ["fresh scan coverage is incomplete"] : []),

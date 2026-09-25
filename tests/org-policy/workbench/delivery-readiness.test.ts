@@ -36,6 +36,7 @@ describe("Workbench release evidence coverage", () => {
         scan: { outcome: "has-findings", coverage: "complete" },
         qualification: { state: "unqualified" },
         findings: ["A real concern must remain visible; it is not missing scan coverage."],
+        evidenceProblems: [],
       };
     }
     const complete = inspectWorkbenchEvidenceCoverageV1(bundle, now);
@@ -123,6 +124,7 @@ function currentVerifiedReport(asset: {
     scan: { outcome: "no-findings" as const, coverage: "complete" as const },
     qualification: { state: "unknown" as const },
     findings: [],
+    evidenceProblems: [],
   };
 }
 

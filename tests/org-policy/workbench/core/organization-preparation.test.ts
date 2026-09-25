@@ -322,10 +322,14 @@ describe("fresh organization preparation custody", () => {
         verification: { state: "missing" },
         scan: { outcome: "unknown", coverage: "none" },
       });
-      expect(evidence(prepared).result.findings).toContain(
+      // Evidence problems are their own label (D56), never findings.
+      expect(evidence(prepared).result.evidenceProblems).toContain(
         "required detector is unavailable: semgrep",
       );
-      expect(evidence(prepared).result.findings).toContain("fresh scan coverage is incomplete");
+      expect(evidence(prepared).result.evidenceProblems).toContain(
+        "fresh scan coverage is incomplete",
+      );
+      expect(evidence(prepared).result.findings).toEqual([]);
     } finally {
       vi.mocked(defaultRunner).mockReset();
       rmSync(root, { recursive: true, force: true });

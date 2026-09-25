@@ -89,6 +89,9 @@ export function projectBaselineDisplayEvidenceV1(
         findings: component.findings
           .slice(0, 50)
           .map((finding) => `${finding.code}: ${finding.detail}`.slice(0, 1000)),
+        evidenceProblems: component.evidenceProblems
+          .slice(0, 50)
+          .map((problem) => `${problem.code}: ${problem.detail}`.slice(0, 1000)),
       });
     }
   }

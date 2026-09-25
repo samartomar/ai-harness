@@ -257,6 +257,13 @@ export function projectContainedScannerEvidenceV1(input: {
           ),
         )
         .slice(0, 50),
+      evidenceProblems: facts
+        .flatMap((item) =>
+          item.evidenceProblems.map((problem) =>
+            `[${item.id}] ${problem.code}: ${problem.detail}`.slice(0, 1_000),
+          ),
+        )
+        .slice(0, 50),
     });
   }
   return evidence;

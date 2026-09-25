@@ -51,9 +51,27 @@ function catalog() {
     },
     qualification: { state: "unknown" },
     findings: [],
+    evidenceProblems: [],
   };
   return bundle;
 }
+
+it("carries evidence problems as their own required label on evidence-summary/v2 (D56)", () => {
+  const withProblem = catalog();
+  const summary = withProblem.evidence.evidence!;
+  summary.evidenceProblems = ["trust.detector-unavailable: semgrep did not run"];
+  expect(AuthoringCatalogBundleV1Schema.safeParse(withProblem).success).toBe(true);
+
+  const missing = catalog();
+  delete (missing.evidence.evidence as { evidenceProblems?: string[] }).evidenceProblems;
+  expect(AuthoringCatalogBundleV1Schema.safeParse(missing).success).toBe(false);
+
+  for (const problems of [[""], ["x".repeat(1_001)], Array.from({ length: 51 }, () => "p")]) {
+    const bad = catalog();
+    bad.evidence.evidence!.evidenceProblems = problems;
+    expect(AuthoringCatalogBundleV1Schema.safeParse(bad).success).toBe(false);
+  }
+});
 it("accepts a tiny source-neutral catalog and rejects dangling, conflicting, unordered, and misbound references", () => {
   expect(AuthoringCatalogBundleV1Schema.safeParse(catalog()).success).toBe(true);
   const mutations: Array<(bundle: AuthoringCatalogBundleV1) => void> = [

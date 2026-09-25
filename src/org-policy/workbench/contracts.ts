@@ -414,6 +414,8 @@ export const EvidenceSummaryV2Schema = z
       .strict(),
     qualification: z.object({ state: z.enum(["qualified", "unqualified", "unknown"]) }).strict(),
     findings: z.array(z.string().min(1).max(1_000)).max(50),
+    /** A separate label (D50/D56): what kept the evidence from being complete, never a finding. */
+    evidenceProblems: z.array(z.string().min(1).max(1_000)).max(50),
   })
   .strict()
   .superRefine((value, ctx) => {
