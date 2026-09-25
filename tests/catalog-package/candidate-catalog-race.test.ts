@@ -1,4 +1,12 @@
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +82,51 @@ describe("openCandidateCatalogV1 reads the tarball it checked", () => {
     };
     expect(() => openCandidateCatalogV1(path, digest)).toThrow(
       /^Candidate Catalog: .*candidate\.tgz is no longer the regular file that was checked/u,
+    );
+  });
+});
+
+describe("openCandidateCatalogV1 lists the directory files it checked", () => {
+  function directory(): { root: string; file: string } {
+    const parent = mkdtempSync(join(tmpdir(), "aih-candidate-race-"));
+    temporary.push(parent);
+    const root = join(parent, "candidate");
+    mkdirSync(join(root, "data"), { recursive: true });
+    writeFileSync(join(root, "package.json"), '{"name":"@aihq/catalog"}');
+    const file = join(root, "data", "catalog.json");
+    writeFileSync(file, "{}");
+    return { root, file };
+  }
+
+  it("refuses a file replaced by a directory after the check", () => {
+    const { root, file } = directory();
+    race.path = file;
+    race.swap = () => {
+      rmSync(file);
+      mkdirSync(file);
+    };
+    expect(() => openCandidateCatalogV1(root, "0".repeat(64))).toThrow(
+      /^Candidate Catalog: holds data\/catalog\.json, which is no longer the regular file that was checked/u,
+    );
+  });
+
+  it("refuses a file replaced by a symbolic link to the same bytes after the check", () => {
+    const { root, file } = directory();
+    const target = join(root, "..", "outside.json");
+    writeFileSync(target, "{}");
+    try {
+      symlinkSync(target, `${file}.probe`);
+      rmSync(`${file}.probe`);
+    } catch {
+      return; // This host cannot create symbolic links; the directory case covers the rule.
+    }
+    race.path = file;
+    race.swap = () => {
+      rmSync(file);
+      symlinkSync(target, file);
+    };
+    expect(() => openCandidateCatalogV1(root, "0".repeat(64))).toThrow(
+      /^Candidate Catalog: holds data\/catalog\.json, which is no longer the regular file that was checked/u,
     );
   });
 });

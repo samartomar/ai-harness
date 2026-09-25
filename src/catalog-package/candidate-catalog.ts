@@ -207,9 +207,17 @@ function directoryFiles(root: string): Map<string, Buffer> {
       if (stat.isSymbolicLink()) fail(`holds symbolic link ${path}`);
       if (stat.isDirectory()) walk(path);
       else if (stat.isFile()) {
-        total += stat.size;
-        if (total > LIMITS.expandedBytes) fail("directory exceeds its size limit");
-        add(files, path, readFileSync(join(root, path)));
+        if (total + stat.size > LIMITS.expandedBytes) fail("directory exceeds its size limit");
+        // One no-follow descriptor, bounded by what the limit leaves: the bytes listed are the checked file's.
+        const bytes = readRegularFileWithStats(join(root, path), {
+          maxBytes: LIMITS.expandedBytes - total,
+        })?.contents;
+        if (bytes === undefined)
+          fail(
+            `holds ${path}, which is no longer the regular file that was checked, within the directory size limit`,
+          );
+        total += bytes.length;
+        add(files, path, bytes);
       } else fail(`holds ${path}, which is not a regular file`);
     }
   };
