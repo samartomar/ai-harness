@@ -17,6 +17,7 @@ import {
   STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
 import { evidenceExpiryV1, isExactUtcTimestampV1 } from "../evidence-freshness.js";
+import { scanCoverageV1, scanOutcomeV1 } from "../trust/evidence.js";
 import { packagedScannerCollectionEvidenceInputV1 } from "./packaged-collection-evidence-data.js";
 import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "./workbench/contracts.js";
 
@@ -628,6 +629,7 @@ export function projectScannerCollectionEvidenceV1(
           item.receiptSha256 === observation.receiptSha256,
       );
       if (published === undefined) continue;
+      const coverage = scanCoverageV1(report.evidenceProblems);
       // Each compiled asset the component's scan covers gets that scan's evidence.
       for (const subject of componentSubjectsV1(component)) {
         if (!exactAsset(bundle, subject, record)) continue;
@@ -645,8 +647,10 @@ export function projectScannerCollectionEvidenceV1(
             contextDigest: `sha256:${canonicalStrictJsonSha256V1({ record: recordDigest, publication: observation.publicationSha256, receipt: observation.receiptSha256 })}`,
           },
           scan: {
-            outcome: report.verdict,
-            coverage: "complete",
+            // The stored label (D50): what the analyzers observed, never a decision. Coverage is
+            // what the evidence problems leave; a no-findings label holds only on complete coverage.
+            outcome: scanOutcomeV1(report.verdict, coverage),
+            coverage,
             analyzers: [...report.analyzers].sort((left, right) => {
               const leftKey = `${left.name}\u0000${left.version}`;
               const rightKey = `${right.name}\u0000${right.version}`;

@@ -163,6 +163,52 @@ export function trustCodeClassV1(code: string | undefined): TrustCodeClassV1 | u
     : TRUST_CODE_CLASSES_V1[code];
 }
 
+/** How much of a component the scan covered, as evidence-summary/v2 states it. */
+export type ScanCoverageV1 = "complete" | "partial" | "none";
+
+/**
+ * What each evidence problem says about the scan's coverage, as its code states it
+ * (src/support/findings.ts): a detector or sandbox smoke test that did not run leaves
+ * the scan partial; a source that could not be fetched leaves nothing scanned; a
+ * missing reviewed pin says nothing about what the analyzers covered. The same table
+ * as the Catalog's scanCoverageV1.
+ */
+const EVIDENCE_PROBLEM_COVERAGE_V1: Readonly<Record<string, ScanCoverageV1>> = {
+  "trust.detector-unavailable": "partial",
+  "trust.sandbox-smoke-unavailable": "partial",
+  "trust.sandbox-smoke-failed": "partial",
+  "trust.fetch-blocked": "none",
+  "trust.unsigned-source": "complete",
+};
+
+/**
+ * The scan coverage a component's evidence problems leave: the narrowest any of them
+ * states. A code outside the table never reads as complete coverage.
+ */
+export function scanCoverageV1(evidenceProblems: readonly { code: string }[]): ScanCoverageV1 {
+  let coverage: ScanCoverageV1 = "complete";
+  for (const { code } of evidenceProblems) {
+    const stated = Object.hasOwn(EVIDENCE_PROBLEM_COVERAGE_V1, code)
+      ? (EVIDENCE_PROBLEM_COVERAGE_V1[code] as ScanCoverageV1)
+      : "partial";
+    if (stated === "none") return "none";
+    if (stated === "partial") coverage = "partial";
+  }
+  return coverage;
+}
+
+/**
+ * The outcome label stated for a stored verdict at `coverage`: a no-findings label
+ * holds only on complete coverage; on less it is unknown, with the evidence problems
+ * stated beside it. Observed findings are stated at any coverage.
+ */
+export function scanOutcomeV1(
+  verdict: "no-findings" | "has-findings",
+  coverage: ScanCoverageV1,
+): "no-findings" | "has-findings" | "unknown" {
+  return verdict === "no-findings" && coverage !== "complete" ? "unknown" : verdict;
+}
+
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }

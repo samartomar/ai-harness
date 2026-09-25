@@ -177,7 +177,8 @@ describe("source-level report projection after independent consumption", () => {
       });
       const original = JSON.stringify(input.consumed);
       const result = Object.values(projectContainedScannerEvidenceV1(input));
-      expect(result[0]?.scan).toMatchObject({ coverage: "complete", outcome: "has-findings" });
+      // A detector that did not run leaves the scan partial; observed findings still show.
+      expect(result[0]?.scan).toMatchObject({ coverage: "partial", outcome: "has-findings" });
       expect(result[0]?.findings.join(" ")).toContain("Original helper finding remains");
       // Evidence problems are their own label (D56), never folded into findings.
       expect(result[0]?.evidenceProblems).toEqual([
@@ -221,6 +222,24 @@ describe("source-level report projection after independent consumption", () => {
       })),
     };
     expect(projectContainedScannerEvidenceV1(input)).toEqual(before);
+  });
+  it("states unknown on partial coverage instead of a no-findings label (Astra step-8 item 5)", () => {
+    const input = fixture();
+    input.consumed.evidence.components[0]!.evidenceProblems = [
+      { code: "trust.detector-unavailable", detail: "required detector skillspector unavailable" },
+    ];
+    for (const summary of Object.values(projectContainedScannerEvidenceV1(input))) {
+      expect(summary.scan).toMatchObject({ outcome: "unknown", coverage: "partial" });
+      expect(summary.evidenceProblems).toEqual([
+        "[runtime:shared] trust.detector-unavailable: required detector skillspector unavailable",
+      ]);
+    }
+    input.consumed.evidence.components[0]!.evidenceProblems = [
+      { code: "trust.unsigned-source", detail: "no reviewed pin" },
+    ];
+    for (const summary of Object.values(projectContainedScannerEvidenceV1(input))) {
+      expect(summary.scan).toMatchObject({ outcome: "no-findings", coverage: "complete" });
+    }
   });
   it("retains original broad report facts and labels exact contained file coverage", () => {
     const input = fixture(true);

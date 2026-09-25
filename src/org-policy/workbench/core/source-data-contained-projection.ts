@@ -7,6 +7,7 @@ import type { ConsumedScannerBaselinePublicationsV1 } from "../../../baseline-ev
 import { BaselineSourceEvidenceSchema } from "../../../baseline-evidence/schema.js";
 import { canonicalStrictJsonSha256V1 } from "../../../contract/strict-json-v1.js";
 import { evidenceExpiryV1 } from "../../../evidence-freshness.js";
+import { scanCoverageV1, scanOutcomeV1 } from "../../../trust/evidence.js";
 import { ScannerPublicationProjectionV1Schema } from "../../packaged-collection-evidence-v1.js";
 import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "../contracts.js";
 import { verifyScannerComponentContainmentV1 } from "./source-data-containment.js";
@@ -209,6 +210,9 @@ export function projectContainedScannerEvidenceV1(input: {
     if (Date.parse(expiry) <= Date.parse(preparedAt)) fail();
     const id = `evidence:${asset.id}`;
     if (evidence[id]) fail();
+    // Coverage is what the component reports' evidence problems leave; a no-findings label
+    // holds only on complete coverage, and observed findings show at any coverage.
+    const coverage = scanCoverageV1(facts.flatMap((item) => item.evidenceProblems));
     evidence[id] = EvidenceSummaryV2Schema.parse({
       id,
       projectionVersion: "evidence-summary/v2",
@@ -222,10 +226,11 @@ export function projectContainedScannerEvidenceV1(input: {
         contextDigest: sourceReportDigest,
       },
       scan: {
-        outcome: facts.some((item) => item.verdict === "has-findings")
-          ? "has-findings"
-          : "no-findings",
-        coverage: "complete",
+        outcome: scanOutcomeV1(
+          facts.some((item) => item.verdict === "has-findings") ? "has-findings" : "no-findings",
+          coverage,
+        ),
+        coverage,
         analyzers: [
           ...new Map(
             facts

@@ -1,5 +1,6 @@
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
+import { scanCoverageV1, scanOutcomeV1 } from "../trust/evidence.js";
 import { adminBaselineEvidenceTimestampEpochV1 } from "./admin-baseline-evidence-cache-v1.js";
 import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "./workbench/contracts.js";
 
@@ -50,6 +51,7 @@ export function projectBaselineDisplayEvidenceV1(
       )
         continue;
       const id = `evidence:${assetId}`;
+      const coverage = scanCoverageV1(component.evidenceProblems);
       result[id] = EvidenceSummaryV2Schema.parse({
         id,
         projectionVersion: "evidence-summary/v2",
@@ -76,13 +78,15 @@ export function projectBaselineDisplayEvidenceV1(
             }
           : { state: "stale" },
         scan: {
+          // Coverage is what the evidence problems leave; no-findings holds only on
+          // complete coverage, and only while the evidence is fresh.
           outcome:
             component.verdict === "has-findings"
               ? "has-findings"
               : fresh
-                ? "no-findings"
+                ? scanOutcomeV1("no-findings", coverage)
                 : "unknown",
-          coverage: "complete",
+          coverage,
           analyzers: component.analyzers.map(({ name, version }) => ({ name, version })),
         },
         qualification: { state: "unknown" },

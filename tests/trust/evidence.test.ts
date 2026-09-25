@@ -10,6 +10,8 @@ import {
   isFindingLevelV1,
   normalizeTrustFindings,
   type RawScannerOccurrence,
+  scanCoverageV1,
+  scanOutcomeV1,
   trustCodeClassV1,
 } from "../../src/trust/evidence.js";
 
@@ -419,5 +421,45 @@ describe("trust code classes (D50)", () => {
         !isConsumerPolicyCodeV1(code),
     );
     expect(unaccounted).toEqual([]);
+  });
+});
+
+describe("scan coverage from evidence problems (Astra step-8 item 5)", () => {
+  it("states the coverage each evidence problem leaves, the narrowest winning", () => {
+    expect(scanCoverageV1([])).toBe("complete");
+    expect(scanCoverageV1([{ code: "trust.unsigned-source" }])).toBe("complete");
+    expect(scanCoverageV1([{ code: "trust.detector-unavailable" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.sandbox-smoke-unavailable" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.sandbox-smoke-failed" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.fetch-blocked" }])).toBe("none");
+    expect(
+      scanCoverageV1([{ code: "trust.detector-unavailable" }, { code: "trust.fetch-blocked" }]),
+    ).toBe("none");
+  });
+
+  it("never reads a code outside the table as complete coverage", () => {
+    expect(scanCoverageV1([{ code: "trust.some-new-problem" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.unsigned-source" }, { code: "unknown" }])).toBe(
+      "partial",
+    );
+  });
+
+  it("holds a no-findings label only on complete coverage and states findings at any coverage", () => {
+    expect(scanOutcomeV1("no-findings", "complete")).toBe("no-findings");
+    expect(scanOutcomeV1("no-findings", "partial")).toBe("unknown");
+    expect(scanOutcomeV1("no-findings", "none")).toBe("unknown");
+    expect(scanOutcomeV1("has-findings", "complete")).toBe("has-findings");
+    expect(scanOutcomeV1("has-findings", "partial")).toBe("has-findings");
+    expect(scanOutcomeV1("has-findings", "none")).toBe("has-findings");
+  });
+
+  it("covers every evidence-problem code in the class table", () => {
+    const text = readFileSync(new URL("../../src/trust/evidence.ts", import.meta.url), "utf8");
+    const problems = [...text.matchAll(/"(trust\.[a-z-]+)":\s*"evidence-problem"/g)].map(
+      (match) => match[1] as string,
+    );
+    const coverage = text.slice(text.indexOf("const EVIDENCE_PROBLEM_COVERAGE_V1"));
+    expect(problems.length).toBeGreaterThan(0);
+    for (const code of problems) expect(coverage, code).toContain(`"${code}":`);
   });
 });

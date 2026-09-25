@@ -306,12 +306,17 @@ describe("packaged collection evidence", () => {
 
     const overlay = packagedScannerCollectionOverlayV1(bundle);
 
+    // A detector that did not run leaves partial coverage, so no-findings is not stated
+    // (Astra step-8 item 5); the problem is stated beside the unknown outcome.
     expect(overlay["evidence:fixture:control"]).toMatchObject({
-      scan: { outcome: "no-findings" },
+      scan: { outcome: "unknown", coverage: "partial" },
       findings: [],
       evidenceProblems: ["trust.detector-unavailable: Cisco did not run"],
     });
-    expect(overlay["evidence:fixture:external"]?.evidenceProblems).toEqual([]);
+    expect(overlay["evidence:fixture:external"]).toMatchObject({
+      scan: { outcome: "no-findings", coverage: "complete" },
+      evidenceProblems: [],
+    });
   });
 
   it("projects an exact current report and retains an expired report's historical outcome", () => {
