@@ -95,7 +95,7 @@ describe("aih ecc — the Core command shell", () => {
     expect(ALL_COMMAND_SPEC_PATHS).toContainEqual(["ecc", "mcp", "remove"]);
   });
 
-  it("refuses by name and names the install command when the plugin is not installed", async () => {
+  it("refuses by name and names the reinstall command when the bundled plugin is missing", async () => {
     await expect(executeEccCommand(ctx())).rejects.toThrow(
       /framework-plugin-unavailable: .*npm install/,
     );

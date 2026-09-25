@@ -168,7 +168,7 @@ describe("loadFrameworkPluginV1 — success", () => {
 });
 
 describe("loadFrameworkPluginV1 — framework-plugin-unavailable", () => {
-  it("refuses by name with the install command when the bundled package is missing", async () => {
+  it("refuses by name and says to reinstall @aihq/core when the bundled package is missing", async () => {
     const refusal = await refusalOf({
       resolveError: withCode(
         "Cannot find module '@aihq/framework-superpowers/package.json'",
@@ -177,8 +177,15 @@ describe("loadFrameworkPluginV1 — framework-plugin-unavailable", () => {
     });
     expect(refusal.reason).toBe("framework-plugin-unavailable");
     expect(refusal.packageName).toBe("@aihq/framework-superpowers");
-    expect(refusal.detail).toContain("npm install -g @aihq/core @aihq/framework-superpowers");
-    expect(refusal.detail).toContain("npm install @aihq/core @aihq/framework-superpowers");
+    expect(refusal.detail).toBe(
+      "@aihq/framework-superpowers ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core (in a project: npm install @aihq/core).",
+    );
+  });
+
+  it("never names a separate plugin install in an incompatible refusal", async () => {
+    const refusal = await refusalOf({ namespace: { somethingElse: true } });
+    expect(refusal.detail).toContain("Reinstall @aihq/core with: npm install -g @aihq/core");
+    expect(refusal.detail).not.toMatch(/npm install (-g )?@aihq\/core @aihq\/framework-/);
   });
 });
 
@@ -485,15 +492,13 @@ describe("bundledFrameworkPluginAccessV1 — the plugins shipped inside @aihq/co
     expect(loaded.refusal.detail).toContain("identity record @aihq/framework-superpowers 0.1.9");
   });
 
-  it("refuses as unavailable, naming the install command, when the bundled package is missing", async () => {
+  it("refuses as unavailable, naming the reinstall, when the bundled package is missing", async () => {
     const loaded = await loadFrameworkPluginV1("superpowers", {
       access: bundled(coreRoot({ plugin: false })),
     });
     if (loaded.ok) throw new Error("expected a refusal");
     expect(loaded.refusal.reason).toBe("framework-plugin-unavailable");
-    expect(loaded.refusal.detail).toContain(
-      "npm install -g @aihq/core @aihq/framework-superpowers",
-    );
+    expect(loaded.refusal.detail).toContain("Reinstall @aihq/core with: npm install -g @aihq/core");
   });
 
   it("refuses a bundled package whose manifest is present but entry is missing as incompatible", async () => {

@@ -168,17 +168,11 @@ export function bundledFrameworkPluginAccessV1(
 
 const bundledPluginAccess = bundledFrameworkPluginAccessV1();
 
-export function frameworkPluginInstallCommand(frameworkId: FrameworkIdV1): string {
-  return `npm install -g @aihq/core ${FRAMEWORK_PLUGIN_PACKAGE_NAMES[frameworkId]}`;
-}
+/** The plugins ship inside @aihq/core, so a missing one means Core itself needs reinstalling. */
+export const FRAMEWORK_PLUGIN_REINSTALL_COMMAND = "npm install -g @aihq/core";
+export const FRAMEWORK_PLUGIN_PROJECT_REINSTALL_COMMAND = "npm install @aihq/core";
 
-export function frameworkPluginProjectInstallCommand(frameworkId: FrameworkIdV1): string {
-  return `npm install @aihq/core ${FRAMEWORK_PLUGIN_PACKAGE_NAMES[frameworkId]}`;
-}
-
-function installAdvice(frameworkId: FrameworkIdV1): string {
-  return `Install it with: ${frameworkPluginInstallCommand(frameworkId)} (in a project: ${frameworkPluginProjectInstallCommand(frameworkId)}).`;
-}
+const REINSTALL_ADVICE = `Reinstall @aihq/core with: ${FRAMEWORK_PLUGIN_REINSTALL_COMMAND} (in a project: ${FRAMEWORK_PLUGIN_PROJECT_REINSTALL_COMMAND}).`;
 
 function messageOf(error: unknown): string {
   return sanitizeLabel(error instanceof Error ? error.message : String(error), 240);
@@ -209,7 +203,7 @@ function incompatible(frameworkId: FrameworkIdV1, problem: string) {
   return refusal(
     frameworkId,
     "framework-plugin-incompatible",
-    `the installed ${name} ${problem}; this @aihq/core needs a ${name} that implements framework plugin contract ${FRAMEWORK_PLUGIN_CONTRACT_VERSION} against framework host API ${FRAMEWORK_HOST_API_VERSION}. ${installAdvice(frameworkId)}`,
+    `the installed ${name} ${problem}; this @aihq/core needs a ${name} that implements framework plugin contract ${FRAMEWORK_PLUGIN_CONTRACT_VERSION} against framework host API ${FRAMEWORK_HOST_API_VERSION}. ${REINSTALL_ADVICE}`,
   );
 }
 
@@ -394,7 +388,7 @@ export async function loadFrameworkPluginV1(
       return refusal(
         frameworkId,
         "framework-plugin-unavailable",
-        `${name} is not installed next to @aihq/core. ${installAdvice(frameworkId)}`,
+        `${name} ships inside @aihq/core but is missing from this install. ${REINSTALL_ADVICE}`,
       );
     }
     return incompatible(

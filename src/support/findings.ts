@@ -1305,9 +1305,9 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "framework-plugin.unavailable": {
     audience: "developer",
     failSeverity: "degraded",
-    title: "a framework phase was refused because its framework plugin is not installed",
+    title: "a framework phase was refused because its framework plugin is missing from @aihq/core",
     action:
-      "The framework plugin package named in the detail is not installed next to @aihq/core, so aih did not run that framework's phase. Install it with the command in the detail (the plugin and @aihq/core in the same place), or leave the framework out.",
+      "The framework plugin named in the detail ships inside @aihq/core but is missing from this install, so aih did not run that framework's phase. Reinstall @aihq/core with the command in the detail, or leave the framework out.",
   },
   "framework-plugin.incompatible": {
     audience: "developer",

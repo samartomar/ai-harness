@@ -320,7 +320,7 @@ describe("durable project policy binding", () => {
     const markerBefore = readFileSync(join(root, ".aih-config.json"), "utf8");
 
     await expect(executePolicyProjectCommand(context)).rejects.toThrow(
-      "framework-plugin-unavailable: @aihq/framework-ecc is not installed next to @aihq/core. Install it with: npm install",
+      "framework-plugin-unavailable: @aihq/framework-ecc ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core",
     );
     expect(readFileSync(join(root, ".aih-config.json"), "utf8")).toBe(markerBefore);
   });

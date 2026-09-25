@@ -81,19 +81,19 @@ describe("ECC uninstall and prune without the plugin", () => {
   it("prune refuses by name, naming the state and the install command, when aih ECC state exists", async () => {
     mkdirSync(join(home, ".aih", "ecc"), { recursive: true });
     await expect(eccPrunePlanV1(ctx(), [])).rejects.toThrow(
-      "framework-plugin-unavailable: @aihq/framework-ecc is not installed next to @aihq/core. Install it with: npm install",
+      "framework-plugin-unavailable: @aihq/framework-ecc ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core",
     );
     await expect(eccPrunePlanV1(ctx(), [])).rejects.toThrow(
       `aih ECC state to reconcile: ${join(home, ".aih", "ecc")}`,
     );
   });
 
-  it("doctor states that the ECC checks were not run, as a skip naming the install command", async () => {
+  it("doctor states that the ECC checks were not run, as a skip naming the reinstall command", async () => {
     const checks = await eccDoctorChecksV1(ctx());
     expect(checks).toHaveLength(1);
     expect(checks[0]).toMatchObject({ name: "ECC checks", verdict: "skip" });
     expect(checks[0]?.detail).toContain(
-      "ECC checks were not run: framework-plugin-unavailable: @aihq/framework-ecc is not installed",
+      "ECC checks were not run: framework-plugin-unavailable: @aihq/framework-ecc ships inside @aihq/core but is missing",
     );
   });
 
@@ -364,7 +364,7 @@ describe("ECC native machine state root: every component from the file-system ro
 
 describe("ECC native machine state root refusal names the manual route", () => {
   const route = (stateRoot: string) =>
-    `install @aihq/framework-ecc, or, once no project on this machine uses the ECC native registration, remove ${stateRoot} by hand`;
+    `reinstall @aihq/core, which ships @aihq/framework-ecc, or, once no project on this machine uses the ECC native registration, remove ${stateRoot} by hand`;
 
   /** An unavailable plugin whose own detail nearly fills the refusal's bound. */
   const verboseUnavailable = {
