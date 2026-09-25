@@ -431,7 +431,6 @@ function materializationEvidenceBindingIssue(binding: {
   if (
     selectedAgentMarkdown &&
     (contentAuthorization.treeSha256 !== authorization.treeSha256 ||
-      contentAuthorization.effective !== authorization.effective ||
       JSON.stringify(contentAuthorization.acceptance) !== JSON.stringify(authorization.acceptance))
   ) {
     return "selected Markdown content authorization differs from selected evidence";

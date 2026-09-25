@@ -307,7 +307,7 @@ export interface V9SkillGovernance {
     analyzers: string[];
     gaps: string[];
   };
-  /** Approvable verdicts carried by committed `aih-skills.lock.json` entries. */
+  /** Vet verdicts, as labels, carried by committed `aih-skills.lock.json` entries. */
   /** RED/UNKNOWN appear only when an approval recorded one, so older renders stay identical. */
   approvalVerdicts?: { GREEN: number; YELLOW: number; RED?: number; UNKNOWN?: number };
   /**

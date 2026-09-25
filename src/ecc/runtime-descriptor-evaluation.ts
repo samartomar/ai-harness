@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import type { BaselineEvidenceLock, BaselineSourceEvidence } from "../baseline-evidence/schema.js";
+import {
+  BASELINE_EVIDENCE_SCHEMA_VERSION,
+  type BaselineEvidenceLock,
+  type BaselineSourceEvidence,
+} from "../baseline-evidence/schema.js";
 import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 
 export const ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V2 = {
@@ -103,7 +107,7 @@ export function deriveEccRuntimeDeclaredEvaluationV1(input: {
   });
   if (new Set(components.map((component) => component.id)).size !== components.length) fail();
   const vendorLock: BaselineEvidenceLock = {
-    schemaVersion: 2,
+    schemaVersion: BASELINE_EVIDENCE_SCHEMA_VERSION,
     sources: [
       {
         id: input.rawReport.id,
