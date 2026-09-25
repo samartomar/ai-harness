@@ -893,6 +893,13 @@ requested source. The record is checked before and after analyzer execution. Mis
 malformed, mismatched, or replaced metadata is a named blocking result; an explicit caller `--pin`
 is an expectation and never substitutes for fetched provenance.
 
+**Exit code (0.7.0).** Findings and evidence problems are labels: `trust scan` exits 0 when every
+failed check is a finding or an evidence problem, and 1 for an integrity failure, an execution
+failure, a code no trust class names, or the organization's own configured requirement
+(`trust.unapproved-skill`, `mcp.policy-denied`, `org-policy.drift`). A CI that should fail on them
+opts in with `--fail-on findings`, `--fail-on evidence-problems`, or both (comma-separated or
+repeated); an unknown value is a usage error.
+
 ## aih skill
 
 The **skill lifecycle** on top of `trust` — a complete governance loop for external agent skills.
@@ -924,6 +931,8 @@ license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). Th
 **install-time teeth**: `workspace add` refuses promoting a skill with no committed approval _for
 that source's pinned commit_ at `enterprise` posture (advisory at `vibe`) — a same-named
 skill from an unrelated source never inherits an approval, and stale approvals are refused.
+`vet` exits like `trust scan`: 0 on findings and evidence problems unless `--fail-on` names
+them, and 1 for integrity, execution, unclassified, and consumer-policy failures.
 `inventory` joins on-disk skills against the approvals — approved / unapproved / stale-pin /
 quarantined, one row per physical install — and feeds a "Skill governance" panel in `report --v9`.
 `sync --name <skill> --cli <claude|codex>` materializes an **approved promoted** skill into the

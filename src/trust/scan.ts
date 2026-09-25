@@ -104,6 +104,7 @@ import {
   type TrustInventoryBuildOptions,
 } from "./inventory.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
+import { FAIL_ON_OPTION } from "./report-exit.js";
 import { isInstallScriptEvidenceFilePath } from "./script-files.js";
 import { type SandboxSmokeShape, sandboxSmokeCheck } from "./smoke.js";
 import { safeMcpName, type TrustLintCheckV1 } from "./trust-lint-sarif.js";
@@ -1896,7 +1897,9 @@ export const trustScanCommand: CommandSpec = {
       description:
         "reason for a trust-origin acknowledgement; aih workspace add persists it to org-policy",
     },
+    FAIL_ON_OPTION,
   ],
   plan: trustScanPlan,
   alwaysVerify: true,
+  labelledExit: true,
 };

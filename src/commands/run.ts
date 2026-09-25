@@ -36,6 +36,7 @@ import { openCodeSandboxPolicyBinding } from "../sandbox/opencode.js";
 import { bindScanSettlement, SCAN_SETTLEMENT_TIMEOUT_MS } from "../scan-package/settlement.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import { redactArgv, redactText } from "../support/redact.js";
+import { labelledReportExitCodeV1, parseFailOnV1 } from "../trust/report-exit.js";
 
 export interface RunDeps {
   run?: Runner;
@@ -281,6 +282,8 @@ export async function runCapability(
       }
       env = { ...baseEnv, AIH_ORG_POLICY: policy.trim() };
     }
+    // Findings and evidence problems are labels (D66); `--fail-on` opts back in.
+    const failOn = spec.labelledExit === true ? parseFailOnV1(opts.failOn) : undefined;
     const bindingDefaults =
       spec.name === "governance-doctor" && spec.readOnly === true && spec.zeroWrite === true
         ? applyPolicyBindingReadOnlyDiagnosticDefaults(resolvedRoot, env, opts)
@@ -445,7 +448,11 @@ export async function runCapability(
     // flips the verify exit code. The ledger status maps from these two signals.
     const execFailed = result.execs.some((e) => e.ran && e.ok === false);
     const verifyCode = result.report ? result.report.exitCode() : 0;
-    const exitCode = verifyCode || (execFailed ? 1 : 0);
+    const reportExit =
+      result.report && failOn !== undefined
+        ? labelledReportExitCodeV1(result.report.checks, failOn)
+        : verifyCode;
+    const exitCode = reportExit || (execFailed ? 1 : 0);
 
     // Support templates: cross-cutting, derived from the verification report so any
     // verifying command (doctor / heal / `bootstrap-ai --verify` / …) turns a coded

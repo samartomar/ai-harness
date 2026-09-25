@@ -480,6 +480,13 @@ export interface CommandSpec {
    */
   alwaysVerify?: boolean;
   /**
+   * The report's findings and evidence problems are labels (D66): the command exits
+   * 0 when every failed check is one of them, and 1 for an integrity failure, the
+   * organization's own configured requirement, or an unclassified code. `--fail-on`
+   * (declare `FAIL_ON_OPTION`) turns findings or evidence problems back into exit 1.
+   */
+  labelledExit?: boolean;
+  /**
    * Exempt from the dirty-worktree `--apply` preflight. For pure-analytics commands
    * (`aih report`) whose only writes are gitignored OUTPUT artifacts (the `.aih/`
    * report file + its ignore rule) — those never clobber uncommitted work, so

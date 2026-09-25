@@ -87,6 +87,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Behavior change: `aih trust scan` and `aih skill vet` exit 0 on findings and evidence
+  problems (D66).** A report whose every failed check is a finding or an evidence problem exits 0;
+  the findings and problems are still in the output as labels. Exit 1 remains for integrity and
+  execution failures, codes no trust class names (fail closed), and the organization's own
+  configured requirements (`trust.unapproved-skill`, `mcp.policy-denied`, `org-policy.drift`). The
+  new opt-in `--fail-on findings|evidence-problems` (comma-separated or repeated) exits 1 when the
+  named condition is present; an unknown value is a usage error. **Upgrade note:** a CI that relied
+  on exit 1 for findings adds `--fail-on findings`.
 - **Findings are labels; nothing blocks on them (D50).** Exact signed evidence about a
   component's bytes authorizes it whatever the analyzers found, and its findings and evidence
   problems travel as labels on the verification result, the install plan, receipts, and the

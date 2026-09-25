@@ -4452,6 +4452,9 @@
               "flags": "--detect"
             },
             {
+              "flags": "--fail-on <conditions>"
+            },
+            {
               "flags": "--force"
             },
             {
@@ -4982,6 +4985,9 @@
             },
             {
               "flags": "--evidence-out <file>"
+            },
+            {
+              "flags": "--fail-on <conditions>"
             },
             {
               "flags": "--force"

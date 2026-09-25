@@ -15,6 +15,7 @@ import {
   validateGitHubTrustFetchMetadata,
 } from "../trust/fetch.js";
 import { resolveInternalScopes } from "../trust/internal-scopes.js";
+import { FAIL_ON_OPTION } from "../trust/report-exit.js";
 import {
   githubFetchMetadataCheck,
   scanOptionsFromContext,
@@ -630,7 +631,9 @@ export const skillVetCommand: CommandSpec = {
       flags: "--reason <reason>",
       description: "required reason for a trust-origin acknowledgement",
     },
+    FAIL_ON_OPTION,
   ],
   plan: skillVetPlan,
   alwaysVerify: true,
+  labelledExit: true,
 };
