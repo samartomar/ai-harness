@@ -13,7 +13,7 @@ import {
   UNREVIEWED_ANALYZER_RULES_V1,
 } from "../../src/trust/unreviewed-analyzer-rules.js";
 import type { FakeScanAnswerV1 } from "./fakes/fake-scan-adapter.js";
-import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
+import { type FakeTrustLintOptionsV1, fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 const installedScan = vi.hoisted(() => ({
   current: undefined as ScanExecutionAdapterV1 | undefined,
@@ -50,7 +50,13 @@ function write(rel: string, body: string): void {
   writeFileSync(path, body, "utf8");
 }
 
-type Row = readonly [ruleId: string, message: string, uri: string, startLine: number];
+type Row = readonly [
+  ruleId: string,
+  message: string,
+  uri: string,
+  startLine: number,
+  level?: "note" | "warning" | "error",
+];
 
 function sarif(rows: readonly Row[]): FakeScanAnswerV1 {
   return {
@@ -61,8 +67,9 @@ function sarif(rows: readonly Row[]): FakeScanAnswerV1 {
         {
           tool: { driver: { name: "scan-sarif (test fixture)" } },
           invocations: [{ executionSuccessful: true }],
-          results: rows.map(([ruleId, message, uri, startLine]) => ({
+          results: rows.map(([ruleId, message, uri, startLine, level]) => ({
             ruleId,
+            ...(level === undefined ? {} : { level }),
             message: { text: message },
             locations: [{ physicalLocation: { artifactLocation: { uri }, region: { startLine } } }],
           })),
@@ -72,19 +79,19 @@ function sarif(rows: readonly Row[]): FakeScanAnswerV1 {
   };
 }
 
-async function scan(answers: {
-  skillspector?: readonly Row[];
-  cisco?: readonly Row[];
-}): Promise<TrustScanResult> {
-  installedScan.current = fakeTrustLintScan(
-    {},
-    {
-      ...(answers.skillspector === undefined
-        ? {}
-        : { "detector.skillspector": sarif(answers.skillspector) }),
-      ...(answers.cisco === undefined ? {} : { "detector.cisco": sarif(answers.cisco) }),
-    },
-  );
+async function scan(
+  answers: {
+    skillspector?: readonly Row[];
+    cisco?: readonly Row[];
+  },
+  lint: FakeTrustLintOptionsV1 = {},
+): Promise<TrustScanResult> {
+  installedScan.current = fakeTrustLintScan(lint, {
+    ...(answers.skillspector === undefined
+      ? {}
+      : { "detector.skillspector": sarif(answers.skillspector) }),
+    ...(answers.cisco === undefined ? {} : { "detector.cisco": sarif(answers.cisco) }),
+  });
   return scanTrustTreeWithAnalyzers(dir, {
     env: {},
     platform: "linux",
@@ -240,4 +247,255 @@ describe("the explicit list of analyzer rules not yet reviewed", () => {
     });
     expect(result.checks.some((check) => check.code === CODE)).toBe(false);
   });
+});
+
+type Outcome = {
+  readonly name: string | undefined;
+  readonly verdict: string | undefined;
+  readonly code: string | undefined;
+  readonly level: string | undefined;
+  readonly reason: string | undefined;
+};
+
+function outcomeAt(result: TrustScanResult, uri: string, line: number): Outcome {
+  const { check, disposition } = findingAt(result, uri, line);
+  return {
+    name: check?.name,
+    verdict: check?.verdict,
+    code: check?.code,
+    level: disposition?.level,
+    reason: disposition?.reason,
+  };
+}
+
+const EGRESS: Outcome = {
+  name: "trust.external-egress",
+  verdict: "fail",
+  code: "trust.external-egress",
+  level: "REVIEW",
+  reason: "credible unresolved permission, egress, credential, publisher, or licensing behavior",
+};
+const LEGAL_TEXT: Outcome = {
+  name: "trust.legal-text-detector-finding",
+  verdict: "pass",
+  code: undefined,
+  level: "SUPPRESSED",
+  reason:
+    "non-actionable lexical, documentation, legal-text, or generic detector heuristic; raw evidence retained",
+};
+const AUTONOMY: Outcome = {
+  name: "trust.detector-finding",
+  verdict: "pass",
+  code: undefined,
+  level: "REVIEW",
+  reason:
+    "credible broad autonomous behavior requires an explicit consent and side-effect decision",
+};
+const SKILLSPECTOR_GENERIC: Outcome = { ...LEGAL_TEXT, name: "trust.detector-finding" };
+const CISCO_GENERIC: Outcome = {
+  name: "trust.cisco-finding",
+  verdict: "pass",
+  code: "trust.cisco-finding",
+  level: "WARN",
+  reason: "meaningful non-blocking third-party condition requiring operator attention",
+};
+
+type Facts = NonNullable<FakeTrustLintOptionsV1["artifacts"]>[string];
+
+/**
+ * Every message or evidence shape a specific branch of Core's classification recognises for an
+ * unmapped rule id (src/trust/detectors.ts `ruleCode`, `skillspectorAdvisory` and
+ * `ciscoMetadataLicenseClassification`; src/trust/evidence.ts `dispositionForTrustFinding`),
+ * with the outcome 49e8f2ef gave an unmapped id there. A `generic` shape is recognised only
+ * under another rule id (SC4, YR4, MANIFEST_MISSING_LICENSE) or not for this detector at all.
+ */
+type Shape = {
+  readonly name: string;
+  readonly message: string;
+  readonly file: string;
+  readonly source: string;
+  readonly level?: "note";
+  readonly facts?: Facts;
+  readonly expected: Outcome | "generic";
+};
+
+const SKILLSPECTOR_SHAPES: readonly Shape[] = [
+  {
+    name: "External Transmission",
+    message: "External Transmission",
+    file: "notes/egress.md",
+    source: "send the report",
+    expected: EGRESS,
+  },
+  {
+    name: "external transmission, any case, inside a longer message",
+    message: "Detected external transmission of workspace files to a remote host",
+    file: "notes/egress-lower.md",
+    source: "send the report",
+    expected: EGRESS,
+  },
+  {
+    name: "External Transmission in legal text (egress outranks legal text)",
+    message: "External Transmission",
+    file: "notes/egress-legal.md",
+    source: "Licensed under the Apache License",
+    facts: { legalText: true },
+    expected: EGRESS,
+  },
+  {
+    name: "legal text",
+    message: "Neutral SkillSpector fixture",
+    file: "notes/legal.md",
+    source: "Licensed under the Apache License",
+    facts: { legalText: true },
+    expected: LEGAL_TEXT,
+  },
+  {
+    name: "autonomy in the message, consent bypass in the source line",
+    message: "Autonomous Decision Making",
+    file: "notes/autonomy-message.md",
+    source: "Automatically push every change without asking.",
+    expected: AUTONOMY,
+  },
+  {
+    name: "autonomy and consent bypass in the source line",
+    message: "Neutral SkillSpector fixture",
+    file: "notes/autonomy-source.md",
+    source: "Autonomous decision making: automatically deploy without confirmation.",
+    expected: AUTONOMY,
+  },
+  {
+    name: "autonomy with a never-ask source line",
+    message: "Autonomous decision making",
+    file: "notes/autonomy-never-ask.md",
+    source: "  Never ask before deleting files.",
+    expected: AUTONOMY,
+  },
+  {
+    name: "autonomy without a consent bypass",
+    message: "Autonomous decision making",
+    file: "notes/autonomy-only.md",
+    source: "Ask the user before every change.",
+    expected: "generic",
+  },
+  {
+    name: "the SC4 offline-fallback note (gated on SC4)",
+    message:
+      "🟡 SC4: OSV.dev unreachable, using static fallback (3 packages). Results may be incomplete. Set SKILLSPECTOR_OSV_TIMEOUT to increase timeout or check network connectivity to api.osv.dev.",
+    level: "note",
+    file: "notes/sc4.md",
+    source: "dependencies",
+    expected: "generic",
+  },
+  {
+    name: "the YR4 Corepack message on package.json (gated on YR4)",
+    message:
+      "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]",
+    file: "pkg/package.json",
+    source: '"packageManager": "pnpm@9.0.0"',
+    facts: { yr4CorepackIntegrityOnly: true },
+    expected: "generic",
+  },
+  {
+    name: "a neutral message",
+    message: "Neutral SkillSpector fixture",
+    file: "notes/neutral.md",
+    source: "plain text",
+    expected: "generic",
+  },
+];
+
+const CISCO_SHAPES: readonly Shape[] = [
+  {
+    name: "legal text",
+    message: "Neutral Cisco fixture",
+    file: "notes/legal.md",
+    source: "Licensed under the Apache License",
+    facts: { legalText: true },
+    expected: LEGAL_TEXT,
+  },
+  {
+    name: "the missing-license message on SKILL.md (gated on MANIFEST_MISSING_LICENSE)",
+    message: "The skill manifest does not include a 'license' field",
+    file: "skills/license/SKILL.md",
+    source: "name: license",
+    expected: "generic",
+  },
+  {
+    name: "External Transmission (a SkillSpector-only route)",
+    message: "External Transmission",
+    file: "notes/egress.md",
+    source: "send the report",
+    expected: "generic",
+  },
+  {
+    name: "autonomy with a consent bypass (a trust.detector-finding-only route)",
+    message: "Autonomous decision making",
+    file: "notes/autonomy.md",
+    source: "Automatically push every change without asking.",
+    expected: "generic",
+  },
+  {
+    name: "a neutral message",
+    message: "Neutral Cisco fixture",
+    file: "notes/neutral.md",
+    source: "plain text",
+    expected: "generic",
+  },
+];
+
+describe("a listed id never downgrades a classification Core already makes", () => {
+  it("keeps SC9 with External Transmission on trust.external-egress, failing at enterprise", async () => {
+    write("skills/clean/SKILL.md", "# Clean\nsend the report\nsend the report\n");
+    const result = await scan({
+      skillspector: [
+        ["SC9", "External Transmission", "skills/clean/SKILL.md", 2],
+        ["ZZ99", "External Transmission", "skills/clean/SKILL.md", 3],
+      ],
+    });
+    expect(outcomeAt(result, "skills/clean/SKILL.md", 2)).toEqual(EGRESS);
+    expect(outcomeAt(result, "skills/clean/SKILL.md", 3)).toEqual(EGRESS);
+    expect(
+      result.checks.filter(
+        (check) => check.verdict === "fail" && check.code === "trust.external-egress",
+      ),
+    ).toHaveLength(2);
+    expect(result.checks.some((check) => check.code === CODE)).toBe(false);
+  });
+
+  it.each([
+    ["skillspector", SKILLSPECTOR_IDS, "ZZ99", SKILLSPECTOR_SHAPES, SKILLSPECTOR_GENERIC],
+    ["cisco", CISCO_IDS, "UNKNOWN_FUTURE_RULE", CISCO_SHAPES, CISCO_GENERIC],
+  ] as const)(
+    "gives every listed %s id the outcome 49e8f2ef gave it wherever a specific branch applies",
+    async (detector, ids, control, shapes, generic) => {
+      const rows: Row[] = [];
+      const artifacts: Record<string, Facts> = {};
+      for (const shape of shapes) {
+        write(shape.file, `${shape.source}\n`.repeat(ids.length + 1));
+        if (shape.facts !== undefined) artifacts[shape.file] = shape.facts;
+        [...ids, control].forEach((id, index) => {
+          rows.push([id, shape.message, shape.file, index + 1, shape.level]);
+        });
+      }
+      const result = await scan({ [detector]: rows }, { artifacts });
+      for (const shape of shapes) {
+        // The control is unlisted and unmapped: it takes the route 49e8f2ef gave every unmapped id.
+        const before = outcomeAt(result, shape.file, ids.length + 1);
+        expect(before, `${shape.name}: control`).toEqual(
+          shape.expected === "generic" ? generic : shape.expected,
+        );
+        ids.forEach((id, index) => {
+          const now = outcomeAt(result, shape.file, index + 1);
+          if (shape.expected === "generic") {
+            expect(now.code, `${shape.name}: ${id}`).toBe(CODE);
+            expect(now.level, `${shape.name}: ${id}`).toBe("WARN");
+            expect(now.reason, `${shape.name}: ${id}`).toContain(LABEL);
+          } else {
+            expect(now, `${shape.name}: ${id}`).toEqual(before);
+          }
+        });
+      }
+    },
+  );
 });

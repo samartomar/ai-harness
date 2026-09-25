@@ -94,7 +94,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refused with the existing typed refusals. Rule ids new at those releases (19 SkillSpector, 24
   Cisco, listed with provenance in `src/trust/unreviewed-analyzer-rules.ts`) report
   `trust.unreviewed-analyzer-rule`, a WARN labelled "new analyzer rule, not yet reviewed" that
-  never blocks; any other unmapped id keeps its route. The installed Catalog's vendor lock was
+  never blocks, wherever no existing route gives them a specific meaning (an egress, legal-text or
+  autonomy classification wins unchanged); any other unmapped id keeps its route. The installed Catalog's vendor lock was
   vetted at the previous analyzers, so pin currency reports its receipts as drift until the
   requalified Catalog is adopted. `prepare:workbench-collection-evidence` takes
   `--definition-overlap <disjoint|compiler-catalog>` (default `disjoint`), as the scanner

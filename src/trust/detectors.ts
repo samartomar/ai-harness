@@ -34,7 +34,7 @@ import {
   type VerifiedCiscoShardJoinV1,
   verifiedCiscoShardJobSarifV1,
 } from "./cisco-shards.js";
-import type { RawScannerOccurrence } from "./evidence.js";
+import { isCredibleAutonomyFindingV1, type RawScannerOccurrence } from "./evidence.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
 import {
@@ -1108,9 +1108,6 @@ function ruleCode(
       code: mapped,
     };
   }
-  // An unmapped id an analyzer upgrade introduced warns until reviewed. Only the
-  // explicit list qualifies: any other unmapped id keeps its generic route below.
-  if (isUnreviewedAnalyzerRuleV1(detector.name, raw)) return { code: UNREVIEWED_ANALYZER_RULE };
   // Only an UNMAPPED Cisco rule id reaches the benign missing-license reclass.
   const metadataLicense = ciscoMetadataLicenseClassification(result, detector, facts, location);
   if (metadataLicense !== undefined) return metadataLicense;
@@ -1136,6 +1133,32 @@ function ruleCode(
       : { code: "trust.cisco-finding" };
   }
   return undefined;
+}
+
+// The bucket an unmapped id lands in when no rule, message or evidence route gives it meaning.
+const GENERIC_DETECTOR_CODES: Partial<Record<TrustDetectorName, CheckCode>> = {
+  skillspector: "trust.detector-finding",
+  cisco: "trust.cisco-finding",
+};
+
+// An id an analyzer upgrade introduced warns until reviewed, but only where Core gives it no
+// specific meaning: every existing route left it in the detector's generic bucket, including a
+// generic SkillSpector finding's autonomy REVIEW. It never replaces a classification Core makes.
+function unreviewedRuleRoute(
+  code: CheckCode,
+  result: SarifResult,
+  detector: TrustDetector,
+  root: string,
+  location: NonNullable<Check["location"]>,
+): CheckCode {
+  const raw = resultRuleId(result);
+  if (raw === undefined || code !== GENERIC_DETECTOR_CODES[detector.name]) return code;
+  if (!isUnreviewedAnalyzerRuleV1(detector.name, raw)) return code;
+  const detail = `${location.uri}:${location.startLine ?? 1} — ${detectorFindingLabel(detector)}: ${resultMessage(result, detector)}`;
+  if (code === "trust.detector-finding" && isCredibleAutonomyFindingV1(root, location, detail)) {
+    return code;
+  }
+  return UNREVIEWED_ANALYZER_RULE;
 }
 
 function detectorFindingLabel(detector: TrustDetector): string {
@@ -1348,7 +1371,7 @@ function sarifChecks(
         });
         continue;
       }
-      const { code } = classification;
+      const code = unreviewedRuleRoute(classification.code, classified, detector, root, location);
       if (
         code === "trust.prompt-injection" &&
         isNarrowReviewableRoleDefinition(classified, detector, root, facts, location)

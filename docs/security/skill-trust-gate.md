@@ -604,10 +604,13 @@ elevated risk. <!-- aih:claim CM-23 -->
 
 A rule id an analyzer upgrade introduced is not silently folded into those
 generic routes. `src/trust/unreviewed-analyzer-rules.ts` lists, with provenance,
-the ids new at the pinned SkillSpector and Cisco skill-scanner releases; each
-finding under a listed id is `trust.unreviewed-analyzer-rule`, a `WARN` labelled
-"new analyzer rule, not yet reviewed" that never blocks, until the rule is
-reviewed and mapped (or confirmed generic) and removed from the list. The list is
+the ids new at the pinned SkillSpector and Cisco skill-scanner releases. A
+finding under a listed id that every existing route leaves in the detector's
+generic bucket is `trust.unreviewed-analyzer-rule`, a `WARN` labelled "new
+analyzer rule, not yet reviewed" that never blocks, until the rule is reviewed and
+mapped (or confirmed generic) and removed from the list. The label never replaces
+a classification Core already makes: a listed id whose message or evidence reaches
+egress, legal text or the autonomy review keeps that outcome. The list is
 explicit: an id that is neither mapped nor listed keeps its generic route.
 
 The Cisco AI Defense skill-scanner also emits a metadata-hygiene finding when a

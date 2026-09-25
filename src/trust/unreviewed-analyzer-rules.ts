@@ -3,8 +3,11 @@ import type { TrustDetectorName } from "./detectors.js";
 /**
  * Rule ids an analyzer upgrade introduced that Core has not reviewed yet. Until a
  * rule is reviewed (mapped to a trust code in the detector's rule map, or left to
- * the generic route on purpose, and then removed from here), each finding under one
- * of these ids is a WARN that never blocks: `trust.unreviewed-analyzer-rule`.
+ * the generic route on purpose, and then removed from here), a finding under one of
+ * these ids that every existing route leaves in the detector's generic bucket is a
+ * WARN that never blocks: `trust.unreviewed-analyzer-rule`. A rule-map, message or
+ * evidence route that already classifies the finding (egress, legal text, autonomy)
+ * wins, unchanged.
  *
  * The list is explicit. An id that is neither mapped nor listed keeps its generic
  * route unchanged, so an unknown rule never becomes a warning just by being new.

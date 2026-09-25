@@ -192,6 +192,27 @@ export function normalizeTrustFindings(
   return findings;
 }
 
+/** A generic detector finding's one evidence route out of SUPPRESSED: credible broad autonomy. */
+function isCredibleAutonomy(detail: string, sourceValue: string | undefined): boolean {
+  const autonomyValue = sourceValue ?? "";
+  return (
+    /autonomous decision making/i.test(`${detail}\n${autonomyValue}`) &&
+    (/\bautomatically\b.*\b(?:without (?:asking|confirmation|consent)|do not ask|never ask)\b/i.test(
+      autonomyValue,
+    ) ||
+      /^\s*(?:do not|never)\s+ask\b/i.test(autonomyValue))
+  );
+}
+
+/** Whether a `trust.detector-finding` with this detail at `location` takes the autonomy REVIEW. */
+export function isCredibleAutonomyFindingV1(
+  root: string,
+  location: Check["location"],
+  detail: string,
+): boolean {
+  return isCredibleAutonomy(detail, safeSourceValue(root, location));
+}
+
 export function dispositionForTrustFinding(
   finding: NormalizedTrustFinding,
 ): TrustPolicyDisposition {
@@ -245,15 +266,9 @@ export function dispositionForTrustFinding(
       policyVersion: TRUST_POLICY_VERSION,
     };
   }
-  const autonomyText = `${finding.detail}\n${finding.sourceValue ?? ""}`;
-  const autonomyValue = finding.sourceValue ?? "";
   if (
     finding.code === "trust.detector-finding" &&
-    /autonomous decision making/i.test(autonomyText) &&
-    (/\bautomatically\b.*\b(?:without (?:asking|confirmation|consent)|do not ask|never ask)\b/i.test(
-      autonomyValue,
-    ) ||
-      /^\s*(?:do not|never)\s+ask\b/i.test(autonomyValue))
+    isCredibleAutonomy(finding.detail, finding.sourceValue)
   ) {
     return {
       findingFingerprint: finding.fingerprint,
