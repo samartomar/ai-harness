@@ -75,6 +75,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { globalNodeModules } from "./lib/packed-consumer.mjs";
 
 const toolRepo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ECC_REPOSITORY = "affaan-m/ECC";
@@ -672,7 +673,14 @@ try {
     ),
     "global-prefix install",
   );
-  const globalCli = join(globalPrefix, "node_modules", "@aihq", "core", "dist", "cli.js");
+  const globalModules = globalNodeModules(globalPrefix);
+  const npmGlobalRoot = npmRun(["root", "--global", "--prefix", globalPrefix], work);
+  check(
+    "Global prefix: npm's own global root is the platform layout the stage uses",
+    npmGlobalRoot.status === 0 && resolve(npmGlobalRoot.stdout.trim()) === resolve(globalModules),
+    `npm: ${npmGlobalRoot.stdout.trim() || npmGlobalRoot.stderr.trim().slice(0, 200)}; stage: ${globalModules}`,
+  );
+  const globalCli = join(globalModules, "@aihq", "core", "dist", "cli.js");
   const globalVersion = run(process.execPath, [globalCli, "--version"], work);
   check("Global prefix: aih --version", globalVersion.status === 0, globalVersion.stdout.trim());
   const globalValidate = spawnSync(
@@ -734,6 +742,7 @@ try {
       policyDataPrepareExit: prepareResult.status,
       preparedSourceDataFormat: preparedFormat,
       globalPrefix,
+      globalModules,
       globalVersionExit: globalVersion.status,
       globalPolicyValidateExit: globalValidate.status,
       fullProvenance,

@@ -60,6 +60,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { globalNodeModules } from "./lib/packed-consumer.mjs";
 
 const ECC = "@aihq/framework-ecc";
 const SUPERPOWERS = "@aihq/framework-superpowers";
@@ -384,7 +385,7 @@ try {
   // ---- installs: a project and a global prefix -------------------------------------------------
   const project = join(work, "project");
   const globalPrefix = join(work, "global");
-  const globalModules = process.platform === "win32" ? join(globalPrefix, "node_modules") : join(globalPrefix, "lib", "node_modules");
+  const globalModules = globalNodeModules(globalPrefix);
   // A previous run ends with the plugin removed from the global prefix; reinstall then.
   if (!reuse || ![join(project, "node_modules"), globalModules].every((modules) => existsSync(join(modules, "@aihq", "framework-ecc")))) {
     rmSync(project, { recursive: true, force: true });
