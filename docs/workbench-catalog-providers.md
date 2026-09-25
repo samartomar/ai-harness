@@ -263,7 +263,19 @@ npm run prepare:workbench-catalog-qualification -- --source /absolute/pinned-che
 ```
 
 It emits the complete inert package-data JSON file: original receipt material,
-independent Core material bindings, and minimal display projections. Only a
+independent Core material bindings, and minimal display projections.
+
+For many entries of one provider, the batch form takes a root holding one
+directory per entry, named by its entry ID, each with exactly those four files:
+
+```bash
+npm run prepare:workbench-catalog-qualification -- --source /absolute/pinned-checkout --provider mattpocock --artifacts-root /absolute/entries --output-dir /absolute/new-drafts
+```
+
+Each entry is verified exactly as the single form verifies one, and
+`<output-dir>/<entryId>.json` is byte-identical to the single form's output for
+that entry. The output directory must be new, and nothing is written unless
+every entry verifies. Only a
 reviewed Core release replaces `catalog-qualification-data.json` with that output.
 The fixed publisher policies must advance to the reviewed Scanner and Catalog
 release commits when their publication workflows change. Development pins cannot
