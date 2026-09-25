@@ -21,7 +21,7 @@ describe("independent Scanner publication lifecycle", () => {
     expect(workflow).toContain("349fcadac4bdb20807c0f3451f91178a3b5911cd");
     expect(workflow).toMatch(/SCANNER_PUBLISHER_COMMIT: \$\{\{ matrix\.publisherCommit \}\}/);
     expect(workflow).toMatch(
-      /id: ecc\n\s+repository: affaan-m\/ECC\n\s+sha: 5064474d4d762dc9640234a41617cccb79185cec\n\s+publisherCommit: 42885cd87e65520da5e47494d344d4a600e79ff9/,
+      /id: ecc\n\s+repository: affaan-m\/ECC\n\s+sha: 5064474d4d762dc9640234a41617cccb79185cec\n\s+publisherCommit: 938db3516001f43b1abf118b15fc12b5e2d8bbfb/,
     );
     expect(workflow).toMatch(
       /id: superpowers\n\s+repository: obra\/Superpowers\n\s+sha: 5bf4e78011075bcfc0dc295f0724994cd123ee71\n\s+publisherCommit: 349fcadac4bdb20807c0f3451f91178a3b5911cd/,

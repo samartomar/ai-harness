@@ -23,7 +23,7 @@ jobs:
           - id: ecc
             repository: affaan-m/ECC
             sha: 5064474d4d762dc9640234a41617cccb79185cec
-            publisherCommit: 42885cd87e65520da5e47494d344d4a600e79ff9
+            publisherCommit: 938db3516001f43b1abf118b15fc12b5e2d8bbfb
           - id: superpowers
             repository: obra/Superpowers
             sha: 5bf4e78011075bcfc0dc295f0724994cd123ee71
