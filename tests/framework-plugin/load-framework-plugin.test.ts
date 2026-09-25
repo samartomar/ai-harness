@@ -178,7 +178,7 @@ describe("loadFrameworkPluginV1 — framework-plugin-unavailable", () => {
     expect(refusal.reason).toBe("framework-plugin-unavailable");
     expect(refusal.packageName).toBe("@aihq/framework-superpowers");
     expect(refusal.detail).toBe(
-      "@aihq/framework-superpowers ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core (in a project: npm install @aihq/core).",
+      "@aihq/framework-superpowers ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core (in a project, npm keeps a package it already has, so delete node_modules/@aihq/core, then run: npm install).",
     );
   });
 

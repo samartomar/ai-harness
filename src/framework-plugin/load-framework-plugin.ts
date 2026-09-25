@@ -168,11 +168,17 @@ export function bundledFrameworkPluginAccessV1(
 
 const bundledPluginAccess = bundledFrameworkPluginAccessV1();
 
-/** The plugins ship inside @aihq/core, so a missing one means Core itself needs reinstalling. */
+/**
+ * The plugins ship inside @aihq/core, so a missing one means Core itself needs
+ * reinstalling. A global install reinstalls the named package; a project
+ * install reports "up to date" for a package whose manifest is present, never
+ * checking its files, so the project route deletes Core's directory first.
+ */
 export const FRAMEWORK_PLUGIN_REINSTALL_COMMAND = "npm install -g @aihq/core";
-export const FRAMEWORK_PLUGIN_PROJECT_REINSTALL_COMMAND = "npm install @aihq/core";
+export const FRAMEWORK_PLUGIN_PROJECT_REINSTALL_ROUTE =
+  "npm keeps a package it already has, so delete node_modules/@aihq/core, then run: npm install";
 
-const REINSTALL_ADVICE = `Reinstall @aihq/core with: ${FRAMEWORK_PLUGIN_REINSTALL_COMMAND} (in a project: ${FRAMEWORK_PLUGIN_PROJECT_REINSTALL_COMMAND}).`;
+const REINSTALL_ADVICE = `Reinstall @aihq/core with: ${FRAMEWORK_PLUGIN_REINSTALL_COMMAND} (in a project, ${FRAMEWORK_PLUGIN_PROJECT_REINSTALL_ROUTE}).`;
 
 function messageOf(error: unknown): string {
   return sanitizeLabel(error instanceof Error ? error.message : String(error), 240);

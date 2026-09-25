@@ -152,7 +152,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/framework-plugin/load-framework-plugin.ts",
-    375,
+    381,
     "export async function loadFrameworkPluginV1(",
   ],
   [
