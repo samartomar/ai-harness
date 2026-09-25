@@ -1,9 +1,9 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ciscoSkillScannerLockSha256 } from "../../src/baseline-evidence/analyzer-profile.js";
-import type { Runner } from "../../src/internals/proc.js";
+import { runCiscoSourceShardThroughScanV1 } from "../../src/trust/cisco-shard-delegation.js";
 import {
   buildCiscoShardManifest,
   buildCiscoShardResult,
@@ -11,16 +11,62 @@ import {
   type CiscoShardJobInput,
   joinCiscoShardResults,
 } from "../../src/trust/cisco-shards.js";
-import {
-  buildCiscoSourceShardManifest,
-  joinedCiscoShardSarif,
-  runCiscoSourceShard,
-} from "../../src/trust/detectors.js";
+import { buildCiscoSourceShardManifest, joinedCiscoShardSarif } from "../../src/trust/detectors.js";
+import { fakeCiscoJobSarif, type HandJobSubjectsForTests } from "./fakes/fake-cisco-job-sarif.js";
 
 const SOURCE_SHA = "a".repeat(40);
 const SOURCE_TREE = "b".repeat(64);
 const INPUT_HASHES = ["1", "2", "3", "4", "5"].map((value) => value.repeat(64));
+// The Cisco host-profile lock Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
+const LOCK_SHA256 = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
 const roots: string[] = [];
+
+/**
+ * Each fixture job's subject (subject-files-v1), computed by hand with plain
+ * node:crypto: sha256 of `<job>/SKILL.md\0<sha256 of its bytes>\n`.
+ * SKILL.md holds `# <job>\n` for skills/skill-N and `# <name>\n` for skills/<name>.
+ */
+const JOB_SUBJECTS: HandJobSubjectsForTests = {
+  "skills/skill-0": "d9b7473395d6550681766014fecd1a6bc75d77cb23d144abc7bef84c1f21ce48",
+  "skills/skill-1": "dc1e246c28caaa5184a0da7d47cd75dd866a1798d34b8f4d51a0b9c6592578a7",
+  "skills/skill-2": "e6eb4f3b188e162ca4bf92629a2b24394cfdf1b5c8e0266713e00e00127330f0",
+  "skills/skill-3": "b48ed78a85018b4fd240972d49bbb926003d19de662aba781315e7d081fb6639",
+  "skills/skill-4": "9a3db90f791933f7c252f920eade614be792b4632fb4946fbe8b226e39ac8083",
+  "skills/alpha": "439283bdb63ecb24c6a5af487d4a88163b4a7de486efa7d844cb1fb6e0db379a",
+  "skills/beta": "6637d24866ca58da16b6396feba0a0f7f3160d15c9f7ae0bcb99fb88e426f911",
+  "skills/gamma": "9c74128959ec0d4fd186321f143a90e94ddcac064f5167841084ffc167ae437e",
+};
+
+interface FakeShardRequest {
+  readonly sourceRoot: string;
+  readonly jobs: readonly { id: string; path: string; inputSha256: string }[];
+  readonly expected: { analyzerVersion: string; lockSha256: string };
+  readonly executionProfileId: string;
+}
+
+/** A stand-in for the installed @aihq/scan Cisco shard runner (see cisco-shard-delegation.test.ts). */
+function fakeCiscoShardScan(respond: (request: FakeShardRequest) => unknown): {
+  importer: () => Promise<unknown>;
+  requests: FakeShardRequest[];
+} {
+  const requests: FakeShardRequest[] = [];
+  const module = {
+    listDetectorCapabilitiesV1: () => [
+      {
+        detectorId: "detector.cisco",
+        analyzerVersion: "2.0.14",
+        executionProfiles: [
+          { id: "host-process-uv-v1", analyzerLock: { path: "uv.lock", sha256: LOCK_SHA256 } },
+        ],
+      },
+    ],
+    runCiscoShardV1: async (request: FakeShardRequest) => {
+      requests.push(request);
+      return respond(request);
+    },
+  };
+  return { importer: () => Promise.resolve(module), requests };
+}
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -43,7 +89,7 @@ function manifest(shardCount = 3) {
     analyzer: {
       name: "cisco",
       version: "2.0.14",
-      lockSha256: ciscoSkillScannerLockSha256(),
+      lockSha256: LOCK_SHA256,
     },
     policy: {
       version: "native.test",
@@ -54,12 +100,30 @@ function manifest(shardCount = 3) {
   });
 }
 
-function resultsFor(plan = manifest()) {
+/** A source tree holding every fixture job directory, so the join can rehash each job. */
+function jobsRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "aih-cisco-shards-join-"));
+  roots.push(root);
+  for (const job of jobs()) {
+    mkdirSync(join(root, job.path), { recursive: true });
+    writeFileSync(join(root, job.path, "SKILL.md"), `# ${job.path}\n`, "utf8");
+  }
+  return root;
+}
+
+function resultsFor(plan = manifest(), _root = jobsRoot()) {
   return plan.shards.map((shard) =>
-    buildCiscoShardResult(plan, shard.id, (job) => ({
-      version: "2.1.0",
-      runs: [{ results: [{ ruleId: "fixture", message: { text: job.path } }] }],
-    })),
+    buildCiscoShardResult(plan, shard.id, (job) =>
+      fakeCiscoJobSarif(
+        JOB_SUBJECTS,
+        job.path,
+        [{ ruleId: "fixture", message: { text: job.path } }],
+        {
+          version: "2.0.14",
+          lockSha256: LOCK_SHA256,
+        },
+      ),
+    ),
   );
 }
 
@@ -79,89 +143,137 @@ describe("Cisco exact-source shard evidence", () => {
 
   it("joins byte-identically regardless of worker completion order", () => {
     const plan = manifest();
-    const results = resultsFor(plan);
+    const root = jobsRoot();
+    const results = resultsFor(plan, root);
 
-    expect(JSON.stringify(joinCiscoShardResults(plan, [...results].reverse()))).toBe(
-      JSON.stringify(joinCiscoShardResults(plan, results)),
+    expect(JSON.stringify(joinCiscoShardResults(plan, [...results].reverse(), root))).toBe(
+      JSON.stringify(joinCiscoShardResults(plan, results, root)),
+    );
+  });
+
+  it("refuses to join a job whose SARIF does not prove it analyzed the job's files", () => {
+    const plan = manifest();
+    const root = jobsRoot();
+    const bare = plan.shards.map((shard) =>
+      buildCiscoShardResult(plan, shard.id, (job) => ({
+        version: "2.1.0",
+        runs: [{ results: [{ ruleId: "fixture", message: { text: job.path } }] }],
+      })),
+    );
+    expect(() => joinCiscoShardResults(plan, bare, root)).toThrow(
+      "Cisco job skills/skill-0 did not prove it completed: it holds SARIF whose run 0 names no tool driver",
+    );
+    const results = resultsFor(plan, root);
+    writeFileSync(join(root, "skills/skill-0/extra.md"), "added after the scan\n", "utf8");
+    expect(() => joinCiscoShardResults(plan, results, root)).toThrow(
+      /Cisco job skills\/skill-0 did not prove it completed: it holds completion evidence for 1 files with subject tree [0-9a-f]{64}; the subject Core submitted has 2 files/,
     );
   });
 
   it("fails closed for a missing shard", () => {
     const plan = manifest();
-    expect(() => joinCiscoShardResults(plan, resultsFor(plan).slice(0, -1))).toThrow(
+    const root = jobsRoot();
+    expect(() => joinCiscoShardResults(plan, resultsFor(plan, root).slice(0, -1), root)).toThrow(
       /missing Cisco shard result/i,
     );
   });
 
   it("fails closed for duplicate and unexpected shard results", () => {
     const plan = manifest();
-    const results = resultsFor(plan);
+    const root = jobsRoot();
+    const results = resultsFor(plan, root);
     const first = results[0];
     if (first === undefined) throw new Error("fixture result missing");
 
-    expect(() => joinCiscoShardResults(plan, [...results, first])).toThrow(
+    expect(() => joinCiscoShardResults(plan, [...results, first], root)).toThrow(
       /duplicate Cisco shard result/i,
     );
     expect(() =>
-      joinCiscoShardResults(plan, [...results.slice(1), { ...first, shardId: "999-of-999" }]),
+      joinCiscoShardResults(plan, [...results.slice(1), { ...first, shardId: "999-of-999" }], root),
     ).toThrow(/unexpected Cisco shard result/i);
   });
 
   it("fails closed when source, analyzer, job, or evidence identity drifts", () => {
     const plan = manifest();
-    const results = resultsFor(plan);
+    const root = jobsRoot();
+    const results = resultsFor(plan, root);
     const first = results[0];
     if (first === undefined) throw new Error("fixture result missing");
     const firstOutput = first.outputs[0];
     if (firstOutput === undefined) throw new Error("fixture output missing");
 
     expect(() =>
-      joinCiscoShardResults(plan, [
-        { ...first, manifestSha256: "d".repeat(64) },
-        ...results.slice(1),
-      ]),
+      joinCiscoShardResults(
+        plan,
+        [{ ...first, manifestSha256: "d".repeat(64) }, ...results.slice(1)],
+        root,
+      ),
     ).toThrow(/manifest identity/i);
     expect(() =>
-      joinCiscoShardResults(plan, [
-        {
-          ...first,
-          outputs: [{ ...firstOutput, inputSha256: "e".repeat(64) }, ...first.outputs.slice(1)],
-        },
-        ...results.slice(1),
-      ]),
+      joinCiscoShardResults(
+        plan,
+        [
+          {
+            ...first,
+            outputs: [{ ...firstOutput, inputSha256: "e".repeat(64) }, ...first.outputs.slice(1)],
+          },
+          ...results.slice(1),
+        ],
+        root,
+      ),
     ).toThrow(/input identity/i);
     expect(() =>
-      joinCiscoShardResults(plan, [
-        {
-          ...first,
-          outputs: [{ ...firstOutput, evidenceSha256: "f".repeat(64) }, ...first.outputs.slice(1)],
-        },
-        ...results.slice(1),
-      ]),
+      joinCiscoShardResults(
+        plan,
+        [
+          {
+            ...first,
+            outputs: [
+              { ...firstOutput, evidenceSha256: "f".repeat(64) },
+              ...first.outputs.slice(1),
+            ],
+          },
+          ...results.slice(1),
+        ],
+        root,
+      ),
     ).toThrow(/evidence digest/i);
     expect(() =>
-      joinCiscoShardResults(plan, [
-        { ...first, analyzer: { ...first.analyzer, version: "drifted" } },
-        ...results.slice(1),
-      ]),
+      joinCiscoShardResults(
+        plan,
+        [{ ...first, analyzer: { ...first.analyzer, version: "drifted" } }, ...results.slice(1)],
+        root,
+      ),
     ).toThrow(/analyzer identity/i);
     expect(() =>
-      joinCiscoShardResults({ ...plan, policy: { ...plan.policy, profile: "drifted" } }, results),
+      joinCiscoShardResults(
+        { ...plan, policy: { ...plan.policy, profile: "drifted" } },
+        results,
+        root,
+      ),
     ).toThrow(/manifest identity does not match/i);
     expect(() =>
-      joinCiscoShardResults(plan, [
-        {
-          ...first,
-          outputs: [{ ...firstOutput, jobId: "unexpected" }, ...first.outputs.slice(1)],
-        },
-        ...results.slice(1),
-      ]),
+      joinCiscoShardResults(
+        plan,
+        [
+          {
+            ...first,
+            outputs: [{ ...firstOutput, jobId: "unexpected" }, ...first.outputs.slice(1)],
+          },
+          ...results.slice(1),
+        ],
+        root,
+      ),
     ).toThrow(/unexpected Cisco job output/i);
     expect(() =>
-      joinCiscoShardResults(plan, [
-        { ...first, outputs: [firstOutput, firstOutput, ...first.outputs.slice(1)] },
-        ...results.slice(1),
-      ]),
+      joinCiscoShardResults(
+        plan,
+        [
+          { ...first, outputs: [firstOutput, firstOutput, ...first.outputs.slice(1)] },
+          ...results.slice(1),
+        ],
+        root,
+      ),
     ).toThrow(/duplicate Cisco job output/i);
   });
 
@@ -209,7 +321,7 @@ describe("Cisco exact-source shard evidence", () => {
     ).rejects.toThrow(/worker failed/);
   });
 
-  it("runs disjoint source shards and joins their SARIF in source order", async () => {
+  it("runs disjoint source shards through Scan and joins their SARIF in source order", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-cisco-shards-"));
     roots.push(root);
     for (const name of ["alpha", "beta", "gamma"]) {
@@ -219,61 +331,64 @@ describe("Cisco exact-source shard evidence", () => {
     }
     const plan = buildCiscoSourceShardManifest(root, {
       source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.14", lockSha256: ciscoSkillScannerLockSha256() },
+      analyzer: { version: "2.0.14", lockSha256: LOCK_SHA256 },
       policy: { version: "native.test", profile: "ecc-full" },
       shardCount: 2,
     });
-    const run: Runner = async (argv) => {
-      if (argv.includes("--version")) {
-        return { code: 0, stdout: "skill-scanner 2.0.14\n", stderr: "" };
-      }
-      const scanIndex = argv.indexOf("scan");
-      const outputIndex = argv.indexOf("--output-sarif");
-      const target = argv[scanIndex + 1];
-      const output = argv[outputIndex + 1];
-      if (scanIndex < 0 || outputIndex < 0 || target === undefined || output === undefined) {
-        return { code: 2, stdout: "", stderr: "unexpected fixture command" };
-      }
-      const heading = readFileSync(join(target, "SKILL.md"), "utf8").trim();
-      writeFileSync(
-        output,
-        JSON.stringify({
-          version: "2.1.0",
-          runs: [
-            {
-              results: [
+    // Scan returns each job's SARIF with URIs relative to the declared source root (C2).
+    const scan = fakeCiscoShardScan((request) => ({
+      outcome: "succeeded",
+      executionProfile: {
+        id: request.executionProfileId,
+        analyzerLock: { path: "uv.lock", sha256: LOCK_SHA256 },
+      },
+      analyzer: { version: request.expected.analyzerVersion, lockSha256: LOCK_SHA256 },
+      outputs: request.jobs.map((job) => {
+        const heading = readFileSync(join(request.sourceRoot, job.path, "SKILL.md"), "utf8");
+        const sarif = new TextEncoder().encode(
+          JSON.stringify({
+            version: "2.1.0",
+            runs: fakeCiscoJobSarif(
+              JOB_SUBJECTS,
+              job.path,
+              [
                 {
                   ruleId: "fixture",
-                  message: { text: heading },
+                  message: { text: heading.trim() },
                   locations: [
                     {
                       physicalLocation: {
-                        artifactLocation: { uri: "SKILL.md" },
+                        artifactLocation: { uri: `${job.path}/SKILL.md` },
                         region: { startLine: 1 },
                       },
                     },
                   ],
                 },
               ],
-            },
-          ],
-        }),
-        "utf8",
-      );
-      return { code: 0, stdout: "", stderr: "" };
-    };
+              { version: request.expected.analyzerVersion, lockSha256: LOCK_SHA256 },
+            ).runs,
+          }),
+        );
+        return {
+          jobId: job.id,
+          path: job.path,
+          inputSha256: job.inputSha256,
+          sarif,
+          sha256: createHash("sha256").update(sarif).digest("hex"),
+        };
+      }),
+    }));
     const workerResults = await Promise.all(
       [...plan.shards].reverse().map((shard) =>
-        runCiscoSourceShard(root, plan, shard.id, {
-          run,
-          platform: "linux",
-          env: {},
+        runCiscoSourceShardThroughScanV1(root, plan, shard.id, {
+          executionProfileId: "host-process-uv-v1",
           concurrency: 2,
+          importer: scan.importer,
         }),
       ),
     );
-    const joined = joinCiscoShardResults(plan, workerResults);
-    const sarif = JSON.parse(joinedCiscoShardSarif(joined)) as {
+    const joined = joinCiscoShardResults(plan, workerResults, root);
+    const sarif = JSON.parse(joinedCiscoShardSarif(joined).sarif) as {
       runs: Array<{
         results: Array<{
           message: { text: string };
@@ -284,6 +399,10 @@ describe("Cisco exact-source shard evidence", () => {
       }>;
     };
 
+    expect(scan.requests.map((request) => request.jobs.map((job) => job.path))).toEqual([
+      ["skills/beta"],
+      ["skills/alpha", "skills/gamma"],
+    ]);
     expect(joined.outputs.map((output) => output.path)).toEqual([
       "skills/alpha",
       "skills/beta",
@@ -304,81 +423,24 @@ describe("Cisco exact-source shard evidence", () => {
     writeFileSync(join(skillDir, "SKILL.md"), "# alpha\n", "utf8");
     const plan = buildCiscoSourceShardManifest(root, {
       source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.14", lockSha256: ciscoSkillScannerLockSha256() },
+      analyzer: { version: "2.0.14", lockSha256: LOCK_SHA256 },
       policy: { version: "native.test", profile: "ecc-full" },
       shardCount: 1,
     });
     writeFileSync(join(skillDir, "SKILL.md"), "# changed\n", "utf8");
     const shard = plan.shards[0];
     if (shard === undefined) throw new Error("fixture shard missing");
+    const scan = fakeCiscoShardScan(() => {
+      throw new Error("Scan must not run a drifted shard");
+    });
 
     await expect(
-      runCiscoSourceShard(root, plan, shard.id, {
-        run: async () => ({ code: 0, stdout: "skill-scanner 2.0.14\n", stderr: "" }),
-        platform: "linux",
-        env: {},
+      runCiscoSourceShardThroughScanV1(root, plan, shard.id, {
+        executionProfileId: "host-process-uv-v1",
+        concurrency: 1,
+        importer: scan.importer,
       }),
     ).rejects.toThrow(/source tree.*exact manifest identity/i);
-  });
-
-  it("removes volatile Cisco invocation timestamps before evidence hashing", async () => {
-    const root = mkdtempSync(join(tmpdir(), "aih-cisco-shards-time-"));
-    roots.push(root);
-    const skillDir = join(root, "skills", "alpha");
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, "SKILL.md"), "# alpha\n", "utf8");
-    const plan = buildCiscoSourceShardManifest(root, {
-      source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.14", lockSha256: ciscoSkillScannerLockSha256() },
-      policy: { version: "native.test", profile: "ecc-full" },
-      shardCount: 1,
-    });
-    let scanCount = 0;
-    const run: Runner = async (argv) => {
-      if (argv.includes("--version")) {
-        return { code: 0, stdout: "skill-scanner 2.0.14\n", stderr: "" };
-      }
-      const output = argv[argv.indexOf("--output-sarif") + 1];
-      if (output === undefined) return { code: 2, stdout: "", stderr: "missing SARIF path" };
-      scanCount++;
-      writeFileSync(
-        output,
-        JSON.stringify({
-          version: "2.1.0",
-          runs: [
-            {
-              invocations: [
-                {
-                  executionSuccessful: true,
-                  startTimeUtc: `2026-07-30T00:00:0${scanCount}Z`,
-                  endTimeUtc: `2026-07-30T00:00:1${scanCount}Z`,
-                },
-              ],
-              results: [],
-            },
-          ],
-        }),
-        "utf8",
-      );
-      return { code: 0, stdout: "", stderr: "" };
-    };
-    const shard = plan.shards[0];
-    if (shard === undefined) throw new Error("fixture shard missing");
-
-    const first = await runCiscoSourceShard(root, plan, shard.id, {
-      run,
-      platform: "linux",
-      env: {},
-    });
-    const second = await runCiscoSourceShard(root, plan, shard.id, {
-      run,
-      platform: "linux",
-      env: {},
-    });
-
-    expect(second.outputs[0]?.evidenceSha256).toBe(first.outputs[0]?.evidenceSha256);
-    expect(joinedCiscoShardSarif(joinCiscoShardResults(plan, [second]))).toBe(
-      joinedCiscoShardSarif(joinCiscoShardResults(plan, [first])),
-    );
+    expect(scan.requests).toEqual([]);
   });
 });

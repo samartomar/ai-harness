@@ -53,7 +53,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   [
     "src/scan-package/load-scan-package.ts",
     22,
-    'export const SCAN_PACKAGE_PEER_RANGE = ">=0.4.0 <1.0.0";',
+    'export const SCAN_PACKAGE_PEER_RANGE = ">=0.5.0 <0.6.0";',
   ],
   [
     "src/scan-package/load-scan-package.ts",
@@ -62,24 +62,58 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/scan-package/load-scan-package.ts",
-    94,
+    112,
     "export async function loadScanPackageExportsV1<K extends ScanPackageExportNameV1>(",
   ],
   [
     "src/scan-package/load-scan-package.ts",
-    123,
+    141,
     "export async function loadScanExecutionAdapterV1(",
   ],
+  ["src/scan-package/load-scan-package.ts", 157, "export function loadScanDetectorProbeV1("],
+  ["src/scan-package/load-scan-package.ts", 167, "export function loadScanCiscoShardRunnerV1("],
   [
     "src/trust/detectors.ts",
-    2249,
-    "export const SCAN_DELEGATED_TRUST_DETECTORS: ReadonlySet<TrustDetectorName> = new Set();",
-  ],
-  [
-    "src/trust/detectors.ts",
-    2257,
+    1419,
     'export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";',
   ],
+  [
+    "src/trust/detectors.ts",
+    1422,
+    "export const SCAN_DETECTOR_IDS: Readonly<Record<ScanRoutedDetectorV1, string>> = Object.freeze({",
+  ],
+  [
+    "src/trust/detectors.ts",
+    1439,
+    'export const DEFAULT_UV_EXECUTION_PROFILE: UvExecutionProfileIdV1 = "host-process-uv-v1";',
+  ],
+  [
+    "src/trust/detectors.ts",
+    1441,
+    'export const TRUST_LINT_EXECUTION_PROFILE = "in-process-trust-lint-v1";',
+  ],
+  [
+    "src/trust/detectors.ts",
+    1443,
+    'export const SKILLSPECTOR_EXECUTION_PROFILE = "docker-host-local-skillspector-v1";',
+  ],
+  ["src/trust/detectors.ts", 2164, "export async function resolveScanTrustLintRouteV1(options: {"],
+  [
+    "src/binding/scan-binding-gate.ts",
+    32,
+    'export const BINDING_GATE_DETECTOR_ID = "detector.aih-binding-gate";',
+  ],
+  [
+    "src/trust/scan-analyzer-identity.ts",
+    34,
+    "export const ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1: readonly AcceptedScanAnalyzerIdentityV1[] =",
+  ],
+  [
+    "src/trust/cisco-shard-delegation.ts",
+    157,
+    "export async function runCiscoSourceShardThroughScanV1(",
+  ],
+  ["src/trust/detector-availability.ts", 56, "export async function probeScanDetectorsV1("],
   [
     "src/catalog-package/load-catalog-package.ts",
     31,

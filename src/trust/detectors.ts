@@ -1,74 +1,91 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
-  existsSync,
+  type BigIntStats,
+  cpSync,
+  lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
-  statSync,
-  writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, join, posix, relative } from "node:path";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
-import { readRegularFileWithStats } from "../internals/fsxn.js";
-import type { Runner, RunResult } from "../internals/proc.js";
+import { AihError } from "../errors.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.js";
 import type { Platform } from "../platform/base.js";
 import {
   loadScanExecutionAdapterV1,
+  SCAN_PACKAGE_INSTALL_COMMAND,
+  SCAN_PACKAGE_PROJECT_INSTALL_COMMAND,
+  ScanPackageRefusalError,
   type ScanPackageRefusalReasonV1,
   type ScanPackageRefusalV1,
   scanPackageRefusalMessage,
 } from "../scan-package/load-scan-package.js";
-import { MCP_CONFIG_FILES } from "../secrets/scan.js";
-import { execArgv } from "../tools/install.js";
+import { startTrackedScanCall } from "../scan-package/settlement.js";
 import {
   buildCiscoShardManifest,
-  buildCiscoShardResultAsync,
   type CiscoShardManifest,
-  type CiscoShardResult,
+  ciscoShardJobSubjectV1,
   type JoinedCiscoShardEvidence,
+  type VerifiedCiscoShardJoinV1,
+  verifiedCiscoShardJobSarifV1,
 } from "./cisco-shards.js";
-import { dockerBindMountArg } from "./docker.js";
 import type { RawScannerOccurrence } from "./evidence.js";
-import { scrubDockerClientEnv, scrubFetchEnv } from "./fetch.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
 import {
-  resolveVerifiedSkillspectorImage,
   SKILLSPECTOR_IMAGE,
+  SKILLSPECTOR_IMAGE_DIGEST,
+  SKILLSPECTOR_SOURCE_REVISION,
   type SkillSpectorImageApproval,
 } from "./images.js";
-import type { TrustFileInventory } from "./inventory.js";
+import { buildTrustFileInventory, type TrustFileInventory } from "./inventory.js";
 import {
-  classifyUnicodeRisk,
-  detectorReportedHiddenUnicodeRisk,
-  isStrictUnicodeSurface,
-  scanTrustDocument,
-  type UnicodeRisk,
-} from "./lint.js";
-import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
+  ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1,
+  type AcceptedScanAnalyzerIdentityV1,
+  acceptedScanAnalyzerIdentityV1,
+  declaredScanAnalyzerIdentityRefusalV1,
+  executedScanAnalyzerIdentityRefusalV1,
+  observedScanAnalyzerVersionV1,
+  SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1,
+} from "./scan-analyzer-identity.js";
+import {
+  type CheckedScanSarifLogV1,
+  type CheckedScanSarifV1,
+  checkedScanSarifLogV1,
+  checkedScanSarifTextV1,
+  SCAN_COMPLETION_PROPERTY_V1,
+  scanCompletionRefusalV1,
+} from "./scan-sarif.js";
+import {
+  baselineVetAnnexSubjectFilesV1,
+  SCAN_EMPTY_SOURCE_COMPLETES_V1,
+  type ScanSubjectDigestV1,
+  scanDetectorSubjectFilesV1,
+  scanSubjectDigestV1,
+  sealedScanSubjectFilesV1,
+} from "./scan-subject-files.js";
 import {
   CISCO_MCP_SCANNER_ANALYZER,
-  CISCO_MCP_SCANNER_PROJECT,
   CISCO_SKILL_SCANNER_ANALYZER,
-  CISCO_SKILL_SCANNER_PROJECT,
-  CISCO_SKILL_SCANNER_VERSION,
   SEMGREP_ANALYZER,
-  SEMGREP_PROJECT,
-  SEMGREP_VERSION,
   SNYK_AGENT_SCAN_ANALYZER,
-  SNYK_AGENT_SCAN_PROJECT,
 } from "./scanner-runtime-identity.js";
-import { isInstallScriptEvidenceFilePath, isMaliciousCodeScanFilePath } from "./script-files.js";
+import {
+  DETECTOR_REPORTED_HIDDEN_UNICODE_RISK,
+  type TrustLintArtifactFactsV1,
+  type TrustLintCheckV1,
+  type TrustLintFactsV1,
+  trustLintChecksFromSarifV1,
+  type UnicodeRiskV1,
+} from "./trust-lint-sarif.js";
 
-const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
-
-// Detector names land here only when the adapter can at least surface an honest
-// availability check. A required-but-unavailable detector fails closed at
+// Detector names land here only when Scan can at least surface an honest
+// availability result. A required-but-unavailable detector fails closed at
 // enterprise posture rather than silently passing.
 export type TrustDetectorName =
   | "skillspector"
@@ -77,58 +94,60 @@ export type TrustDetectorName =
   | "semgrep"
   | "snyk-agent-scan";
 
+/** Core's name for Scan's `detector.aih-trust-lint`, which reports the native findings. */
+export const SCAN_TRUST_LINT_DETECTOR = "aih-trust-lint";
+
+/** Every detector Core routes to Scan: the five analyzers and the native findings. */
+export type ScanRoutedDetectorV1 = TrustDetectorName | typeof SCAN_TRUST_LINT_DETECTOR;
+
+/** The uv-backed profiles a caller may select; the host profile is the default on every OS. */
+export type UvExecutionProfileIdV1 = "host-process-uv-v1" | "linux-namespace-uv-v1";
+
+/** Core's classification of one detector's SARIF; execution is always Scan's. */
 export interface TrustDetector {
   name: TrustDetectorName;
   analyzerLabel: string;
-  checkAvailable: (
-    run: Runner,
-    platform: Platform,
-    env: NodeJS.ProcessEnv,
-    runtimeOptions?: TrustDetectorRuntimeOptions,
-  ) => Promise<string | undefined>;
-  runScan: (
-    run: Runner,
-    platform: Platform,
-    env: NodeJS.ProcessEnv,
-    tree: string,
-    runtimeOptions?: TrustDetectorRuntimeOptions,
-  ) => Promise<string>;
   ruleMap: Record<string, CheckCode>;
 }
 
-interface TrustDetectorRuntimeOptions {
-  skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
-  inventory?: TrustFileInventory;
-}
-
 export interface TrustDetectorOptions {
+  /** Read only for `SNYK_TOKEN` and `AIH_CISCO_SCAN_CONCURRENCY`; never handed to Scan whole. */
   env: NodeJS.ProcessEnv;
   platform: Platform;
   posture: Posture;
   requiredDetectors?: readonly TrustDetectorName[];
-  run: Runner;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
-  inventory?: TrustFileInventory;
+  inventory: TrustFileInventory;
   /** Restrict execution to this detector set. Omitted means the complete set for the scan kind. */
   detectors?: readonly TrustDetectorName[];
-  /** Exact, coordinator-validated SARIF that replaces local execution for the named detector. */
-  precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
+  /**
+   * SARIF that replaces execution for the named detector. It counts complete
+   * only with completion evidence v1 for this tree (or as a verified Cisco
+   * shard join); without evidence it is `completion-evidence-absent`.
+   */
+  precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>>;
   /**
    * Scan's detector execution. Omitted means the INSTALLED `@aihq/scan`, loaded
-   * on first need. An injected adapter replaces it (tests and embedders) and is
-   * delegated every detector its capability list names. The installed package
-   * is delegated only `delegatedDetectors`; every other detector keeps Core's
-   * execution and is recorded as `core-legacy`.
+   * on first need; an injected adapter replaces it (tests and embedders). Every
+   * detector runs through it: one it does not declare is unavailable, never run
+   * by Core.
    */
   scanExecution?: ScanExecutionAdapterV1;
   /**
-   * The detectors delegated to the installed package, with no fallback to Core.
-   * Defaults to `SCAN_DELEGATED_TRUST_DETECTORS`; tests name others to exercise
-   * the rule each detector will follow once it is delegated.
+   * The profile every uv-backed detector (semgrep, cisco, mcp-scanner,
+   * snyk-agent-scan) is requested under. Default `host-process-uv-v1` on every
+   * OS; the Linux namespace profile only when policy selects it. No profile
+   * falls back.
    */
-  delegatedDetectors?: ReadonlySet<TrustDetectorName>;
+  uvExecutionProfileId?: UvExecutionProfileIdV1;
+  /** Cancels the scan: Scan kills the analyzer's process tree and Core throws `TrustScanCancelledError`. */
+  signal?: AbortSignal;
   /** Native AIH findings that can corroborate an elevated third-party rule on the same line. */
   corroboratedChecks?: readonly Check[];
+  /** The facts Scan's trust lint stated for this tree; absent when the trust lint did not run. */
+  trustLintFacts?: TrustLintFactsV1;
+  /** The incoming MCP configs Core declared for this tree, in discovery order. */
+  mcpConfigPaths?: readonly string[];
   progress?: (message: string) => void;
 }
 
@@ -137,20 +156,21 @@ export interface TrustDetectorOptions {
  * execution profile when Scan ran it. Nothing about detector execution is silent.
  */
 export interface TrustDetectorExecutionV1 {
-  readonly detector: TrustDetectorName;
+  readonly detector: ScanRoutedDetectorV1;
   /**
    * `scan`: `@aihq/scan` handled it (installed package or injected adapter).
-   * `core-legacy`: Core's retained implementation, for a detector Scan does not declare.
    * `precomputed-sarif`: coordinator-validated SARIF replaced execution.
    * `none`: nothing executed it, because the Scan package refused.
    */
-  readonly executedBy: "scan" | "core-legacy" | "precomputed-sarif" | "none";
+  readonly executedBy: "scan" | "precomputed-sarif" | "none";
   readonly scanSource?: ScanExecutionSource;
   /** Scan's execution-profile id for a run Scan actually performed. */
   readonly executionProfileId?: string;
   readonly outcome: "completed" | "refused" | "failed" | "unavailable";
   /** The package-level refusal that left the detector unexecuted. */
   readonly refusal?: ScanPackageRefusalReasonV1;
+  /** Precomputed SARIF with no completion evidence v1: never counted complete (decision D17). */
+  readonly reason?: "completion-evidence-absent";
 }
 
 /**
@@ -183,93 +203,13 @@ export interface TrustDetectorResult {
 }
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
-const UV_SCANNER_PYTHON = "3.12";
-const UV_SCANNER_STARTUP_TIMEOUT_MS = 120_000;
 
 export {
   CISCO_MCP_SCANNER_ANALYZER,
-  CISCO_MCP_SCANNER_PROJECT,
-  CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_ANALYZER,
-  CISCO_SKILL_SCANNER_PROJECT,
-  CISCO_SKILL_SCANNER_VERSION,
   SEMGREP_ANALYZER,
-  SEMGREP_PROJECT,
-  SEMGREP_VERSION,
   SNYK_AGENT_SCAN_ANALYZER,
-  SNYK_AGENT_SCAN_PROJECT,
-  SNYK_AGENT_SCAN_VERSION,
 } from "./scanner-runtime-identity.js";
-
-// These Semgrep rules are deliberately small harness-owned safety rules, not a
-// complete substitute for native trust checks. The regexes are line-oriented,
-// including the download-and-execute rule, so a pass is same-line coverage only.
-const SEMGREP_RULES_YAML = [
-  "rules:",
-  "  - id: semgrep.prompt-injection",
-  "    languages: [generic]",
-  "    message: prompt injection shape in trust content",
-  "    severity: WARNING",
-  "    pattern-regex: '(?i)(ignore|disregard)\\s+(all\\s+)?previous\\s+instructions'",
-  "  - id: semgrep.malicious-code",
-  "    languages: [generic]",
-  "    message: download-and-execute shell shape in trust content",
-  "    severity: WARNING",
-  "    pattern-regex: '(?i)(curl|wget|Invoke-WebRequest|iwr).*\\b(sh|bash|iex|Invoke-Expression)\\b'",
-  "",
-].join("\n");
-const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
-const MAX_LEGAL_TEXT_BYTES = 2 * 1024 * 1024;
-const LEGAL_TEXT_BASENAME = /^(?:LICENSE|COPYING|NOTICE)(?:$|[._-])/i;
-const NON_TEXT_LEGAL_EXTENSIONS = new Set([
-  ".bat",
-  ".bin",
-  ".c",
-  ".cc",
-  ".cfg",
-  ".cjs",
-  ".cmd",
-  ".com",
-  ".conf",
-  ".cpp",
-  ".cs",
-  ".dll",
-  ".dylib",
-  ".env",
-  ".exe",
-  ".fish",
-  ".go",
-  ".h",
-  ".hpp",
-  ".ini",
-  ".jar",
-  ".java",
-  ".js",
-  ".json",
-  ".jsonc",
-  ".jsx",
-  ".kt",
-  ".kts",
-  ".mjs",
-  ".php",
-  ".pl",
-  ".properties",
-  ".ps1",
-  ".py",
-  ".rb",
-  ".rs",
-  ".sh",
-  ".sql",
-  ".so",
-  ".toml",
-  ".ts",
-  ".tsx",
-  ".yaml",
-  ".yml",
-  ".wasm",
-  ".xml",
-  ".zsh",
-]);
 
 const SKILLSPECTOR_RULE_MAP: Record<string, CheckCode> = {
   "auto-exec": "trust.auto-exec-hook",
@@ -340,606 +280,24 @@ interface SarifResult {
   locations?: SarifLocation[];
 }
 
-interface SarifRun {
-  invocations?: Array<Record<string, unknown>>;
-  results?: SarifResult[];
-}
-
-interface SarifLog {
-  runs?: SarifRun[];
-  version?: string;
-}
-
-interface SnykAgentFindingLocation {
-  file?: unknown;
-  line?: unknown;
-  path?: unknown;
-}
-
-interface SnykAgentFinding {
-  code?: unknown;
-  description?: unknown;
-  file?: unknown;
-  id?: unknown;
-  issueCode?: unknown;
-  line?: unknown;
-  location?: SnykAgentFindingLocation;
-  message?: unknown;
-  path?: unknown;
-  reference?: unknown;
-  ruleId?: unknown;
-  severity?: unknown;
-  title?: unknown;
-}
-
-interface SnykAgentReport {
-  findings?: unknown;
-  issues?: unknown;
-  results?: unknown;
-  vulnerabilities?: unknown;
-}
-
-interface SnykAgentScanPathResult {
-  issues?: unknown;
-  path?: unknown;
-  servers?: unknown;
-}
-
-interface SnykAgentServerResult {
-  config_path?: unknown;
-  server?: unknown;
-}
-
-interface McpScannerFindingSummary {
-  severity?: unknown;
-  threat_names?: unknown;
-  threat_summary?: unknown;
-  total_findings?: unknown;
-}
-
-interface McpScannerResult {
-  findings?: unknown;
-  is_safe?: unknown;
-  status?: unknown;
-  tool_name?: unknown;
-}
-
-interface MaliciousPattern {
-  label: string;
-  pattern: RegExp;
-}
-
-const MALICIOUS_PATTERNS: MaliciousPattern[] = [
-  {
-    label: "interactive bash reverse shell over /dev/tcp",
-    pattern: /\bbash\s+-i\b.*(?:>&|&>)\s*\/dev\/tcp\/[A-Za-z0-9._-]+\/\d+/,
-  },
-  {
-    label: "base64-decoded payload piped to shell",
-    pattern: /\bbase64\b[^\n|;&]*(?:-d|--decode)?[^\n|;&]*\|\s*(?:bash|sh)\b/,
-  },
-  {
-    label: "netcat exec shell",
-    pattern: /\bnc(?:at)?\b[^\n]*(?:-e|-c)\s*(?:\/bin\/)?(?:bash|sh)\b/,
-  },
-];
-
 function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
-function realpathIfExists(path: string): string {
+/** The source line a finding names: evidence for its fingerprint and `sourceValue`, never detection. */
+function fileLine(root: string, uri: string, line: number): string | undefined {
   try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-}
-
-function normalizeShellWhitespace(line: string): string {
-  // Collapse any ${IFS...} parameter-expansion form (plain, #/% removal, :offset
-  // substring, //pattern substitution) and bare $IFS to a space, so IFS-obfuscated
-  // reverse shells still match the patterns below.
-  return line.replace(/\$\{IFS[^}]*\}|\$IFS\b/g, " ");
-}
-
-function contentLine(path: string, line: number): string {
-  const text = readFileSync(path, "utf8");
-  return text.split(/\r?\n/)[line - 1] ?? "";
-}
-
-function fileLine(path: string, line: number): string | undefined {
-  try {
-    return contentLine(path, line);
+    const text = readFileSync(join(root, uri), "utf8");
+    return text.split(/\r?\n/)[line - 1] ?? "";
   } catch {
     return undefined;
   }
 }
 
-function maliciousCodeCheck(
-  occurrences: Map<string, number>,
-  rel: string,
-  line: number,
-  text: string,
-  label: string,
-): Check {
-  const ruleId = `native:${label}`;
-  const content = `${text}\0${label}`;
-  const key = JSON.stringify(["trust.malicious-code", rel, ruleId, content]);
-  const occurrence = occurrences.get(key) ?? 0;
-  occurrences.set(key, occurrence + 1);
-  return {
-    name: "trust.malicious-code",
-    verdict: "fail",
-    code: "trust.malicious-code",
-    detail: `${rel}:${line} — bundled script matches ${label}; static trust gate rejects raw malicious-code shapes`,
-    location: { uri: rel, startLine: line },
-    fingerprint: contentFindingFingerprint({
-      code: "trust.malicious-code",
-      path: rel,
-      ruleId,
-      content,
-      occurrence,
-      displayLine: line,
-    }),
-  };
-}
-
-export function scanNativeMaliciousCode(root: string, inventory?: TrustFileInventory): Check[] {
-  const files: Iterable<string> = inventory
-    ? {
-        *[Symbol.iterator]() {
-          for (const entry of inventory.matching(
-            (candidate) =>
-              isMaliciousCodeScanFilePath(candidate.relativePath) &&
-              candidate.size <= MAX_SCRIPT_SCAN_BYTES,
-          )) {
-            yield entry.absolutePath;
-          }
-        },
-      }
-    : collectFilesUnder(
-        root,
-        (abs) => {
-          const rel = toPosix(relative(root, abs));
-          return isMaliciousCodeScanFilePath(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
-        },
-        TRUST_SKIP_DIRS,
-      );
-  const checks: Check[] = [];
-  const occurrences = new Map<string, number>();
-  for (const file of files) {
-    const rel = toPosix(relative(root, file));
-    const lines = readFileSync(file, "utf8").split(/\r?\n/);
-    lines.forEach((line, index) => {
-      const normalizedLine = normalizeShellWhitespace(line);
-      for (const rule of MALICIOUS_PATTERNS) {
-        if (rule.pattern.test(normalizedLine)) {
-          checks.push(maliciousCodeCheck(occurrences, rel, index + 1, line, rule.label));
-        }
-      }
-    });
-  }
-  return checks;
-}
-
-export function skillspectorDockerRunArgv(
-  platform: Platform,
-  tree: string,
-  image: string = SKILLSPECTOR_IMAGE,
-  containerName = `aih-skillspector-${randomUUID()}`,
-): string[] {
-  // Native Windows Docker bind mounts can reject drive-letter paths; that fails safe to skip.
-  return execArgv(platform, [
-    "docker",
-    "run",
-    "--rm",
-    "--name",
-    containerName,
-    "--network",
-    "none",
-    "--cpus",
-    "2",
-    "--memory",
-    "4g",
-    "--memory-swap",
-    "4g",
-    "--pids-limit",
-    "256",
-    "--cap-drop",
-    "ALL",
-    "--cap-add",
-    "DAC_OVERRIDE",
-    "--security-opt",
-    "no-new-privileges",
-    "--read-only",
-    "--tmpfs",
-    "/tmp:rw,noexec,nosuid,size=64m",
-    "--mount",
-    dockerBindMountArg(tree, "/scan"),
-    image,
-    "scan",
-    "/scan",
-    "--no-llm",
-    "--format",
-    "sarif",
-  ]);
-}
-
-function skillspectorDockerCleanupArgv(platform: Platform, containerName: string): string[] {
-  return execArgv(platform, ["docker", "rm", "--force", "--volumes", containerName]);
-}
-
-function ciscoSkillScannerBaseArgv(): string[] {
-  return [
-    "uv",
-    "run",
-    "--project",
-    CISCO_SKILL_SCANNER_PROJECT,
-    "--locked",
-    "--isolated",
-    "--python",
-    UV_SCANNER_PYTHON,
-    "--offline",
-    "--no-python-downloads",
-    "--no-env-file",
-    "skill-scanner",
-  ];
-}
-
-function mcpScannerBaseArgv(): string[] {
-  return [
-    "uv",
-    "run",
-    "--project",
-    CISCO_MCP_SCANNER_PROJECT,
-    "--locked",
-    "--isolated",
-    "--python",
-    UV_SCANNER_PYTHON,
-    "--offline",
-    "--no-python-downloads",
-    "--no-env-file",
-    "mcp-scanner",
-  ];
-}
-
-function snykAgentScanBaseArgv(): string[] {
-  return [
-    "uv",
-    "run",
-    "--project",
-    SNYK_AGENT_SCAN_PROJECT,
-    "--locked",
-    "--isolated",
-    "--python",
-    UV_SCANNER_PYTHON,
-    "--offline",
-    "--no-python-downloads",
-    "--no-env-file",
-    "snyk-agent-scan",
-  ];
-}
-
-function semgrepBaseArgv(): string[] {
-  return [
-    "uv",
-    "run",
-    "--project",
-    SEMGREP_PROJECT,
-    "--locked",
-    "--isolated",
-    "--python",
-    UV_SCANNER_PYTHON,
-    "--offline",
-    "--no-python-downloads",
-    "--no-env-file",
-    "semgrep",
-  ];
-}
-
-function ciscoSkillScannerVersionArgv(platform: Platform): string[] {
-  return execArgv(platform, [...ciscoSkillScannerBaseArgv(), "--version"]);
-}
-
-function mcpScannerHelpArgv(platform: Platform): string[] {
-  return execArgv(platform, [...mcpScannerBaseArgv(), "--help"]);
-}
-
-function semgrepVersionArgv(platform: Platform): string[] {
-  return execArgv(platform, [...semgrepBaseArgv(), "--version"]);
-}
-
-function snykAgentScanHelpArgv(platform: Platform): string[] {
-  return execArgv(platform, [...snykAgentScanBaseArgv(), "help"]);
-}
-
-export function ciscoSkillScannerRunArgv(
-  platform: Platform,
-  tree: string,
-  outputSarif: string,
-): string[] {
-  return execArgv(platform, [
-    ...ciscoSkillScannerBaseArgv(),
-    "scan",
-    tree,
-    "--format",
-    "sarif",
-    "--output-sarif",
-    outputSarif,
-  ]);
-}
-
-export function mcpScannerStaticArgv(platform: Platform, inputJson: string): string[] {
-  return execArgv(platform, [
-    ...mcpScannerBaseArgv(),
-    "--raw",
-    "--analyzers",
-    "yara",
-    "static",
-    "--tools",
-    inputJson,
-  ]);
-}
-
-export function semgrepScanArgv(platform: Platform, tree: string, config: string): string[] {
-  return execArgv(platform, [
-    ...semgrepBaseArgv(),
-    "scan",
-    "--config",
-    config,
-    "--sarif",
-    "--metrics=off",
-    "--disable-version-check",
-    "--x-ignore-semgrepignore-files",
-    "--no-git-ignore",
-    "--scan-unknown-extensions",
-    "--",
-    tree,
-  ]);
-}
-
-export function snykAgentScanArgv(platform: Platform, tree: string): string[] {
-  return execArgv(platform, [
-    ...snykAgentScanBaseArgv(),
-    "scan",
-    tree,
-    "--json",
-    "--no-bootstrap",
-    "--suppress-mcpserver-io=true",
-  ]);
-}
-
-function runFailureReason(result: RunResult, fallback: string): string | undefined {
-  if (!result.spawnError && result.code === 0) return undefined;
-  return result.stderr || result.stdout || fallback;
-}
-
-function snykAgentScanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out = scrubFetchEnv(env);
-  if (typeof env.SNYK_TOKEN === "string" && env.SNYK_TOKEN.trim().length > 0) {
-    out.SNYK_TOKEN = env.SNYK_TOKEN.trim();
-  }
-  return out;
-}
-
-async function checkSkillspectorAvailable(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  runtimeOptions: TrustDetectorRuntimeOptions = {},
-): Promise<string | undefined> {
-  const image = await resolveVerifiedSkillspectorImage(
-    run,
-    platform,
-    env,
-    30_000,
-    runtimeOptions.skillspectorImageApprovals,
-  );
-  return "reason" in image ? image.reason : undefined;
-}
-
-async function runSkillspectorScan(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  tree: string,
-  runtimeOptions: TrustDetectorRuntimeOptions = {},
-): Promise<string> {
-  const image = await resolveVerifiedSkillspectorImage(
-    run,
-    platform,
-    env,
-    30_000,
-    runtimeOptions.skillspectorImageApprovals,
-  );
-  if ("reason" in image) throw new Error(image.reason);
-  const containerName = `aih-skillspector-${randomUUID()}`;
-  const dockerEnv = scrubDockerClientEnv(env);
-  const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image, containerName), {
-    env: dockerEnv,
-    // Full pinned catalogs are CPU-bound in SkillSpector and exceed the old
-    // two-minute budget even on the dedicated 6-vCPU vet hosts. Keep the
-    // external process bounded while allowing one exact source-wide run.
-    timeoutMs: 900_000,
-  });
-  const exitLabel = scan.code ?? "signal";
-  if (scan.spawnError || scan.truncated) {
-    const cleanup = await run(skillspectorDockerCleanupArgv(platform, containerName), {
-      env: dockerEnv,
-      timeoutMs: 30_000,
-    });
-    const cleanupDetail =
-      cleanup.spawnError || cleanup.code !== 0
-        ? `; container cleanup failed: ${
-            runFailureReason(cleanup, `docker exit ${cleanup.code ?? "signal"}`) ??
-            `docker exit ${cleanup.code ?? "signal"}`
-          }`
-        : "";
-    throw new Error(
-      `${
-        runFailureReason(scan, `detector exit ${exitLabel}`) ?? `detector exit ${exitLabel}`
-      }${cleanupDetail}`,
-    );
-  }
-  if (scan.code !== 0 && scan.code !== 1) {
-    const output = (scan.stderr || scan.stdout).trim();
-    throw new Error(`detector exit ${exitLabel}${output.length > 0 ? `: ${output}` : ""}`);
-  }
-  if (scan.stdout.trim().length === 0) {
-    throw new Error(scan.stderr.trim() || `detector exit ${exitLabel} emitted no SARIF`);
-  }
-  return scan.stdout;
-}
-
-async function checkCiscoAvailable(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  runtimeOptionsOrExpectedVersion?: TrustDetectorRuntimeOptions | string,
-): Promise<string | undefined> {
-  const expectedVersion =
-    typeof runtimeOptionsOrExpectedVersion === "string"
-      ? runtimeOptionsOrExpectedVersion
-      : CISCO_SKILL_SCANNER_VERSION;
-  const version = await run(ciscoSkillScannerVersionArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
-  });
-  const reason = runFailureReason(version, `uvx exit ${version.code ?? "signal"}`);
-  if (reason !== undefined) return reason;
-  const reportedVersion = version.stdout.trim();
-  if (reportedVersion.length === 0) {
-    return "skill-scanner version check emitted no output";
-  }
-  if (expectedVersion !== undefined && reportedVersion !== `skill-scanner ${expectedVersion}`) {
-    return `skill-scanner version ${JSON.stringify(reportedVersion)} does not match ${expectedVersion}`;
-  }
-  return undefined;
-}
-
-async function checkMcpScannerAvailable(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-): Promise<string | undefined> {
-  const help = await run(mcpScannerHelpArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
-  });
-  const reason = runFailureReason(help, `uvx exit ${help.code ?? "signal"}`);
-  if (reason !== undefined) return reason;
-  if (`${help.stdout}${help.stderr}`.trim().length === 0) {
-    return "mcp-scanner help check emitted no output";
-  }
-  return undefined;
-}
-
-async function checkSemgrepAvailable(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-): Promise<string | undefined> {
-  const version = await run(semgrepVersionArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
-  });
-  const reason = runFailureReason(version, `semgrep exit ${version.code ?? "signal"}`);
-  if (reason !== undefined) return reason;
-  const reportedVersion = version.stdout.trim();
-  if (reportedVersion.length === 0) {
-    return "semgrep version check emitted no output";
-  }
-  if (reportedVersion !== SEMGREP_VERSION) {
-    return `semgrep version ${JSON.stringify(reportedVersion)} does not match ${SEMGREP_VERSION}`;
-  }
-  return undefined;
-}
-
-async function checkSnykAgentScanAvailable(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-): Promise<string | undefined> {
-  if (typeof env.SNYK_TOKEN !== "string" || env.SNYK_TOKEN.trim().length === 0) {
-    return "SNYK_TOKEN is not set";
-  }
-  const help = await run(snykAgentScanHelpArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
-  });
-  const reason = runFailureReason(help, `uvx exit ${help.code ?? "signal"}`);
-  if (reason !== undefined) return reason;
-  if (`${help.stdout}${help.stderr}`.trim().length === 0) {
-    return "snyk-agent-scan help check emitted no output";
-  }
-  return undefined;
-}
-
-function collectCiscoSkillDirs(root: string, inventory?: TrustFileInventory): string[] {
-  const dirs = new Set<string>();
-  const skillFiles: Iterable<string> = inventory
-    ? {
-        *[Symbol.iterator]() {
-          for (const entry of inventory.matching(
-            (candidate) => basename(candidate.absolutePath) === "SKILL.md",
-          )) {
-            yield entry.absolutePath;
-          }
-        },
-      }
-    : collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md", TRUST_SKIP_DIRS);
-  for (const file of skillFiles) dirs.add(dirname(file));
-  return [...dirs].sort((a, b) =>
-    toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))),
-  );
-}
-
-function prefixSafeCiscoUri(prefix: string, raw: unknown): unknown {
-  if (typeof raw !== "string" || raw.length === 0) return raw;
-  const stripped = toPosix(raw.replace(/^file:\/\//, ""));
-  if (!isSafeRelativeSarifUri(stripped)) return raw;
-  return prefix.length > 0 ? `${prefix}/${stripped}` : stripped;
-}
-
-function prefixCiscoSarifUris(sarifText: string, root: string, skillRoot: string): SarifLog {
-  const parsed = parseSarifLog(sarifText);
-  if (parsed === undefined) throw new Error("detector did not emit valid SARIF");
-  const prefix = toPosix(relative(root, skillRoot));
-  return {
-    ...parsed,
-    runs: parsed.runs?.map((run) => ({
-      ...run,
-      invocations: run.invocations?.map((invocation) => {
-        const {
-          startTimeUtc: _startTimeUtc,
-          endTimeUtc: _endTimeUtc,
-          ...stableInvocation
-        } = invocation;
-        return stableInvocation;
-      }),
-      results: run.results?.map((result) => ({
-        ...result,
-        locations: result.locations?.map((location) => ({
-          ...location,
-          physicalLocation:
-            location.physicalLocation === undefined
-              ? undefined
-              : {
-                  ...location.physicalLocation,
-                  artifactLocation: {
-                    ...location.physicalLocation.artifactLocation,
-                    uri: prefixSafeCiscoUri(
-                      prefix,
-                      location.physicalLocation.artifactLocation?.uri,
-                    ),
-                  },
-                },
-        })),
-      })),
-    })),
-  };
-}
+// --------------------------------------------------------------------------
+// Cisco source-wide shards: Core builds the manifest and joins the results;
+// Scan executes each shard (`runCiscoShardV1`, see cisco-shard-delegation.ts).
+// --------------------------------------------------------------------------
 
 const DEFAULT_CISCO_SCAN_CONCURRENCY = 4;
 const MAX_CISCO_SCAN_CONCURRENCY = 64;
@@ -971,11 +329,17 @@ export interface CiscoSourceShardManifestOptions {
   inventory?: TrustFileInventory;
 }
 
-export interface CiscoSourceShardRunOptions {
-  run: Runner;
-  platform: Platform;
-  env: NodeJS.ProcessEnv;
-  concurrency?: number;
+/** Every directory holding a selected `SKILL.md`, sorted by relative path as Core has always sorted it. */
+function collectCiscoSkillDirs(root: string, inventory: TrustFileInventory): string[] {
+  const dirs = new Set<string>();
+  for (const entry of inventory.matching(
+    (candidate) => basename(candidate.absolutePath) === "SKILL.md",
+  )) {
+    dirs.add(dirname(entry.absolutePath));
+  }
+  return [...dirs].sort((a, b) =>
+    toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))),
+  );
 }
 
 export function buildCiscoSourceShardManifest(
@@ -983,9 +347,10 @@ export function buildCiscoSourceShardManifest(
   options: CiscoSourceShardManifestOptions,
 ): CiscoShardManifest {
   const safeRoot = realpathSync(root);
-  const paths = collectCiscoSkillDirs(safeRoot, options.inventory).map((skillDir) =>
-    toPosix(relative(safeRoot, skillDir)),
-  );
+  const paths = collectCiscoSkillDirs(
+    safeRoot,
+    options.inventory ?? buildTrustFileInventory(safeRoot),
+  ).map((skillDir) => toPosix(relative(safeRoot, skillDir)));
   if (paths.length === 0) throw new Error("no SKILL.md directories found for Cisco scan");
   const sourceTree = hashComponentTree(safeRoot, paths);
   return buildCiscoShardManifest({
@@ -1006,598 +371,522 @@ export function buildCiscoSourceShardManifest(
   });
 }
 
-async function scanCiscoSkillDirectory(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  root: string,
-  skillDir: string,
-): Promise<SarifLog> {
-  const tmp = mkdtempSync(join(tmpdir(), "aih-cisco-sarif-"));
-  const output = join(tmp, "results.sarif");
-  try {
-    const scan = await run(ciscoSkillScannerRunArgv(platform, skillDir, output), {
-      cwd: skillDir,
-      env: scrubFetchEnv(env),
-      timeoutMs: 120_000,
-    });
-    const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
-    if (reason !== undefined) throw new Error(reason);
-    return prefixCiscoSarifUris(readFileSync(output, "utf8"), root, skillDir);
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
-}
-
-function verifyCiscoShardSource(root: string, manifest: CiscoShardManifest): void {
-  const paths = manifest.jobs.map((job) => job.path);
-  const sourceTree = hashComponentTree(root, paths);
-  if (sourceTree.treeSha256 !== manifest.source.treeSha256) {
-    throw new Error("Cisco shard source tree does not match the exact manifest identity");
-  }
-  for (const job of manifest.jobs) {
-    if (hashComponentTree(root, [job.path]).treeSha256 !== job.inputSha256) {
-      throw new Error(`Cisco shard input identity changed: ${job.path}`);
-    }
-  }
-}
-
-export async function runCiscoSourceShard(
-  root: string,
-  manifest: CiscoShardManifest,
-  shardId: string,
-  options: CiscoSourceShardRunOptions,
-): Promise<CiscoShardResult> {
-  const safeRoot = realpathSync(root);
-  verifyCiscoShardSource(safeRoot, manifest);
-  const expectedVersion = manifest.analyzer.version.split("+", 1)[0] ?? manifest.analyzer.version;
-  const localLockSha256 = createHash("sha256")
-    .update(readFileSync(join(CISCO_SKILL_SCANNER_PROJECT, "uv.lock")))
-    .digest("hex");
-  if (localLockSha256 !== manifest.analyzer.lockSha256) {
-    throw new Error(
-      `Cisco shard analyzer lock does not match manifest identity: ${localLockSha256}`,
-    );
-  }
-  const unavailable = await checkCiscoAvailable(
-    options.run,
-    options.platform,
-    options.env,
-    expectedVersion,
-  );
-  if (unavailable !== undefined)
-    throw new Error(`Cisco shard analyzer unavailable: ${unavailable}`);
-  const result = await buildCiscoShardResultAsync(
-    manifest,
-    shardId,
-    async (job) => {
-      const skillDir = join(safeRoot, ...job.path.split("/"));
-      if (hashComponentTree(safeRoot, [job.path]).treeSha256 !== job.inputSha256) {
-        throw new Error(`Cisco shard input identity changed before scan: ${job.path}`);
-      }
-      const sarif = await scanCiscoSkillDirectory(
-        options.run,
-        options.platform,
-        options.env,
-        safeRoot,
-        skillDir,
-      );
-      if (hashComponentTree(safeRoot, [job.path]).treeSha256 !== job.inputSha256) {
-        throw new Error(`Cisco shard input identity changed during scan: ${job.path}`);
-      }
-      return sarif;
-    },
-    options.concurrency ?? resolveCiscoScanConcurrency(options.env),
-  );
-  verifyCiscoShardSource(safeRoot, manifest);
-  return result;
-}
-
 function sourcePathsIntersect(left: string, right: string): boolean {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
+/**
+ * Cisco SARIF joined from shard jobs whose completion evidence Core checked,
+ * job by job, against each job's own subject (`joinCiscoShardResults`). Its
+ * runs name different subjects, so it is exempt from the one-subject check
+ * precomputed SARIF otherwise meets, and only a value `joinedCiscoShardSarif`
+ * issued is: a look-alike is refused. The exemption holds only for the tree
+ * the value was issued for: its root, its exact job set, and each job's
+ * subject as verified at the join (`issuedShardJoinRefusalV1`).
+ */
+export interface VerifiedCiscoShardSarifV1 {
+  readonly kind: "verified-cisco-shard-join-v1";
+  readonly sarif: string;
+}
+
+/**
+ * A Scanner publication's (baseline-vet) annex. Only an annex the verified
+ * Scanner consumer issued (`consumeVerifiedScannerBaselineBatches`, after
+ * Scan's attestation verified) for this detector is checked under Scan's
+ * baseline rule (C2a §1.6 [Scan: S2j], decision D24); any other value of this
+ * shape is inline SARIF.
+ */
+export interface ScannerBaselineVetAnnexV1 {
+  readonly kind: "scanner-baseline-vet-annex-v1";
+  readonly sarif: string;
+}
+
+/**
+ * Precomputed SARIF: inline bytes, a Scanner publication's annex, or a Cisco
+ * shard join Core verified.
+ */
+export type PrecomputedDetectorSarifV1 =
+  | string
+  | ScannerBaselineVetAnnexV1
+  | VerifiedCiscoShardSarifV1;
+
+/** A directory's identity on disk: the same pathname may later hold another directory. */
+interface DirectoryIdentityV1 {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly birthtimeNs: bigint;
+}
+
+/**
+ * What an issued join is bound to: the canonical root it is presented for,
+ * each job's verified subject, and for a projection Core made, that
+ * directory's identity when Core created it.
+ */
+interface IssuedShardJoinBindingV1 {
+  readonly root: string;
+  readonly jobs: readonly { readonly path: string; readonly subject: ScanSubjectDigestV1 }[];
+  readonly projection?: DirectoryIdentityV1;
+}
+
+const ISSUED_SHARD_JOINS = new WeakMap<VerifiedCiscoShardSarifV1, IssuedShardJoinBindingV1>();
+/** Projection joins whose projection Core has removed: refused from then on. */
+const REVOKED_PROJECTION_JOINS = new WeakSet<VerifiedCiscoShardSarifV1>();
+
+/** The error code of a failed file-system operation, or "unknown error". */
+function errorCodeV1(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === "string" ? code : "unknown error";
+}
+
+/** A failed file-system operation on `path`, named by the path and the error code, for a refusal. */
+function failedPathV1(
+  path: string,
+  error: unknown,
+  action: "read" | "resolved" | "copied" | "removed",
+): string {
+  return `${path} cannot be ${action} (${errorCodeV1(error)})`;
+}
+
+/**
+ * The identity of a real directory at `path` (never a link or junction):
+ * `identity` is undefined when there is none, and `unreadable` names an I/O
+ * error that kept Core from reading it, which a caller turns into a refusal.
+ */
+function directoryIdentityV1(
+  path: string,
+): { readonly identity: DirectoryIdentityV1 | undefined } | { readonly unreadable: string } {
+  let stat: BigIntStats | undefined;
+  try {
+    stat = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+  } catch (error) {
+    return { unreadable: failedPathV1(path, error, "read") };
+  }
+  if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory())
+    return { identity: undefined };
+  return {
+    identity: Object.freeze({ dev: stat.dev, ino: stat.ino, birthtimeNs: stat.birthtimeNs }),
+  };
+}
+
+function sameDirectoryV1(
+  left: DirectoryIdentityV1,
+  right: DirectoryIdentityV1 | undefined,
+): boolean {
+  return (
+    right !== undefined &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.birthtimeNs === right.birthtimeNs
+  );
+}
+
+/**
+ * Issues the verified join's SARIF, optionally only for the jobs that meet
+ * `includedPaths`, bound to the root the join was verified against. The only
+ * other root it is ever bound to is a projection Core makes itself
+ * (`withCiscoShardJoinProjectionV1`).
+ */
 export function joinedCiscoShardSarif(
   joined: JoinedCiscoShardEvidence,
   includedPaths?: readonly string[],
-): string {
-  const runs: SarifRun[] = [];
-  for (const output of joined.outputs) {
+): VerifiedCiscoShardSarifV1 {
+  const verified = verifiedJoinOrThrow(joined);
+  return issueShardJoin(includedJobs(verified, includedPaths), verified.root);
+}
+
+/** A projection of a verified join's source, and the join's SARIF bound to it. */
+export interface CiscoShardJoinProjectionV1 {
+  readonly root: string;
+  readonly cisco: VerifiedCiscoShardSarifV1;
+}
+
+/**
+ * A projection Core could not remove once its scan settled, left behind at
+ * `path`: Core's shard projection, or baseline vet's own component projection.
+ * A diagnostic only: never a finding, and it never replaces a result.
+ */
+export interface ProjectionCleanupFailureV1 {
+  readonly kind:
+    | "cisco-shard-projection-cleanup-failed-v1"
+    | "baseline-component-projection-cleanup-failed-v1";
+  readonly path: string;
+  readonly code: string;
+  readonly detail: string;
+}
+
+/** A shard projection Core could not remove once its scan settled. */
+export interface CiscoShardProjectionCleanupFailureV1 extends ProjectionCleanupFailureV1 {
+  readonly kind: "cisco-shard-projection-cleanup-failed-v1";
+}
+
+/**
+ * The rejection for a scan whose own rejection cannot carry the cleanup
+ * failure (a primitive, a frozen error, or one already carrying another): the
+ * scan's rejection is its `cause`, unchanged.
+ */
+export class ProjectionCleanupRejectionV1 extends Error {
+  readonly cleanupFailure: ProjectionCleanupFailureV1;
+  constructor(rejection: unknown, cleanupFailure: ProjectionCleanupFailureV1) {
+    super(rejectionTextV1(rejection), { cause: rejection });
+    this.name = "ProjectionCleanupRejectionV1";
+    this.cleanupFailure = cleanupFailure;
+  }
+}
+
+function rejectionTextV1(rejection: unknown): string {
+  try {
+    return rejection instanceof Error ? rejection.message : String(rejection);
+  } catch {
+    return "a scan rejected with a value that cannot be printed";
+  }
+}
+
+/**
+ * Removes a projection; never throws. A failure is returned, naming the path
+ * and error code, for the caller to keep beside its result.
+ */
+export function removeProjectionV1<K extends ProjectionCleanupFailureV1["kind"]>(
+  root: string,
+  kind: K,
+  projection: string,
+): (ProjectionCleanupFailureV1 & { readonly kind: K }) | undefined {
+  try {
+    rmSync(root, { recursive: true, force: true });
+    return undefined;
+  } catch (error) {
+    return Object.freeze({
+      kind,
+      path: root,
+      code: errorCodeV1(error),
+      detail: `Core could not remove ${projection}: ${failedPathV1(root, error, "removed")}`,
+    });
+  }
+}
+
+/**
+ * The scan's own rejection, now carrying `cleanupFailure` as a typed
+ * property; never throws. A property, not `cause`: the cause belongs to the
+ * scan's error and may already hold its own reason, and wrapping would replace
+ * the error the caller catches. Only a rejection that cannot take the property
+ * is wrapped, in a `ProjectionCleanupRejectionV1` whose `cause` it is.
+ */
+export function rejectionWithCleanupFailureV1(
+  rejection: unknown,
+  cleanupFailure: ProjectionCleanupFailureV1,
+): unknown {
+  try {
     if (
-      includedPaths !== undefined &&
-      !includedPaths.some((path) => sourcePathsIntersect(output.path, path))
+      rejection instanceof Error &&
+      Object.isExtensible(rejection) &&
+      !Object.hasOwn(rejection, "cleanupFailure")
     ) {
-      continue;
-    }
-    const parsed = parseSarifLog(JSON.stringify(output.evidence));
-    if (parsed === undefined) {
-      throw new Error(`Cisco shard job ${output.path} did not retain valid SARIF evidence`);
-    }
-    runs.push(...(parsed.runs ?? []));
-  }
-  return JSON.stringify({ version: "2.1.0", runs });
-}
-
-async function mapConcurrentStable<T, R>(
-  items: readonly T[],
-  limit: number,
-  worker: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  const failures: Array<{ error: unknown; index: number }> = [];
-  let nextIndex = 0;
-  let stopped = false;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (!stopped && nextIndex < items.length) {
-      const index = nextIndex++;
-      const item = items[index];
-      if (item === undefined) throw new Error(`concurrent work item ${index} is missing`);
-      try {
-        results[index] = await worker(item);
-      } catch (error) {
-        failures.push({ error, index });
-        stopped = true;
-      }
-    }
-  });
-  await Promise.all(workers);
-  const firstFailure = failures.sort((left, right) => left.index - right.index)[0];
-  if (firstFailure !== undefined) throw firstFailure.error;
-  return results;
-}
-
-async function runCiscoSkillScan(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  tree: string,
-  runtimeOptions: TrustDetectorRuntimeOptions = {},
-): Promise<string> {
-  const skillDirs = collectCiscoSkillDirs(tree, runtimeOptions.inventory);
-  if (skillDirs.length === 0) throw new Error("no SKILL.md directories found for Cisco scan");
-  const runsBySkill = await mapConcurrentStable(
-    skillDirs,
-    resolveCiscoScanConcurrency(env),
-    async (skillDir): Promise<SarifRun[]> =>
-      (await scanCiscoSkillDirectory(run, platform, env, tree, skillDir)).runs ?? [],
-  );
-  return JSON.stringify({ version: "2.1.0", runs: runsBySkill.flat() });
-}
-
-function mcpConfigRoots(root: string, inventory?: TrustFileInventory): string[] {
-  const skillDirs = new Set<string>();
-  const skillFiles = inventory
-    ? inventory.matching((entry) => basename(entry.absolutePath) === "SKILL.md")
-    : collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md", TRUST_SKIP_DIRS).map(
-        (absolutePath) => ({ absolutePath }),
-      );
-  for (const entry of skillFiles) skillDirs.add(dirname(entry.absolutePath));
-  return [root, ...skillDirs];
-}
-
-function mcpConfigFiles(root: string, inventory?: TrustFileInventory): string[] {
-  return [
-    ...new Set(
-      mcpConfigRoots(root, inventory).flatMap((dir) =>
-        [...INCOMING_MCP_CONFIG_FILES]
-          .filter((name) => existsSync(join(dir, name)))
-          .map((name) => join(dir, name)),
-      ),
-    ),
-  ];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function snykIssueReference(issue: SnykAgentFinding): number | undefined {
-  const reference = issue.reference;
-  if (!Array.isArray(reference)) return undefined;
-  const serverIndex = reference[0];
-  return typeof serverIndex === "number" && Number.isInteger(serverIndex) && serverIndex >= 0
-    ? serverIndex
-    : undefined;
-}
-
-function snykServerUri(server: SnykAgentServerResult): string | undefined {
-  const configPath = firstString(server, ["config_path", "configPath", "path"]);
-  if (configPath !== undefined) return configPath;
-  if (isRecord(server.server)) {
-    return firstString(server.server, ["path", "config_path", "configPath"]);
-  }
-  return undefined;
-}
-
-function snykScanPathIssueUri(
-  scanPath: string,
-  pathResult: SnykAgentScanPathResult,
-  issue: SnykAgentFinding,
-): string {
-  const direct = firstString(issue, ["file", "path"]);
-  if (direct !== undefined) return direct;
-  const reference = snykIssueReference(issue);
-  if (reference !== undefined && Array.isArray(pathResult.servers)) {
-    const server = pathResult.servers[reference];
-    if (isRecord(server)) {
-      const serverUri = snykServerUri(server);
-      if (serverUri !== undefined) return serverUri;
-    }
-  }
-  return firstString(pathResult, ["path"]) ?? scanPath;
-}
-
-function snykFindingArray(report: unknown): SnykAgentFinding[] | undefined {
-  if (Array.isArray(report)) return report.filter(isRecord) as SnykAgentFinding[];
-  if (!isRecord(report)) return undefined;
-  const typedReport = report as SnykAgentReport;
-  for (const key of ["findings", "issues", "results", "vulnerabilities"] as const) {
-    const value = typedReport[key];
-    if (Array.isArray(value)) return value.filter(isRecord) as SnykAgentFinding[];
-  }
-  const pathFindings: SnykAgentFinding[] = [];
-  let sawScanPathResult = false;
-  for (const [scanPath, rawPathResult] of Object.entries(typedReport)) {
-    if (!isRecord(rawPathResult)) continue;
-    const pathResult = rawPathResult as SnykAgentScanPathResult;
-    if (!Array.isArray(pathResult.issues)) continue;
-    sawScanPathResult = true;
-    for (const rawIssue of pathResult.issues) {
-      if (!isRecord(rawIssue)) continue;
-      const issue = rawIssue as SnykAgentFinding;
-      pathFindings.push({
-        ...issue,
-        path: snykScanPathIssueUri(scanPath, pathResult, issue),
+      Object.defineProperty(rejection, "cleanupFailure", {
+        value: cleanupFailure,
+        enumerable: true,
       });
+      return rejection;
     }
-  }
-  if (sawScanPathResult || Object.keys(typedReport).length === 0) return pathFindings;
-  return undefined;
-}
-
-function firstString(record: object, keys: readonly string[]): string | undefined {
-  for (const key of keys) {
-    const value = (record as Record<string, unknown>)[key];
-    if (typeof value === "string" && value.trim().length > 0) return value;
-  }
-  return undefined;
-}
-
-function snykFindingRuleId(finding: SnykAgentFinding): string {
-  return firstString(finding, ["id", "code", "issueCode", "ruleId"]) ?? "snyk-agent-scan.finding";
-}
-
-function snykFindingMessage(finding: SnykAgentFinding): string {
-  const title = firstString(finding, ["title", "message", "description"]);
-  const description = firstString(finding, ["description", "message"]);
-  if (title !== undefined && description !== undefined && title !== description) {
-    return `${title}: ${description}`;
-  }
-  return title ?? description ?? "Snyk Agent Scan finding";
-}
-
-function snykSafeSarifUri(raw: string, tree: string): string {
-  const stripped = raw.replace(/^file:\/\//, "");
-  const posix = toPosix(stripped);
-  if (isAbsolute(stripped) || isAbsolute(posix) || /^[A-Za-z]:/.test(posix)) {
-    const relativeUri = toPosix(relative(realpathIfExists(tree), realpathIfExists(stripped)));
-    if (relativeUri.length === 0) return ".";
-    return isSafeRelativeSarifUri(relativeUri) ? relativeUri : ".";
-  }
-  return isSafeRelativeSarifUri(posix) ? posix : ".";
-}
-
-function snykFindingUri(finding: SnykAgentFinding, tree: string): string {
-  let raw: string | undefined;
-  if (isRecord(finding.location)) {
-    const locationFile = firstString(finding.location, ["file", "path"]);
-    if (locationFile !== undefined) raw = locationFile;
-  }
-  raw ??= firstString(finding, ["file", "path"]);
-  return raw === undefined ? "." : snykSafeSarifUri(raw, tree);
-}
-
-function snykFindingLine(finding: SnykAgentFinding): number {
-  const raw = isRecord(finding.location) ? (finding.location.line ?? finding.line) : finding.line;
-  return typeof raw === "number" && Number.isInteger(raw) && raw > 0 ? raw : 1;
-}
-
-function snykAgentScanSarif(raw: string, tree: string): SarifLog {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
   } catch {
-    throw new Error("snyk-agent-scan did not emit parseable JSON");
+    // A rejection that refuses the property is wrapped below.
   }
-  const findings = snykFindingArray(parsed);
-  if (findings === undefined) {
-    throw new Error("snyk-agent-scan JSON did not include a findings array");
+  return new ProjectionCleanupRejectionV1(rejection, cleanupFailure);
+}
+
+/** The cleanup failure a scan's rejection carries, if any. */
+export function projectionCleanupFailureOfV1(
+  rejection: unknown,
+): ProjectionCleanupFailureV1 | undefined {
+  try {
+    if (typeof rejection !== "object" || rejection === null) return undefined;
+    const failure = (rejection as { cleanupFailure?: unknown }).cleanupFailure;
+    if (typeof failure !== "object" || failure === null) return undefined;
+    const kind = (failure as { kind?: unknown }).kind;
+    return kind === "cisco-shard-projection-cleanup-failed-v1" ||
+      kind === "baseline-component-projection-cleanup-failed-v1"
+      ? (failure as ProjectionCleanupFailureV1)
+      : undefined;
+  } catch {
+    return undefined;
   }
-  const results = findings.filter(isRecord).map((finding): SarifResult => {
-    const typed = finding as SnykAgentFinding;
-    return {
-      ruleId: snykFindingRuleId(typed),
-      message: { text: snykFindingMessage(typed) },
-      locations: [
-        {
-          physicalLocation: {
-            artifactLocation: { uri: snykFindingUri(typed, tree) },
-            region: { startLine: snykFindingLine(typed) },
-          },
-        },
-      ],
+}
+
+/**
+ * What a projection of a verified join came to: `scanned`, the scan's own
+ * result; or `refused`, the failed Cisco detector Core returns without a scan
+ * when it could not prepare the projection. Either way `cleanupFailure` names
+ * a projection Core could not remove; it never replaces the result.
+ */
+export type CiscoShardJoinProjectionResultV1<T> =
+  | {
+      readonly kind: "scanned";
+      readonly result: T;
+      readonly cleanupFailure?: CiscoShardProjectionCleanupFailureV1;
+    }
+  | {
+      readonly kind: "refused";
+      readonly detector: TrustDetectorResult;
+      readonly cleanupFailure?: CiscoShardProjectionCleanupFailureV1;
     };
-  });
-  return { version: "2.1.0", runs: [{ results }] };
-}
 
-function mcpScannerRuleId(analyzer: string, threat: string): string {
-  const normalized = threat
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized.length > 0 ? normalized : analyzer;
-}
-
-function mcpScannerToolUri(raw: unknown, sourceUriByToolName: ReadonlyMap<string, string>): string {
-  if (typeof raw !== "string") return "mcp-scanner.json";
-  const candidate = sourceUriByToolName.get(raw);
-  return candidate !== undefined && isSafeRelativeSarifUri(candidate)
-    ? candidate
-    : "mcp-scanner.json";
-}
-
-function mcpScannerSarif(raw: string, sourceUriByToolName: ReadonlyMap<string, string>): SarifLog {
-  let parsed: unknown;
+/**
+ * Runs `scan` over a projection of a verified join's source: a directory Core
+ * creates beside the verified root, into which Core copies, from that root,
+ * every job that meets `includedPaths` (symbolic links left out; a job nested
+ * in another selected job arrives with it), with the
+ * join's SARIF for those jobs bound to that directory. The caller may add
+ * other files; the scan still rehashes every job it finds there. The join
+ * holds only while that directory, by identity, is the one Core created: it
+ * is revoked, and the directory removed, once `scan` settles. A projection
+ * Core cannot prepare is never scanned: Core returns the failed Cisco detector
+ * naming the path and error code, and reads nothing more there. A rejected
+ * `scan` rejects with its own error, carrying any `cleanupFailure`
+ * (`rejectionWithCleanupFailureV1`).
+ */
+export async function withCiscoShardJoinProjectionV1<T>(
+  joined: JoinedCiscoShardEvidence,
+  includedPaths: readonly string[],
+  scan: (projection: CiscoShardJoinProjectionV1) => Promise<T>,
+): Promise<CiscoShardJoinProjectionResultV1<T>> {
+  const verified = verifiedJoinOrThrow(joined);
+  const jobs = includedJobs(verified, includedPaths);
+  const root = mkdtempSync(join(dirname(verified.root), ".aih-cisco-shard-projection-"));
+  let issued: VerifiedCiscoShardSarifV1 | undefined;
+  let settled:
+    | { readonly kind: "scanned"; readonly result: T }
+    | { readonly kind: "refused"; readonly detector: TrustDetectorResult }
+    | { readonly kind: "rejected"; readonly error: unknown };
   try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("mcp-scanner did not emit parseable JSON");
+    const prepared = prepareShardProjectionV1(verified, jobs, root);
+    if ("refusal" in prepared) {
+      settled = {
+        kind: "refused",
+        detector: shardProjectionRefusedV1(
+          `Core could not prepare the shard join's projection: ${prepared.refusal}`,
+        ),
+      };
+    } else {
+      issued = issueShardJoin(jobs, prepared.canonical, prepared.identity);
+      settled = { kind: "scanned", result: await scan(Object.freeze({ root, cisco: issued })) };
+    }
+  } catch (error) {
+    settled = { kind: "rejected", error };
   }
-  if (!Array.isArray(parsed)) {
-    throw new Error("mcp-scanner JSON did not include a result array");
-  }
-  if (parsed.length !== sourceUriByToolName.size) {
-    throw new Error(
-      `mcp-scanner returned ${parsed.length} result(s) for ${sourceUriByToolName.size} submitted tool(s)`,
-    );
-  }
-
-  const remainingToolNames = new Set(sourceUriByToolName.keys());
-
-  const results: SarifResult[] = [];
-  for (const rawResult of parsed) {
-    if (!isRecord(rawResult)) {
-      throw new Error("mcp-scanner JSON included a malformed result");
-    }
-    const result = rawResult as McpScannerResult;
-    if (result.status !== "completed" || typeof result.is_safe !== "boolean") {
-      throw new Error("mcp-scanner JSON included an incomplete result");
-    }
-    if (typeof result.tool_name !== "string") {
-      throw new Error("mcp-scanner JSON result omitted its submitted tool name");
-    }
-    if (!remainingToolNames.delete(result.tool_name)) {
-      throw new Error(`mcp-scanner JSON included an unexpected tool result: ${result.tool_name}`);
-    }
-    if (!isRecord(result.findings)) {
-      throw new Error("mcp-scanner JSON result omitted analyzer findings");
-    }
-    if (!isRecord(result.findings.yara_analyzer)) {
-      throw new Error("mcp-scanner JSON result omitted required YARA analyzer coverage");
-    }
-
-    let emitted = 0;
-    for (const [analyzer, rawSummary] of Object.entries(result.findings)) {
-      if (!isRecord(rawSummary)) {
-        throw new Error("mcp-scanner JSON included a malformed analyzer finding");
-      }
-      const summary = rawSummary as McpScannerFindingSummary;
-      const total =
-        typeof summary.total_findings === "number" &&
-        Number.isInteger(summary.total_findings) &&
-        summary.total_findings >= 0
-          ? summary.total_findings
-          : undefined;
-      if (total === undefined) {
-        throw new Error("mcp-scanner JSON analyzer finding omitted a valid total");
-      }
-      if (total === 0) continue;
-
-      const threats = Array.isArray(summary.threat_names)
-        ? summary.threat_names.filter((threat): threat is string => typeof threat === "string")
-        : [];
-      const findingNames = threats.length > 0 ? threats : [analyzer];
-      const detail =
-        typeof summary.threat_summary === "string" && summary.threat_summary.length > 0
-          ? summary.threat_summary
-          : `${total} finding(s) from ${analyzer}`;
-      const severity = typeof summary.severity === "string" ? `; severity ${summary.severity}` : "";
-      for (const threat of findingNames) {
-        results.push({
-          ruleId: mcpScannerRuleId(analyzer, threat),
-          message: { text: `${detail}${severity}; analyzer ${analyzer}; count ${total}` },
-          locations: [
-            {
-              physicalLocation: {
-                artifactLocation: {
-                  uri: mcpScannerToolUri(result.tool_name, sourceUriByToolName),
-                },
-                region: { startLine: 1 },
-              },
-            },
-          ],
-        });
-        emitted += 1;
-      }
-    }
-    if (result.is_safe === false && emitted === 0) {
-      throw new Error("mcp-scanner marked a result unsafe without reporting a finding");
-    }
-  }
-
-  return { version: "2.1.0", runs: [{ results }] };
-}
-
-function safeToolName(raw: string): string {
-  const safe = raw.replace(/[^A-Za-z0-9._:-]/g, "_").replace(/^_+|_+$/g, "");
-  return safe.length > 0 ? safe.slice(0, 120) : "mcp-server";
-}
-
-interface McpStaticTool {
-  sourceUri: string;
-  tool: Record<string, unknown>;
-}
-
-function mcpStaticToolsFromConfig(rel: string, parsed: unknown): McpStaticTool[] {
-  if (!isRecord(parsed)) return [];
-  const maps: Array<Record<string, unknown>> = [];
-  for (const key of ["mcpServers", "servers", "mcp"]) {
-    const value = parsed[key];
-    if (isRecord(value)) maps.push(value);
-  }
-  return maps.flatMap((servers) =>
-    Object.entries(servers)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, rawServer]) => {
-        const description =
-          isRecord(rawServer) && typeof rawServer.description === "string"
-            ? rawServer.description.slice(0, 400)
-            : `MCP server declared in ${rel}`;
-        return {
-          sourceUri: rel,
-          tool: {
-            name: safeToolName(`${rel}:${name}`),
-            description,
-            inputSchema: { type: "object", properties: {} },
-          },
-        };
-      }),
+  if (issued !== undefined) REVOKED_PROJECTION_JOINS.add(issued);
+  const cleanupFailure = removeProjectionV1(
+    root,
+    "cisco-shard-projection-cleanup-failed-v1",
+    "the shard join's projection",
   );
+  if (settled.kind === "rejected")
+    throw cleanupFailure === undefined
+      ? settled.error
+      : rejectionWithCleanupFailureV1(settled.error, cleanupFailure);
+  return Object.freeze(cleanupFailure === undefined ? settled : { ...settled, cleanupFailure });
 }
 
-function mcpStaticTools(root: string, inventory?: TrustFileInventory): McpStaticTool[] {
-  return mcpConfigFiles(root, inventory).flatMap((abs) => {
-    const rel = toPosix(relative(root, abs));
+/**
+ * The failed Cisco detector for a projection Core could not prepare, as
+ * `runTrustDetectors` reports a refused shard join: a failed check, never a
+ * pass, whatever the posture.
+ */
+function shardProjectionRefusedV1(reason: string): TrustDetectorResult {
+  return {
+    checks: [
+      {
+        name: "trust detector cisco",
+        verdict: "fail",
+        code: DETECTOR_UNAVAILABLE,
+        detail: unavailableDetail(
+          "cisco",
+          `precomputed SARIF for ${SCAN_DETECTOR_IDS.cisco} is refused: ${reason}`,
+        ),
+      },
+    ],
+    analyzersRun: [],
+    rawOccurrences: [],
+    executions: [{ detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" }],
+    observations: [],
+  };
+}
+
+/**
+ * Reads the new projection directory's identity, copies the selected jobs
+ * into it from the verified root, and resolves it; or names the path and error
+ * code of the first file-system operation that failed.
+ */
+function prepareShardProjectionV1(
+  verified: VerifiedCiscoShardJoinV1,
+  jobs: VerifiedCiscoShardJoinV1["jobs"],
+  root: string,
+):
+  | { readonly canonical: string; readonly identity: DirectoryIdentityV1 }
+  | { readonly refusal: string } {
+  const read = directoryIdentityV1(root);
+  if ("unreadable" in read) return { refusal: read.unreadable };
+  if (read.identity === undefined) return { refusal: `${root} is not a real directory` };
+  // Copying a job copies every job nested in it, so only the outermost
+  // selected jobs are copied; every selected job is still bound and rehashed.
+  const outermost = jobs.filter(
+    (job) => !jobs.some((other) => job.path.startsWith(`${other.path}/`)),
+  );
+  for (const job of outermost) {
+    const source = join(verified.root, ...job.path.split("/"));
+    let unreadable: string | undefined;
     try {
-      return mcpStaticToolsFromConfig(rel, JSON.parse(readFileSync(abs, "utf8")) as unknown);
-    } catch {
-      return [
-        {
-          sourceUri: rel,
-          tool: {
-            name: safeToolName(`${rel}:malformed`),
-            description: `Malformed MCP config declared in ${rel}`,
-            inputSchema: { type: "object", properties: {} },
-          },
+      const target = join(root, ...job.path.split("/"));
+      mkdirSync(dirname(target), { recursive: true });
+      cpSync(source, target, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        dereference: false,
+        preserveTimestamps: true,
+        filter: (candidate) => {
+          try {
+            return !lstatSync(candidate).isSymbolicLink();
+          } catch (error) {
+            unreadable = failedPathV1(candidate, error, "read");
+            throw error;
+          }
         },
-      ];
+      });
+    } catch (error) {
+      return { refusal: unreadable ?? failedPathV1(source, error, "copied") };
     }
-  });
-}
-
-async function runMcpScannerScan(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  tree: string,
-  runtimeOptions: TrustDetectorRuntimeOptions = {},
-): Promise<string> {
-  const tmp = mkdtempSync(join(tmpdir(), "aih-mcp-scanner-"));
-  const input = join(tmp, "tools.json");
+  }
   try {
-    const staticTools = mcpStaticTools(tree, runtimeOptions.inventory);
-    if (staticTools.length === 0) {
-      throw new Error("mcp-scanner received an MCP config with no scannable tools");
-    }
-    const sourceUriByToolName = new Map<string, string>();
-    const tools = staticTools.map(({ sourceUri, tool }) => {
-      if (typeof tool.name !== "string") throw new Error("derived MCP tool omitted its name");
-      if (sourceUriByToolName.has(tool.name)) {
-        throw new Error(`derived duplicate MCP tool name: ${tool.name}`);
-      }
-      sourceUriByToolName.set(tool.name, sourceUri);
-      return tool;
-    });
-    writeFileSync(input, `${JSON.stringify({ tools }, null, 2)}\n`, "utf8");
-    const scan = await run(mcpScannerStaticArgv(platform, input), {
-      env: scrubFetchEnv(env),
-      timeoutMs: 120_000,
-    });
-    const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
-    if (reason !== undefined) throw new Error(reason);
-    if (scan.stdout.trim().length === 0) throw new Error("mcp-scanner emitted no JSON");
-    return JSON.stringify(mcpScannerSarif(scan.stdout, sourceUriByToolName));
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    return { canonical: realpathSync.native(root), identity: read.identity };
+  } catch (error) {
+    return { refusal: failedPathV1(root, error, "resolved") };
   }
 }
 
-async function runSemgrepScan(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  tree: string,
-): Promise<string> {
-  const tmp = mkdtempSync(join(tmpdir(), "aih-semgrep-rules-"));
-  const config = join(tmp, "rules.yml");
-  try {
-    writeFileSync(config, SEMGREP_RULES_YAML, "utf8");
-    const scan = await run(semgrepScanArgv(platform, tree, config), {
-      env: scrubFetchEnv(env),
-      timeoutMs: 120_000,
-    });
-    if (scan.spawnError || scan.code !== 0) {
-      throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
-    }
-    if (scan.stdout.trim().length === 0) throw new Error("semgrep scan emitted no SARIF");
-    const parsed = parseSarifLog(scan.stdout);
-    const detail = scan.stderr.trim().length > 0 ? `: ${scan.stderr.trim().slice(0, 200)}` : "";
-    if (parsed === undefined) throw new Error(`semgrep scan emitted no parseable SARIF${detail}`);
-    if (parsed.version !== "2.1.0") {
-      const version = typeof parsed.version === "string" ? parsed.version : "missing";
-      throw new Error(`semgrep returned SARIF version ${version}, expected 2.1.0${detail}`);
-    }
-    return scan.stdout;
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
+function verifiedJoinOrThrow(joined: JoinedCiscoShardEvidence): VerifiedCiscoShardJoinV1 {
+  const verified = verifiedCiscoShardJobSarifV1(joined);
+  if (verified === undefined)
+    throw new Error("Cisco shard evidence was not joined by joinCiscoShardResults");
+  return verified;
 }
 
-async function runSnykAgentScan(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  tree: string,
-): Promise<string> {
-  const scan = await run(snykAgentScanArgv(platform, tree), {
-    env: snykAgentScanEnv(env),
-    timeoutMs: 120_000,
+function includedJobs(
+  verified: VerifiedCiscoShardJoinV1,
+  includedPaths: readonly string[] | undefined,
+): VerifiedCiscoShardJoinV1["jobs"] {
+  return includedPaths === undefined
+    ? verified.jobs
+    : verified.jobs.filter((job) =>
+        includedPaths.some((path) => sourcePathsIntersect(job.path, path)),
+      );
+}
+
+/** Issues `jobs`' SARIF bound to `root`: the verified root, or a projection Core made. */
+function issueShardJoin(
+  jobs: VerifiedCiscoShardJoinV1["jobs"],
+  root: string,
+  projection?: DirectoryIdentityV1,
+): VerifiedCiscoShardSarifV1 {
+  const runs: CheckedScanSarifLogV1["runs"][number][] = [];
+  const bound: IssuedShardJoinBindingV1["jobs"][number][] = [];
+  for (const job of jobs) {
+    const checked = checkedScanSarifLogV1(JSON.parse(job.sarif));
+    if ("refusal" in checked) {
+      throw new Error(
+        `Cisco shard job ${job.path} did not retain valid SARIF evidence: it holds ${checked.refusal}`,
+      );
+    }
+    runs.push(...checked.log.runs);
+    bound.push(Object.freeze({ path: job.path, subject: Object.freeze({ ...job.subject }) }));
+  }
+  const issued: VerifiedCiscoShardSarifV1 = Object.freeze({
+    kind: "verified-cisco-shard-join-v1",
+    sarif: JSON.stringify({ version: "2.1.0", runs }),
   });
-  if (scan.spawnError) {
-    throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
-  }
-  if (scan.stdout.trim().length === 0) {
-    throw new Error(scan.stderr || "snyk-agent-scan emitted no JSON on stdout");
-  }
-  // Snyk Agent Scan documents --ci as the mode that exits non-zero for findings,
-  // but we avoid --ci because it requires --dangerously-run-mcp-servers. Accept
-  // exit 1 only when the JSON payload contains findings.
-  if (scan.code !== 0 && scan.code !== 1) {
-    throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
-  }
-  const sarif = snykAgentScanSarif(scan.stdout, tree);
-  if (scan.code === 1 && !sarif.runs?.some((sarifRun) => (sarifRun.results ?? []).length > 0)) {
-    throw new Error(scan.stderr || "snyk-agent-scan exited 1 without findings");
-  }
-  return JSON.stringify(sarif);
+  ISSUED_SHARD_JOINS.set(
+    issued,
+    Object.freeze({
+      root,
+      jobs: Object.freeze(bound),
+      ...(projection === undefined ? {} : { projection }),
+    }),
+  );
+  return issued;
 }
+
+/**
+ * Why an issued shard join does not describe the tree being scanned now, or
+ * undefined when it does: a projection's join must not be revoked, the
+ * scanned root must be the one it is bound to (for a projection, the very
+ * directory Core created, by identity, before and after the rehash), the jobs Core derives from that tree (every directory holding a selected
+ * `SKILL.md`) must be exactly its jobs, and each job's subject, rehashed now,
+ * must equal the subject verified at the join.
+ */
+function issuedShardJoinRefusalV1(
+  issued: VerifiedCiscoShardSarifV1,
+  binding: IssuedShardJoinBindingV1,
+  root: string,
+  inventory: TrustFileInventory,
+): string | undefined {
+  if (REVOKED_PROJECTION_JOINS.has(issued))
+    return "the shard join's projection no longer exists: Core removed it when the projection's scan settled";
+  let scanned: string;
+  try {
+    scanned = realpathSync.native(root);
+  } catch (error) {
+    return `the root being scanned cannot be resolved: ${failedPathV1(root, error, "resolved")}`;
+  }
+  if (scanned !== binding.root)
+    return `the shard join Core verified is bound to source root ${binding.root}, not the root being scanned, ${scanned}`;
+  const projection = binding.projection;
+  // The projection must still be the directory Core created; an identity
+  // Core cannot read is a refusal naming the path and the error code.
+  const identityRefusal = (when: string): string | undefined => {
+    if (projection === undefined) return undefined;
+    const now = directoryIdentityV1(scanned);
+    if ("unreadable" in now)
+      return `the identity of the projection directory Core created cannot be read ${when}: ${now.unreadable}`;
+    return sameDirectoryV1(projection, now.identity)
+      ? undefined
+      : `the shard join is bound to the projection directory Core created at ${binding.root}, and the directory there now is another one`;
+  };
+  const before = identityRefusal("before the jobs are rehashed");
+  if (before !== undefined) return before;
+  const bound = binding.jobs.map((job) => job.path).sort();
+  const derived = [
+    ...new Set(
+      inventory.files
+        .map((entry) => entry.relativePath)
+        .filter((path) => posix.basename(path) === "SKILL.md")
+        .map((path) => posix.dirname(path)),
+    ),
+  ].sort();
+  const added = derived.filter((path) => !bound.includes(path));
+  const removed = bound.filter((path) => !derived.includes(path));
+  if (added.length > 0 || removed.length > 0)
+    return `the shard join Core verified covers jobs ${bound.join(", ")}, and the tree being scanned has jobs ${derived.join(", ") || "none"} (added: ${added.join(", ") || "none"}; removed: ${removed.join(", ") || "none"})`;
+  for (const job of binding.jobs) {
+    let now: ScanSubjectDigestV1;
+    try {
+      now = ciscoShardJobSubjectV1(scanned, job.path);
+    } catch (error) {
+      return `the tree changed after Core verified the shard join: job ${job.path} cannot be rehashed: ${(error as Error)?.message ?? "unknown error"}`;
+    }
+    if (
+      now.subjectTreeSha256 !== job.subject.subjectTreeSha256 ||
+      now.analyzedFileCount !== job.subject.analyzedFileCount
+    )
+      return `the tree changed after Core verified the shard join: job ${job.path} was verified with ${job.subject.analyzedFileCount} files and subject tree ${job.subject.subjectTreeSha256}, and now has ${now.analyzedFileCount} files with subject tree ${now.subjectTreeSha256}`;
+  }
+  return identityRefusal("after the jobs were rehashed");
+}
+
+// --------------------------------------------------------------------------
+// SARIF -> Core check classification (Core's policy; the facts come from Scan)
+// --------------------------------------------------------------------------
 
 function unavailableDetail(detector: TrustDetectorName, reason: string): string {
   const runbook =
     detector === "skillspector"
-      ? " See docs/security/skillspector.md to build the pinned image."
+      ? " Load the pinned SkillSpector image locally as @aihq/scan documents; Core never pulls it."
       : "";
   return `DEGRADED-COVERAGE: deep scan SKIPPED — ${detector} not available (${reason}); coverage is GREEN-tier only. Analyzers run: aih-native.${runbook}`;
 }
@@ -1622,64 +911,34 @@ function unavailableCheck(
   };
 }
 
-function parseSarifLog(raw: string): (SarifLog & { runs: SarifRun[] }) | undefined {
-  try {
-    const parsed = JSON.parse(raw) as SarifLog;
-    return Array.isArray(parsed.runs) ? { ...parsed, runs: parsed.runs } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function resultRuleId(result: SarifResult): string | undefined {
   const raw = typeof result.ruleId === "string" ? result.ruleId : result.rule?.id;
   return typeof raw === "string" ? raw : undefined;
 }
 
-function sourceTextForLocation(
-  root: string,
-  location: NonNullable<Check["location"]>,
-): string | undefined {
-  try {
-    return readFileSync(join(root, location.uri), "utf8");
-  } catch {
-    return undefined;
-  }
-}
+const NO_TRUST_LINT_FACTS: TrustLintFactsV1 = Object.freeze({
+  trustDocumentCount: 0,
+  repositoryLicenseFile: null,
+  artifacts: new Map(),
+});
 
-function reviewableLegalTextContent(
-  root: string,
+/** The facts Scan stated for a readable sealed file, or undefined (absent, a directory, or unreadable). */
+function readableFacts(
+  facts: TrustLintFactsV1,
   location: NonNullable<Check["location"]>,
-): Buffer | undefined {
-  if (!LEGAL_TEXT_BASENAME.test(basename(location.uri))) return undefined;
-  if (isStrictUnicodeSurface(location.uri)) return undefined;
-  if (isInstallScriptEvidenceFilePath(location.uri)) return undefined;
-  if (NON_TEXT_LEGAL_EXTENSIONS.has(extname(location.uri).toLowerCase())) return undefined;
-  try {
-    const path = join(root, location.uri);
-    const rootReal = realpathSync(root);
-    const pathReal = realpathSync(path);
-    const fromRoot = relative(rootReal, pathReal);
-    if (!isSafeRelativeSarifUri(toPosix(fromRoot))) return undefined;
-    const opened = readRegularFileWithStats(pathReal, { maxBytes: MAX_LEGAL_TEXT_BYTES });
-    if (opened === undefined || (opened.stats.mode & 0o111) !== 0) return undefined;
-    if (opened.contents.includes(0)) return undefined;
-    return opened.contents.subarray(0, 256).toString("utf8").startsWith("#!")
-      ? undefined
-      : opened.contents;
-  } catch {
-    return undefined;
-  }
+): Exclude<TrustLintArtifactFactsV1, { unreadable: true }> | undefined {
+  const entry = facts.artifacts.get(location.uri);
+  return entry === undefined || entry.unreadable ? undefined : entry;
 }
 
 function unicodeRiskForLocation(
-  root: string,
+  facts: TrustLintFactsV1,
   location: NonNullable<Check["location"]>,
-): UnicodeRisk | undefined {
-  const source = sourceTextForLocation(root, location);
-  return source === undefined
-    ? detectorReportedHiddenUnicodeRisk()
-    : classifyUnicodeRisk(location.uri, source);
+): UnicodeRiskV1 | undefined {
+  const file = readableFacts(facts, location);
+  return file === undefined
+    ? DETECTOR_REPORTED_HIDDEN_UNICODE_RISK
+    : (file.unicodeRisk ?? undefined);
 }
 
 function isReviewableVisibleUnicodeDetectorResult(
@@ -1699,13 +958,13 @@ function isReviewableVisibleUnicodeDetectorResult(
 function hiddenUnicodeRiskForDetectorResult(
   result: SarifResult,
   detector: TrustDetector,
-  root: string,
+  facts: TrustLintFactsV1,
   location: NonNullable<Check["location"]>,
-): UnicodeRisk | undefined {
+): UnicodeRiskV1 | undefined {
   if (!isReviewableVisibleUnicodeDetectorResult(result, detector)) {
-    return detectorReportedHiddenUnicodeRisk();
+    return DETECTOR_REPORTED_HIDDEN_UNICODE_RISK;
   }
-  return unicodeRiskForLocation(root, location);
+  return unicodeRiskForLocation(facts, location);
 }
 
 type DetectorRuleClassification =
@@ -1716,7 +975,6 @@ const SKILLSPECTOR_SC4_OFFLINE_FALLBACK =
   /^🟡 SC4: OSV\.dev unreachable, using static fallback \([1-9][0-9]* packages\)\. Results may be incomplete\. Set SKILLSPECTOR_OSV_TIMEOUT to increase timeout or check network connectivity to api\.osv\.dev\.$/;
 const SKILLSPECTOR_YR4_METADATA_MESSAGE =
   "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]";
-const COREPACK_PACKAGE_MANAGER_INTEGRITY = /^[A-Za-z0-9._-]+@[^+\s"]+\+sha512\.[a-f0-9]{128}$/i;
 // The Cisco skill-scanner's metadata-hygiene "missing license field" finding.
 // Its rule id (MANIFEST_MISSING_LICENSE, emitted by cisco-ai-skill-scanner
 // ==2.0.12) is not in CISCO_RULE_MAP, so it otherwise falls through to the
@@ -1731,48 +989,17 @@ const COREPACK_PACKAGE_MANAGER_INTEGRITY = /^[A-Za-z0-9._-]+@[^+\s"]+\+sha512\.[
 const CISCO_MISSING_LICENSE_RULE_ID = "MANIFEST_MISSING_LICENSE";
 const CISCO_MISSING_LICENSE_MESSAGE =
   /\bskill manifest does not include a ['"‘’]?license['"‘’]?\s+field\b/i;
-const REPOSITORY_LICENSE_FILES = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"] as const;
-// SkillSpector YR4 (`agent_skill_mcp_tool_poisoning_metadata`) fires when
-// `any of ($schema_*)` (ubiquitous manifest keys like `"description":`) is
-// present AND at least one Gate-B poisoning co-signal matches. The carve-out
-// below only downgrades the finding to advisory when the SOLE surviving Gate-B
-// signal is the pinned Corepack `packageManager` integrity blob (which trips the
-// rule's `$long_base64`). To stay fail-closed, `hasSkillspectorYr4PoisoningSignal`
-// MUST over-approximate every Gate-B string in the pinned rule: each constant
-// below mirrors exactly one rule string (five are byte-for-byte identical). The
-// full class-by-class equivalence table and the re-verify-on-pin-bump obligation
-// live in docs/security/skillspector.md \u2014 re-check it whenever
-// SKILLSPECTOR_SOURCE_REVISION changes.
-const SKILLSPECTOR_YR4_HIDDEN_HTML =
-  /<!--[^>]{0,240}(?:SYSTEM|IGNORE|OVERRIDE|DEVELOPER|ASSISTANT)[^>]{0,240}-->/i;
-const SKILLSPECTOR_YR4_HIDDEN_MARKDOWN =
-  /\[\/\/\]:\s*#\s*\([^)]{0,240}(?:SYSTEM|IGNORE|OVERRIDE|DEVELOPER|ASSISTANT)[^)]{0,240}\)/i;
-const SKILLSPECTOR_YR4_DATA_URI = /data:text\/[a-zA-Z0-9.+-]+;base64,/i;
-const SKILLSPECTOR_YR4_LONG_OPAQUE = /[A-Za-z0-9+/]{120,}={0,2}/;
-// `[\s\S]{0,160}` (not `.{0,160}`) mirrors YARA's newline-permissive `.`, which
-// matches CR / U+2028 / U+2029 that JavaScript's `.` skips. Without this, a
-// poisoning payload separated from its `(parameter|argument|description)` anchor
-// by a lone CR (legal JSON whitespace) matched the pinned rule but slipped past
-// this co-signal, wrongly earning the advisory carve-out.
-const SKILLSPECTOR_YR4_PARAMETER_INJECTION =
-  /(?:parameter|argument|description)[\s\S]{0,160}(?:ignore previous|override safety|send to|transmit|exfiltrate|SYSTEM:)/i;
-const SKILLSPECTOR_YR4_DIRECTIONAL_CONTROL = /[\u200b-\u200d\u202d\u202e]/;
 
-function hasSkillspectorYr4PoisoningSignal(source: string): boolean {
-  return (
-    SKILLSPECTOR_YR4_HIDDEN_HTML.test(source) ||
-    SKILLSPECTOR_YR4_HIDDEN_MARKDOWN.test(source) ||
-    SKILLSPECTOR_YR4_DATA_URI.test(source) ||
-    SKILLSPECTOR_YR4_LONG_OPAQUE.test(source) ||
-    SKILLSPECTOR_YR4_PARAMETER_INJECTION.test(source) ||
-    SKILLSPECTOR_YR4_DIRECTIONAL_CONTROL.test(source)
-  );
-}
-
+// SkillSpector YR4 (`agent_skill_mcp_tool_poisoning_metadata`) fires on
+// ubiquitous manifest keys plus at least one Gate-B poisoning co-signal. It is
+// downgraded to an advisory only when Scan's trust lint states that the SOLE
+// surviving co-signal in this `package.json` is the pinned Corepack
+// `packageManager` integrity blob (`yr4CorepackIntegrityOnly`, C2a §2.6). Core
+// keeps the gate on the rule id, the exact message and the file name.
 function skillspectorAdvisory(
   result: SarifResult,
   detector: TrustDetector,
-  root: string,
+  facts: TrustLintFactsV1,
   location: NonNullable<Check["location"]>,
 ): string | undefined {
   if (detector.name !== "skillspector") return undefined;
@@ -1792,28 +1019,7 @@ function skillspectorAdvisory(
   ) {
     return undefined;
   }
-  const source = sourceTextForLocation(root, location);
-  if (source === undefined) return undefined;
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(source);
-  } catch {
-    return undefined;
-  }
-  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) {
-    return undefined;
-  }
-  const packageManager = (manifest as Record<string, unknown>).packageManager;
-  if (
-    typeof packageManager !== "string" ||
-    !COREPACK_PACKAGE_MANAGER_INTEGRITY.test(packageManager)
-  ) {
-    return undefined;
-  }
-  const encodedIntegrity = JSON.stringify(packageManager);
-  if (!source.includes(encodedIntegrity)) return undefined;
-  const withoutCorepackIntegrity = source.replace(encodedIntegrity, '""');
-  if (hasSkillspectorYr4PoisoningSignal(withoutCorepackIntegrity)) return undefined;
+  if (readableFacts(facts, location)?.yr4CorepackIntegrityOnly !== true) return undefined;
   return `${message}; reviewed false positive: the only poisoning co-signal is the top-level Corepack packageManager integrity suffix, which remains pinned.`;
 }
 
@@ -1825,22 +1031,10 @@ function skillspectorAdvisory(
 // merely quotes the license phrase can never be relabelled. Only the Cisco
 // skill-scanner, only that rule id, only the manifest surface (SKILL.md), only
 // that exact wording — never the mcp-scanner or any other Cisco finding.
-function repositoryLicensePath(root: string): string | undefined {
-  for (const name of REPOSITORY_LICENSE_FILES) {
-    const candidate = join(root, name);
-    try {
-      if (existsSync(candidate) && statSync(candidate).isFile()) return name;
-    } catch {
-      // An unreadable or unstable path is not accepted as license evidence.
-    }
-  }
-  return undefined;
-}
-
 function ciscoMetadataLicenseClassification(
   result: SarifResult,
   detector: TrustDetector,
-  root: string,
+  facts: TrustLintFactsV1,
   location: NonNullable<Check["location"]>,
 ): DetectorRuleClassification | undefined {
   if (detector.name !== "cisco") return undefined;
@@ -1851,8 +1045,8 @@ function ciscoMetadataLicenseClassification(
   if (detector.ruleMap[ruleId] !== undefined) return undefined;
   if (basename(location.uri) !== "SKILL.md") return undefined;
   if (!CISCO_MISSING_LICENSE_MESSAGE.test(resultMessage(result, detector))) return undefined;
-  const inherited = repositoryLicensePath(root);
-  return inherited === undefined
+  const inherited = facts.repositoryLicenseFile;
+  return inherited === null
     ? { code: "trust.skill-metadata-license" }
     : {
         advisory: `${resultMessage(result, detector)}; repository-level license inheritance resolved by ${inherited}`,
@@ -1862,13 +1056,13 @@ function ciscoMetadataLicenseClassification(
 function ruleCode(
   result: SarifResult,
   detector: TrustDetector,
-  root: string,
+  facts: TrustLintFactsV1,
   location: NonNullable<Check["location"]>,
   corroboratedDangerLocations: ReadonlySet<string>,
 ): DetectorRuleClassification | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
-  const advisory = skillspectorAdvisory(result, detector, root, location);
+  const advisory = skillspectorAdvisory(result, detector, facts, location);
   if (advisory !== undefined) return { advisory };
   // A rule id mapped by the detector always wins over any message-text
   // reclassification below: a danger-mapped finding (e.g.
@@ -1876,24 +1070,20 @@ function ruleCode(
   // YARA_command_injection_generic -> trust.malicious-code) must never be
   // relabelled to an acknowledgeable trust-origin code by a substring match on
   // echoed message content.
-  const mapped = detector.ruleMap[raw];
+  // Own properties only: a rule id such as "constructor" names no mapped rule.
+  const mapped = Object.hasOwn(detector.ruleMap, raw) ? detector.ruleMap[raw] : undefined;
   if (mapped !== undefined) {
     if (mapped === "trust.hidden-unicode") {
-      const risk = hiddenUnicodeRiskForDetectorResult(result, detector, root, location);
+      const risk = hiddenUnicodeRiskForDetectorResult(result, detector, facts, location);
       return risk === undefined ? undefined : { code: risk.code };
     }
     if (mapped === "trust.prompt-injection") {
-      const source = sourceTextForLocation(root, location);
-      if (source === undefined) return { code: "trust.detector-finding" };
-      const native = scanTrustDocument(location.uri, source).filter(
-        (check) => check.location?.startLine === location.startLine,
-      );
-      if (native.some((check) => check.code === "trust.prompt-injection")) {
-        return { code: "trust.prompt-injection" };
-      }
-      if (native.some((check) => check.code === "trust.external-egress")) {
-        return { code: "trust.external-egress" };
-      }
+      // Corroborated by Scan's whole-file lint of the same line, never by Core reading the file.
+      const file = readableFacts(facts, location);
+      if (file === undefined) return { code: "trust.detector-finding" };
+      const codes = file.lintLines.get(location.startLine ?? 1) ?? [];
+      if (codes.includes("trust.prompt-injection")) return { code: "trust.prompt-injection" };
+      if (codes.includes("trust.external-egress")) return { code: "trust.external-egress" };
       return { code: "trust.detector-finding" };
     }
     if (
@@ -1917,9 +1107,9 @@ function ruleCode(
     };
   }
   // Only an UNMAPPED Cisco rule id reaches the benign missing-license reclass.
-  const metadataLicense = ciscoMetadataLicenseClassification(result, detector, root, location);
+  const metadataLicense = ciscoMetadataLicenseClassification(result, detector, facts, location);
   if (metadataLicense !== undefined) return metadataLicense;
-  const legalText = reviewableLegalTextContent(root, location);
+  const legalText = readableFacts(facts, location)?.legalText === true;
   if (
     detector.name === "skillspector" ||
     detector.name === "semgrep" ||
@@ -1931,14 +1121,14 @@ function ruleCode(
     ) {
       return { code: "trust.external-egress" };
     }
-    return legalText === undefined
-      ? { code: "trust.detector-finding" }
-      : { code: "trust.legal-text-detector-finding" };
+    return legalText
+      ? { code: "trust.legal-text-detector-finding" }
+      : { code: "trust.detector-finding" };
   }
   if (detector.name === "cisco" || detector.name === "mcp-scanner") {
-    return legalText === undefined
-      ? { code: "trust.cisco-finding" }
-      : { code: "trust.legal-text-detector-finding" };
+    return legalText
+      ? { code: "trust.legal-text-detector-finding" }
+      : { code: "trust.cisco-finding" };
   }
   return undefined;
 }
@@ -1966,15 +1156,17 @@ function isNarrowReviewableRoleDefinition(
   result: SarifResult,
   detector: TrustDetector,
   root: string,
+  facts: TrustLintFactsV1,
   location: NonNullable<Check["location"]>,
 ): boolean {
-  if (isStrictUnicodeSurface(location.uri)) return false;
-  const line = fileLine(join(root, location.uri), location.startLine ?? 1) ?? "";
+  // A strict surface (instructions, config, executables) is never a reviewable role definition.
+  if (readableFacts(facts, location)?.strictUnicodeSurface !== false) return false;
+  const line = fileLine(root, location.uri, location.startLine ?? 1) ?? "";
   const evidence = [resultRuleId(result) ?? "", resultMessage(result, detector), line].join("\n");
   return ROLE_ASSIGNMENT.test(evidence) && !DANGEROUS_ROLE_CONTEXT.test(evidence);
 }
 
-function unicodeResultMessage(message: string, risk: UnicodeRisk | undefined): string {
+function unicodeResultMessage(message: string, risk: UnicodeRiskV1 | undefined): string {
   if (risk === undefined) return message;
   return `${message}; character category: ${risk.category}; reason: ${risk.reason}`;
 }
@@ -1984,37 +1176,13 @@ function legalTextResultMessage(message: string, code: CheckCode): string {
   return `${message}; file class: non-executable legal text; severity: reviewable trust-origin because generic detector heuristics on LICENSE/COPYING/NOTICE require human review`;
 }
 
-function normalizeSarifUri(raw: unknown, detector: TrustDetector, root: string): string {
-  const fallback = `${detector.name}.sarif`;
-  if (typeof raw !== "string" || raw.length === 0) return fallback;
-  // Refuse nonempty file URL authorities (including localhost/UNC); only the
-  // authority-free file:/// form can be resolved against this scan root.
-  const isFileUrl = /^file:\/\//i.test(raw);
-  if (isFileUrl && !/^file:\/\/\//i.test(raw)) return fallback;
-  const unprefixed = isFileUrl ? decodeFileUrlPath(raw.slice("file://".length)) : raw;
-  const stripped = toPosix(unprefixed.replace(/^\/scan\/?/, "").replace(/^scan\/?/, ""));
-  if (isSafeRelativeSarifUri(stripped)) return stripped;
-  // Semgrep echoes targets as given, so the absolute tree Core passes yields absolute
-  // URIs (`/tmp/x/a.md`; on Windows `D:\x\a.md` or `file:///D:/x/a.md`). A finding
-  // inside the scanned tree keeps its tree-relative path; a path outside the tree, or
-  // one that escapes it through `..` or a symlink, falls back to the detector's SARIF.
-  const candidate = toPosix(unprefixed).replace(/^\/(?=[A-Za-z]:\/)/, "");
-  if (!isAbsolute(candidate) && !/^[A-Za-z]:\//.test(candidate)) return fallback;
-  const relativeUri = toPosix(relative(realpathIfExists(root), realpathIfExists(candidate)));
-  return relativeUri.length > 0 && isSafeRelativeSarifUri(relativeUri) ? relativeUri : fallback;
-}
-
-function decodeFileUrlPath(path: string): string {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-}
-
-function isSafeRelativeSarifUri(uri: string): boolean {
-  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:/.test(uri)) return false;
-  return !uri.split("/").some((part) => part === "..");
+/**
+ * A finding's URI was checked at the boundary (`checkedScanSarifLogV1`): a
+ * source-relative path or ".", kept exactly as Scan wrote it. A result with no
+ * URI is located at the detector's SARIF.
+ */
+function sarifUri(raw: unknown, detector: TrustDetector): string {
+  return typeof raw === "string" && raw.length > 0 ? raw : `${detector.name}.sarif`;
 }
 
 function sarifStartLine(result: SarifResult): number {
@@ -2025,11 +1193,10 @@ function sarifStartLine(result: SarifResult): number {
 function sarifLocation(
   result: SarifResult,
   detector: TrustDetector,
-  root: string,
 ): NonNullable<Check["location"]> {
   const physical = result.locations?.[0]?.physicalLocation;
   return {
-    uri: normalizeSarifUri(physical?.artifactLocation?.uri, detector, root),
+    uri: sarifUri(physical?.artifactLocation?.uri, detector),
     startLine: sarifStartLine(result),
   };
 }
@@ -2045,7 +1212,7 @@ function sarifFingerprint(
 ): string {
   const line = location.startLine ?? 1;
   const findingRule = `${detector.name}:${ruleId}`;
-  const lineContent = fileLine(join(root, location.uri), line) ?? detail;
+  const lineContent = fileLine(root, location.uri, line) ?? detail;
   const content = `${lineContent}\0${detail}`;
   const key = JSON.stringify([code, location.uri, findingRule, content]);
   const occurrence = occurrences.get(key) ?? 0;
@@ -2060,23 +1227,59 @@ function sarifFingerprint(
   });
 }
 
+function isSealedRegularFile(root: string, uri: string): boolean {
+  try {
+    return lstatSync(join(root, uri)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Scan's trust lint states facts for every regular file in the sealed tree, skip
+ * directories included (C2a §2.6). A finding on such a file without facts is
+ * Scan's omission, never absent corroboration: the detector's SARIF cannot be
+ * classified, so it fails closed. A directory, the source root and the
+ * detector's own SARIF name no file and carry no facts.
+ */
+function unstatedFactsRefusal(
+  log: CheckedScanSarifLogV1,
+  detector: TrustDetector,
+  root: string,
+  facts: TrustLintFactsV1,
+): string | undefined {
+  for (const run of log.runs) {
+    for (const result of run.results) {
+      const { uri } = sarifLocation(result as SarifResult, detector);
+      if (facts.artifacts.has(uri) || !isSealedRegularFile(root, uri)) continue;
+      return `${SCAN_DETECTOR_IDS[detector.name]} reported ${adapterReason(uri)}, a sealed file ${SCAN_DETECTOR_IDS[SCAN_TRUST_LINT_DETECTOR]} stated no facts for`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * `canonicalRuleId`, when given, names the rule Core classifies and fingerprints a
+ * result under; the raw occurrence keeps the analyzer's own rule id as evidence.
+ */
 function sarifChecks(
-  stdout: string,
+  log: CheckedScanSarifLogV1,
   root: string,
   posture: Posture,
   detector: TrustDetector,
   corroboratedDangerLocations: ReadonlySet<string>,
-): { checks: Check[]; rawOccurrences: RawScannerOccurrence[] } | undefined {
-  const parsed = parseSarifLog(stdout);
-  if (parsed === undefined) return undefined;
+  facts: TrustLintFactsV1,
+  canonicalRuleId?: (raw: string) => string | undefined,
+): { checks: Check[]; rawOccurrences: RawScannerOccurrence[] } {
   const checks: Check[] = [];
   const rawOccurrences: RawScannerOccurrence[] = [];
   const occurrences = new Map<string, number>();
   const rawOccurrenceCounts = new Map<string, number>();
   const seen = new Set<string>();
-  for (const run of parsed.runs) {
-    for (const result of run.results ?? []) {
-      const location = sarifLocation(result, detector, root);
+  for (const run of log.runs) {
+    for (const checked of run.results) {
+      const result = checked as SarifResult;
+      const location = sarifLocation(result, detector);
       const rawRuleId = resultRuleId(result) ?? "unknown-rule";
       const rawMessage = resultMessage(result, detector);
       const rawKey = JSON.stringify([
@@ -2088,7 +1291,7 @@ function sarifChecks(
       ]);
       const rawOccurrence = rawOccurrenceCounts.get(rawKey) ?? 0;
       rawOccurrenceCounts.set(rawKey, rawOccurrence + 1);
-      const sourceValue = fileLine(join(root, location.uri), location.startLine ?? 1);
+      const sourceValue = fileLine(root, location.uri, location.startLine ?? 1);
       rawOccurrences.push({
         fingerprint: `trust-raw:${createHash("sha256")
           .update(JSON.stringify([rawKey, rawOccurrence]), "utf8")
@@ -2108,10 +1311,16 @@ function sarifChecks(
       ]);
       if (seen.has(duplicateKey)) continue;
       seen.add(duplicateKey);
+      const canonical =
+        canonicalRuleId === undefined || resultRuleId(result) === undefined
+          ? undefined
+          : canonicalRuleId(rawRuleId);
+      const classified: SarifResult =
+        canonical === undefined ? result : { ...result, ruleId: canonical };
       const classification = ruleCode(
-        result,
+        classified,
         detector,
-        root,
+        facts,
         location,
         corroboratedDangerLocations,
       );
@@ -2128,16 +1337,16 @@ function sarifChecks(
       const { code } = classification;
       if (
         code === "trust.prompt-injection" &&
-        isNarrowReviewableRoleDefinition(result, detector, root, location)
+        isNarrowReviewableRoleDefinition(classified, detector, root, facts, location)
       ) {
         continue;
       }
       const risk =
         code === "trust.hidden-unicode" || code === "trust.visible-unicode"
-          ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location)
+          ? hiddenUnicodeRiskForDetectorResult(classified, detector, facts, location)
           : undefined;
       const detail = legalTextResultMessage(
-        unicodeResultMessage(resultMessage(result, detector), risk),
+        unicodeResultMessage(resultMessage(classified, detector), risk),
         code,
       );
       checks.push(
@@ -2153,7 +1362,7 @@ function sarifChecks(
               code,
               root,
               location,
-              resultRuleId(result) ?? "unknown-rule",
+              resultRuleId(classified) ?? "unknown-rule",
               detail,
               detector,
             ),
@@ -2171,55 +1380,22 @@ function analyzerPassCheck(
   analyzersRun: readonly string[],
   delegated?: { readonly source: ScanExecutionSource; readonly executionProfileId?: string },
 ): Check {
-  // Never describe a mechanism Core did not use: a delegated run was executed
-  // by Scan, and only Scan's own result can state the profile it ran under.
-  if (delegated !== undefined) {
-    const through =
-      delegated.source === "installed-package"
+  // Never describe a mechanism Core did not use: Scan executed the run (or its
+  // SARIF was precomputed), and only Scan's own result states the profile.
+  const through =
+    delegated === undefined
+      ? "precomputed SARIF"
+      : delegated.source === "installed-package"
         ? `the installed @aihq/scan${
             delegated.executionProfileId === undefined
               ? ""
               : ` under execution profile ${delegated.executionProfileId}`
           }`
         : "the injected scan execution adapter";
-    return {
-      name: `trust detector ${detector.name}`,
-      verdict: "pass",
-      detail: `${detector.analyzerLabel} static scan completed through ${through}; Core did not execute it. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
-    };
-  }
-  if (detector.name === "skillspector") {
-    return {
-      name: "trust detector skillspector",
-      verdict: "pass",
-      detail: `SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
-    };
-  }
-  if (detector.name === "mcp-scanner") {
-    return {
-      name: "trust detector mcp-scanner",
-      verdict: "pass",
-      detail: `Cisco AI Defense mcp-scanner static scan completed through the committed uv lock with offline local analyzers. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
-    };
-  }
-  if (detector.name === "semgrep") {
-    return {
-      name: "trust detector semgrep",
-      verdict: "pass",
-      detail: `Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
-    };
-  }
-  if (detector.name === "snyk-agent-scan") {
-    return {
-      name: "trust detector snyk-agent-scan",
-      verdict: "pass",
-      detail: `Snyk Agent Scan completed with JSON output, --no-bootstrap, and no MCP auto-exec bypass. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
-    };
-  }
   return {
-    name: "trust detector cisco",
+    name: `trust detector ${detector.name}`,
     verdict: "pass",
-    detail: `Cisco AI Defense skill-scanner static scan completed through the committed uv lock with offline defaults-only. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    detail: `${detector.analyzerLabel} static scan completed through ${through}; Core did not execute it. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
   };
 }
 
@@ -2235,35 +1411,72 @@ function isRequired(
 // --------------------------------------------------------------------------
 
 /**
- * The detectors Core delegates to the INSTALLED `@aihq/scan` and then never
- * runs itself: a missing, incompatible, refusing or failing Scan is that
- * detector's result, with no fallback to Core.
- *
- * Empty for now, deliberately. Scan's capabilities that share a name with
- * Core's detectors are not yet equivalents (its Cisco skill-scanner refuses a
- * multi-skill tree without a top-level SKILL.md and has no sharded runs; its
- * SkillSpector image trust differs from Core's approved-digest policy), so
- * every Core detector keeps Core's execution and is recorded as `core-legacy`.
- * A detector is added here, one at a time, once Scan closes its gap.
- */
-export const SCAN_DELEGATED_TRUST_DETECTORS: ReadonlySet<TrustDetectorName> = new Set();
-
-/**
- * Scan's in-process identity observation. It is NOT Core's `aih-native` trust
- * lint (which produces findings and always runs in Core): it records a tree
- * hash and file list. Core invokes it through the installed package as an
- * additional recorded observation, never as a finding source.
+ * Scan's in-process identity observation. It is NOT the native findings (Scan's
+ * `detector.aih-trust-lint` reports those): it records a tree hash and file
+ * list. Core invokes it through the installed package as an additional recorded
+ * observation, never as a finding source.
  */
 export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";
+
+/** Scan's detector id for each detector Core routes to it. */
+export const SCAN_DETECTOR_IDS: Readonly<Record<ScanRoutedDetectorV1, string>> = Object.freeze({
+  [SCAN_TRUST_LINT_DETECTOR]: "detector.aih-trust-lint",
+  skillspector: "detector.skillspector",
+  cisco: "detector.cisco",
+  "mcp-scanner": "detector.cisco-mcp-scanner",
+  semgrep: "detector.semgrep",
+  "snyk-agent-scan": "detector.snyk-agent-scan",
+});
+
+/** Detectors Scan runs through uv; each is requested under one named uv profile. */
+const UV_BACKED_DETECTORS: ReadonlySet<ScanRoutedDetectorV1> = new Set([
+  "semgrep",
+  "cisco",
+  "mcp-scanner",
+  "snyk-agent-scan",
+]);
+
+export const DEFAULT_UV_EXECUTION_PROFILE: UvExecutionProfileIdV1 = "host-process-uv-v1";
+/** The native findings: Scan's in-process trust lint, on every platform. */
+export const TRUST_LINT_EXECUTION_PROFILE = "in-process-trust-lint-v1";
+/** SkillSpector: the locally loaded pinned image under host Docker; it never pulls. */
+export const SKILLSPECTOR_EXECUTION_PROFILE = "docker-host-local-skillspector-v1";
+
+/**
+ * A trust scan the caller cancelled. Scan kills the analyzer's process tree and
+ * returns a failure; Core then stops, because a cancelled scan has no verdict.
+ */
+export class TrustScanCancelledError extends AihError {
+  constructor(detail: string) {
+    super(`trust scan cancelled: ${detail}`, "AIH_TRUST_CANCELLED");
+  }
+}
+
+function throwIfCancelled(signal: AbortSignal | undefined, detail: string): void {
+  if (signal?.aborted === true) throw new TrustScanCancelledError(detail);
+}
 
 /** How Core reached Scan's execution for this scan. */
 export type ScanExecutionSource = "installed-package" | "injected-adapter";
 
-type ResolvedScanExecutionV1 =
+export type ResolvedScanExecutionV1 =
   | { readonly adapter: ScanExecutionAdapterV1; readonly source: ScanExecutionSource }
   | { readonly refusal: ScanPackageRefusalV1 };
 
-type DelegatedDetectorResultV1 =
+/** Scan's execution for a scan: the injected adapter, else the installed package or its refusal. */
+export function resolveScanExecutionV1(
+  injected?: ScanExecutionAdapterV1,
+): Promise<ResolvedScanExecutionV1> {
+  return injected !== undefined
+    ? Promise.resolve({ adapter: injected, source: "injected-adapter" })
+    : loadScanExecutionAdapterV1().then((loaded) =>
+        loaded.ok
+          ? { adapter: loaded.adapter, source: "installed-package" }
+          : { refusal: loaded.refusal },
+      );
+}
+
+export type DelegatedDetectorResultV1 =
   | { readonly sarif: string; readonly executionProfileId?: string }
   | {
       readonly unavailable: string;
@@ -2296,14 +1509,15 @@ function stringMember(
 
 /**
  * The capability the adapter publishes for this detector, or undefined when it
- * publishes none. Scan names its capabilities `detector.<name>`; a bare name is
- * accepted for the same detector. A capability list Core cannot read names
- * nothing, so nothing is delegated.
+ * publishes none. Scan names its capabilities by `SCAN_DETECTOR_IDS`. A
+ * capability list Core cannot read names nothing.
  */
 function adapterCapabilityFor(
   adapter: ScanExecutionAdapterV1,
-  detector: string,
+  detector: ScanRoutedDetectorV1 | typeof SCAN_NATIVE_OBSERVATION_DETECTOR_ID,
 ): Record<string, unknown> | undefined {
+  const scanId =
+    detector === SCAN_NATIVE_OBSERVATION_DETECTOR_ID ? detector : SCAN_DETECTOR_IDS[detector];
   let capabilities: readonly unknown[];
   try {
     capabilities = adapter.listDetectorCapabilitiesV1();
@@ -2313,32 +1527,100 @@ function adapterCapabilityFor(
   if (!Array.isArray(capabilities)) return undefined;
   for (const capability of capabilities) {
     const record = asRecord(capability);
-    const id = record?.detectorId;
-    if (typeof id === "string" && (id === detector || id === `detector.${detector}`)) return record;
+    if (record?.detectorId === scanId) return record;
   }
   return undefined;
 }
 
+/** Scan's platform name for this host (`amd64` for Node's `x64`). */
+function scanArchitecture(): string {
+  return process.arch === "x64" ? "amd64" : process.arch;
+}
+
 /**
- * The subject kind Core can state truthfully about the tree it is scanning.
- *
- * A trust tree is a source tree, so that is the default. Scan's `detector.cisco`
- * takes only a `skill-directory`, and Core may say so only when the scanned root
- * really is one — a top-level `SKILL.md` that is inside the declared selection.
- * Core never relabels a tree to satisfy a detector: when neither statement is
- * true of the capability's own list, Core sends `source-tree` and lets the
- * adapter refuse with its own reason.
+ * The profile Core runs a detector under, and so the one whose pinned analyzer
+ * a result must name, delegated or precomputed: the stated uv profile, else
+ * Core's default (`host-process-uv-v1`) for a uv-backed detector; otherwise
+ * the detector's one profile.
  */
-function delegatedSubjectKind(
-  capability: Record<string, unknown> | undefined,
-  selectedClosurePaths: readonly string[],
+function requiredExecutionProfileIdV1(
+  detector: ScanRoutedDetectorV1,
+  uvProfile: UvExecutionProfileIdV1 | undefined,
 ): string {
-  const kinds = capability?.subjectKinds;
-  const declared = Array.isArray(kinds) ? kinds.filter((kind) => typeof kind === "string") : [];
-  if (declared.includes("source-tree") || declared.length === 0) return "source-tree";
-  if (declared.includes("skill-directory") && selectedClosurePaths.includes("SKILL.md"))
-    return "skill-directory";
-  return "source-tree";
+  return UV_BACKED_DETECTORS.has(detector)
+    ? (uvProfile ?? DEFAULT_UV_EXECUTION_PROFILE)
+    : detector === SCAN_TRUST_LINT_DETECTOR
+      ? TRUST_LINT_EXECUTION_PROFILE
+      : SKILLSPECTOR_EXECUTION_PROFILE;
+}
+
+/**
+ * The execution profile Core names for this detector, checked against what the
+ * capability declares for this host before anything is asked of Scan.
+ *
+ * uv-backed detectors run under `host-process-uv-v1` on every OS unless policy
+ * selects `linux-namespace-uv-v1`; the native findings under
+ * `in-process-trust-lint-v1`; SkillSpector under the never-pull local Docker
+ * profile, and only in a container. A profile the capability does not declare
+ * for this OS and architecture is refused: nothing falls back to another profile.
+ */
+export function requestedExecutionProfileV1(
+  detector: ScanRoutedDetectorV1,
+  capability: Record<string, unknown> | undefined,
+  platform: Platform,
+  uvProfile: UvExecutionProfileIdV1 | undefined,
+):
+  | { readonly id: string; readonly profile: Record<string, unknown> }
+  | { readonly refusal: string } {
+  const scanId = SCAN_DETECTOR_IDS[detector];
+  const architecture = scanArchitecture();
+  const id = requiredExecutionProfileIdV1(detector, uvProfile);
+  const profiles = capability?.executionProfiles;
+  const profile = Array.isArray(profiles)
+    ? profiles.map(asRecord).find((entry) => entry?.id === id)
+    : undefined;
+  const declared =
+    profile !== undefined &&
+    Array.isArray(profile.supportedPlatforms) &&
+    profile.supportedPlatforms.some((host) => {
+      const supported = asRecord(host);
+      return supported?.os === platform && supported.architecture === architecture;
+    });
+  if (!declared || profile === undefined)
+    return {
+      refusal: `${scanId} does not declare ${id} for ${platform}/${architecture}`,
+    };
+  if (detector === "skillspector" && profile.isolation !== "container")
+    return {
+      refusal: `${scanId} profile ${id} is not a container profile; Core runs SkillSpector only in a container`,
+    };
+  return { id, profile };
+}
+
+/**
+ * The digests Core's approval POLICY accepts for the local SkillSpector image:
+ * the organization's approvals recorded for exactly the pinned tag and source
+ * revision, deduplicated in policy order. Scan applies the identity rule.
+ */
+export function acceptedSkillspectorImageDigestsV1(
+  approvals: readonly SkillSpectorImageApproval[],
+): string[] {
+  const digests: string[] = [];
+  for (const approval of approvals) {
+    if (
+      approval.imageTag === SKILLSPECTOR_IMAGE &&
+      approval.sourceRevision === SKILLSPECTOR_SOURCE_REVISION &&
+      !digests.includes(approval.imageDigest)
+    )
+      digests.push(approval.imageDigest);
+  }
+  return digests;
+}
+
+/** `SNYK_TOKEN`, trimmed, only when set and non-blank; it goes to snyk-agent-scan alone. */
+function snykTokenEnv(env: NodeJS.ProcessEnv): { readonly SNYK_TOKEN: string } | undefined {
+  const token = env.SNYK_TOKEN?.trim();
+  return token === undefined || token.length === 0 ? undefined : { SNYK_TOKEN: token };
 }
 
 /**
@@ -2350,7 +1632,7 @@ function delegatedSubjectKind(
  * The profile a run used is Scan's own statement, taken only from a run Scan
  * says it performed (a success or a failure), never from a refusal.
  */
-function delegatedDetectorResult(result: unknown): DelegatedDetectorResultV1 {
+export function delegatedDetectorResult(result: unknown): DelegatedDetectorResultV1 {
   const record = asRecord(result);
   const narrowed = narrowedDelegatedResult(record);
   const profileId =
@@ -2384,9 +1666,11 @@ function narrowedDelegatedResult(
     const failure = asRecord(record.failure);
     const stage = stringMember(failure, "stage");
     const detail = stringMember(failure, "detail");
+    const cause = stringMember(failure, "cause");
     const text =
       detail === undefined ? stage : stage === undefined ? detail : `${stage}: ${detail}`;
-    return { unavailable: adapterReason(text ?? "scan execution adapter failed without a reason") };
+    const said = text ?? "scan execution adapter failed without a reason";
+    return { unavailable: adapterReason(cause === undefined ? said : `${said} (${cause})`) };
   }
   if (record.outcome !== "succeeded")
     return { unavailable: "scan execution adapter returned an unrecognized result" };
@@ -2412,15 +1696,9 @@ function narrowedDelegatedResult(
   const bytes = observation?.bytes;
   if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0)
     return { unavailable: "scan execution adapter returned an analyzer observation without bytes" };
-  // The adapter is never trusted: the observation's own annex digest is the
-  // claim, and Core checks the bytes it was handed against it before reading.
-  const annex = asRecord(observation?.annex);
-  const sha256 = stringMember(annex, "sha256");
-  const byteLength = annex?.byteLength;
-  if (
-    sha256 !== createHash("sha256").update(bytes).digest("hex") ||
-    (typeof byteLength === "number" && byteLength !== bytes.byteLength)
-  ) {
+  // The adapter is never trusted: the observation's own annex (digest and
+  // length) is the claim, and Core recomputes both over the bytes before reading.
+  if (!annexNamesBytes(observation?.annex, bytes)) {
     return {
       unavailable:
         "scan execution adapter returned analyzer bytes that its own annex does not name",
@@ -2435,6 +1713,15 @@ function narrowedDelegatedResult(
   return sarif.trim().length > 0
     ? { sarif }
     : { unavailable: "scan execution adapter returned empty analyzer bytes" };
+}
+
+/** Whether an observation's annex states exactly these bytes: both its sha256 and its byteLength. */
+function annexNamesBytes(annex: unknown, bytes: Uint8Array): boolean {
+  const record = asRecord(annex);
+  return (
+    stringMember(record, "sha256") === createHash("sha256").update(bytes).digest("hex") &&
+    record?.byteLength === bytes.byteLength
+  );
 }
 
 /** Scan's `producer` statement, when present and well-formed. */
@@ -2455,7 +1742,8 @@ function scanProducer(value: unknown): ScanObservationV1["producer"] {
 async function recordScanNativeObservation(
   scan: ResolvedScanExecutionV1,
   root: string,
-  inventory: TrustFileInventory | undefined,
+  inventory: TrustFileInventory,
+  signal: AbortSignal | undefined,
 ): Promise<ScanObservationV1 | undefined> {
   const detectorId = SCAN_NATIVE_OBSERVATION_DETECTOR_ID;
   if ("refusal" in scan) {
@@ -2469,18 +1757,19 @@ async function recordScanNativeObservation(
   // An adapter that does not declare the observation is not asked for it.
   if (adapterCapabilityFor(scan.adapter, detectorId) === undefined) return undefined;
   const base = { detectorId, scanSource: scan.source } as const;
-  if (inventory === undefined)
-    return { ...base, outcome: "refused", detail: "no file inventory is available to declare" };
   let result: unknown;
   try {
-    result = await scan.adapter.runDetectorV1({
-      detectorId,
-      subject: {
-        kind: "source-tree",
-        sourceRoot: root,
-        selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
-      },
-    });
+    result = await startTrackedScanCall(signal, detectorId, () =>
+      scan.adapter.runDetectorV1({
+        detectorId,
+        subject: {
+          kind: "source-tree",
+          sourceRoot: root,
+          selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
+        },
+        ...(signal === undefined ? {} : { signal }),
+      }),
+    );
   } catch (error) {
     return {
       ...base,
@@ -2509,11 +1798,11 @@ async function recordScanNativeObservation(
   const annex = asRecord(observation?.annex);
   const annexSha256 = stringMember(annex, "sha256");
   const bytes = observation?.bytes;
-  // Scan is never trusted: the annex digest is its claim, checked against the bytes.
+  // Scan is never trusted: the annex is its claim, checked against the bytes.
   if (
     !(bytes instanceof Uint8Array) ||
     annexSha256 === undefined ||
-    annexSha256 !== createHash("sha256").update(bytes).digest("hex")
+    !annexNamesBytes(annex, bytes)
   ) {
     return {
       ...ran,
@@ -2532,74 +1821,288 @@ async function recordScanNativeObservation(
   };
 }
 
+/**
+ * Semgrep prefixes each rule id with the dotted directory of the config file it
+ * read (`aih.work.semgrep.prompt-injection`), so a Semgrep rule is matched by its
+ * exact id or by `.<id>` suffix against Core's own rule ids (owner decision
+ * 2026-09-24: the rule map is applied).
+ */
+function canonicalSemgrepRuleId(raw: string): string | undefined {
+  if (Object.hasOwn(SEMGREP_RULE_MAP, raw)) return raw;
+  return Object.keys(SEMGREP_RULE_MAP).find((id) => raw.endsWith(`.${id}`));
+}
+
+/**
+ * Scan's SARIF crosses a trust boundary, whether a delegated run returned it or
+ * it arrives precomputed: the one shape check (`checkedScanSarifTextV1`), and a
+ * Semgrep run may report only Core's own rules. Anything else fails closed as
+ * this detector's failure, never partly read.
+ */
+function checkedDetectorSarif(detector: ScanRoutedDetectorV1, sarif: string): CheckedScanSarifV1 {
+  const checked = checkedScanSarifTextV1(sarif);
+  if ("refusal" in checked || detector !== "semgrep") return checked;
+  for (const run of checked.log.runs) {
+    for (const result of run.results) {
+      const ruleId = result.ruleId ?? asRecord(result.rule)?.id;
+      if (typeof ruleId !== "string" || canonicalSemgrepRuleId(ruleId) === undefined)
+        return {
+          refusal: `rule id ${adapterReason(JSON.stringify(ruleId) ?? "")}, which is not one of Core's Semgrep rules (${Object.keys(SEMGREP_RULE_MAP).join(", ")})`,
+        };
+    }
+  }
+  return checked;
+}
+
+/** What one detector call analyzes: the request fields its subject rule reads (C2a §1.6). */
+export interface ScanCallSubjectRequestV1 {
+  readonly detectorId: string;
+  readonly sourceRoot: string;
+  readonly selectedClosurePaths: readonly string[];
+  readonly mcpConfigPaths?: readonly string[];
+}
+
+/**
+ * The subject one detector call analyzes, rebuilt now from Core's own disk
+ * and request (the source root, the selected paths and, for mcp-scanner, the
+ * config paths it named), or why Core cannot rebuild it. Never cached: each
+ * call binds the tree as it stands for that call.
+ */
+export function scanCallSubjectV1(
+  request: ScanCallSubjectRequestV1,
+): { readonly subject: ScanSubjectDigestV1 } | { readonly refusal: string } {
+  try {
+    return {
+      subject: scanSubjectDigestV1(
+        scanDetectorSubjectFilesV1(request.detectorId, request.sourceRoot, {
+          selectedClosurePaths: request.selectedClosurePaths,
+          ...(request.mcpConfigPaths === undefined
+            ? {}
+            : { mcpConfigPaths: request.mcpConfigPaths }),
+          sealed: () => sealedScanSubjectFilesV1(request.sourceRoot),
+        }),
+      ),
+    };
+  } catch (error) {
+    return {
+      refusal: adapterReason(
+        `completion evidence Core cannot check, because it cannot rebuild the subject of ${request.detectorId}: ${(error as Error)?.message ?? "unknown error"}`,
+      ),
+    };
+  }
+}
+
+/** A baseline-vet annex's subject over `sourceRoot` now, or why Core cannot rebuild it. */
+function baselineVetAnnexSubjectV1(
+  detectorId: string,
+  sourceRoot: string,
+): { readonly subject: ScanSubjectDigestV1 } | { readonly refusal: string } {
+  try {
+    return {
+      subject: scanSubjectDigestV1(baselineVetAnnexSubjectFilesV1(detectorId, sourceRoot)),
+    };
+  } catch (error) {
+    return {
+      refusal: adapterReason(
+        `completion evidence Core cannot check, because it cannot rebuild the baseline subject of ${detectorId}: ${(error as Error)?.message ?? "unknown error"}`,
+      ),
+    };
+  }
+}
+
+/**
+ * Why a succeeded run's completion evidence v1 (C2a §1.6) does not bind it to
+ * what Core submitted, or undefined when it does. `request.subject` is the
+ * subject Core bound immediately before the call; Core rebuilds it again now,
+ * after the call, and any change fails the run (the tree Scan analyzed is not
+ * the one Core grades). The evidence must name that subject, and the analyzer
+ * is the identity Core accepted for the run, never the evidence's own claim.
+ */
+export function delegatedScanCompletionRefusalV1(
+  raw: unknown,
+  log: CheckedScanSarifLogV1,
+  request: ScanCallSubjectRequestV1 & {
+    readonly executionProfileId: string;
+    /** The subject bound before the call (`scanCallSubjectV1`). */
+    readonly subject: ScanSubjectDigestV1;
+  },
+): string | undefined {
+  const identity = acceptedScanAnalyzerIdentityV1(request.detectorId, request.executionProfileId);
+  const version = stringMember(
+    asRecord(asRecord(asRecord(raw)?.evidence)?.observation),
+    "analyzerVersion",
+  );
+  if (identity === undefined || version === undefined)
+    return `no analyzer identity Core accepts for ${request.detectorId} under ${request.executionProfileId}`;
+  const after = scanCallSubjectV1(request);
+  if ("refusal" in after) return after.refusal;
+  if (
+    after.subject.subjectTreeSha256 !== request.subject.subjectTreeSha256 ||
+    after.subject.analyzedFileCount !== request.subject.analyzedFileCount
+  )
+    return `completion evidence Core cannot accept, because the source changed while ${request.detectorId} ran: Core submitted ${request.subject.analyzedFileCount} files with subject tree ${request.subject.subjectTreeSha256}, and the tree now has ${after.subject.analyzedFileCount} files with subject tree ${after.subject.subjectTreeSha256}`;
+  return scanCompletionRefusalV1(log, {
+    detectorId: request.detectorId,
+    subject: request.subject,
+    emptyAllowed: SCAN_EMPTY_SOURCE_COMPLETES_V1.has(request.detectorId),
+    analyzer: { version, lockSha256: identity.lockSha256 },
+  });
+}
+
+/** Which rule precomputed SARIF meets: inline, or a verified Scanner publication's annex. */
+type PrecomputedSarifOriginV1 = "inline" | "scanner-baseline-vet";
+
+/**
+ * Why precomputed SARIF (a Scanner annex's bytes) does not prove this tree was
+ * analyzed, or undefined when it does. With no run stating completion evidence
+ * v1 at all, it is `completion-evidence-absent` (every publication made before
+ * Scan wrote the evidence): never counted complete, never a crash. Otherwise
+ * every run's evidence must name this detector, the subject Core rebuilds from
+ * this tree for it, and the analyzer identity Core pins for the detector under
+ * `executionProfileId`, the profile Core requires for this evidence. Another
+ * profile's pinned identity is refused naming both profiles. SkillSpector's
+ * identity is its image, not a lock: the pinned image or a digest policy
+ * accepted, under the pinned source revision. A baseline-vet annex's subject
+ * is the baseline F (`baselineVetAnnexSubjectFilesV1`); inline SARIF's is the
+ * detector's own rule, as for a delegated run.
+ */
+function precomputedScanCompletionRefusalV1(
+  log: CheckedScanSarifLogV1,
+  request: {
+    readonly detectorId: string;
+    readonly origin: PrecomputedSarifOriginV1;
+    readonly executionProfileId: string;
+    readonly sourceRoot: string;
+    readonly selectedClosurePaths: readonly string[];
+    readonly mcpConfigPaths?: readonly string[];
+    readonly acceptedImageDigests: readonly string[];
+  },
+): { readonly absent: true } | string | undefined {
+  const firstEvidence = log.runs.map((run) => {
+    const invocations = (run as unknown as Record<string, unknown>).invocations;
+    const properties = asRecord(
+      Array.isArray(invocations) ? invocations[0] : undefined,
+    )?.properties;
+    return asRecord(properties)?.[SCAN_COMPLETION_PROPERTY_V1];
+  });
+  if (firstEvidence.every((evidence) => evidence === undefined)) return { absent: true };
+  const stated = asRecord(
+    asRecord(firstEvidence.find((evidence) => evidence !== undefined))?.analyzer,
+  );
+  const named = (identity: AcceptedScanAnalyzerIdentityV1) =>
+    `${observedScanAnalyzerVersionV1(identity)} with ${identity.lockSha256 === null ? "no uv.lock" : `uv.lock ${identity.lockSha256}`}`;
+  let accepted: readonly { readonly version: string; readonly lockSha256: string | null }[];
+  if (request.detectorId === "detector.skillspector") {
+    accepted = [
+      SKILLSPECTOR_IMAGE_DIGEST,
+      ...request.acceptedImageDigests.filter((digest) => digest !== SKILLSPECTOR_IMAGE_DIGEST),
+    ].map((digest) => ({ version: `${SKILLSPECTOR_SOURCE_REVISION}@${digest}`, lockSha256: null }));
+  } else {
+    const required = acceptedScanAnalyzerIdentityV1(request.detectorId, request.executionProfileId);
+    if (required === undefined)
+      return `Core accepts no analyzer identity for ${request.detectorId} under ${request.executionProfileId}`;
+    const requiredAnalyzer = {
+      version: observedScanAnalyzerVersionV1(required),
+      lockSha256: required.lockSha256,
+    };
+    const isRequired =
+      stated?.version === requiredAnalyzer.version &&
+      stated?.lockSha256 === requiredAnalyzer.lockSha256;
+    const other = isRequired
+      ? undefined
+      : ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.find(
+          (identity) =>
+            identity.detectorId === request.detectorId &&
+            stated?.version === observedScanAnalyzerVersionV1(identity) &&
+            stated?.lockSha256 === identity.lockSha256,
+        );
+    if (other !== undefined)
+      return `completion evidence names the analyzer Core pins for ${request.detectorId} under ${other.executionProfileId} (${named(other)}); Core requires the one it pins under ${request.executionProfileId} (${named(required)})`;
+    accepted = [requiredAnalyzer];
+  }
+  const analyzer =
+    accepted.find(
+      (candidate) =>
+        candidate.version === stated?.version && candidate.lockSha256 === stated?.lockSha256,
+    ) ?? accepted[0];
+  if (analyzer === undefined) return `Core accepts no analyzer identity for ${request.detectorId}`;
+  const bound =
+    request.origin === "scanner-baseline-vet"
+      ? baselineVetAnnexSubjectV1(request.detectorId, request.sourceRoot)
+      : scanCallSubjectV1(request);
+  if ("refusal" in bound) return bound.refusal;
+  return scanCompletionRefusalV1(log, {
+    detectorId: request.detectorId,
+    subject: bound.subject,
+    emptyAllowed: SCAN_EMPTY_SOURCE_COMPLETES_V1.has(request.detectorId),
+    analyzer,
+  });
+}
+
+interface DelegatedRunOptionsV1 {
+  readonly platform: Platform;
+  readonly uvProfile?: UvExecutionProfileIdV1;
+  readonly signal?: AbortSignal;
+  /** Detector-specific request fields (C2a §1.3), passed as named. */
+  readonly detectorOptions?: Readonly<Record<string, unknown>>;
+  readonly acceptedImageDigests?: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+}
+
 async function runDelegatedDetector(
   adapter: ScanExecutionAdapterV1,
   capability: Record<string, unknown> | undefined,
-  detector: TrustDetectorName,
+  detector: ScanRoutedDetectorV1,
   root: string,
-  inventory: TrustFileInventory | undefined,
-  platform: Platform,
+  inventory: TrustFileInventory,
+  options: DelegatedRunOptionsV1,
 ): Promise<DelegatedDetectorResultV1> {
-  // Scan requires the selection as a field, so Core delegates only what it has
-  // actually enumerated: it never declares a closure it did not read.
-  if (inventory === undefined)
-    return {
-      unavailable: "no file inventory is available to declare as this detector's selected closure",
-      outcome: "refused",
-    };
-  // Semgrep's host-process profile is opt-in and is not yet declared for
-  // Windows or macOS by the installed Scan package. Never fall back to Scan's
-  // default profile when Core's selected host profile is absent or unsupported.
-  let executionProfileId: string | undefined;
-  if (detector === "semgrep") {
-    executionProfileId = platform === "linux" ? "linux-namespace-uv-v1" : "host-process-uv-v1";
-    const architecture = process.arch === "x64" ? "amd64" : process.arch;
-    const profiles = capability?.executionProfiles;
-    const declared = Array.isArray(profiles)
-      ? profiles.some((entry) => {
-          const profile = asRecord(entry);
-          if (
-            profile === undefined ||
-            profile.id !== executionProfileId ||
-            !Array.isArray(profile.supportedPlatforms)
-          )
-            return false;
-          return profile.supportedPlatforms.some((host) => {
-            const supported = asRecord(host);
-            return supported?.os === platform && supported.architecture === architecture;
-          });
-        })
-      : false;
-    if (!declared)
-      return {
-        unavailable: `detector.semgrep does not declare ${executionProfileId} for ${platform}/${architecture}`,
-        outcome: "refused",
-      };
-  }
-  const selectedClosurePaths = inventory.files.map((entry) => entry.relativePath);
+  const scanId = SCAN_DETECTOR_IDS[detector];
+  const profile = requestedExecutionProfileV1(
+    detector,
+    capability,
+    options.platform,
+    options.uvProfile,
+  );
+  if ("refusal" in profile) return { unavailable: profile.refusal, outcome: "refused" };
+  const executionProfileId = profile.id;
+  // Core, not Scan, is the authority on which analyzer runs: a capability that
+  // declares another version or lock is not asked to run.
+  const declared = declaredScanAnalyzerIdentityRefusalV1(capability, scanId, executionProfileId);
+  if (declared !== undefined) return { unavailable: declared, outcome: "refused" };
+  // The subject this call analyzes, bound now: the evidence is checked against
+  // it, and the tree must still be it once the call returns.
+  const mcpConfigPaths = options.detectorOptions?.mcpConfigPaths;
+  const subjectRequest: ScanCallSubjectRequestV1 = {
+    detectorId: scanId,
+    sourceRoot: root,
+    selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
+    ...(Array.isArray(mcpConfigPaths) ? { mcpConfigPaths: mcpConfigPaths as string[] } : {}),
+  };
+  const bound = scanCallSubjectV1(subjectRequest);
+  if ("refusal" in bound) return { unavailable: bound.refusal, outcome: "refused" };
+  let raw: unknown;
   try {
-    const result = delegatedDetectorResult(
-      await adapter.runDetectorV1({
-        detectorId: `detector.${detector}`,
-        ...(executionProfileId === undefined ? {} : { executionProfileId }),
+    raw = await startTrackedScanCall(options.signal, scanId, () =>
+      adapter.runDetectorV1({
+        detectorId: scanId,
+        executionProfileId,
         subject: {
-          kind: delegatedSubjectKind(capability, selectedClosurePaths),
+          kind: "source-tree",
           sourceRoot: root,
-          selectedClosurePaths,
+          selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
         },
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.detectorOptions === undefined
+          ? {}
+          : { detectorOptions: options.detectorOptions }),
+        ...(options.acceptedImageDigests === undefined || options.acceptedImageDigests.length === 0
+          ? {}
+          : { acceptedImageDigests: [...options.acceptedImageDigests] }),
+        ...(options.env === undefined ? {} : { env: options.env }),
       }),
     );
-    if (
-      executionProfileId !== undefined &&
-      "sarif" in result &&
-      result.executionProfileId !== executionProfileId
-    )
-      return {
-        unavailable: `detector.semgrep returned execution profile ${result.executionProfileId ?? "unstated"} instead of requested ${executionProfileId}`,
-        outcome: "failed",
-      };
-    return result;
   } catch (error) {
+    throwIfCancelled(options.signal, `${scanId} was running`);
     return {
       unavailable: adapterReason(
         `scan execution adapter failed: ${(error as Error)?.message ?? "unknown error"}`,
@@ -2607,101 +2110,203 @@ async function runDelegatedDetector(
       outcome: "failed",
     };
   }
+  // Scan reports a cancelled run as a failure; Core stops rather than grade it.
+  throwIfCancelled(options.signal, `${scanId} was running`);
+  const result = delegatedDetectorResult(raw);
+  if (!("sarif" in result)) return result;
+  if (result.executionProfileId !== executionProfileId)
+    return {
+      unavailable: `${scanId} returned execution profile ${result.executionProfileId ?? "unstated"} instead of requested ${executionProfileId}`,
+      outcome: "failed",
+    };
+  const executed = executedScanAnalyzerIdentityRefusalV1(raw, scanId, executionProfileId, {
+    acceptedImageDigests: options.acceptedImageDigests ?? [],
+  });
+  if (executed !== undefined)
+    return { unavailable: executed, outcome: "failed", executionProfileId };
+  const checked = checkedDetectorSarif(detector, result.sarif);
+  if ("refusal" in checked)
+    return {
+      unavailable: `${scanId} returned ${checked.refusal}`,
+      outcome: "failed",
+      executionProfileId,
+    };
+  // Zero findings count only when the SARIF names the subject Scan proved was
+  // analyzed, and that subject is the one Core submitted.
+  const completion = delegatedScanCompletionRefusalV1(raw, checked.log, {
+    ...subjectRequest,
+    executionProfileId,
+    subject: bound.subject,
+  });
+  if (completion !== undefined)
+    return {
+      unavailable: `${scanId} returned ${completion}`,
+      outcome: "failed",
+      executionProfileId,
+    };
+  return result;
+}
+
+/** Where a scan's native findings come from: Scan's trust lint, always. */
+export interface ScanTrustLintRouteV1 {
+  readonly adapter: ScanExecutionAdapterV1;
+  readonly source: ScanExecutionSource;
+  readonly capability: Record<string, unknown>;
+}
+
+/**
+ * Scan's `detector.aih-trust-lint`, which produces every trust scan's native
+ * findings. There is no fallback: a missing or incompatible package (or an
+ * injected adapter that does not declare the detector) refuses the whole trust
+ * scan with `ScanPackageRefusalError`, because without native findings Core has
+ * nothing to grade the source on.
+ */
+export async function resolveScanTrustLintRouteV1(options: {
+  readonly scanExecution?: ScanExecutionAdapterV1;
+}): Promise<ScanTrustLintRouteV1> {
+  const scan = await resolveScanExecutionV1(options.scanExecution);
+  if ("refusal" in scan) throw new ScanPackageRefusalError(scan.refusal);
+  const capability = adapterCapabilityFor(scan.adapter, SCAN_TRUST_LINT_DETECTOR);
+  if (capability === undefined)
+    throw new ScanPackageRefusalError({
+      reason: "scan-package-incompatible",
+      detail: `the ${scan.source === "installed-package" ? "installed @aihq/scan" : "injected scan execution adapter"} declares no ${SCAN_DETECTOR_IDS[SCAN_TRUST_LINT_DETECTOR]} capability, so Core has no native findings for this source. Install it with: ${SCAN_PACKAGE_INSTALL_COMMAND} (in a project: ${SCAN_PACKAGE_PROJECT_INSTALL_COMMAND}).`,
+    });
+  return { adapter: scan.adapter, source: scan.source, capability };
+}
+
+function trustLintUnavailableCheck(source: ScanExecutionSource, reason: string): Check {
+  const said = source === "installed-package" ? `installed @aihq/scan: ${reason}` : reason;
+  return {
+    name: `trust detector ${SCAN_TRUST_LINT_DETECTOR}`,
+    verdict: "fail",
+    code: DETECTOR_UNAVAILABLE,
+    detail: `native trust findings are unavailable (${said}); Core cannot grade this source without them, so this fails at every posture.`,
+  };
+}
+
+export interface ScanTrustLintResultV1 {
+  /** The graded native checks in Scan's order, MCP-description findings tagged, or one failing check. */
+  readonly checks: TrustLintCheckV1[];
+  readonly execution: TrustDetectorExecutionV1;
+  /** The classification facts, only when the trust lint completed. */
+  readonly facts?: TrustLintFactsV1;
+}
+
+/**
+ * Scan's native findings as Core's graded native checks, in Core's native order,
+ * plus the facts Core's third-party classification reads. A refusal, a failure
+ * or SARIF Core cannot accept leaves one failing `trust.detector-unavailable`
+ * check at every posture: native coverage is the floor every trust verdict
+ * stands on, so its absence never passes.
+ */
+export async function runScanTrustLintV1(
+  route: ScanTrustLintRouteV1,
+  root: string,
+  options: {
+    readonly inventory: TrustFileInventory;
+    readonly platform: Platform;
+    readonly posture: Posture;
+    readonly internalScopes: readonly string[];
+    readonly mcpConfigPaths: readonly string[];
+    readonly signal?: AbortSignal;
+  },
+): Promise<ScanTrustLintResultV1> {
+  throwIfCancelled(options.signal, `before ${SCAN_DETECTOR_IDS[SCAN_TRUST_LINT_DETECTOR]} started`);
+  const delegated = await runDelegatedDetector(
+    route.adapter,
+    route.capability,
+    SCAN_TRUST_LINT_DETECTOR,
+    root,
+    options.inventory,
+    {
+      platform: options.platform,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      // Dependency confusion is decided against the organization's internal
+      // scopes; MCP secrets and descriptions against the configs Core declared.
+      detectorOptions: {
+        internalScopes: [...options.internalScopes],
+        mcpConfigPaths: [...options.mcpConfigPaths],
+      },
+    },
+  );
+  const base = {
+    detector: SCAN_TRUST_LINT_DETECTOR,
+    executedBy: "scan",
+    scanSource: route.source,
+    ...(delegated.executionProfileId === undefined
+      ? {}
+      : { executionProfileId: delegated.executionProfileId }),
+  } as const;
+  if ("unavailable" in delegated)
+    return {
+      checks: [{ check: trustLintUnavailableCheck(route.source, delegated.unavailable) }],
+      execution: { ...base, outcome: delegated.outcome },
+    };
+  const mapped = trustLintChecksFromSarifV1(delegated.sarif, options.posture, {
+    selectedPaths: options.inventory.files.map((entry) => entry.relativePath),
+    mcpConfigPaths: options.mcpConfigPaths,
+  });
+  if ("refusal" in mapped)
+    return {
+      checks: [{ check: trustLintUnavailableCheck(route.source, mapped.refusal) }],
+      execution: { ...base, outcome: "failed" },
+    };
+  return {
+    checks: mapped.checks,
+    execution: { ...base, outcome: "completed" },
+    facts: mapped.facts,
+  };
 }
 
 const SKILL_TRUST_DETECTORS: TrustDetector[] = [
-  {
-    name: "skillspector",
-    analyzerLabel: "skillspector@docker",
-    checkAvailable: checkSkillspectorAvailable,
-    runScan: runSkillspectorScan,
-    ruleMap: SKILLSPECTOR_RULE_MAP,
-  },
-  {
-    name: "cisco",
-    analyzerLabel: CISCO_SKILL_SCANNER_ANALYZER,
-    checkAvailable: checkCiscoAvailable,
-    runScan: runCiscoSkillScan,
-    ruleMap: CISCO_RULE_MAP,
-  },
-  {
-    name: "semgrep",
-    analyzerLabel: SEMGREP_ANALYZER,
-    checkAvailable: checkSemgrepAvailable,
-    runScan: runSemgrepScan,
-    ruleMap: SEMGREP_RULE_MAP,
-  },
+  { name: "skillspector", analyzerLabel: "skillspector@docker", ruleMap: SKILLSPECTOR_RULE_MAP },
+  { name: "cisco", analyzerLabel: CISCO_SKILL_SCANNER_ANALYZER, ruleMap: CISCO_RULE_MAP },
+  { name: "semgrep", analyzerLabel: SEMGREP_ANALYZER, ruleMap: SEMGREP_RULE_MAP },
   {
     name: "snyk-agent-scan",
     analyzerLabel: SNYK_AGENT_SCAN_ANALYZER,
-    checkAvailable: checkSnykAgentScanAvailable,
-    runScan: runSnykAgentScan,
     ruleMap: SNYK_AGENT_SCAN_RULE_MAP,
   },
 ];
 
+// Semgrep stays in SKILL_TRUST_DETECTORS: it scans the full trust tree,
+// including MCP config files. This list is for MCP-specific detector tools.
 const MCP_CONFIG_DETECTORS: TrustDetector[] = [
-  // Semgrep stays in SKILL_TRUST_DETECTORS: it scans the full trust tree,
-  // including MCP config files. This list is for MCP-specific detector tools.
-  {
-    name: "mcp-scanner",
-    analyzerLabel: CISCO_MCP_SCANNER_ANALYZER,
-    checkAvailable: checkMcpScannerAvailable,
-    runScan: runMcpScannerScan,
-    ruleMap: MCP_SCANNER_RULE_MAP,
-  },
+  { name: "mcp-scanner", analyzerLabel: CISCO_MCP_SCANNER_ANALYZER, ruleMap: MCP_SCANNER_RULE_MAP },
 ];
 
-const ALL_TRUST_DETECTORS: readonly TrustDetector[] = [
-  ...SKILL_TRUST_DETECTORS,
-  ...MCP_CONFIG_DETECTORS,
-];
+/** The analyzer label Core records for each detector (`analyzersRun`, baseline receipts). */
+export const TRUST_DETECTOR_ANALYZER_LABELS: Readonly<Record<TrustDetectorName, string>> =
+  Object.freeze(
+    Object.fromEntries(
+      [...SKILL_TRUST_DETECTORS, ...MCP_CONFIG_DETECTORS].map((detector) => [
+        detector.name,
+        detector.analyzerLabel,
+      ]),
+    ) as Record<TrustDetectorName, string>,
+  );
 
-/** One requested detector that is NOT runnable, with the underlying reason. */
-export interface DetectorAvailabilityProbe {
-  name: TrustDetectorName;
-  analyzerLabel: string;
-  reason: string;
-}
-
-export interface DetectorAvailabilityOptions {
-  run: Runner;
-  platform: Platform;
-  env: NodeJS.ProcessEnv;
-  skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
-}
-
-/**
- * Probe availability of specific detectors WITHOUT scanning. Returns one entry
- * per requested detector that is not runnable, carrying the underlying reason
- * (e.g. an offline uv cache miss). An empty array means every requested detector
- * is ready. Used by the baseline preflight to fail fast with an actionable
- * provisioning message instead of aborting mid-vet with an opaque
- * missing-analyzer error. It never runs a scan, fabricates a receipt, or relaxes
- * the required-detector floor.
- */
-export async function checkDetectorsAvailable(
-  names: readonly TrustDetectorName[],
-  options: DetectorAvailabilityOptions,
-): Promise<DetectorAvailabilityProbe[]> {
-  const runtimeOptions: TrustDetectorRuntimeOptions = {
-    skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
-  };
-  const unavailable: DetectorAvailabilityProbe[] = [];
-  for (const name of names) {
-    const detector = ALL_TRUST_DETECTORS.find((candidate) => candidate.name === name);
-    if (detector === undefined) throw new Error(`unknown trust detector: ${name}`);
-    const reason = await detector.checkAvailable(
-      options.run,
-      options.platform,
-      options.env,
-      runtimeOptions,
-    );
-    if (reason !== undefined) {
-      unavailable.push({ name, analyzerLabel: detector.analyzerLabel, reason });
-    }
+/** The request fields one detector takes beyond the subject (C2a §2.1, §3.3, §4.1, §5.1, §6.2). */
+function detectorRequestFields(
+  detector: TrustDetectorName,
+  options: TrustDetectorOptions,
+): Pick<DelegatedRunOptionsV1, "detectorOptions" | "acceptedImageDigests" | "env"> {
+  if (detector === "cisco")
+    return { detectorOptions: { concurrency: resolveCiscoScanConcurrency(options.env) } };
+  if (detector === "mcp-scanner")
+    return { detectorOptions: { mcpConfigPaths: [...(options.mcpConfigPaths ?? [])] } };
+  if (detector === "skillspector")
+    return {
+      acceptedImageDigests: acceptedSkillspectorImageDigestsV1(
+        options.skillspectorImageApprovals ?? [],
+      ),
+    };
+  if (detector === "snyk-agent-scan") {
+    const env = snykTokenEnv(options.env);
+    return env === undefined ? {} : { env };
   }
-  return unavailable;
+  return {};
 }
 
 async function runDetectorList(
@@ -2714,16 +2319,9 @@ async function runDetectorList(
   const checks: Check[] = [];
   const analyzersRun: string[] = [];
   const rawOccurrences: RawScannerOccurrence[] = [];
-  const runtimeOptions: TrustDetectorRuntimeOptions = {
-    skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
-    inventory: options.inventory,
-  };
-  const fallbackMalicious =
-    options.corroboratedChecks === undefined
-      ? scanNativeMaliciousCode(root, options.inventory)
-      : [];
+  const facts = options.trustLintFacts ?? NO_TRUST_LINT_FACTS;
   const corroboratedDangerLocations = new Set(
-    [...(options.corroboratedChecks ?? []), ...fallbackMalicious]
+    (options.corroboratedChecks ?? [])
       .filter(
         (check) =>
           check.location !== undefined &&
@@ -2736,20 +2334,11 @@ async function runDetectorList(
   );
 
   const executions: TrustDetectorExecutionV1[] = [];
-  const delegatedDetectors = options.delegatedDetectors ?? SCAN_DELEGATED_TRUST_DETECTORS;
   // Scan is resolved once per list and only when a detector actually needs
   // execution: precomputed SARIF never loads the package.
   let scanExecution: Promise<ResolvedScanExecutionV1> | undefined;
   const resolveScanExecution = (): Promise<ResolvedScanExecutionV1> => {
-    const injected = options.scanExecution;
-    scanExecution ??=
-      injected !== undefined
-        ? Promise.resolve({ adapter: injected, source: "injected-adapter" })
-        : loadScanExecutionAdapterV1().then((loaded) =>
-            loaded.ok
-              ? { adapter: loaded.adapter, source: "installed-package" }
-              : { refusal: loaded.refusal },
-          );
+    scanExecution ??= resolveScanExecutionV1(options.scanExecution);
     return scanExecution;
   };
   const unavailable = (detector: TrustDetector, reason: string): void => {
@@ -2759,67 +2348,61 @@ async function runDetectorList(
   };
 
   for (const detector of detectors) {
+    throwIfCancelled(options.signal, `before ${SCAN_DETECTOR_IDS[detector.name]} started`);
     options.progress?.(`trust scan: detector ${detector.name} started`);
-    let sarifText = options.precomputedSarif?.[detector.name];
+    const precomputed = options.precomputedSarif?.[detector.name];
+    let sarifText: string;
     let execution: Omit<TrustDetectorExecutionV1, "detector" | "outcome"> = {
       executedBy: "precomputed-sarif",
     };
     let delegatedPass: Parameters<typeof analyzerPassCheck>[2];
-    if (sarifText === undefined) {
+    // A verified shard join's jobs were each checked against their own subject.
+    let verifiedShardJoin = false;
+    let origin: PrecomputedSarifOriginV1 = "inline";
+    if (typeof precomputed === "string") sarifText = precomputed;
+    else if (precomputed?.kind === "scanner-baseline-vet-annex-v1") {
+      sarifText = precomputed.sarif;
+      // Only the verified consumer's own annex for this detector claims Scan's
+      // baseline rule; a look-alike is inline SARIF. Loaded on use: the consumer
+      // imports the scan that imports this module.
+      const { scannerBaselineVetAnnexDetectorV1 } = await import(
+        "../baseline-evidence/scanner-consumer.js"
+      );
+      if (scannerBaselineVetAnnexDetectorV1(precomputed) === detector.name)
+        origin = "scanner-baseline-vet";
+    } else if (precomputed !== undefined) {
+      const binding = ISSUED_SHARD_JOINS.get(precomputed);
+      if (detector.name !== "cisco" || binding === undefined) {
+        unavailable(
+          detector,
+          `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: a shard join Core did not verify for ${SCAN_DETECTOR_IDS[detector.name]}`,
+        );
+        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+        continue;
+      }
+      const unbound = issuedShardJoinRefusalV1(precomputed, binding, root, options.inventory);
+      if (unbound !== undefined) {
+        unavailable(
+          detector,
+          `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: ${unbound}`,
+        );
+        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+        continue;
+      }
+      sarifText = precomputed.sarif;
+      verifiedShardJoin = true;
+    } else {
       const scan = await resolveScanExecution();
       const capability =
         "adapter" in scan ? adapterCapabilityFor(scan.adapter, detector.name) : undefined;
-      // Per detector and data-driven: an injected adapter runs what it names; the
-      // installed package runs only what Core has delegated to it.
-      const delegate =
-        "adapter" in scan &&
-        capability !== undefined &&
-        (scan.source === "injected-adapter" || delegatedDetectors.has(detector.name));
-      if ("adapter" in scan && capability !== undefined && delegate) {
-        const delegated = await runDelegatedDetector(
-          scan.adapter,
-          capability,
-          detector.name,
-          root,
-          options.inventory,
-          options.platform,
-        );
-        execution = {
-          executedBy: "scan",
-          scanSource: scan.source,
-          ...(delegated.executionProfileId === undefined
-            ? {}
-            : { executionProfileId: delegated.executionProfileId }),
-        };
-        if ("unavailable" in delegated) {
-          // Scan's own words, prefixed with who said them when it is the installed package.
-          unavailable(
-            detector,
-            scan.source === "installed-package"
-              ? `installed @aihq/scan: ${delegated.unavailable}`
-              : delegated.unavailable,
-          );
-          executions.push({ detector: detector.name, ...execution, outcome: delegated.outcome });
-          continue;
-        }
-        sarifText = delegated.sarif;
-        delegatedPass = {
-          source: scan.source,
-          ...(delegated.executionProfileId === undefined
-            ? {}
-            : { executionProfileId: delegated.executionProfileId }),
-        };
-      } else if (
-        delegatedDetectors.has(detector.name) &&
-        !("adapter" in scan && scan.source === "injected-adapter")
-      ) {
-        // No fallback: a delegated detector the installed Scan cannot run is unavailable.
+      if (!("adapter" in scan) || capability === undefined) {
+        // No fallback: a detector Scan cannot run is unavailable, never run by Core.
         const refusal: ScanPackageRefusalV1 =
           "refusal" in scan
             ? scan.refusal
             : {
                 reason: "scan-package-incompatible",
-                detail: `the installed @aihq/scan declares no detector.${detector.name} capability; Core does not execute ${detector.name} itself.`,
+                detail: `the ${scan.source === "installed-package" ? "installed @aihq/scan" : "injected scan execution adapter"} declares no ${SCAN_DETECTOR_IDS[detector.name]} capability; Core does not execute ${detector.name} itself.`,
               };
         unavailable(detector, scanPackageRefusalMessage(refusal));
         executions.push({
@@ -2829,49 +2412,123 @@ async function runDetectorList(
           refusal: refusal.reason,
         });
         continue;
-      } else {
-        execution = { executedBy: "core-legacy" };
-        const reason = await detector.checkAvailable(
-          options.run,
-          options.platform,
-          options.env,
-          runtimeOptions,
-        );
-        if (reason !== undefined) {
-          unavailable(detector, reason);
-          executions.push({ detector: detector.name, ...execution, outcome: "unavailable" });
-          continue;
-        }
-
-        try {
-          sarifText = await detector.runScan(
-            options.run,
-            options.platform,
-            options.env,
-            root,
-            runtimeOptions,
-          );
-        } catch (error) {
-          unavailable(detector, (error as Error).message);
-          executions.push({ detector: detector.name, ...execution, outcome: "unavailable" });
-          continue;
-        }
       }
+      const delegated = await runDelegatedDetector(
+        scan.adapter,
+        capability,
+        detector.name,
+        root,
+        options.inventory,
+        {
+          platform: options.platform,
+          ...(options.uvExecutionProfileId === undefined
+            ? {}
+            : { uvProfile: options.uvExecutionProfileId }),
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+          ...detectorRequestFields(detector.name, options),
+        },
+      );
+      execution = {
+        executedBy: "scan",
+        scanSource: scan.source,
+        ...(delegated.executionProfileId === undefined
+          ? {}
+          : { executionProfileId: delegated.executionProfileId }),
+      };
+      if ("unavailable" in delegated) {
+        // Scan's own words, prefixed with who said them when it is the installed package.
+        unavailable(
+          detector,
+          scan.source === "installed-package"
+            ? `installed @aihq/scan: ${delegated.unavailable}`
+            : delegated.unavailable,
+        );
+        executions.push({ detector: detector.name, ...execution, outcome: delegated.outcome });
+        continue;
+      }
+      sarifText = delegated.sarif;
+      delegatedPass = {
+        source: scan.source,
+        ...(delegated.executionProfileId === undefined
+          ? {}
+          : { executionProfileId: delegated.executionProfileId }),
+      };
     }
 
+    // Precomputed SARIF meets the same boundary as a run Scan just returned.
+    const checked = checkedDetectorSarif(detector.name, sarifText);
+    if ("refusal" in checked) {
+      unavailable(
+        detector,
+        execution.executedBy === "precomputed-sarif"
+          ? `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: it holds ${checked.refusal}`
+          : `${SCAN_DETECTOR_IDS[detector.name]} returned ${checked.refusal}`,
+      );
+      executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+      continue;
+    }
+    // Precomputed SARIF counts complete only when it proves this tree was
+    // analyzed, exactly as a delegated run must (decision D17).
+    if (execution.executedBy === "precomputed-sarif" && !verifiedShardJoin) {
+      const scanId = SCAN_DETECTOR_IDS[detector.name];
+      const baselineProfile =
+        origin === "scanner-baseline-vet"
+          ? SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1[scanId]
+          : undefined;
+      const completion = precomputedScanCompletionRefusalV1(checked.log, {
+        detectorId: scanId,
+        origin: baselineProfile === undefined ? "inline" : origin,
+        executionProfileId:
+          baselineProfile ??
+          requiredExecutionProfileIdV1(detector.name, options.uvExecutionProfileId),
+        sourceRoot: root,
+        selectedClosurePaths: options.inventory.files.map((entry) => entry.relativePath),
+        ...(detector.name === "mcp-scanner"
+          ? { mcpConfigPaths: [...(options.mcpConfigPaths ?? [])] }
+          : {}),
+        acceptedImageDigests: acceptedSkillspectorImageDigestsV1(
+          options.skillspectorImageApprovals ?? [],
+        ),
+      });
+      if (typeof completion === "object") {
+        unavailable(
+          detector,
+          `precomputed SARIF for ${scanId} carries no completion evidence v1 (completion-evidence-absent); SARIF published before Scan wrote completion evidence is never counted complete, so it must be republished with evidence`,
+        );
+        executions.push({
+          detector: detector.name,
+          ...execution,
+          outcome: "unavailable",
+          reason: "completion-evidence-absent",
+        });
+        continue;
+      }
+      if (completion !== undefined) {
+        unavailable(detector, `precomputed SARIF for ${scanId} is refused: ${completion}`);
+        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+        continue;
+      }
+    }
+    // Without completed native facts the scan already fails; with them, none may be missing.
+    const unstated =
+      options.trustLintFacts === undefined
+        ? undefined
+        : unstatedFactsRefusal(checked.log, detector, root, options.trustLintFacts);
+    if (unstated !== undefined) {
+      unavailable(detector, unstated);
+      executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+      continue;
+    }
     const mapped = sarifChecks(
-      sarifText,
+      checked.log,
       root,
       options.posture,
       detector,
       corroboratedDangerLocations,
+      facts,
+      // Semgrep rule ids carry its config directory; Core classifies by its own id.
+      detector.name === "semgrep" ? canonicalSemgrepRuleId : undefined,
     );
-    if (mapped === undefined) {
-      unavailable(detector, "detector did not emit valid SARIF");
-      executions.push({ detector: detector.name, ...execution, outcome: "failed" });
-      continue;
-    }
-
     analyzersRun.push(detector.analyzerLabel);
     rawOccurrences.push(...mapped.rawOccurrences);
     const completedAnalyzers = ["aih-native", ...analyzersRun];
@@ -2883,9 +2540,14 @@ async function runDetectorList(
   // Scan's identity observation rides along only when Scan was consulted at all.
   const observations =
     recordScanObservation && scanExecution !== undefined
-      ? [await recordScanNativeObservation(await scanExecution, root, options.inventory)].filter(
-          (observation): observation is ScanObservationV1 => observation !== undefined,
-        )
+      ? [
+          await recordScanNativeObservation(
+            await scanExecution,
+            root,
+            options.inventory,
+            options.signal,
+          ),
+        ].filter((observation): observation is ScanObservationV1 => observation !== undefined)
       : [];
   return { checks, analyzersRun, rawOccurrences, executions, observations };
 }

@@ -8,6 +8,18 @@ import { defaultRunner } from "../../../../src/internals/proc.js";
 import { policyAuthoringCatalog } from "../../../../src/org-policy/catalog.js";
 import { prepareWorkbenchCatalog } from "../../../../src/org-policy/workbench/prepared-catalog.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
+import { fakeTrustLintScan } from "../../../trust/fakes/fake-trust-lint.js";
+import {
+  fixtureTrustLint,
+  setInstalledFakeScan,
+} from "../../../trust/fakes/installed-fake-scan.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../../../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
 
 vi.mock("../../../../src/internals/proc.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../../src/internals/proc.js")>()),
@@ -100,6 +112,33 @@ describe("fresh organization preparation custody", () => {
       posture?: "vibe" | "enterprise";
     } = {},
   ) {
+    // Semgrep runs in the installed Scan: a clean run, optionally racing a change to the tree.
+    setInstalledFakeScan(
+      fakeTrustLintScan(
+        fixtureTrustLint,
+        semgrep
+          ? {
+              "detector.semgrep": {
+                kind: "sarif-for",
+                sarif: (request) => {
+                  const sourceRoot = (request.subject as { sourceRoot: string }).sourceRoot;
+                  if (options.mutateDuringScan) {
+                    writeFileSync(
+                      join(sourceRoot, "skills", "triage", "SKILL.md"),
+                      `${document}changed`,
+                      "utf8",
+                    );
+                  }
+                  return JSON.stringify({
+                    version: "2.1.0",
+                    runs: [{ tool: { driver: { name: "semgrep" } }, results: [] }],
+                  });
+                },
+              },
+            }
+          : {},
+      ),
+    );
     vi.mocked(defaultRunner).mockImplementation(async (argv) => {
       if (argv[0] === process.execPath && argv[1] === "-e") {
         const input = JSON.parse(argv[3] ?? "{}") as Record<string, string>;
@@ -125,21 +164,6 @@ describe("fresh organization preparation custody", () => {
           );
           return { code: 0, stdout: "", stderr: "" };
         }
-      }
-      if (semgrep && argv.includes("--version")) return { code: 0, stdout: "1.173.0", stderr: "" };
-      if (semgrep && argv.includes("--sarif")) {
-        if (options.mutateDuringScan) {
-          writeFileSync(
-            join(String(argv.at(-1)), "skills", "triage", "SKILL.md"),
-            `${document}changed`,
-            "utf8",
-          );
-        }
-        return {
-          code: 0,
-          stdout: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
-          stderr: "",
-        };
       }
       return { code: 0, stdout: "{}", stderr: "" };
     });

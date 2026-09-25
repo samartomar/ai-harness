@@ -53,6 +53,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Remove legacy MCP-target reconstruction during saved-policy consumption. Policies authored
   against an older MCP target declaration now fail closed with `Stale selected content`; re-save
   the policy with the currently installed Catalog's MCP targets before consuming it.
+- Core runs no detector of its own any more; every detector runs in the installed
+  `@aihq/scan`. Removed with the engines: the native trust lint, dependency-name and
+  manifest engines (`src/trust/{lint,manifest,depnames}.ts`), the binding gate's in-Core
+  inspectors and visible-typography classifier, the dormant uvx/docker deep-tier inspectors
+  (`runDeepScanTier` now takes its inspectors explicitly), the committed analyzer projects
+  `tools/cisco-skill-scanner` and `tools/trust-scanners/*` (no longer in the package
+  `files`), `tools/skillspector.Dockerfile` (the image recipe is Scan's
+  `tools/skillspector/Dockerfile`), the Snyk qualification validator and the
+  `cisco-mcp-runtime` and `snyk-agent-qualification` workflows.
 - Remove the pre-release Policy Workbench browser/HTML/server bundle and its
   `aih --ui` and `aih policy generate` command registrations. They have no
   compatibility stubs or `aih-ui` replacement. Core retains policy validation,
@@ -208,18 +217,146 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `@aihq/catalog` 0.2.0 is outside the peer range. The same bytes
   are accepted as before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`), and the
   source used is printed on stderr.
-- `@aihq/scan` is now an optional peer dependency (`>=0.4.0 <1.0.0`) and is no longer
+- `@aihq/scan` is now an optional peer dependency (`>=0.5.0 <0.6.0`) and is no longer
   bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
   and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`
   and update Scan independently. A Core-only installation supports operations that do not
   require a sibling package; what needs Scan reports `scan-package-unavailable` or
   `scan-package-incompatible` with the install command, and never falls back to a bundled copy.
-- `aih trust scan` and `aih skill vet` load the installed Scan by default. Every detector
-  still runs in Core; the runtime advisory now names each detector's executor and records
-  Scan's `detector.aih-native` identity observation (execution profile, analyzer, annex
-  digest) or the package refusal. The trust scan result gains `detectorExecutions` and
-  `scanObservations`. The detectors delegated to Scan are a per-detector set, empty until
-  Scan's capabilities are equivalents; a delegated detector will never fall back to Core.
+- Every detector runs in the installed `@aihq/scan` through its public API; Core keeps
+  inventory, classification, grading, policy and the gate decisions. `aih trust scan`,
+  `aih skill vet` and workspace acquisition take their native findings from Scan's
+  `detector.aih-trust-lint` (profile `in-process-trust-lint-v1`) and the facts it
+  reports; SkillSpector, Cisco, Cisco MCP scanner, Semgrep and Snyk Agent Scan run through
+  `runDetectorV1` under the profile Core names (uv detectors `host-process-uv-v1` on
+  every OS unless policy selects `linux-namespace-uv-v1`; SkillSpector only under the
+  never-pull `docker-host-local-skillspector-v1` container profile, with the policy's
+  approved local digests). The baseline vet's source-wide Cisco shards run through
+  `runCiscoShardV1` bound to the uv.lock digest Scan publishes for the profile, and the
+  baseline preflight asks `probeDetectorAvailabilityV1`. The binding scan gate's FAST tier
+  is Scan's `detector.aih-binding-gate`; `inspectTree` and `runFastScanGate` are now
+  asynchronous, the gate's typography overlay reads Scan's per-file verdicts, and the
+  derived scan cache moves to schema version 4 (older records are recomputed). A missing or
+  incompatible Scan is `scan-package-unavailable` or `scan-package-incompatible`
+  (`AIH_SCAN_PACKAGE`); Core never runs a detector in its place. The runtime advisory
+  names each detector's executor (`scan`, `precomputed-sarif`, `none`) and records Scan's
+  `detector.aih-native` identity observation.
+- Semgrep results are mapped through Core's canonical rule map for every executor, so the
+  same finding carries the same code whether Semgrep ran in Scan or arrived as SARIF.
+- Every SARIF log Core reads from Scan (a delegated run, precomputed SARIF, or a Cisco shard
+  job's output) passes one strict check: SARIF 2.1.0, every run an object with a results
+  array, typed result fields, positive start lines and source-relative URIs kept verbatim.
+  A malformed log fails the detector (a required detector fails at enterprise posture);
+  precomputed SARIF with absolute or unknown-rule results is no longer rewritten or read.
+- Scan's trust-lint facts must cover every selected file, or the native findings fail at
+  every posture instead of third-party findings losing their corroboration. The binding gate
+  recomputes each content pin from the file before any acceptance applies.
+- A SIGINT or SIGTERM during a delegated Scan call now waits, up to 30 seconds, for the
+  cancelled call to settle before command cleanup and the re-raised signal, so Scan removes
+  its snapshot and analyzer temporary directories; a call that does not settle in time is
+  reported on stderr as a cleanup warning.
+- Core pins the analyzer identity it accepts from Scan per detector and execution profile
+  (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`: analyzer version and uv.lock sha256). A capability
+  that declares another identity, or a run whose evidence names one, is refused as
+  `trust.detector-unavailable` naming the expected and observed identity; the binding gate
+  and Cisco shards refuse the same way. Fresh baseline vets name each uv analyzer from that
+  table, never from Scan's declaration (the host-process Cisco lock, which differs from the
+  committed receipts' lock, is an explicit table entry). Committed baseline evidence is still
+  checked against the pinned identities.
+- A detector run counts as completed, zero findings included, only when its SARIF proves the
+  analysis completed. Every log Core reads from Scan (delegated, precomputed, or a Cisco shard
+  job) must have at least one run, each naming a tool driver and reporting non-empty
+  `invocations` that are all `executionSuccessful: true`, with well-formed notifications and
+  none at `error` level. A delegated run, the binding gate and every Cisco shard job (in the run
+  and again before the join) must also carry Scan's completion evidence v1
+  (`invocations[0].properties.aihScanCompletionV1`). Core recomputes the subject digest and file
+  count from the files it submitted, and requires the requested detector and the analyzer
+  identity it accepted. Zero analyzed files are accepted only for the five detectors that
+  complete on an empty source. Anything else is `trust.detector-unavailable` (outcome `failed`).
+  An `@aihq/scan` without completion evidence (before S2g) therefore fails every delegated
+  detector, and a Snyk or mcp-scanner run whose SARIF names no tool driver fails too.
+- A SkillSpector run must state the image that ran (`evidence.observation.image`): its digest
+  must be Core's pinned digest or one Core's policy accepted for the request, stated with the
+  acceptance that digest implies (`scan-pinned` for the pinned digest, `caller-accepted`
+  otherwise) and a reference, and the observation's analyzer version must name exactly that
+  image under the pinned source revision. A missing or contradictory image fails the detector;
+  any other detector that states an image fails too.
+- Each delegated detector call, and the binding gate, binds its own subject: Core recomputes
+  it immediately before the call, checks the completion evidence against it, and recomputes it
+  after the call returns; a tree that changed during the call fails the detector. The
+  whole-tree inventory is no longer cached across the detectors of one scan, so a change between
+  two detectors is judged against the tree each one actually saw.
+- Precomputed SARIF (a Scanner annex) counts as completed only when every run carries
+  completion evidence v1 for the tree Core is scanning: the requested detector, the subject Core
+  recomputes for that detector, and an analyzer identity Core pins for it. SARIF with no
+  completion evidence at all, which is every publication made before Scan S2g, is never counted
+  complete: it is `trust.detector-unavailable` with reason `completion-evidence-absent`
+  (outcome `unavailable`), and must be republished with evidence. Evidence that is present but
+  wrong fails the detector. Joined Cisco shards stay exempt from the one-subject check because
+  each job was checked against its own subject; only a join `joinCiscoShardResults` verified
+  (`joinedCiscoShardSarif` now returns it as a `VerifiedCiscoShardSarifV1`) is exempt.
+- A verified Cisco shard join is exempt only for the tree it was verified for: the scanned root
+  (by realpath) must be the root it was issued for, the tree's jobs must be exactly the join's
+  jobs, and every job's subject, rehashed at the scan, must equal the subject verified at the
+  join. A join presented for another root, a job added or removed, or a job changed after the
+  join fails the detector naming the difference. No caller can name the root a join is bound
+  to: `joinedCiscoShardSarif` binds it to the verified root, and a baseline component scan gets
+  its join through `withCiscoShardJoinProjectionV1`, which creates the projection directory,
+  copies the included jobs into it from the verified root, and binds the join to that directory
+  by identity (device, inode and birth time, a real directory and never a link or junction).
+  The join is revoked when the projection's scan settles: presented afterwards, even at a
+  recreated pathname with the same jobs, it fails with "the shard join's projection no longer
+  exists", and a directory replaced at the same pathname during the scan fails too. A join whose
+  selected jobs nest (`skills/a` and `skills/a/nested`) can now be projected: Core copies only the
+  outermost selected jobs and still binds and rehashes every selected job. A file-system error
+  while Core checks a projection's identity at the scan fails the Cisco detector with a refusal
+  naming the path and the error code (such as `EACCES`), instead of rejecting the whole scan. A
+  projection Core cannot prepare (reading its identity, copying a job, resolving it) is never
+  scanned: `withCiscoShardJoinProjectionV1` now returns a typed result, either `scanned` with the
+  scan's own result or `refused` with the failed Cisco detector naming the path and code, and
+  reads nothing more there; baseline vet uses the refusal as the component's scan. A projection
+  Core cannot remove no longer replaces the result or the scan's own error, and is never lost:
+  the result carries a typed `cleanupFailure` with the path and code, and a rejected scan's own
+  error carries it as a `cleanupFailure` property (only a rejection that cannot take the
+  property, such as a frozen error or a thrown string, is wrapped in a
+  `ProjectionCleanupRejectionV1` whose `cause` it is; `projectionCleanupFailureOfV1` reads it).
+  Baseline vet keeps it on the component scan it returns (`projectionCleanupFailures`, also
+  reported as progress), and its own component projection now follows the same rules. Baseline
+  vet's "produced no analyzer receipt" error now names the detector diagnostics too.
+- The record `joinCiscoShardResults` verified is stored deep-frozen, and
+  `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each
+  job's subject), so a caller can no longer replace a job's SARIF, add or remove a job, or edit a
+  path, subject or root that the shard exemption later reads.
+- Precomputed SARIF must name the analyzer Core pins under the one profile Core requires for it,
+  no longer any pinned profile: the caller's `uvExecutionProfileId` when stated, otherwise Core's
+  default `host-process-uv-v1`. An annex naming another profile's identity (such as Cisco's
+  host-profile `knownGap` lock under the namespace profile) fails the detector with a message
+  naming both profiles. SkillSpector's image rule is unchanged. A baseline vet that aborts for a
+  missing required analyzer now also names detectors the source-wide scan graded `skip`, not only
+  `fail`.
+- Scanner-publication (baseline-vet) annexes are checked against Scan's baseline rule (decision
+  D24): only an annex the Scanner consumer issued after Scan's attestation verified carries
+  that rule, as a private brand on the `ScannerBaselineVetAnnexV1` it creates for the detector the
+  annex was published for; a plain string, a caller-built wrapper or another detector's annex is
+  inline SARIF, and no option lets a live scan claim the rule. Core recomputes the subject over
+  the consumer's source root as what Scan's batch snapshot received, for Semgrep, SkillSpector
+  and Cisco (Cisco as the whole-snapshot skill-directory scan): the top-level `.git` is left out
+  before the walk, so a broken link inside it no longer fails the subject, and a link must be
+  relative and resolve through real directories to a real file or directory inside the root, so
+  an absolute link, a link to or through another link, a link into `.git`, and a directory link
+  naming a directory that holds a link are refused as the snapshot refuses them. A directory link
+  contributes nothing (D26). The analyzer must be the one Scan's
+  batch runs (`SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1`, mirroring Scan's
+  `BASELINE_BATCH_EXECUTION_PROFILES_V1`): the `linux-namespace-uv-v1` identity for Semgrep and
+  Cisco, and `docker-hardened-skillspector-v1` (no lock, the pinned revision at an accepted digest)
+  for SkillSpector. Another profile's identity or a subject that includes `.git` fails the
+  detector; an evidence-less annex stays
+  `completion-evidence-absent`. Delegated runs and inline precomputed SARIF are unchanged.
+- An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
+  without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
+  malformed one such as `@my team` with its field path instead of ignoring it, and Scan
+  refuses one that arrives through `AIH_TRUST_INTERNAL_SCOPES`. This is an intentional
+  fail-closed change.
 - SARIF locations with a nonempty `file://` authority are refused as repository paths;
   local `file:///` locations remain supported.
 - Independent Serena and Token Optimizer selections can be inspected with
@@ -256,6 +393,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hook the request did not name may come back disabled, whatever authority it claims (unrequested
   hooks stay enabled inventory decisions); an omission, a duplicate or an unrequested disable
   refuses with `framework-plugin-incompatible`.
+- Org policy `trust.uvExecutionProfile` (`host-process-uv-v1` or `linux-namespace-uv-v1`)
+  names the execution profile Scan runs the uv-backed detectors under.
 - Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
   runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
   `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain

@@ -21,6 +21,20 @@ import {
   joinCiscoShardResults,
 } from "../../src/trust/cisco-shards.js";
 import { TRUST_POLICY_VERSION } from "../../src/trust/evidence.js";
+import {
+  fakeCiscoJobSarif,
+  type HandJobSubjectsForTests,
+} from "../trust/fakes/fake-cisco-job-sarif.js";
+
+/**
+ * Each fixture job's subject (subject-files-v1), computed by hand with plain
+ * node:crypto: sha256 of `<job>/SKILL.md\0<sha256 of its bytes>\n`.
+ * SKILL.md holds `# Clean\n` and `# Blocked\n`.
+ */
+const JOB_SUBJECTS: HandJobSubjectsForTests = {
+  "skills/clean": "dcaa68965d2c6d3bb6a62dc39fe93d0aa86067a55765cb711482093b0aafb928",
+  "skills/blocked": "28c0d120433260b0f404da989081f038a3b9af6a0846e360dfd116c045fdb1df",
+};
 
 let root: string;
 
@@ -348,8 +362,9 @@ describe("vetBaselineCatalog", () => {
     const scanTree = vi.fn(
       async (_projectionRoot: string, options?: Parameters<typeof defaultComponentScanner>[0]) => {
         const raw = options?.precomputedDetectorSarif?.cisco;
-        if (raw === undefined) throw new Error("expected precomputed Cisco SARIF");
-        const sarif = JSON.parse(raw) as {
+        if (raw === undefined || typeof raw === "string")
+          throw new Error("expected a verified Cisco shard join");
+        const sarif = JSON.parse(raw.sarif) as {
           runs: Array<{
             results: Array<{
               locations: Array<{
@@ -373,27 +388,27 @@ describe("vetBaselineCatalog", () => {
     );
     const dispatch = vi.fn(async (manifest: CiscoShardManifest) =>
       manifest.shards.map((shard) =>
-        buildCiscoShardResult(manifest, shard.id, (job) => ({
-          version: "2.1.0",
-          runs: [
-            {
-              results: [
-                {
-                  ruleId: "fixture",
-                  message: { text: job.path },
-                  locations: [
-                    {
-                      physicalLocation: {
-                        artifactLocation: { uri: `${job.path}/SKILL.md` },
-                        region: { startLine: 1 },
-                      },
+        buildCiscoShardResult(manifest, shard.id, (job) =>
+          fakeCiscoJobSarif(
+            JOB_SUBJECTS,
+            job.path,
+            [
+              {
+                ruleId: "fixture",
+                message: { text: job.path },
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: `${job.path}/SKILL.md` },
+                      region: { startLine: 1 },
                     },
-                  ],
-                },
-              ],
-            },
-          ],
-        })),
+                  },
+                ],
+              },
+            ],
+            manifest.analyzer,
+          ),
+        ),
       ),
     );
 
@@ -478,12 +493,15 @@ describe("vetBaselineCatalog", () => {
     });
     const shard = manifest.shards[0];
     if (shard === undefined) throw new Error("fixture shard missing");
-    const shared = joinCiscoShardResults(manifest, [
-      buildCiscoShardResult(manifest, shard.id, () => ({
-        version: "2.1.0",
-        runs: [],
-      })),
-    ]);
+    const shared = joinCiscoShardResults(
+      manifest,
+      [
+        buildCiscoShardResult(manifest, shard.id, (job) =>
+          fakeCiscoJobSarif(JOB_SUBJECTS, job.path, [], manifest.analyzer),
+        ),
+      ],
+      root,
+    );
     const scanTree = vi.fn(async () => ({
       analyzersRun: ["aih-native", "cisco@uvx"],
       checks: [pass("must not run")],
@@ -503,6 +521,31 @@ describe("vetBaselineCatalog", () => {
       }),
     ).rejects.toThrow(/requires Cisco.*no exact source-wide Cisco job/i);
     expect(scanTree).not.toHaveBeenCalled();
+  });
+
+  it("names the detector's refusal when a component scan ran no analyzer", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: [],
+          checks: [
+            {
+              name: "trust detector cisco",
+              verdict: "fail",
+              code: "trust.detector-unavailable",
+              detail: "precomputed SARIF for detector.cisco is refused: fixture reason",
+            },
+          ],
+        }),
+        requiredAnalyzers: ["aih-native", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "native.test",
+          "cisco@uvx": "2.0.13+uvlock.fixture",
+        },
+      }),
+    ).rejects.toThrow(
+      /^baseline vet produced no analyzer receipt; detector diagnostics: precomputed SARIF for detector\.cisco is refused: fixture reason$/,
+    );
   });
 
   it("requires an explicit dispatcher before requesting multiple source shards", async () => {

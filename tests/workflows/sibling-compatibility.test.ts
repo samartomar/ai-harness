@@ -647,8 +647,11 @@ describe("the contract checks, run against this Core and the installed Scan", ()
       "refusal-evidence-unknown-version": "passed",
       "refusal-scan-core-contract-unknown": "passed",
       "refusal-catalog-index-unknown-version": "unavailable",
-      // The published @aihq/scan 0.4.0 this checkout installs predates that export.
-      "scan-custody-negative": "unavailable",
+      // @aihq/scan 0.4.0 predates that export; the 0.5 line has it and it must refuse.
+      "scan-custody-negative":
+        typeof scan.coreOrganizationEvidenceEnvelopeDigestV1 === "function"
+          ? "passed"
+          : "unavailable",
     });
   });
 

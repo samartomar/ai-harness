@@ -1,0 +1,724 @@
+{
+  "format": "aih-trust-parity-golden",
+  "version": 1,
+  "case": "unicode",
+  "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+  "posture": "vibe",
+  "internalScopes": [],
+  "native": {
+    "byEnvironment": {
+      "linux-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "trust-lint",
+            "name": "trust.visible-unicode",
+            "verdict": "pass",
+            "code": null,
+            "uri": "docs/guide.md",
+            "startLine": 3,
+            "detail": "warning-only (vibe posture): docs/guide.md:3 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+            "fingerprint": "trust-visible-unicode:docs/guide.md:f0f6311351488d8e007e2d7d4f11a6106283a00ee99a904ae9cbec148ca3cd85"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.visible-unicode",
+            "verdict": "pass",
+            "code": null,
+            "uri": "notes.md",
+            "startLine": 3,
+            "detail": "warning-only (vibe posture): notes.md:3 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+            "fingerprint": "trust-visible-unicode:notes.md:9b985ec642a19d071c96d9882e5f7f428ebf22021774f61e50855be82e29e4bb"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 7,
+            "detail": "SKILL.md:7 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+200B",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:bd81616a29df7ae5c439d98e1b5d93a9dff70472817b6ac7bba3ce58ffd6a833"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 8,
+            "detail": "SKILL.md:8 — trust.hidden-unicode: character category: bidi-control; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+202E",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:6758f2d7761fd826be1df3735df0570a5489faa433350132050d3e4f46f45a29"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 8,
+            "detail": "SKILL.md:8 — trust.hidden-unicode: character category: bidi-control; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+202C",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:ff265ab31258a12450ec64fe0d1bc20dc323dc8181cbc8b1953b084284293be1"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 9,
+            "detail": "SKILL.md:9 — trust.hidden-unicode: character category: tag-character; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+E0041",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:cafbabce13f430d5706356f78d99a7ce5ac3e0baf457b1760291e1e1ae600531"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 9,
+            "detail": "SKILL.md:9 — trust.hidden-unicode: character category: tag-character; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+E0042",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:664052fa8a92a3044b21b90cc7c6e807f57041aad0158a6e7f1141592f103819"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "tool.py",
+            "startLine": 1,
+            "detail": "tool.py:1 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+435",
+            "fingerprint": "trust-hidden-unicode:tool.py:dad573ece64f3b0753596feda546c2a3dcfe95a0d9ee61cea1e0e50d7aaf76c3"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "tool.py",
+            "startLine": 2,
+            "detail": "tool.py:2 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+435",
+            "fingerprint": "trust-hidden-unicode:tool.py:a69a0c17be34a4727243eb9534195caba9334967f1c5b9d29d1ece33d907ecd8"
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 9
+      },
+      "win32-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "trust-lint",
+            "name": "trust.visible-unicode",
+            "verdict": "pass",
+            "code": null,
+            "uri": "docs/guide.md",
+            "startLine": 3,
+            "detail": "warning-only (vibe posture): docs/guide.md:3 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+            "fingerprint": "trust-visible-unicode:docs/guide.md:f0f6311351488d8e007e2d7d4f11a6106283a00ee99a904ae9cbec148ca3cd85"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.visible-unicode",
+            "verdict": "pass",
+            "code": null,
+            "uri": "notes.md",
+            "startLine": 3,
+            "detail": "warning-only (vibe posture): notes.md:3 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+            "fingerprint": "trust-visible-unicode:notes.md:9b985ec642a19d071c96d9882e5f7f428ebf22021774f61e50855be82e29e4bb"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 7,
+            "detail": "SKILL.md:7 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+200B",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:bd81616a29df7ae5c439d98e1b5d93a9dff70472817b6ac7bba3ce58ffd6a833"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 8,
+            "detail": "SKILL.md:8 — trust.hidden-unicode: character category: bidi-control; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+202E",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:6758f2d7761fd826be1df3735df0570a5489faa433350132050d3e4f46f45a29"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 8,
+            "detail": "SKILL.md:8 — trust.hidden-unicode: character category: bidi-control; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+202C",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:ff265ab31258a12450ec64fe0d1bc20dc323dc8181cbc8b1953b084284293be1"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 9,
+            "detail": "SKILL.md:9 — trust.hidden-unicode: character category: tag-character; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+E0041",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:cafbabce13f430d5706356f78d99a7ce5ac3e0baf457b1760291e1e1ae600531"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "SKILL.md",
+            "startLine": 9,
+            "detail": "SKILL.md:9 — trust.hidden-unicode: character category: tag-character; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+E0042",
+            "fingerprint": "trust-hidden-unicode:SKILL.md:664052fa8a92a3044b21b90cc7c6e807f57041aad0158a6e7f1141592f103819"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "tool.py",
+            "startLine": 1,
+            "detail": "tool.py:1 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+435",
+            "fingerprint": "trust-hidden-unicode:tool.py:dad573ece64f3b0753596feda546c2a3dcfe95a0d9ee61cea1e0e50d7aaf76c3"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.hidden-unicode",
+            "verdict": "fail",
+            "code": "trust.hidden-unicode",
+            "uri": "tool.py",
+            "startLine": 2,
+            "detail": "tool.py:2 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+435",
+            "fingerprint": "trust-hidden-unicode:tool.py:a69a0c17be34a4727243eb9534195caba9334967f1c5b9d29d1ece33d907ecd8"
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 9
+      }
+    },
+    "identicalAcrossEnvironments": true
+  },
+  "detectors": {
+    "semgrep": {
+      "scanDetectorId": "detector.semgrep",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 7591,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "11848ed895b9c97712efca5a79e216472c8ea7ba47a6f354621c26dd3e185a93"
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 15006,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "e52b3dfe9acfb213e5ffdc80eb36f5e12d05a39daf02e2f598f243db5316aeee"
+        }
+      },
+      "executedOn": [
+        "linux-x64",
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "cisco": {
+      "scanDetectorId": "detector.cisco",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "cisco@uvx"
+          ],
+          "durationMs": 16701,
+          "checks": [
+            {
+              "name": "trust detector cisco",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Cisco AI Defense skill-scanner static scan completed through the committed uv lock with offline defaults-only. No findings != safe. Analyzers run: aih-native, cisco@uvx",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.skill-metadata-license",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:SKILL.md:9034c744696c6c304d05da32720288ec8e646f83195b4b53c5b2653ba46d7fc8"
+            },
+            {
+              "name": "trust.cisco-finding",
+              "verdict": "pass",
+              "code": "trust.cisco-finding",
+              "uri": "SKILL.md",
+              "startLine": 3,
+              "detail": "warning-only (vibe posture): SKILL.md:3 — Cisco AI Defense skill-scanner: Detects hidden Unicode characters used for invisible prompt injection and ASCII smuggling steganography: ​",
+              "fingerprint": "trust-cisco-finding:SKILL.md:b4059686937cb7d7c7ef0b72ab98cd912c168b226e9166cf204db60c002ad0e2"
+            },
+            {
+              "name": "trust.cisco-finding",
+              "verdict": "pass",
+              "code": "trust.cisco-finding",
+              "uri": "SKILL.md",
+              "startLine": 4,
+              "detail": "warning-only (vibe posture): SKILL.md:4 — Cisco AI Defense skill-scanner: Detects hidden Unicode characters used for invisible prompt injection and ASCII smuggling steganography: ‮",
+              "fingerprint": "trust-cisco-finding:SKILL.md:80fe014bac49c59e94802f2d63589efb8f6e199190f7887f1a5ed1f144841688"
+            },
+            {
+              "name": "trust.cisco-finding",
+              "verdict": "pass",
+              "code": "trust.cisco-finding",
+              "uri": "SKILL.md",
+              "startLine": 5,
+              "detail": "warning-only (vibe posture): SKILL.md:5 — Cisco AI Defense skill-scanner: Detects hidden Unicode characters used for invisible prompt injection and ASCII smuggling steganography: 󠁁",
+              "fingerprint": "trust-cisco-finding:SKILL.md:d5c340a5c7d001075f1bc5e8cb146d1b4f75577362b662d9582a816d8e5371e3"
+            },
+            {
+              "name": "trust.cisco-finding",
+              "verdict": "pass",
+              "code": "trust.cisco-finding",
+              "uri": "SKILL.md",
+              "startLine": 9,
+              "detail": "warning-only (vibe posture): SKILL.md:9 — Cisco AI Defense skill-scanner: ASCII smuggling detected in 'SKILL.md': 2 Unicode Tag Block character(s) found (2 printable, 0 boundary marker(s)). First occurrence at line 9. Decoded hidden payload (first 120 chars): «AB». Tag Block characters (U+E0000–U+E007F) are invisible in editors but are decoded by LLMs, enabling hidden prompt-injection payloads inside otherwise-legitimate skill files.",
+              "fingerprint": "trust-cisco-finding:SKILL.md:d905ab5630bb9011009b145c872d854b2132bc99c6e9d4f01d1b4b236d042bc8"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "MANIFEST_MISSING_LICENSE",
+              "level": "note",
+              "message": "Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "sourceValue": "---",
+              "fingerprint": "trust-raw:0504f39a10a23860b57fcdc9beb8c4793176e3c744e4e54b71d38dab1c1be490"
+            },
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "YARA_prompt_injection_unicode_steganography",
+              "level": "warning",
+              "message": "Detects hidden Unicode characters used for invisible prompt injection and ASCII smuggling steganography: ​",
+              "uri": "SKILL.md",
+              "startLine": 3,
+              "sourceValue": "description: Parity fixture with invisible and control characters.",
+              "fingerprint": "trust-raw:328be2d6a1833e9f468d54b842f7a6ab5540d0fdc63e94c6ddcd150f16cf7f4c"
+            },
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "YARA_prompt_injection_unicode_steganography",
+              "level": "warning",
+              "message": "Detects hidden Unicode characters used for invisible prompt injection and ASCII smuggling steganography: ‮",
+              "uri": "SKILL.md",
+              "startLine": 4,
+              "sourceValue": "---",
+              "fingerprint": "trust-raw:96103588a0187b8ad72f6a17177c9f848ef34537fbe87a556427196d8fbbb63e"
+            },
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "YARA_prompt_injection_unicode_steganography",
+              "level": "warning",
+              "message": "Detects hidden Unicode characters used for invisible prompt injection and ASCII smuggling steganography: 󠁁",
+              "uri": "SKILL.md",
+              "startLine": 5,
+              "sourceValue": "# Unicode demo",
+              "fingerprint": "trust-raw:8aa8dd2de204808c7b53ba4ed6df317f3dfc99eba1e2e24c5f41b9e7a98ad711"
+            },
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "ASCII_SMUGGLING_TAG_BLOCK",
+              "level": "error",
+              "message": "ASCII smuggling detected in 'SKILL.md': 2 Unicode Tag Block character(s) found (2 printable, 0 boundary marker(s)). First occurrence at line 9. Decoded hidden payload (first 120 chars): «AB». Tag Block characters (U+E0000–U+E007F) are invisible in editors but are decoded by LLMs, enabling hidden prompt-injection payloads inside otherwise-legitimate skill files.",
+              "uri": "SKILL.md",
+              "startLine": 9,
+              "sourceValue": "Tagged: plain󠁁󠁂 text.",
+              "fingerprint": "trust-raw:7ea1030f9b57d5a04ae42e751c0af48d45c8e9ab18d4b7ac312b60597cd4bad5"
+            }
+          ],
+          "executions": [
+            {
+              "detector": "cisco",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skill-scanner",
+              "version": "1.0.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "0885338c3c0e9191be4a3aadb45757d9670f502f468c96d58c365d43a1b6025a"
+        }
+      },
+      "executedOn": [
+        "linux-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "mcp-scanner": {
+      "scanDetectorId": "detector.cisco-mcp-scanner",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco-mcp-scanner",
+          "mode": "executed",
+          "outcome": "not-applicable",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 5,
+          "checks": [],
+          "rawOccurrences": [],
+          "executions": [],
+          "scanObservations": [],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    },
+    "skillspector": {
+      "scanDetectorId": "detector.skillspector",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.skillspector",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "skillspector@docker"
+          ],
+          "durationMs": 6190,
+          "checks": [
+            {
+              "name": "trust detector skillspector",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: aih-native, skillspector@docker",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 7,
+              "detail": "warning-only (vibe posture): SKILL.md:7 — SkillSpector: Hidden Instructions",
+              "fingerprint": "trust-detector-finding:SKILL.md:c3a50a4ed09f97071e7de1910b6595a77745007e639cf2252b1294640d3dd922"
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 8,
+              "detail": "warning-only (vibe posture): SKILL.md:8 — SkillSpector: Hidden Instructions",
+              "fingerprint": "trust-detector-finding:SKILL.md:2ea9f8e4dc65bd46f4cecf07f195421ca8bc61adef326247c87d7dc31d84fba1"
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 9,
+              "detail": "warning-only (vibe posture): SKILL.md:9 — SkillSpector: Hidden Instructions (Unicode Tag / ASCII smuggling)",
+              "fingerprint": "trust-detector-finding:SKILL.md:fa3e47e5dea2f44835f50b1d8ed45a3c770843b384f35c69a8b9cc7348466d75"
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 3,
+              "detail": "warning-only (vibe posture): SKILL.md:3 — SkillSpector: YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]",
+              "fingerprint": "trust-detector-finding:SKILL.md:f6cabd5e3c3d5b00d2bb19f874aea9ef1a92fc9f4b66917ac375d8cbcfe13ec5"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "P2",
+              "level": "error",
+              "message": "Hidden Instructions",
+              "uri": "SKILL.md",
+              "startLine": 7,
+              "sourceValue": "Summarize the re​port briefly.",
+              "fingerprint": "trust-raw:334ff59d5353c2a189e995968cf80b34ec9c8f9b9be0d9ec0b907823899e84ef"
+            },
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "P2",
+              "level": "error",
+              "message": "Hidden Instructions",
+              "uri": "SKILL.md",
+              "startLine": 8,
+              "sourceValue": "Label: ‮abc‬ end.",
+              "fingerprint": "trust-raw:30e13123f08f2384cebbb5656aa984322eacb91820569d7a5db6ef358dfa247c"
+            },
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "P2",
+              "level": "error",
+              "message": "Hidden Instructions",
+              "uri": "SKILL.md",
+              "startLine": 8,
+              "sourceValue": "Label: ‮abc‬ end.",
+              "fingerprint": "trust-raw:39f6bfc20f9b3485ce5f6da51d6c63b1066a0e42a2c0407ae4a1f4cb1162cfb9"
+            },
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "P2",
+              "level": "error",
+              "message": "Hidden Instructions (Unicode Tag / ASCII smuggling)",
+              "uri": "SKILL.md",
+              "startLine": 9,
+              "sourceValue": "Tagged: plain󠁁󠁂 text.",
+              "fingerprint": "trust-raw:df325e5967bcf2f04d04b25d4cc54c9f7b84bda872d053b9c77eb9d99879e77c"
+            },
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "YR4",
+              "level": "error",
+              "message": "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]",
+              "uri": "SKILL.md",
+              "startLine": 3,
+              "sourceValue": "description: Parity fixture with invisible and control characters.",
+              "fingerprint": "trust-raw:e9066c1c49baf48f742a40e001f43bcda1e97325fff5914af72ac45ce9548619"
+            }
+          ],
+          "executions": [
+            {
+              "detector": "skillspector",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skillspector",
+              "version": "2.9.4"
+            }
+          ],
+          "runnerCalls": 5,
+          "transcriptSha256": "881b0c7a3adac7eed004edc2e35d4934033701b77c8229663eb6e17028442c46"
+        }
+      },
+      "executedOn": [
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "snyk-agent-scan": {
+      "scanDetectorId": "detector.snyk-agent-scan",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.snyk-agent-scan",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 42,
+          "checks": [
+            {
+              "name": "trust detector snyk-agent-scan",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "snyk-agent-scan",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    }
+  },
+  "sandboxSmoke": {
+    "byEnvironment": {
+      "linux-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+        "fingerprint": null
+      },
+      "win32-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+        "fingerprint": null
+      }
+    }
+  }
+}

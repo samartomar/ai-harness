@@ -551,8 +551,16 @@
               "default": [],
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^\\s*@?[A-Za-z0-9][A-Za-z0-9._~-]*\\s*$"
               }
+            },
+            "uvExecutionProfile": {
+              "type": "string",
+              "enum": [
+                "host-process-uv-v1",
+                "linux-namespace-uv-v1"
+              ]
             },
             "skillspector": {
               "type": "object",
@@ -3348,8 +3356,16 @@
               "default": [],
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^\\s*@?[A-Za-z0-9][A-Za-z0-9._~-]*\\s*$"
               }
+            },
+            "uvExecutionProfile": {
+              "type": "string",
+              "enum": [
+                "host-process-uv-v1",
+                "linux-namespace-uv-v1"
+              ]
             },
             "skillspector": {
               "type": "object",

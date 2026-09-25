@@ -19,7 +19,8 @@ interface CoverageShape {
 // genuine global statements aggregate at ~91.0% (CI ~90.98%), so the global floor is
 // 90.5 (tracked here so the drop is DELIBERATE, never silent — AIH-TEST-001). The two
 // W5 gate files gain scoped floors that lock them in to ratchet UP as their dedicated
-// closure/typography-path tests land.
+// closure/typography-path tests land. The typography reclassifier now runs in
+// @aihq/scan, so only the closure classifier keeps a floor.
 const minimumGlobalThresholds = {
   statements: 90.5,
   branches: 78,
@@ -57,12 +58,6 @@ const minimumScopedThresholds = {
     branches: 49,
     functions: 94,
     lines: 69,
-  },
-  "src/binding/visible-typography.ts": {
-    statements: 84,
-    branches: 78,
-    functions: 92,
-    lines: 84,
   },
 } as const;
 

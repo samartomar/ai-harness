@@ -1,25 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { extname, join } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
 import { AihError } from "../errors.js";
-import { readContainedRegularFile } from "../internals/contained-path.js";
 import type { Runner } from "../internals/proc.js";
-import { scanNativeMaliciousCode } from "../trust/detectors.js";
+import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.js";
 import { isSafeGitRefName } from "../trust/fetch.js";
 import { buildTrustFileInventory, type TrustFileInventory } from "../trust/inventory.js";
-import {
-  isStrictUnicodeSurface,
-  scanTrustDocument,
-  scanTrustUnicodeDocument,
-} from "../trust/lint.js";
-import {
-  isInstallScriptEvidenceFilePath,
-  isMaliciousCodeScanFilePath,
-} from "../trust/script-files.js";
 import {
   type ClosureSpec,
   classificationOf,
@@ -30,12 +20,8 @@ import {
   type Reachability,
 } from "./closure/profile-closure.js";
 import scanAcceptanceJson from "./scan-acceptance.json";
+import { type BindingTypographyFact, inspectTreeThroughScanV1 } from "./scan-binding-gate.js";
 import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug } from "./schema.js";
-import {
-  classifyFileTypography,
-  fileHasBlockingTypographyChar,
-  type TypographyAdvisory,
-} from "./visible-typography.js";
 
 /**
  * Fast-scan gate (D12). No adapter executes upstream code before a policy
@@ -476,6 +462,14 @@ export type SelectedProfileGate = "ALLOW" | "ALLOW_WITH_CONDITIONS" | "BLOCK";
 
 const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 
+/** A rule-8 demotion of a hidden-unicode finding whose file Scan found to be all advisory typography. */
+export interface TypographyAdvisory {
+  /** The detector/gate severity this finding carried before demotion (always "high"). */
+  reclassifiedFrom: ScanSeverity;
+  /** The dominant advisory context that justified the demotion (e.g. "comment", "prose"). */
+  contextClass: string;
+}
+
 export interface ScanFinding {
   code: string;
   severity: ScanSeverity;
@@ -563,50 +557,15 @@ export function rollupScanFindings(findings: readonly ScanFinding[]): ScanFileRo
     .map(([path, entries]) => ({ path, findings: [...entries].sort(compareFinding) }));
 }
 
-export interface DimensionInspectionContext {
-  treePath: string;
-  inventory: TrustFileInventory;
-}
-
 export interface DimensionReport {
   dimension: string;
   status: "produced" | "missing";
   reason?: string;
   findings: readonly ScanFinding[];
-}
-
-export interface DimensionInspector {
-  dimension: string;
-  run(ctx: DimensionInspectionContext): DimensionReport;
-}
-
-// Danger codes always block at every posture (aligns with src/trust/grade.ts's
-// danger floor); graded content findings are surfaced but do not, on their own,
-// cross the blocking threshold in W2.
-const DANGER_SEVERITY: Record<string, ScanSeverity> = {
-  "trust.malicious-code": "critical",
-  "trust.prompt-injection": "high",
-  "trust.hidden-unicode": "high",
-};
-const GRADED_SEVERITY: Record<string, ScanSeverity> = {
-  "trust.external-egress": "medium",
-  "trust.visible-unicode": "medium",
-};
-const DOTTED_LATIN_CAPITAL_I = "\u0130";
-
-function findingFromCode(
-  code: string | undefined,
-  detail: string,
-  pin?: { path: string; contentSha256: string },
-): ScanFinding {
-  const resolvedCode = code ?? "trust.finding";
-  const severity = DANGER_SEVERITY[resolvedCode] ?? GRADED_SEVERITY[resolvedCode] ?? "medium";
-  const finding: ScanFinding = { code: resolvedCode, severity, detail, coverage: "complete" };
-  if (pin !== undefined) {
-    finding.path = pin.path;
-    finding.contentSha256 = pin.contentSha256;
-  }
-  return finding;
+  /** Scan's `classifyFileTypography` verdict per `trust.hidden-unicode` file (the rule-8 overlay reads it). */
+  typography?: Readonly<Record<string, BindingTypographyFact>>;
+  /** Scan's machine-sensitive U+0130 verdict per `trust.visible-unicode` file. */
+  dottedIBlocking?: Readonly<Record<string, boolean>>;
 }
 
 function readTextSafe(path: string): string | undefined {
@@ -617,435 +576,11 @@ function readTextSafe(path: string): string | undefined {
   }
 }
 
-function normalizedTextSha256(text: string): string {
-  return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
-}
-
-function isDocSurface(rel: string): boolean {
-  const name = rel.split("/").at(-1) ?? "";
-  if (name === "SKILL.md") return true;
-  if (!rel.includes("/") && ["AGENTS.md", "CLAUDE.md", "GEMINI.md"].includes(name)) return true;
-  return name.toLowerCase().endsWith(".md");
-}
-
-function inspectContentRisk(dimension: string, ctx: DimensionInspectionContext): DimensionReport {
-  const findings: ScanFinding[] = [];
-  for (const entry of ctx.inventory.files) {
-    const rel = entry.relativePath;
-    const isDoc = isDocSurface(rel);
-    const isStrict = isStrictUnicodeSurface(rel) || isMaliciousCodeScanFilePath(rel);
-    if (!isDoc && !isStrict) continue;
-    const source = readTextSafe(entry.absolutePath);
-    if (source === undefined) continue;
-    const pin = {
-      path: toComparablePath(rel),
-      contentSha256: normalizedTextSha256(source),
-    };
-    const checks = isDoc ? scanTrustDocument(rel, source) : scanTrustUnicodeDocument(rel, source);
-    for (const check of checks) {
-      findings.push(findingFromCode(check.code, check.detail ?? `${rel}: content risk`, pin));
-    }
-  }
-  return { dimension, status: "produced", findings };
-}
-
-function inspectSuspiciousExecution(
-  dimension: string,
-  ctx: DimensionInspectionContext,
-): DimensionReport {
-  const findings = scanNativeMaliciousCode(ctx.treePath, ctx.inventory).map((check) =>
-    findingFromCode(check.code ?? "trust.malicious-code", check.detail ?? "malicious-code shape"),
-  );
-  return { dimension, status: "produced", findings };
-}
-
-// -- Real per-dimension inspectors (D12 FAST tier; deep scanners are W7) ------
-
-const MAX_SCAN_BYTES = 512 * 1024;
-const STRUCTURE_MAX_FILE_BYTES = 50 * 1024 * 1024;
-const STRUCTURE_MAX_FILES = 20_000;
-const MAX_FINDINGS_PER_DIMENSION = 50;
-
-function readContainedTextSafe(root: string, rel: string): string | undefined {
-  const read = readContainedRegularFile(root, rel, { maxBytes: MAX_SCAN_BYTES });
-  return read.state === "present" ? read.contents.toString("utf8") : undefined;
-}
-
-const BINARY_EXTENSIONS = new Set([
-  ".a",
-  ".apk",
-  ".bin",
-  ".class",
-  ".deb",
-  ".dll",
-  ".dmg",
-  ".dylib",
-  ".exe",
-  ".img",
-  ".jar",
-  ".lib",
-  ".msi",
-  ".node",
-  ".o",
-  ".obj",
-  ".pyc",
-  ".pyd",
-  ".rpm",
-  ".so",
-  ".wasm",
-]);
-
-const HOOK_EVENT_KEYS = new Set([
-  "SessionStart",
-  "SessionEnd",
-  "PreToolUse",
-  "PostToolUse",
-  "UserPromptSubmit",
-  "Stop",
-  "SubagentStop",
-  "Notification",
-  "PreCompact",
-]);
-
-const LICENSE_NAME = /^(?:LICENSE|LICENCE|COPYING|NOTICE)(?:\..+)?$/i;
-
-interface SurfacePattern {
-  label: string;
-  pattern: RegExp;
-}
-
-// FAST-tier static heuristics over text surfaces (bounded by MAX_SCAN_BYTES, like
-// the native malicious-code scanner). These are line/substring shape checks — the
-// deep behavioral scanners W7 adds are separate dimensions, not a replacement.
-const NETWORK_PATTERNS: readonly SurfacePattern[] = [
-  { label: "outbound HTTP(S) URL", pattern: /https?:\/\/[^\s"'`)]+/i },
-  {
-    label: "curl/wget/Invoke-WebRequest download",
-    pattern: /\b(?:curl|wget|Invoke-WebRequest|iwr)\b/i,
-  },
-  {
-    label: "network client call",
-    pattern:
-      /\b(?:fetch|axios|got|node-fetch|urllib|requests\.(?:get|post|put))\b|https?\.request\b/i,
-  },
-  {
-    label: "npm registry version check",
-    pattern: /registry\.npmjs\.org|\bnpm\s+(?:view|outdated|dist-tag)\b/i,
-  },
-  {
-    label: "auto-update marker",
-    pattern: /\b(?:auto[-_]?update|self[-_]?update|check[-_ ]for[-_ ]updates?)\b/i,
-  },
-];
-const TELEMETRY_PATTERNS: readonly SurfacePattern[] = [
-  {
-    label: "telemetry/analytics vendor",
-    pattern:
-      /\b(?:telemetry|analytics|posthog|segment(?:\.io)?|sentry|mixpanel|amplitude|datadog|google-analytics|gtag)\b/i,
-  },
-  {
-    label: "telemetry env toggle",
-    pattern: /\b[A-Z0-9_]*(?:TELEMETRY|ANALYTICS)[A-Z0-9_]*\b|\bDO_NOT_TRACK\b/,
-  },
-];
-const WRITE_DEST_PATTERNS: readonly SurfacePattern[] = [
-  {
-    label: "redirect to HOME/absolute path",
-    pattern: /(?:>>?|\btee\b)\s*["']?(?:~\/|\/[A-Za-z]|\$HOME|\$\{HOME\}|%USERPROFILE%)/,
-  },
-  {
-    label: "write to HOME/absolute path",
-    pattern:
-      /\b(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream)\s*\(\s*["'`](?:~\/|\/|\$\{?HOME)/,
-  },
-  {
-    label: "HOME/homedir reference",
-    pattern: /\$HOME\b|\$\{HOME\}|%USERPROFILE%|os\.homedir\(\)|\bhomedir\(\)/,
-  },
-];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseJsonRecord(text: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(text);
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function isExecutableSurface(rel: string): boolean {
-  return isMaliciousCodeScanFilePath(rel) || isInstallScriptEvidenceFilePath(rel);
-}
-
-function isScannableTextSurface(rel: string): boolean {
-  return isExecutableSurface(rel) || isStrictUnicodeSurface(rel) || isDocSurface(rel);
-}
-
-function containsNullByte(path: string): boolean {
-  try {
-    return readFileSync(path).includes(0);
-  } catch {
-    return false;
-  }
-}
-
-function scanForPatterns(
-  dimension: string,
-  ctx: DimensionInspectionContext,
-  patterns: readonly SurfacePattern[],
-  severityFor: (executable: boolean) => ScanSeverity,
-  onlyExecutable = false,
-): DimensionReport {
-  const findings: ScanFinding[] = [];
-  for (const entry of ctx.inventory.files) {
-    if (findings.length >= MAX_FINDINGS_PER_DIMENSION) break;
-    const rel = entry.relativePath;
-    const executable = isExecutableSurface(rel);
-    if (onlyExecutable ? !executable : !isScannableTextSurface(rel)) continue;
-    if (entry.size > MAX_SCAN_BYTES) continue;
-    const text = readTextSafe(entry.absolutePath);
-    if (text === undefined) continue;
-    for (const { label, pattern } of patterns) {
-      if (findings.length >= MAX_FINDINGS_PER_DIMENSION) break;
-      if (pattern.test(text)) {
-        findings.push({
-          code: `binding.${dimension}`,
-          severity: severityFor(executable),
-          detail: `${rel}: ${label}`,
-          coverage: "complete",
-        });
-      }
-    }
-  }
-  return { dimension, status: "produced", findings };
-}
-
-function inspectStructure(ctx: DimensionInspectionContext): DimensionReport {
-  const findings: ScanFinding[] = [];
-  if (ctx.inventory.files.length > STRUCTURE_MAX_FILES) {
-    findings.push({
-      code: "binding.structure.file-count",
-      severity: "info",
-      detail: `tree contains ${ctx.inventory.files.length} files (over ${STRUCTURE_MAX_FILES})`,
-      coverage: "complete",
-    });
-  }
-  for (const entry of ctx.inventory.files) {
-    if (findings.length >= MAX_FINDINGS_PER_DIMENSION) break;
-    if (entry.size > STRUCTURE_MAX_FILE_BYTES) {
-      findings.push({
-        code: "binding.structure.large-file",
-        severity: "low",
-        detail: `${entry.relativePath}: unusually large file (${entry.size} bytes)`,
-        coverage: "complete",
-      });
-    }
-  }
-  return { dimension: "structure", status: "produced", findings };
-}
-
-function inspectScripts(ctx: DimensionInspectionContext): DimensionReport {
-  const scripts: string[] = [];
-  const installScripts: string[] = [];
-  for (const entry of ctx.inventory.files) {
-    const rel = entry.relativePath;
-    if (isMaliciousCodeScanFilePath(rel)) scripts.push(rel);
-    if (isInstallScriptEvidenceFilePath(rel)) installScripts.push(rel);
-  }
-  const findings: ScanFinding[] = installScripts
-    .slice(0, MAX_FINDINGS_PER_DIMENSION)
-    .map((rel) => ({
-      code: "binding.scripts.install-script",
-      severity: "medium",
-      detail: `${rel}: install/setup script (executes on install)`,
-      coverage: "complete",
-    }));
-  if (scripts.length > 0) {
-    const shown = scripts.slice(0, 5).join(", ");
-    findings.push({
-      code: "binding.scripts.present",
-      severity: "info",
-      detail: `${scripts.length} script file(s): ${shown}${scripts.length > 5 ? ", …" : ""}`,
-      coverage: "complete",
-    });
-  }
-  return { dimension: "scripts", status: "produced", findings };
-}
-
-function inspectBinaries(ctx: DimensionInspectionContext): DimensionReport {
-  const findings: ScanFinding[] = [];
-  for (const entry of ctx.inventory.files) {
-    if (findings.length >= MAX_FINDINGS_PER_DIMENSION) break;
-    const rel = entry.relativePath;
-    const ext = extname(rel).toLowerCase();
-    let binary = BINARY_EXTENSIONS.has(ext);
-    if (!binary && ext === "" && entry.size > 0 && entry.size <= MAX_SCAN_BYTES) {
-      binary = containsNullByte(entry.absolutePath);
-    }
-    if (binary) {
-      findings.push({
-        code: "binding.binaries.blob",
-        severity: "medium",
-        detail: `${rel}: binary/executable blob`,
-        coverage: "complete",
-      });
-    }
-  }
-  return { dimension: "binaries", status: "produced", findings };
-}
-
-function hookEventsIn(text: string): string[] {
-  const parsed = parseJsonRecord(text);
-  if (parsed === undefined) return [];
-  if (isRecord(parsed.hooks)) return Object.keys(parsed.hooks);
-  return Object.keys(parsed).filter((key) => HOOK_EVENT_KEYS.has(key));
-}
-
-function inspectHooks(ctx: DimensionInspectionContext): DimensionReport {
-  const findings: ScanFinding[] = [];
-  for (const entry of ctx.inventory.files) {
-    if (findings.length >= MAX_FINDINGS_PER_DIMENSION) break;
-    const rel = entry.relativePath;
-    const parts = rel.split("/");
-    const name = parts.at(-1) ?? "";
-    if (parts.slice(0, -1).includes("hooks")) {
-      findings.push({
-        code: "binding.hooks.dir",
-        severity: "medium",
-        detail: `${rel}: file under a hooks/ surface`,
-        coverage: "complete",
-      });
-      continue;
-    }
-    if (!/^settings.*\.json$/.test(name) && name !== ".claude.json") continue;
-    if (entry.size > MAX_SCAN_BYTES) continue;
-    const text = readTextSafe(entry.absolutePath);
-    if (text === undefined) continue;
-    const events = hookEventsIn(text);
-    if (events.length > 0) {
-      findings.push({
-        code: "binding.hooks.settings",
-        severity: "medium",
-        detail: `${rel}: hook events ${events.join(", ")}`,
-        coverage: "complete",
-      });
-    }
-  }
-  return { dimension: "hooks", status: "produced", findings };
-}
-
-function mcpServersIn(text: string): string[] {
-  const parsed = parseJsonRecord(text);
-  if (parsed === undefined) return [];
-  const out: string[] = [];
-  for (const key of ["mcpServers", "servers", "mcp"]) {
-    const value = parsed[key];
-    if (isRecord(value)) out.push(...Object.keys(value));
-  }
-  return out;
-}
-
-function inspectMcp(ctx: DimensionInspectionContext): DimensionReport {
-  const findings: ScanFinding[] = [];
-  for (const entry of ctx.inventory.files) {
-    if (findings.length >= MAX_FINDINGS_PER_DIMENSION) break;
-    const rel = entry.relativePath;
-    const name = rel.split("/").at(-1) ?? "";
-    const isMcpFile = name === ".mcp.json" || name === "mcp.json";
-    const isSettings = /^settings.*\.json$/.test(name) || name === ".claude.json";
-    if (!isMcpFile && !isSettings) continue;
-    if (entry.size > MAX_SCAN_BYTES) continue;
-    const text = readTextSafe(entry.absolutePath);
-    if (text === undefined) continue;
-    const servers = mcpServersIn(text);
-    if (servers.length > 0) {
-      findings.push({
-        code: "binding.mcp.declaration",
-        severity: "medium",
-        detail: `${rel}: MCP servers ${servers.slice(0, 5).join(", ")}`,
-        coverage: "complete",
-      });
-    } else if (isMcpFile) {
-      findings.push({
-        code: "binding.mcp.declaration",
-        severity: "medium",
-        detail: `${rel}: MCP config present`,
-        coverage: "complete",
-      });
-    }
-  }
-  return { dimension: "mcp", status: "produced", findings };
-}
-
-function inspectLicenses(ctx: DimensionInspectionContext): DimensionReport {
-  let hasLicenseFile = false;
-  let hasLicenseField = false;
-  for (const entry of ctx.inventory.files) {
-    const name = entry.relativePath.split("/").at(-1) ?? "";
-    if (LICENSE_NAME.test(name)) hasLicenseFile = true;
-    if (name === "package.json" && entry.size <= MAX_SCAN_BYTES) {
-      const license = parseJsonRecord(readTextSafe(entry.absolutePath) ?? "")?.license;
-      if (typeof license === "string" && license.trim().length > 0) hasLicenseField = true;
-    }
-  }
-  const findings: ScanFinding[] =
-    hasLicenseFile || hasLicenseField
-      ? []
-      : [
-          {
-            code: "binding.licenses.missing",
-            severity: "info",
-            detail: "no LICENSE file or package.json license field found",
-            coverage: "complete",
-          },
-        ];
-  return { dimension: "licenses", status: "produced", findings };
-}
-
-/**
- * The W2 fast-inspection registry. Every one of the eleven D12 FAST-tier
- * dimensions is genuinely inspected here (native `src/trust/` seams for content
- * and execution; inventory-driven checks for structure/scripts/binaries/hooks/
- * MCP/licenses; bounded static pattern scans for network/telemetry/write
- * destinations). Deep external scanners (W7) add SEPARATE dimensions later; the
- * incomplete-coverage machinery in {@link runFastScanGate} exists for those.
- */
-export const W2_DEFAULT_INSPECTORS: readonly DimensionInspector[] = [
-  { dimension: "structure", run: inspectStructure },
-  { dimension: "scripts", run: inspectScripts },
-  { dimension: "binaries", run: inspectBinaries },
-  { dimension: "hooks", run: inspectHooks },
-  { dimension: "mcp", run: inspectMcp },
-  { dimension: "licenses", run: inspectLicenses },
-  { dimension: "hidden-unicode", run: (ctx) => inspectContentRisk("hidden-unicode", ctx) },
-  {
-    dimension: "suspicious-execution",
-    run: (ctx) => inspectSuspiciousExecution("suspicious-execution", ctx),
-  },
-  {
-    dimension: "network-update",
-    run: (ctx) =>
-      scanForPatterns("network-update", ctx, NETWORK_PATTERNS, (exec) => (exec ? "medium" : "low")),
-  },
-  {
-    dimension: "telemetry",
-    run: (ctx) =>
-      scanForPatterns("telemetry", ctx, TELEMETRY_PATTERNS, (exec) => (exec ? "medium" : "low")),
-  },
-  {
-    dimension: "write-destinations",
-    run: (ctx) =>
-      scanForPatterns("write-destinations", ctx, WRITE_DEST_PATTERNS, () => "medium", true),
-  },
-];
-
 export interface InspectTreeDeps {
-  inspectors?: readonly DimensionInspector[];
   inventoryFactory?: (root: string) => TrustFileInventory;
+  /** Test seam: Scan's execution functions. Production loads the installed `@aihq/scan`. */
+  scanExecution?: ScanExecutionAdapterV1;
+  signal?: AbortSignal;
 }
 
 // The binding scan skips ONLY ".git", matching the digest's fileset
@@ -1059,22 +594,33 @@ function defaultInventory(root: string): TrustFileInventory {
   return buildTrustFileInventory(root, { skipDirs: BINDING_SCAN_SKIP_DIRS });
 }
 
-function runInspectors(
+function inspectInventory(
   treePath: string,
   inventory: TrustFileInventory,
-  inspectors: readonly DimensionInspector[],
-): DimensionReport[] {
-  return inspectors.map((inspector) => inspector.run({ treePath, inventory }));
+  deps: InspectTreeDeps,
+): Promise<DimensionReport[]> {
+  return inspectTreeThroughScanV1(
+    treePath,
+    inventory.files.map((entry) => entry.relativePath),
+    {
+      ...(deps.scanExecution === undefined ? {} : { scanExecution: deps.scanExecution }),
+      ...(deps.signal === undefined ? {} : { signal: deps.signal }),
+    },
+  );
 }
 
 /**
- * Run the fast inspection over an on-disk tree, returning one report per D12
- * dimension. Split out from {@link runFastScanGate} so the inspection is
- * independently testable and reusable; the gate applies policy on top.
+ * The fast inspection of an on-disk tree: Scan's `detector.aih-binding-gate`
+ * over Core's binding inventory, one report per D12 dimension. Split out from
+ * {@link runFastScanGate} so the inspection is independently testable and
+ * reusable; the gate applies policy on top.
  */
-export function inspectTree(treePath: string, deps: InspectTreeDeps = {}): DimensionReport[] {
+export async function inspectTree(
+  treePath: string,
+  deps: InspectTreeDeps = {},
+): Promise<DimensionReport[]> {
   const inventory = (deps.inventoryFactory ?? defaultInventory)(treePath);
-  return runInspectors(treePath, inventory, deps.inspectors ?? W2_DEFAULT_INSPECTORS);
+  return inspectInventory(treePath, inventory, deps);
 }
 
 function toComparablePath(path: string): string {
@@ -1393,33 +939,28 @@ function buildDisclosure(
 }
 
 /**
- * Compute the visible-typography advisory overlay for a seeded closure (rule-8).
- * Reads each `trust.hidden-unicode` finding's file ONCE (per-file roll-up) and,
- * when every non-ASCII occurrence is advisory-eligible, records a demotion keyed
- * by path. ACTIVE ONLY for a seeded closure with a reader — legacy and W4
- * full-tree paths never reclassify (byte-identical). Fail-closed: an unreadable
- * or non-demotable file yields no advisory, so its finding stays high/blocking.
+ * Compute the visible-typography advisory overlay for a seeded closure (rule-8)
+ * from Scan's per-file typography verdicts: when every non-ASCII occurrence in a
+ * `trust.hidden-unicode` file is advisory-eligible, record a demotion keyed by
+ * path. ACTIVE ONLY for a seeded closure — legacy and W4 full-tree paths never
+ * reclassify (byte-identical). Fail-closed: a file without a verdict, or one that
+ * is not demotable, yields no advisory, so its finding stays high/blocking.
  */
 function computeTypographyAdvisories(
-  findings: readonly ScanFinding[],
+  reports: readonly DimensionReport[],
   closure: ProfileClosure | undefined,
-  reader: ((rel: string) => string | undefined) | undefined,
 ): Map<string, TypographyAdvisory> {
   const advisories = new Map<string, TypographyAdvisory>();
-  if (closure === undefined || closure.spec.mode !== "seeded" || reader === undefined) {
-    return advisories;
-  }
-  const paths = new Set<string>();
-  for (const finding of findings) {
-    if (finding.code === "trust.hidden-unicode" && finding.path !== undefined) {
-      paths.add(finding.path);
-    }
-  }
-  for (const path of paths) {
-    const text = reader(path);
-    if (text === undefined) continue;
-    const verdict = classifyFileTypography(path, text);
-    if (verdict.demote) {
+  if (closure === undefined || closure.spec.mode !== "seeded") return advisories;
+  for (const report of reports) {
+    for (const [path, verdict] of Object.entries(report.typography ?? {})) {
+      if (!verdict.demote) continue;
+      if (
+        !report.findings.some(
+          (finding) => finding.code === "trust.hidden-unicode" && finding.path === path,
+        )
+      )
+        continue;
       advisories.set(path, {
         reclassifiedFrom: "high",
         contextClass: verdict.contextClass ?? "visible-typography",
@@ -1435,9 +976,9 @@ function computeTypographyAdvisories(
  * proves an occurrence is machine-sensitive, however, it is an exact
  * identifier/key confusable and must gate. This is occurrence-level rather
  * than a file roll-up: another glyph's blocker cannot turn a prose U+0130 into
- * a gate finding. The reread is pinned to the finding's exact content hash, so
- * a missing or changed checkout is uncertain and therefore gates rather than
- * proving an advisory for different bytes.
+ * a gate finding. Scan states the verdict for the exact bytes the finding's
+ * content hash pins; a finding without one is uncertain and therefore gates
+ * rather than proving an advisory Scan never stated.
  */
 type DottedIPathDisposition = "advisory-proven" | "dotted-i-blocking" | "uncertain";
 
@@ -1453,27 +994,24 @@ function mergeDottedIPathDisposition(
 }
 
 function computeDottedIPathDispositions(
-  findings: readonly ScanFinding[],
-  reader: ((rel: string) => string | undefined) | undefined,
+  reports: readonly DimensionReport[],
 ): Map<string, DottedIPathDisposition> {
   const dispositions = new Map<string, DottedIPathDisposition>();
-  for (const finding of findings) {
-    if (finding.code !== "trust.visible-unicode" || finding.path === undefined) {
-      continue;
+  for (const report of reports) {
+    for (const finding of report.findings) {
+      if (finding.code !== "trust.visible-unicode" || finding.path === undefined) continue;
+      const blocking = report.dottedIBlocking?.[finding.path];
+      const next: DottedIPathDisposition =
+        blocking === undefined || finding.contentSha256 === undefined
+          ? "uncertain"
+          : blocking
+            ? "dotted-i-blocking"
+            : "advisory-proven";
+      dispositions.set(
+        finding.path,
+        mergeDottedIPathDisposition(dispositions.get(finding.path), next),
+      );
     }
-    const text = reader?.(finding.path);
-    const next =
-      text === undefined ||
-      finding.contentSha256 === undefined ||
-      normalizedTextSha256(text) !== finding.contentSha256
-        ? "uncertain"
-        : fileHasBlockingTypographyChar(finding.path, text, DOTTED_LATIN_CAPITAL_I)
-          ? "dotted-i-blocking"
-          : "advisory-proven";
-    dispositions.set(
-      finding.path,
-      mergeDottedIPathDisposition(dispositions.get(finding.path), next),
-    );
   }
   return dispositions;
 }
@@ -1522,7 +1060,6 @@ function decide(
   reports: readonly DimensionReport[],
   policy: FastScanPolicy,
   closure?: ProfileClosure,
-  typographyReader?: (rel: string) => string | undefined,
 ): DecisionResult {
   const collected: ScanFinding[] = [];
   for (const report of reports) {
@@ -1530,8 +1067,8 @@ function decide(
     if (report.status === "missing") collected.push(coverageFinding(report));
   }
   const closureApplied = closure !== undefined;
-  const advisoryByPath = computeTypographyAdvisories(collected, closure, typographyReader);
-  const dottedIPathDispositions = computeDottedIPathDispositions(collected, typographyReader);
+  const advisoryByPath = computeTypographyAdvisories(reports, closure);
+  const dottedIPathDispositions = computeDottedIPathDispositions(reports);
 
   // Acceptance marking: a maintainer-accepted (code, path, fileSha256) triple
   // neutralizes exactly that content-pinned finding. Critical findings are
@@ -1662,9 +1199,8 @@ function produceDisposition(
   reports: readonly DimensionReport[],
   producedAt: string,
   closure?: ProfileClosure,
-  typographyReader?: (rel: string) => string | undefined,
 ): ScanDisposition {
-  const decision = decide(reports, policy, closure, typographyReader);
+  const decision = decide(reports, policy, closure);
   const closureBlock =
     closure === undefined
       ? undefined
@@ -1715,6 +1251,13 @@ const DimensionReportSchema = z
     status: z.enum(["produced", "missing"]),
     reason: z.string().optional(),
     findings: z.array(ScanFindingSchema),
+    typography: z
+      .record(
+        z.string().min(1),
+        z.object({ demote: z.boolean(), contextClass: z.string().optional() }).strict(),
+      )
+      .optional(),
+    dottedIBlocking: z.record(z.string().min(1), z.boolean()).optional(),
   })
   .strict();
 
@@ -1723,9 +1266,11 @@ const DimensionReportSchema = z
 // a wrong verdict — but the a2 change reshapes the disposition, and the v1→v2
 // precedent's conservatism is retained: bumping the literal turns every older
 // record into a cache miss (a recompute), never a served pre-a2 artifact.
+// schemaVersion 4: the reports carry Scan's typography verdicts, which the
+// overlay reads instead of rereading the checkout; a v3 record has none and is a miss.
 const ScanCacheRecordSchema = z
   .object({
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(4),
     // A git tree digest (sha256 hex) OR an npm scannable digest (SRI sha512
     // integrity): npm and git dispositions bind to different digest namespaces,
     // so the derived cache must recognize both. A record whose digest matches
@@ -1773,22 +1318,26 @@ function writeScanCache(cacheHome: string, record: ScanCacheRecord): void {
 
 export interface FastScanDeps {
   cacheHome: string;
-  inspectors?: readonly DimensionInspector[];
   inventoryFactory?: (root: string) => TrustFileInventory;
+  /** Test seam: Scan's execution functions. Production loads the installed `@aihq/scan`. */
+  scanExecution?: ScanExecutionAdapterV1;
+  signal?: AbortSignal;
 }
 
 /**
  * Run the fast scan for a scannable source and produce a brand-protected
- * disposition. The inspection reports (the expensive part) are cached per exact
- * digest under the derived scan cache; the cheap policy decision re-runs each
- * call so posture changes are honored. Deleting the cache only forces a
- * recompute — it never changes the validation outcome.
+ * disposition. The inspection reports (the expensive part, Scan's
+ * `detector.aih-binding-gate`) are cached per exact digest under the derived
+ * scan cache; the cheap policy decision re-runs each call so posture changes
+ * are honored. Deleting the cache only forces a recompute — it never changes
+ * the validation outcome. A missing Scan or an inspection that did not
+ * complete throws; nothing is decided or cached from it.
  */
-export function runFastScanGate(
+export async function runFastScanGate(
   source: ScannableSource,
   policy: FastScanPolicy,
   deps: FastScanDeps,
-): ScanDisposition {
+): Promise<ScanDisposition> {
   // The closure is a policy-cheap classification recomputed every call (like
   // acceptance), so it rides both the warm-cache and the fresh path. Absent a
   // closure spec, it is undefined and the gate stays byte-identical to pre-a2.
@@ -1796,11 +1345,6 @@ export function runFastScanGate(
     policy.closureSpec === undefined
       ? undefined
       : computeClosureForSource(source, policy.closureSpec, policy.hostFacts, deps);
-  // Typography policy re-reads flagged files from the derived checkout. The
-  // seeded-closure reclassifier remains inert without a closure, while the
-  // U+0130 occurrence check applies to every gate mode.
-  const typographyReader = (rel: string): string | undefined =>
-    readContainedTextSafe(source.treePath, rel);
   // Phase-2 (§C.4) deep-dimension fold — THE one integration seam. Pre-computed deep
   // dimensions (from `scan-cache-tiers.ts`) are appended to the fast dimensions so the
   // SAME `decide()`/coverage path handles both. Absent ⇒ the SAME array reference is
@@ -1821,17 +1365,12 @@ export function runFastScanGate(
       withDeep(cached.reports),
       cached.scannedAt,
       closure,
-      typographyReader,
     );
   }
-  // One inventory serves BOTH the inspectors and the identity-coverage check, so
+  // One inventory serves BOTH the inspection and the identity-coverage check, so
   // the digest and the scanned fileset can never silently diverge.
   const inventory = (deps.inventoryFactory ?? defaultInventory)(source.treePath);
-  const reports = runInspectors(
-    source.treePath,
-    inventory,
-    deps.inspectors ?? W2_DEFAULT_INSPECTORS,
-  );
+  const reports = await inspectInventory(source.treePath, inventory, deps);
   const identityReport = identityCoverageReport(source.identityFiles, inventory);
   const allReports = identityReport === undefined ? reports : [...reports, identityReport];
   const scannedAt = new Date().toISOString();
@@ -1840,20 +1379,13 @@ export function runFastScanGate(
   // spuriously block a later, correctly-constructed source for the same digest.
   if (source.identityFiles !== undefined) {
     writeScanCache(deps.cacheHome, {
-      schemaVersion: 3,
+      schemaVersion: 4,
       digest: source.digest,
       scannedAt,
       reports: allReports.map((report) => ({ ...report, findings: [...report.findings] })),
     });
   }
-  return produceDisposition(
-    source.digest,
-    policy,
-    withDeep(allReports),
-    scannedAt,
-    closure,
-    typographyReader,
-  );
+  return produceDisposition(source.digest, policy, withDeep(allReports), scannedAt, closure);
 }
 
 /**

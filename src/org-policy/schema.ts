@@ -247,6 +247,11 @@ const SecurityPolicySchema = z
   })
   .strict();
 
+/** One internal npm scope as policy may write it; normalized it must be `@[a-z0-9][a-z0-9._~-]*`. */
+export const InternalScopeSchema = z
+  .string()
+  .regex(/^\s*@?[A-Za-z0-9][A-Za-z0-9._~-]*\s*$/, "must be an npm scope such as @acme");
+
 const SkillSpectorDigestApprovalSchema = z
   .object({
     imageTag: SingleLinePolicyTextSchema,
@@ -1620,7 +1625,20 @@ const OrgPolicyBaseSchema = z
          */
         requiredChecks: z.array(z.string().min(1)).optional(),
         baselineOverrides: z.array(BaselineOverrideSchema).optional(),
-        internalScopes: z.array(z.string()).default([]),
+        /**
+         * npm scopes the organization owns (`acme` or `@acme`; trimmed, `@`-prefixed and
+         * lowercased when used). A malformed scope is refused here, with its field path,
+         * instead of being sent to Scan's trust lint, which refuses it too.
+         */
+        internalScopes: z.array(InternalScopeSchema).default([]),
+        /**
+         * The execution profile @aihq/scan runs every uv-backed detector under
+         * (semgrep, cisco, mcp-scanner, snyk-agent-scan). Absent: `host-process-uv-v1`
+         * on every OS. `linux-namespace-uv-v1` is the hardened Linux-only option; a
+         * profile the installed Scan does not declare for the host is refused, never
+         * substituted.
+         */
+        uvExecutionProfile: z.enum(["host-process-uv-v1", "linux-namespace-uv-v1"]).optional(),
         skillspector: z
           .object({
             approvedDigests: z.array(SkillSpectorDigestApprovalSchema).default([]),

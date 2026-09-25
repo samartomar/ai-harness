@@ -25,6 +25,15 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { createSelfCompletingFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+
+// The vet runs through the installed @aihq/scan; this fake declares the uv
+// detectors with their analyzer locks, which is all the plan reads before vetting.
+const scan = createSelfCompletingFakeScanAdapterForTests({
+  "detector.cisco": { kind: "refused", reason: "unused", detail: "unused" },
+  "detector.semgrep": { kind: "refused", reason: "unused", detail: "unused" },
+});
+const scanPackageImporter = () => Promise.resolve(scan);
 
 let root: string;
 let sourceRoot: string;
@@ -110,14 +119,17 @@ describe("baseline vet command plan", () => {
     const vetCatalog = vi.fn(async () => evidence());
     const source = resolveTrustSource(sourceRoot, { root });
     const result = await executePlan(
-      await baselineVetPlanForSource(ctx(true), source, catalog(), { vetCatalog }),
+      await baselineVetPlanForSource(ctx(true), source, catalog(), {
+        vetCatalog,
+        scanPackageImporter,
+      }),
       ctx(true),
     );
     const rel = `.aih/baseline-reports/ecc-${"a".repeat(12)}.json`;
-    const required = requiredBaselineVetOptions({
-      run: fakeRunner(() => undefined),
+    const required = await requiredBaselineVetOptions({
       platform: "linux",
       env: {},
+      importer: scanPackageImporter,
     });
 
     expect(vetCatalog).toHaveBeenCalledOnce();
@@ -134,7 +146,8 @@ describe("baseline vet command plan", () => {
           env: {},
           platform: "linux",
           progress: expect.any(Function),
-          run: expect.any(Function),
+          scanExecution: expect.objectContaining({ runDetectorV1: scan.runDetectorV1 }),
+          uvExecutionProfileId: "host-process-uv-v1",
         }),
       }),
     );

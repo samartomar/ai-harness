@@ -83,15 +83,6 @@ function hasScriptLikeName(name: string): boolean {
   return SCRIPT_LIKE_SUBSTRINGS.some((needle) => name.includes(needle));
 }
 
-export function isMaliciousCodeScanFilePath(path: string): boolean {
-  const name = basename(path).toLowerCase();
-  if (isIgnoredPackageManifest(name)) return false;
-  const ext = extname(name);
-  if (MALICIOUS_CODE_SCRIPT_EXTENSIONS.has(ext)) return true;
-  if (NON_SCRIPT_EXTENSIONS.has(ext)) return false;
-  return hasScriptLikeName(name);
-}
-
 export function isInstallScriptEvidenceFilePath(path: string): boolean {
   const name = basename(path).toLowerCase();
   if (isIgnoredPackageManifest(name)) return false;

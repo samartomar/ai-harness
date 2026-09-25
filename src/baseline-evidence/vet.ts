@@ -1,6 +1,8 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Check } from "../internals/verify.js";
+import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
+import { runCiscoSourceShardThroughScanV1 } from "../trust/cisco-shard-delegation.js";
 import {
   type CiscoShardManifest,
   type CiscoShardResult,
@@ -9,8 +11,14 @@ import {
 } from "../trust/cisco-shards.js";
 import {
   buildCiscoSourceShardManifest,
+  DEFAULT_UV_EXECUTION_PROFILE,
   joinedCiscoShardSarif,
-  runCiscoSourceShard,
+  type ProjectionCleanupFailureV1,
+  rejectionWithCleanupFailureV1,
+  removeProjectionV1,
+  resolveCiscoScanConcurrency,
+  type VerifiedCiscoShardSarifV1,
+  withCiscoShardJoinProjectionV1,
 } from "../trust/detectors.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
@@ -155,6 +163,8 @@ export interface VetBaselineCatalogOptions {
     profile?: string;
     workerConcurrency?: number;
     dispatch?: (manifest: CiscoShardManifest) => Promise<readonly CiscoShardResult[]>;
+    /** Test seam for the installed `@aihq/scan` that runs an undispatched shard. */
+    importer?: ScanPackageImporterV1;
   };
 }
 
@@ -239,17 +249,17 @@ export function defaultComponentScanner(
   sharedCiscoEvidence?: JoinedCiscoShardEvidence,
 ): BaselineComponentScanner {
   return async ({ sourceRoot, component }) => {
-    const projectionRoot = mkdtempSync(
-      join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
-    );
-    try {
+    // Copies the component into a projection root. Core's shard projection has
+    // already copied the Cisco jobs there from the verified root, so the copy
+    // keeps what exists instead of refusing it.
+    const project = (projectionRoot: string, keepExisting: boolean): void => {
       for (const rel of component.paths) {
         const source = resolve(sourceRoot, ...rel.split("/"));
         const target = resolve(projectionRoot, ...rel.split("/"));
         mkdirSync(dirname(target), { recursive: true });
         cpSync(source, target, {
           recursive: true,
-          errorOnExist: true,
+          errorOnExist: !keepExisting,
           force: false,
           dereference: false,
           preserveTimestamps: true,
@@ -260,48 +270,99 @@ export function defaultComponentScanner(
       // evidence for the selected skill. Project only that top-level legal file
       // so the scanner can resolve inheritance without exposing unrelated source.
       projectRepositoryLicense(sourceRoot, projectionRoot);
-      const timing = baselineDetectorTiming(component.id, scanOptions.progress);
-      try {
-        const requiredDetectors =
-          requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors;
-        const usesCisco = requiredDetectors?.includes("cisco") === true;
-        if (
-          sharedCiscoEvidence !== undefined &&
-          usesCisco &&
-          !componentContainsCiscoJob(component, sharedCiscoEvidence)
-        ) {
-          throw new Error(
-            `baseline component ${component.id} requires Cisco but has no exact source-wide Cisco job`,
-          );
-        }
-        const detectors =
-          sharedCiscoEvidence === undefined || usesCisco
-            ? scanOptions.detectors
-            : (["skillspector", "mcp-scanner", "semgrep", "snyk-agent-scan"] as const).filter(
-                (detector) => scanOptions.detectors?.includes(detector) ?? true,
-              );
-        const scan = await scanTree(projectionRoot, {
+    };
+    const timing = baselineDetectorTiming(component.id, scanOptions.progress);
+    try {
+      const requiredDetectors =
+        requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors;
+      const usesCisco = requiredDetectors?.includes("cisco") === true;
+      if (
+        sharedCiscoEvidence !== undefined &&
+        usesCisco &&
+        !componentContainsCiscoJob(component, sharedCiscoEvidence)
+      ) {
+        throw new Error(
+          `baseline component ${component.id} requires Cisco but has no exact source-wide Cisco job`,
+        );
+      }
+      const detectors =
+        sharedCiscoEvidence === undefined || usesCisco
+          ? scanOptions.detectors
+          : (["skillspector", "mcp-scanner", "semgrep", "snyk-agent-scan"] as const).filter(
+              (detector) => scanOptions.detectors?.includes(detector) ?? true,
+            );
+      const scanProjection = (projectionRoot: string, cisco?: VerifiedCiscoShardSarifV1) =>
+        scanTree(projectionRoot, {
           ...scanOptions,
           detectors,
           precomputedDetectorSarif:
-            sharedCiscoEvidence !== undefined && usesCisco
-              ? {
-                  ...scanOptions.precomputedDetectorSarif,
-                  cisco: joinedCiscoShardSarif(sharedCiscoEvidence, component.paths),
-                }
-              : scanOptions.precomputedDetectorSarif,
+            cisco === undefined
+              ? scanOptions.precomputedDetectorSarif
+              : { ...scanOptions.precomputedDetectorSarif, cisco },
           progress: timing.progress,
           posture: "enterprise",
           requiredDetectors,
         });
-        timing.complete(scan);
-        return scan;
-      } catch (error) {
-        timing.fail();
-        throw error;
+      let scan: TrustScanResult;
+      // A projection Core could not remove is kept on the scan it returns, or on
+      // the scan's own rejection: never only in progress, never in its place.
+      let cleanupFailure: ProjectionCleanupFailureV1 | undefined;
+      if (sharedCiscoEvidence !== undefined && usesCisco) {
+        // Only Core rebinds the verified join: to a projection it makes and fills.
+        // One it could not prepare is never scanned: its failed Cisco detector is
+        // the component's scan.
+        const projected = await withCiscoShardJoinProjectionV1(
+          sharedCiscoEvidence,
+          component.paths,
+          (projection) => {
+            project(projection.root, true);
+            return scanProjection(projection.root, projection.cisco);
+          },
+        );
+        cleanupFailure = projected.cleanupFailure;
+        scan =
+          projected.kind === "scanned"
+            ? projected.result
+            : {
+                checks: projected.detector.checks,
+                analyzersRun: projected.detector.analyzersRun,
+                rawOccurrences: projected.detector.rawOccurrences,
+                detectorExecutions: projected.detector.executions,
+              };
+      } else {
+        const projectionRoot = mkdtempSync(
+          join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
+        );
+        let settled: { readonly scan: TrustScanResult } | { readonly error: unknown };
+        try {
+          project(projectionRoot, false);
+          settled = { scan: await scanProjection(projectionRoot) };
+        } catch (error) {
+          settled = { error };
+        }
+        cleanupFailure = removeProjectionV1(
+          projectionRoot,
+          "baseline-component-projection-cleanup-failed-v1",
+          `baseline component ${component.id}'s projection`,
+        );
+        if ("error" in settled)
+          throw cleanupFailure === undefined
+            ? settled.error
+            : rejectionWithCleanupFailureV1(settled.error, cleanupFailure);
+        scan = settled.scan;
       }
-    } finally {
-      rmSync(projectionRoot, { recursive: true, force: true });
+      if (cleanupFailure !== undefined) {
+        scan = {
+          ...scan,
+          projectionCleanupFailures: [...(scan.projectionCleanupFailures ?? []), cleanupFailure],
+        };
+        scanOptions.progress?.(`baseline vet: component ${component.id}: ${cleanupFailure.detail}`);
+      }
+      timing.complete(scan);
+      return scan;
+    } catch (error) {
+      timing.fail();
+      throw error;
     }
   };
 }
@@ -342,23 +403,19 @@ async function prepareSourceWideCiscoEvidence(
         "source-wide Cisco scan with multiple shards requires an explicit shard dispatcher",
       );
     }
-    if (scanOptions.run === undefined || scanOptions.platform === undefined) {
-      throw new Error("source-wide Cisco scan requires run and platform runtime options");
-    }
     const shard = manifest.shards[0];
     if (shard === undefined) throw new Error("source-wide Cisco manifest has no shard");
     results = [
-      await runCiscoSourceShard(sourceRoot, manifest, shard.id, {
-        run: scanOptions.run,
-        platform: scanOptions.platform,
-        env: scanOptions.env ?? {},
-        ...(options.workerConcurrency === undefined
-          ? {}
-          : { concurrency: options.workerConcurrency }),
+      await runCiscoSourceShardThroughScanV1(sourceRoot, manifest, shard.id, {
+        executionProfileId: scanOptions.uvExecutionProfileId ?? DEFAULT_UV_EXECUTION_PROFILE,
+        concurrency:
+          options.workerConcurrency ?? resolveCiscoScanConcurrency(scanOptions.env ?? {}),
+        ...(scanOptions.signal === undefined ? {} : { signal: scanOptions.signal }),
+        ...(options.importer === undefined ? {} : { importer: options.importer }),
       }),
     ];
   }
-  const joined = joinCiscoShardResults(manifest, results);
+  const joined = joinCiscoShardResults(manifest, results, sourceRoot);
   scanOptions.progress?.(
     `baseline vet: Cisco source evidence joined ${joined.outputs.length} exact jobs`,
   );
@@ -368,10 +425,15 @@ async function prepareSourceWideCiscoEvidence(
 // A missing required analyzer is almost always a detector that failed to run
 // (e.g. an offline uv cache that no longer resolves the pinned Cisco scanner).
 // Surface those underlying reasons so the fail-closed abort is actionable instead
-// of opaque.
+// of opaque. A source-wide scan runs without enterprise posture, where an
+// unavailable detector is graded skip rather than fail; its reason counts too.
 function detectorDiagnostics(checks: readonly Check[]): string[] {
   return checks
-    .filter((check) => check.code === "trust.detector-unavailable" && check.verdict === "fail")
+    .filter(
+      (check) =>
+        check.code === "trust.detector-unavailable" &&
+        (check.verdict === "fail" || check.verdict === "skip"),
+    )
     .map((check) => check.detail?.trim())
     .filter((detail): detail is string => detail !== undefined && detail.length > 0);
 }
@@ -384,13 +446,15 @@ function analyzerReceipts(
   checks: readonly Check[],
 ): BaselineAnalyzerReceipt[] {
   const analyzers = [...new Set(analyzersRun)].sort((left, right) => left.localeCompare(right));
-  if (analyzers.length === 0) throw new Error("baseline vet produced no analyzer receipt");
+  const diagnostics = detectorDiagnostics(checks);
+  const because =
+    diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
+  // A component Core refused before any detector ran still names why.
+  if (analyzers.length === 0)
+    throw new Error(`baseline vet produced no analyzer receipt${because}`);
   const completed = new Set(analyzers);
   const missing = requiredAnalyzers.filter((name) => !completed.has(name));
   if (missing.length > 0) {
-    const diagnostics = detectorDiagnostics(checks);
-    const because =
-      diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
     throw new Error(
       `baseline component ${componentId} missing required baseline analyzers: ${missing.join(", ")}${because}`,
     );

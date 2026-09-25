@@ -1,0 +1,202 @@
+{
+  "case": "multi-skill-nested",
+  "producer": {
+    "engine": "runTrustLintV1",
+    "scanCheckout": "sep/scan-detectors",
+    "scanCommit": "28718a7515829c64b0b1410d98bfd1c48d29069b"
+  },
+  "request": {
+    "selectedClosurePaths": [
+      "skills/alpha/SKILL.md",
+      "skills/beta/nested/gamma/SKILL.md",
+      "skills/beta/SKILL.md",
+      "skills/delta/scripts/setup.sh",
+      "skills/delta/SKILL.md"
+    ],
+    "detectorOptions": {
+      "internalScopes": [],
+      "mcpConfigPaths": []
+    }
+  },
+  "sarif": {
+    "version": "2.1.0",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "aih-trust-lint",
+            "version": "1.0.0"
+          }
+        },
+        "properties": {
+          "aih-trust/v1": {
+            "format": "aih-trust-lint-facts",
+            "version": 1,
+            "trustDocumentCount": 4,
+            "repositoryLicenseFile": null
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": "dist/bundle.js"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": [
+                  {
+                    "line": 1,
+                    "codes": [
+                      "trust.prompt-injection"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "node_modules/ignored-pkg/SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": [
+                  {
+                    "line": 4,
+                    "codes": [
+                      "trust.prompt-injection"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "skills/alpha/SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "skills/beta/nested/gamma/SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "skills/beta/SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": [
+                  {
+                    "line": 7,
+                    "codes": [
+                      "trust.prompt-injection"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "skills/delta/scripts/setup.sh"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "skills/delta/SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "ruleId": "trust.prompt-injection",
+            "level": "error",
+            "message": {
+              "text": "skills/beta/SKILL.md:7 — prompt-injection.ignore-instructions: attempts to override prior/system instructions"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "skills/beta/SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 7
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-prompt-injection:skills/beta/SKILL.md:a64b05b8eb6df583c4953d27dec150a613c34346396924374e5d2c8e3be11a32"
+            }
+          },
+          {
+            "ruleId": "trust.permission-risk",
+            "level": "error",
+            "message": {
+              "text": "skills/beta/nested/gamma/SKILL.md:4 — frontmatter allowed-tools grants broad Bash permission"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "skills/beta/nested/gamma/SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 4
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-permission-risk:skills/beta/nested/gamma/SKILL.md:e703997ac3e698d20c53eb2c34a7220d0ebeef01ee64d7a304fd605f854a4d72"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

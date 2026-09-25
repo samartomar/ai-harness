@@ -32,7 +32,6 @@ import {
   hasAcknowledgementRequest,
 } from "../trust/acknowledge.js";
 import { policyWithApprovedSourceReason } from "../trust/commands.js";
-import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   cleanupQuarantine,
   readTrustFetchMetadata,
@@ -41,6 +40,7 @@ import {
   type TrustFetchMetadata,
   type TrustSource,
 } from "../trust/fetch.js";
+import { resolveInternalScopes } from "../trust/internal-scopes.js";
 import { readTrustLock, readTrustLockExact } from "../trust/lock.js";
 import {
   scanOptionsFromContext,

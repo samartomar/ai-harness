@@ -1,5 +1,6 @@
 import type { Posture, PostureSource } from "../config/posture.js";
 import { AihError } from "../errors.js";
+import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.js";
 import type { EnvShell, HostAdapter } from "../platform/base.js";
 import {
   legacyChecksToVerificationRun,
@@ -370,6 +371,10 @@ export interface PlanContext {
   progress?: (message: string) => void;
   /** Register command-owned resources for reverse-order cleanup at the command boundary. */
   deferCleanup?: (cleanup: () => void | Promise<void>) => void;
+  /** Cancels a delegated trust scan; Scan kills the analyzer and the scan stops as cancelled. */
+  signal?: AbortSignal;
+  /** Test seam: Scan's execution functions. Absent, commands load the installed `@aihq/scan`. */
+  scanExecution?: ScanExecutionAdapterV1;
   /**
    * The resolved CLI target set, injected by an orchestrator (`aih init`) that
    * resolves `--detect`/`--cli` ONCE and threads the result into every phase. A

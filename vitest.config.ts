@@ -70,7 +70,8 @@ export default defineConfig({
       // they lower the global statements aggregate to ~91.0% (from the pre-W5 level).
       // The global `statements` floor is set to 90.5 to track that genuine level, and
       // per-file floors below lock these files in so they can only ratchet up as the
-      // dedicated closure/typography path tests land.
+      // dedicated closure/typography path tests land. The typography reclassifier now
+      // runs in @aihq/scan, so only the closure classifier keeps a floor here.
       thresholds: {
         statements: 90.5,
         branches: 78,
@@ -105,12 +106,6 @@ export default defineConfig({
           branches: 49,
           functions: 94,
           lines: 69,
-        },
-        "src/binding/visible-typography.ts": {
-          statements: 84,
-          branches: 78,
-          functions: 92,
-          lines: 84,
         },
         // W7 §C scan cache tiers — branch-dense derived-cache + deep-scanner
         // machinery (canonical keys, read-time tuple guard, SARIF mapping). Locked

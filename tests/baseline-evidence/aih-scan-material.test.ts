@@ -31,6 +31,14 @@ import {
 } from "@aihq/scan";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports none, with neutral facts for every selected file.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) =>
+  (await import("../trust/fakes/installed-fake-scan.js")).withInstalledFakeScan(
+    await importOriginal(),
+  ),
+);
+
 const mocks = vi.hoisted(() => ({ defaultRunner: vi.fn() }));
 
 vi.mock("../../src/internals/proc.js", async (importOriginal) => ({
@@ -75,6 +83,8 @@ import {
   verifyCatalogQualificationArtifactsForPackagingV1,
 } from "../../src/org-policy/workbench/core/catalog-qualification-v1.js";
 import { packagedPreparedWorkbenchCatalogV1 } from "../../src/org-policy/workbench/prepared-catalog.js";
+import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { selfDerivedPrecomputedCompletionForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 const roots: string[] = [];
 const materializedRoots: MaterializedAihScanSubjectsV1[] = [];
@@ -327,7 +337,8 @@ function sha256(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function signedPublication(request: BaselineVetRequestV1) {
+/** A signed publication whose SARIF annexes carry completion evidence SELF-DERIVED for `sourceRoot`. */
+function signedPublication(sourceRoot: string, request: BaselineVetRequestV1) {
   const annexArtifacts = [
     ...new Set(request.components.flatMap((component) => component.analyzers)),
   ].map((analyzer) => {
@@ -338,7 +349,22 @@ function signedPublication(request: BaselineVetRequestV1) {
             sourceTreeSha256: request.source.treeSha256,
             files: [],
           }
-        : { version: "2.1.0", runs: [{ tool: { driver: { name: analyzer } }, results: [] }] };
+        : selfDerivedPrecomputedCompletionForTests(
+            {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: { driver: { name: analyzer } },
+                  invocations: [{ executionSuccessful: true }],
+                  results: [],
+                },
+              ],
+            },
+            SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+            sourceRoot,
+            // A Scanner publication's annex: the baseline subject and Scan's batch profiles.
+            { origin: "scanner-baseline-vet" },
+          );
     return {
       path: `annex/${analyzer}.json`,
       bytes: canonicalStrictJsonBytesV1(value),
@@ -778,7 +804,7 @@ describe("AIH scan material", () => {
     const artifacts = createCoreBaselineVetRequests(
       materialized.sourceRoot,
       materialized.catalog,
-    ).map(signedPublication);
+    ).map((request) => signedPublication(materialized.sourceRoot, request));
     const calls: string[][] = [];
     let next = 0;
     const scannerRunner = async (argv: readonly string[]) => {

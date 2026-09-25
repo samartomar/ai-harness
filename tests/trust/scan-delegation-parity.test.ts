@@ -1,0 +1,534 @@
+import { rmSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakeRunner } from "../../src/internals/proc.js";
+import type { Check } from "../../src/internals/verify.js";
+import type { TrustDetectorName } from "../../src/trust/detectors.js";
+import { buildTrustFileInventory } from "../../src/trust/inventory.js";
+import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
+import {
+  createSelfCompletingFakeScanAdapterForTests,
+  type FakeScanAnswerV1,
+  selfDerivedPrecomputedCompletionForTests,
+} from "./fakes/fake-scan-adapter.js";
+import { fakeTrustLintScan, requestedPathsOf } from "./fakes/fake-trust-lint.js";
+import {
+  comparableCheck,
+  comparableOccurrence,
+  detectorSarifFromGolden,
+  type GoldenCheck,
+  type GoldenDetectorRun,
+  loadGolden,
+  loadParityCases,
+  loadRecordedScanTrustLint,
+  loadRecordedSnykGoldens,
+  materializeParityCase,
+  type ParityCase,
+  recordedScanTrustLintSarif,
+  SCAN_IDS,
+  trustLintSarifFromGolden,
+  withoutHostDependentFields,
+  writeFiles,
+} from "./fakes/trust-parity-golden.js";
+
+// ---------------------------------------------------------------------------
+// Parity oracle: the goldens Core's former engines produced at the base commit
+// (tests/fixtures/trust-parity/golden, captured by tools/capture-trust-golden.mjs
+// with real Semgrep, Cisco, Cisco MCP scanner and SkillSpector runs; Snyk from
+// Core's recorded test output). The native findings come from Scan's REAL
+// detector.aih-trust-lint output recorded on each corpus case
+// (tests/fixtures/trust-parity/scan-trust-lint): Core must send exactly the
+// recorded request and turn the recorded SARIF into the golden checks. Each
+// other detector is routed through the Scan execution seam to a TEST FAKE that
+// returns the SARIF a Scan run returns under contract C2, and Core's SARIF ->
+// check mapping must reproduce the golden: same codes, relative paths, lines,
+// multiplicity and availability. Core itself runs no analyzer and computes no
+// native finding on this path.
+// ---------------------------------------------------------------------------
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+
+const roots: string[] = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+function materialize(entry: ParityCase): string {
+  const root = materializeParityCase(entry);
+  roots.push(root);
+  return root;
+}
+
+/** No process may run in Core on the delegated path; every attempt is recorded and fails. */
+function forbiddenRunner() {
+  const argvs: string[][] = [];
+  const run = fakeRunner((argv) => {
+    argvs.push([...argv]);
+    return {
+      code: 127,
+      stdout: "",
+      stderr: "no process may run in a delegated scan",
+      spawnError: true,
+    };
+  });
+  return { argvs, run };
+}
+
+/** Only the sandbox smoke check's Docker probe may be attempted; it fails, so nothing runs. */
+function onlySmokeProbes(argvs: readonly string[][]): boolean {
+  return argvs.every((argv) => argv.join(" ") === "docker --version");
+}
+
+function goldenComparable(check: GoldenCheck, fingerprintsHostDependent = false): GoldenCheck {
+  const { family: _family, hostDependentDetail: _host, ...rest } = check;
+  return fingerprintsHostDependent ? { ...rest, fingerprint: null } : rest;
+}
+
+/** The detector's own pass or unavailable check (advisories are findings). */
+const isDetectorStatus = (check: { readonly name: string }) =>
+  /^trust detector [a-z-]+$/.test(check.name);
+
+const cases = loadParityCases();
+
+function nativeGolden(entry: ParityCase): readonly GoldenCheck[] {
+  const golden = loadGolden(entry.id);
+  expect(golden.native.identicalAcrossEnvironments).toBe(true);
+  const first = Object.values(golden.native.byEnvironment)[0];
+  if (first === undefined) throw new Error(`no native golden for ${entry.id}`);
+  return first.checks;
+}
+
+function nativeCount(checks: readonly GoldenCheck[]): number {
+  return checks.filter((check) => check.family !== "sandbox-smoke" && check.family !== "summary")
+    .length;
+}
+
+/** The detector's checks: what Core appended after the native checks and before the smoke check. */
+function detectorSlice(checks: readonly Check[], native: number): Check[] {
+  const nonSmoke = checks.slice(0, -1);
+  return nonSmoke.length === 1 && nonSmoke[0]?.name === "trust scan" ? [] : nonSmoke.slice(native);
+}
+
+/** The environment whose run is the oracle: a real completed run first, else a real refusal. */
+function oracle(runs: Readonly<Record<string, GoldenDetectorRun>>): [string, GoldenDetectorRun] {
+  const entries = Object.entries(runs);
+  const pick =
+    entries.find(([env, run]) => env === "linux-x64" && run.outcome === "completed") ??
+    entries.find(([, run]) => run.outcome === "completed") ??
+    entries.find(([, run]) => run.outcome === "unavailable") ??
+    entries[0];
+  if (pick === undefined) throw new Error("golden detector has no environment");
+  return pick;
+}
+
+function answerFor(run: GoldenDetectorRun, root: string): FakeScanAnswerV1 {
+  return run.outcome === "completed"
+    ? { kind: "sarif", sarif: detectorSarifFromGolden(run, root) }
+    : {
+        kind: "refused",
+        reason: "prerequisite-missing",
+        detail: `the golden run was unavailable: ${run.reason ?? "no reason recorded"}`,
+      };
+}
+
+/** Scan's own trust-lint run for a corpus case, recorded from Scan's engine. */
+function recordedTrustLint(entry: ParityCase): FakeScanAnswerV1 {
+  return { kind: "sarif", sarif: recordedScanTrustLintSarif(entry.id) };
+}
+
+describe("golden parity: native findings through detector.aih-trust-lint", () => {
+  it.each(cases.map((entry) => [entry.id, entry] as const))("%s", async (_id, entry) => {
+    const golden = loadGolden(entry.id);
+    const expected = nativeGolden(entry);
+    const recorded = loadRecordedScanTrustLint(entry.id);
+    const root = materialize(entry);
+    const fake = createSelfCompletingFakeScanAdapterForTests({
+      "detector.aih-trust-lint": recordedTrustLint(entry),
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(root, {
+      posture: "vibe",
+      internalScopes: golden.internalScopes,
+      scanExecution: fake,
+    });
+
+    // Core's request is exactly the one Scan's engine was recorded answering:
+    // the same selected closure and the same detector options.
+    expect(fake.requests).toHaveLength(1);
+    expect(fake.requests[0]).toMatchObject({
+      detectorId: "detector.aih-trust-lint",
+      executionProfileId: "in-process-trust-lint-v1",
+      subject: { kind: "source-tree", sourceRoot: root },
+    });
+    const subject = fake.requests[0]?.subject as { selectedClosurePaths: string[] };
+    expect(subject.selectedClosurePaths).toEqual(recorded.request.selectedClosurePaths);
+    expect(subject.selectedClosurePaths).toEqual(
+      buildTrustFileInventory(root).files.map((file) => file.relativePath),
+    );
+    expect(fake.requests[0]?.detectorOptions).toEqual(recorded.request.detectorOptions);
+
+    // Scan's recorded report yields Core's golden native checks: every native
+    // finding, the MCP policy checks Core keeps, the summary and the smoke
+    // check, in the same order with the same codes, paths, lines, details and
+    // fingerprints.
+    expect(result.checks.map((check) => comparableCheck(check, root))).toEqual(
+      expected.map((check) => goldenComparable(check)),
+    );
+    expect(result.detectorExecutions).toEqual([
+      {
+        detector: "aih-trust-lint",
+        executedBy: "scan",
+        scanSource: "injected-adapter",
+        executionProfileId: "in-process-trust-lint-v1",
+        outcome: "completed",
+      },
+    ]);
+    expect(result.analyzersRun).toEqual(["aih-native"]);
+  });
+
+  it("takes native findings only from Scan: an empty report leaves none", async () => {
+    const entry = cases.find((candidate) => candidate.id === "auto-exec-permissions");
+    if (entry === undefined) throw new Error("corpus lost auto-exec-permissions");
+    const root = materialize(entry);
+    const fake = fakeTrustLintScan();
+    const result = await scanTrustTreeWithAnalyzers(root, { posture: "vibe", scanExecution: fake });
+    expect(result.checks.map((check) => check.name)).toEqual([
+      "trust scan",
+      "skill sandbox smoke test",
+    ]);
+  });
+});
+
+const detectorRuns = cases.flatMap((entry) =>
+  Object.entries(loadGolden(entry.id).detectors).map(
+    ([detector, value]) => [`${entry.id} / ${detector}`, entry, detector, value] as const,
+  ),
+);
+
+describe("golden parity: each detector through the Scan execution seam", () => {
+  it.each(detectorRuns)("%s", async (_label, entry, detector, value) => {
+    const golden = loadGolden(entry.id);
+    const native = nativeGolden(entry);
+    const [, run] = oracle(value.byEnvironment);
+    const root = materialize(entry);
+    const scanId = SCAN_IDS[detector as keyof typeof SCAN_IDS];
+    const fake = createSelfCompletingFakeScanAdapterForTests({
+      "detector.aih-trust-lint": recordedTrustLint(entry),
+      [scanId]: answerFor(run, root),
+    });
+    const { argvs, run: runner } = forbiddenRunner();
+
+    const result = await scanTrustTreeWithAnalyzers(root, {
+      posture: "vibe",
+      internalScopes: golden.internalScopes,
+      env: {},
+      platform: "linux",
+      run: runner,
+      detectors: [detector as TrustDetectorName],
+      scanExecution: fake,
+    });
+
+    const checks = detectorSlice(result.checks, nativeCount(native));
+    const requested = fake.requests.map((request) => request.detectorId);
+    expect(onlySmokeProbes(argvs)).toBe(true);
+    if (run.outcome === "not-applicable") {
+      // Core decides applicability (no incoming MCP config): Scan is not asked.
+      expect(checks).toEqual([]);
+      expect(requested).toEqual(["detector.aih-trust-lint"]);
+      return;
+    }
+    expect(requested).toEqual(["detector.aih-trust-lint", scanId]);
+    expect(fake.requests[1]).toMatchObject({
+      executionProfileId:
+        detector === "skillspector" ? "docker-host-local-skillspector-v1" : "host-process-uv-v1",
+    });
+    const status = checks.filter(isDetectorStatus);
+    if (run.outcome === "unavailable") {
+      expect(status).toEqual([
+        expect.objectContaining({ verdict: "skip", code: "trust.detector-unavailable" }),
+      ]);
+      expect(checks.filter((check) => !isDetectorStatus(check))).toEqual([]);
+      expect(result.analyzersRun).toEqual(["aih-native"]);
+      return;
+    }
+    expect(status).toEqual([expect.objectContaining({ verdict: "pass" })]);
+    expect(result.analyzersRun).toEqual(run.analyzersRun);
+    const findings = checks.filter((check) => !isDetectorStatus(check));
+    const expectedFindings = run.checks.filter((check) => !isDetectorStatus(check));
+    const rows = (result.rawOccurrences ?? []).slice(
+      (result.rawOccurrences ?? []).length - run.rawOccurrences.length,
+    );
+    expect(rows.map(comparableOccurrence)).toEqual(
+      run.rawOccurrences.map((row) => ({
+        analyzer: row.analyzer,
+        ruleId: row.ruleId.replace("<semgrep-config-dir>", "aih.work"),
+        level: row.level,
+        message: row.message,
+        uri: row.uri,
+        startLine: row.startLine,
+        sourceValue: row.sourceValue,
+      })),
+    );
+    if (detector === "semgrep") {
+      // Semgrep reports its rule ids under the config file's directory, which is
+      // why Core's exact-id map never matched a real run (see the golden's rule
+      // ids). Scan's Semgrep ids are matched by suffix, so the delegated result
+      // must equal Core's mapping of the same SARIF with Core's exact rule ids,
+      // and it lands on the golden's paths, lines and multiplicity.
+      const reference = await scanTrustTreeWithAnalyzers(root, {
+        posture: "vibe",
+        internalScopes: golden.internalScopes,
+        env: {},
+        platform: "linux",
+        run: runner,
+        detectors: ["semgrep"],
+        // Not a completion-boundary test: the evidence is self-derived for this tree.
+        precomputedDetectorSarif: {
+          semgrep: selfDerivedPrecomputedCompletionForTests(
+            detectorSarifFromGolden(run, root, null),
+            "detector.semgrep",
+            root,
+          ),
+        },
+        scanExecution: createSelfCompletingFakeScanAdapterForTests({
+          "detector.aih-trust-lint": recordedTrustLint(entry),
+        }),
+      });
+      const referenceFindings = detectorSlice(reference.checks, nativeCount(native)).filter(
+        (check) => !isDetectorStatus(check),
+      );
+      expect(findings.map((check) => comparableCheck(check, root))).toEqual(
+        referenceFindings.map((check) => comparableCheck(check, root)),
+      );
+      const place = (check: { uri: string | null; startLine: number | null }) =>
+        `${check.uri}:${check.startLine}`;
+      expect(findings.map((check) => place(comparableCheck(check, root)))).toEqual(
+        expectedFindings.map(place),
+      );
+      expect(semgrepCorrections(expectedFindings, findings, root)).toEqual(
+        SEMGREP_CODE_CORRECTIONS[entry.id] ?? [],
+      );
+      return;
+    }
+    expect(findings.map((check) => comparableCheck(check, root))).toEqual(
+      expectedFindings.map((check) => goldenComparable(check, run.fingerprintsHostDependent)),
+    );
+    expect(result.detectorExecutions).toContainEqual({
+      detector,
+      executedBy: "scan",
+      scanSource: "injected-adapter",
+      executionProfileId:
+        detector === "skillspector" ? "docker-host-local-skillspector-v1" : "host-process-uv-v1",
+      outcome: "completed",
+    });
+  });
+});
+
+/**
+ * Owner decision 2026-09-24: APPLY Core's Semgrep rule map to real Semgrep rule
+ * ids (matched exactly or by `.<id>` suffix). This is an enforcement change
+ * against the base commit's goldens, pinned here so it is reviewed rather than
+ * silent: `[place, golden name, delegated name]`, 7 findings in 5 cases. The base
+ * commit could not match any real Semgrep rule id, so every real Semgrep finding
+ * was a warn-only generic finding. Matched, `semgrep.prompt-injection` is
+ * corroborated by the native lint on the same line and becomes a blocking
+ * `trust.prompt-injection`, including in a LICENSE file and in skipped
+ * directories Semgrep still scans; an uncorroborated `semgrep.malicious-code`
+ * stays a generic finding either way.
+ */
+const SEMGREP_CODE_CORRECTIONS: Readonly<Record<string, readonly (readonly string[])[]>> = {
+  "prompt-injection": [["SKILL.md:7", "trust.detector-finding", "trust.prompt-injection"]],
+  "multi-skill-nested": [
+    ["dist/bundle.js:1", "trust.detector-finding", "trust.prompt-injection"],
+    ["node_modules/ignored-pkg/SKILL.md:4", "trust.detector-finding", "trust.prompt-injection"],
+    ["skills/beta/SKILL.md:7", "trust.detector-finding", "trust.prompt-injection"],
+  ],
+  "mcp-configs": [[".mcp.json:16", "trust.detector-finding", "trust.prompt-injection"]],
+  "semgrep-positive": [["notes.txt:1", "trust.detector-finding", "trust.prompt-injection"]],
+  "legal-text": [["LICENSE:4", "trust.legal-text-detector-finding", "trust.prompt-injection"]],
+};
+
+function semgrepCorrections(
+  golden: readonly GoldenCheck[],
+  delegated: readonly Check[],
+  root: string,
+): string[][] {
+  return delegated.flatMap((check, index) => {
+    const now = comparableCheck(check, root);
+    const before = golden[index];
+    return before === undefined || before.name === now.name
+      ? []
+      : [[`${now.uri}:${now.startLine}`, before.name, now.name]];
+  });
+}
+
+describe("Semgrep enforcement change (owner decision 2026-09-24: apply the rule map)", () => {
+  async function delegatedSemgrep(caseId: string, configDir: string) {
+    const entry = cases.find((candidate) => candidate.id === caseId);
+    if (entry === undefined) throw new Error(`corpus lost ${caseId}`);
+    const golden = loadGolden(caseId);
+    const native = nativeGolden(entry);
+    const semgrep = golden.detectors.semgrep;
+    if (semgrep === undefined) throw new Error(`no Semgrep golden for ${caseId}`);
+    const [, run] = oracle(semgrep.byEnvironment);
+    const root = materialize(entry);
+    const fake = createSelfCompletingFakeScanAdapterForTests({
+      "detector.aih-trust-lint": recordedTrustLint(entry),
+      "detector.semgrep": { kind: "sarif", sarif: detectorSarifFromGolden(run, root, configDir) },
+    });
+    const result = await scanTrustTreeWithAnalyzers(root, {
+      posture: "vibe",
+      internalScopes: golden.internalScopes,
+      env: {},
+      platform: "linux",
+      run: forbiddenRunner().run,
+      detectors: ["semgrep"],
+      scanExecution: fake,
+    });
+    const findings = detectorSlice(result.checks, nativeCount(native)).filter(
+      (check) => !isDetectorStatus(check),
+    );
+    return { findings, result, root, run };
+  }
+
+  it("makes exactly the pinned findings blocking, at every posture, where they were warn-only", async () => {
+    let blocking = 0;
+    for (const [caseId, corrections] of Object.entries(SEMGREP_CODE_CORRECTIONS)) {
+      const { findings, root, run } = await delegatedSemgrep(caseId, "aih.work");
+      const places = new Set(corrections.map(([place]) => place));
+      for (const check of findings) {
+        const now = comparableCheck(check, root);
+        const place = `${now.uri}:${now.startLine}`;
+        const before = run.checks.find((row) => `${row.uri}:${row.startLine}` === place);
+        if (places.has(place)) {
+          blocking++;
+          // Blocking: a failing danger check, never graded down by posture.
+          expect(now).toMatchObject({
+            name: "trust.prompt-injection",
+            verdict: "fail",
+            code: "trust.prompt-injection",
+          });
+          // The base commit's goldens held a warn-only generic finding at the same place.
+          expect(before).toMatchObject({ verdict: "pass", code: null });
+        } else {
+          expect(now.verdict).toBe("pass");
+        }
+      }
+    }
+    expect(blocking).toBe(7);
+  });
+
+  it("does not apply the legal-text reclassification to a mapped Semgrep rule", async () => {
+    // Core reclassifies a detector result in a non-executable LICENSE/COPYING/NOTICE
+    // file only when its rule id is UNMAPPED (ruleCode consults the rule map
+    // first), for every detector. Mapped, the LICENSE hit is corroborated by the
+    // native lint and blocks; it is not reviewable legal text.
+    const { findings, root, run } = await delegatedSemgrep("legal-text", "aih.work");
+    expect(findings.map((check) => comparableCheck(check, root))).toEqual([
+      expect.objectContaining({
+        uri: "LICENSE",
+        startLine: 4,
+        verdict: "fail",
+        code: "trust.prompt-injection",
+      }),
+    ]);
+    expect(findings[0]?.detail).not.toContain("non-executable legal text");
+    expect(run.checks.find((row) => row.uri === "LICENSE")?.name).toBe(
+      "trust.legal-text-detector-finding",
+    );
+  });
+
+  it("does not drop Semgrep findings inside Core's inventory skip directories", async () => {
+    // Semgrep scans the whole tree; Core's skip directories (node_modules, dist,
+    // ...) shape only Core's own inventory, never a third-party result.
+    const { findings, root } = await delegatedSemgrep("multi-skill-nested", "aih.work");
+    const blockingPlaces = findings
+      .map((check) => comparableCheck(check, root))
+      .filter((check) => check.verdict === "fail")
+      .map((check) => `${check.uri}:${check.startLine}`);
+    expect(blockingPlaces).toEqual([
+      "dist/bundle.js:1",
+      "node_modules/ignored-pkg/SKILL.md:4",
+      "skills/beta/SKILL.md:7",
+    ]);
+  });
+
+  it("fingerprints a finding the same way whatever config directory Semgrep ran from", async () => {
+    const first = await delegatedSemgrep("semgrep-positive", "aih.work");
+    const second = await delegatedSemgrep("semgrep-positive", "tmp.aih-scan-host-Xy12Ab.work");
+    const shape = (checks: readonly Check[], root: string) =>
+      checks.map((check) => comparableCheck(check, root));
+    expect(shape(second.findings, second.root)).toEqual(shape(first.findings, first.root));
+    // The raw occurrence keeps Semgrep's own, run-specific rule id as evidence.
+    const rawIds = (result: typeof first.result) =>
+      (result.rawOccurrences ?? [])
+        .filter((row) => row.analyzer.startsWith("semgrep"))
+        .map((row) => row.ruleId);
+    expect(rawIds(first.result)).toEqual([
+      "aih.work.semgrep.malicious-code",
+      "aih.work.semgrep.prompt-injection",
+    ]);
+    expect(rawIds(second.result)).toEqual([
+      "tmp.aih-scan-host-Xy12Ab.work.semgrep.malicious-code",
+      "tmp.aih-scan-host-Xy12Ab.work.semgrep.prompt-injection",
+    ]);
+  });
+});
+
+describe("golden parity: Snyk Agent Scan (recorded output, never executed here)", () => {
+  it.each(loadRecordedSnykGoldens().map((entry) => [entry.id, entry] as const))(
+    "%s",
+    async (_id, recorded) => {
+      const root = materializeParityCase({ id: recorded.id, tree: null });
+      roots.push(root);
+      writeFiles(root, recorded.files);
+      const run: GoldenDetectorRun = {
+        scanDetectorId: "detector.snyk-agent-scan",
+        mode: "recorded",
+        outcome: recorded.outcome,
+        ...(recorded.reason === undefined ? {} : { reason: recorded.reason }),
+        analyzersRun: [],
+        checks: recorded.checks,
+        rawOccurrences: recorded.rawOccurrences,
+      };
+      const fake = createSelfCompletingFakeScanAdapterForTests({
+        "detector.aih-trust-lint": {
+          kind: "sarif-for",
+          sarif: (request) =>
+            trustLintSarifFromGolden(
+              (recorded as unknown as { nativeChecks: GoldenCheck[] }).nativeChecks,
+              requestedPathsOf(request),
+            ),
+        },
+        "detector.snyk-agent-scan": answerFor(run, root),
+      });
+      const { argvs, run: runner } = forbiddenRunner();
+      const result = await scanTrustTreeWithAnalyzers(root, {
+        posture: "vibe",
+        env: {},
+        platform: "linux",
+        run: runner,
+        detectors: ["snyk-agent-scan"],
+        scanExecution: fake,
+      });
+      const native = (recorded as unknown as { nativeChecks: GoldenCheck[] }).nativeChecks;
+      const checks = detectorSlice(result.checks, nativeCount(native));
+      expect(onlySmokeProbes(argvs)).toBe(true);
+      if (recorded.outcome === "unavailable") {
+        expect(checks).toEqual([
+          expect.objectContaining({ verdict: "skip", code: "trust.detector-unavailable" }),
+        ]);
+        return;
+      }
+      expect(
+        checks
+          .filter((check) => !isDetectorStatus(check))
+          .map((check) => comparableCheck(check, root)),
+      ).toEqual(
+        recorded.checks
+          .filter((check) => !isDetectorStatus(check))
+          .map((check) => withoutHostDependentFields(check)),
+      );
+    },
+  );
+});

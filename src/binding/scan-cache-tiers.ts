@@ -2,10 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { CISCO_SKILL_SCANNER_SPEC } from "../baseline-evidence/analyzer-profile.js";
 import type { Runner } from "../internals/proc.js";
 import { classifyTuple, type HostTuple } from "./host-tuple.js";
-import type { DimensionReport, ResolvedSource, ScanFinding, ScanSeverity } from "./scan-gate.js";
+import type { DimensionReport, ResolvedSource } from "./scan-gate.js";
 import type { BindingSource, FrameworkId } from "./schema.js";
 
 /**
@@ -350,209 +349,9 @@ export interface DeepDimensionInspector {
 
 /** A generous default deep-scan budget — these tools scan a whole framework tree. */
 export const DEEP_SCAN_TIMEOUT_MS = 300_000;
-const AVAILABILITY_TIMEOUT_MS = 30_000;
-const MAX_DEEP_FINDINGS = 100;
 
-/**
- * The pinned Cisco skill-scanner package + its console-script (see
- * tools/cisco-skill-scanner). Imported rather than restated: this file used to
- * carry its own copy of the version literal, which is exactly the kind of
- * second source of truth that goes stale silently during a pin rotation.
- */
-const CISCO_CONSOLE_SCRIPT = "skill-scanner";
-
-function missingReport(dimension: string, reason: string): DimensionReport {
-  return { dimension, status: "missing", reason, findings: [] };
-}
-
-/** Normalize a SARIF artifact uri to a determinism-safe relative path + display label. */
-function normalizeSarifPath(uri: unknown): { path?: string; display: string } {
-  if (typeof uri !== "string" || uri.length === 0) return { display: "(no location)" };
-  const normalized = uri.replace(/\\/g, "/").replace(/^\.\//, "");
-  // Absolute POSIX / UNC / drive paths are machine-local: drop the path pin and
-  // display the basename only, so a cache record stays portable and deterministic.
-  if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) {
-    const base = normalized.split("/").filter(Boolean).at(-1) ?? "(no location)";
-    return { display: base };
-  }
-  return { path: normalized, display: normalized };
-}
-
-function sarifLevelToSeverity(level: unknown): ScanSeverity {
-  if (level === "error") return "high";
-  if (level === "warning") return "medium";
-  return "low";
-}
-
-interface SarifResult {
-  ruleId?: unknown;
-  level?: unknown;
-  message?: { text?: unknown };
-  locations?: Array<{
-    physicalLocation?: {
-      artifactLocation?: { uri?: unknown };
-      region?: { startLine?: unknown };
-    };
-  }>;
-}
-
-/**
- * Map a scanner's SARIF stdout to sorted, bounded {@link ScanFinding}s — DETERMINISTIC
- * (findings sorted by detail). Returns `undefined` when the output is not a SARIF
- * envelope with a `runs` array, so the caller reports the dimension MISSING rather
- * than fabricating a pass. Zero results in a valid envelope is a PRODUCED clean scan.
- */
-function parseSarifFindings(stdout: string, code: string): ScanFinding[] | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    return undefined;
-  }
-  if (parsed === null || typeof parsed !== "object") return undefined;
-  const runs = (parsed as { runs?: unknown }).runs;
-  if (!Array.isArray(runs)) return undefined;
-  const findings: ScanFinding[] = [];
-  for (const run of runs) {
-    const results = (run as { results?: unknown })?.results;
-    if (!Array.isArray(results)) continue;
-    for (const raw of results as SarifResult[]) {
-      const message =
-        typeof raw?.message?.text === "string" && raw.message.text.length > 0
-          ? raw.message.text
-          : "(no message)";
-      const physical = raw?.locations?.[0]?.physicalLocation;
-      const { path, display } = normalizeSarifPath(physical?.artifactLocation?.uri);
-      const startLine =
-        typeof physical?.region?.startLine === "number" ? physical.region.startLine : undefined;
-      const where = startLine !== undefined ? `${display}:${startLine}` : display;
-      const finding: ScanFinding = {
-        code,
-        severity: sarifLevelToSeverity(raw?.level),
-        detail: `${where} — ${message}`,
-        coverage: "complete",
-      };
-      if (path !== undefined) finding.path = path;
-      findings.push(finding);
-    }
-  }
-  findings.sort((left, right) => left.detail.localeCompare(right.detail));
-  return findings.slice(0, MAX_DEEP_FINDINGS);
-}
-
-interface ExternalSarifScannerConfig {
-  dimension: string;
-  findingCode: string;
-  toolLabel: string;
-  availabilityArgv: readonly string[];
-  buildScanArgv: (treePath: string) => string[];
-}
-
-/**
- * The shared "probe availability -> scan -> map SARIF" flow both external deep
- * dimensions use. Availability is checked FIRST (e.g. `uvx --version` / `docker
- * --version`) so an absent tool is a clean `missing`, not a scan attempt; a spawn
- * failure, non-zero exit, or unparseable output is likewise `missing` with a reason.
- */
-async function runExternalSarifDimension(
-  ctx: DeepDimensionContext,
-  config: ExternalSarifScannerConfig,
-): Promise<DimensionReport> {
-  const available = await ctx.runner([...config.availabilityArgv], {
-    timeoutMs: AVAILABILITY_TIMEOUT_MS,
-  });
-  if (available.spawnError || available.code !== 0) {
-    return missingReport(
-      config.dimension,
-      `${config.toolLabel} is unavailable on this host — ${config.dimension} deep scan not run (incomplete coverage)`,
-    );
-  }
-  const result = await ctx.runner(config.buildScanArgv(ctx.treePath), {
-    timeoutMs: ctx.timeoutMs ?? DEEP_SCAN_TIMEOUT_MS,
-  });
-  if (result.spawnError) {
-    return missingReport(config.dimension, `${config.dimension} scanner failed to spawn`);
-  }
-  if (result.code !== 0) {
-    return missingReport(
-      config.dimension,
-      `${config.dimension} scanner exited with code ${String(result.code)}`,
-    );
-  }
-  const findings = parseSarifFindings(result.stdout, config.findingCode);
-  if (findings === undefined) {
-    return missingReport(
-      config.dimension,
-      `${config.dimension} scanner produced no parseable SARIF output`,
-    );
-  }
-  return { dimension: config.dimension, status: "produced", findings };
-}
-
-/**
- * The Cisco AI Defense skill-scanner deep dimension (design §C.3, O6 — `cisco@uvx`).
- * Runs the pinned `cisco-ai-skill-scanner` console-script (`skill-scanner`) through
- * `uvx`, OFFLINE, emitting SARIF. Available on AIH-DEV, so it PRODUCES here. Its
- * output maps deterministically to `trust.cisco-finding` findings; any spawn / exit
- * / parse failure reports the dimension MISSING (never a fabricated pass).
- */
-export const ciscoSkillScannerInspector: DeepDimensionInspector = {
-  dimension: "cisco-skill-scanner",
-  run: (ctx) =>
-    runExternalSarifDimension(ctx, {
-      dimension: "cisco-skill-scanner",
-      findingCode: "trust.cisco-finding",
-      toolLabel: "uvx",
-      availabilityArgv: ["uvx", "--version"],
-      buildScanArgv: (treePath) => [
-        "uvx",
-        "--from",
-        CISCO_SKILL_SCANNER_SPEC,
-        CISCO_CONSOLE_SCRIPT,
-        "--offline",
-        "--format",
-        "sarif",
-        treePath,
-      ],
-    }),
-};
-
-/**
- * The SkillSpector deep dimension (design §C.3, O6 — `skillspector@docker`). Requires
- * docker, which is ABSENT on this VM, so it reports MISSING here (incomplete coverage,
- * the designed first-class path — never a false green). Where docker exists it runs the
- * pinned image over the mounted tree and maps its SARIF like the Cisco dimension.
- */
-export const skillspectorInspector: DeepDimensionInspector = {
-  dimension: "skillspector",
-  run: (ctx) =>
-    runExternalSarifDimension(ctx, {
-      dimension: "skillspector",
-      findingCode: "trust.detector-finding",
-      toolLabel: "docker",
-      availabilityArgv: ["docker", "--version"],
-      buildScanArgv: (treePath) => [
-        "docker",
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "-v",
-        `${treePath}:/scan:ro`,
-        "skillspector",
-        "scan",
-        "--format",
-        "sarif",
-        "/scan",
-      ],
-    }),
-};
-
-/** The deep dimensions wired in W7 (O6): cisco (uvx, produced) + skillspector (docker, missing here). */
-export const DEEP_DIMENSION_INSPECTORS: readonly DeepDimensionInspector[] = [
-  ciscoSkillScannerInspector,
-  skillspectorInspector,
-];
+// Core ships no deep inspector of its own: every detector runs in the installed
+// @aihq/scan (C2a decision 3), so a caller supplies the deep dimensions it wants.
 
 // -- deep-scan tier orchestration (consult cache -> scan -> write) -----------
 
@@ -564,8 +363,8 @@ export interface DeepScanTierInput {
   treeDigest: string;
   treePath: string;
   runner: Runner;
-  /** Defaults to {@link DEEP_DIMENSION_INSPECTORS}. */
-  inspectors?: readonly DeepDimensionInspector[];
+  /** The deep dimensions to run; Core has no default. */
+  inspectors: readonly DeepDimensionInspector[];
   timeoutMs?: number;
   scannerVersion?: number;
   policyVersion?: number;
@@ -610,7 +409,7 @@ export async function runDeepScanTier(input: DeepScanTierInput): Promise<DeepSca
     };
   }
 
-  const inspectors = input.inspectors ?? DEEP_DIMENSION_INSPECTORS;
+  const { inspectors } = input;
   const dimensionReports = await Promise.all(
     inspectors.map((inspector) =>
       inspector.run({ treePath: input.treePath, runner: input.runner, timeoutMs: input.timeoutMs }),

@@ -82,6 +82,6 @@ describe("packed Core and the optional @aihq/scan peer", () => {
     ).toEqual({ status: 0, failed: [] });
     expect(summary.ok).toBe(true);
     expect(lines.filter((line) => line.startsWith("FAIL "))).toEqual([]);
-    expect(lines.filter((line) => line.startsWith("PASS ")).length).toBeGreaterThanOrEqual(14);
+    expect(lines.filter((line) => line.startsWith("PASS ")).length).toBeGreaterThanOrEqual(12);
   }, 600_000);
 });

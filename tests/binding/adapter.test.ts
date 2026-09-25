@@ -12,7 +12,7 @@ import {
 import { parseBindingLock } from "../../src/binding/lock.js";
 import {
   BindingScanError,
-  type DimensionInspector,
+  type DimensionReport,
   type FastScanPolicy,
   type ResolvedGitSource,
   type ResolvedSource,
@@ -28,6 +28,7 @@ import {
 import { defaultRunner } from "../../src/internals/proc.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
 import { createFakeAdapter } from "./fake-adapter.js";
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 const DUMMY_RESOLVED: ResolvedSource = {
   kind: "git",
@@ -37,23 +38,19 @@ const DUMMY_RESOLVED: ResolvedSource = {
   treePath: "/does/not/matter",
 };
 
-const producedClean: DimensionInspector = {
-  dimension: "c",
-  run: () => ({ dimension: "c", status: "produced", findings: [] }),
+const producedClean: DimensionReport = { dimension: "structure", status: "produced", findings: [] };
+const producedCritical: DimensionReport = {
+  dimension: "suspicious-execution",
+  status: "produced",
+  findings: [
+    { code: "trust.malicious-code", severity: "critical", detail: "boom", coverage: "complete" },
+  ],
 };
-const producedCritical: DimensionInspector = {
-  dimension: "x",
-  run: () => ({
-    dimension: "x",
-    status: "produced",
-    findings: [
-      { code: "trust.malicious-code", severity: "critical", detail: "boom", coverage: "complete" },
-    ],
-  }),
-};
-const missingDim: DimensionInspector = {
-  dimension: "m",
-  run: () => ({ dimension: "m", status: "missing", reason: "deferred", findings: [] }),
+const missingDim: DimensionReport = {
+  dimension: "telemetry",
+  status: "missing",
+  reason: "deferred",
+  findings: [],
 };
 
 function eccDeclaration(): BindingDeclaration {
@@ -97,7 +94,7 @@ async function resolveFixture(): Promise<ResolvedGitSource> {
 }
 
 async function makeDisposition(
-  inspectors: DimensionInspector[],
+  reports: DimensionReport[],
   policy: FastScanPolicy,
 ): Promise<ScanDisposition> {
   const home = mkdtempSync(join(tmpdir(), "aih-adapter-scan-"));
@@ -106,7 +103,10 @@ async function makeDisposition(
     { repository: repoDir, ref: "HEAD" },
     { runner: defaultRunner, cacheHome: home },
   );
-  return runFastScanGate(scannableFromGit(resolved), policy, { cacheHome: home, inspectors });
+  return runFastScanGate(scannableFromGit(resolved), policy, {
+    cacheHome: home,
+    scanExecution: fakeBindingGateScan(reports),
+  });
 }
 
 beforeEach(() => {

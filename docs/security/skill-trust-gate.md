@@ -112,6 +112,141 @@ candidate content. The skip remains visible in trust evidence. When the sandbox
 is available and an executed smoke run fails, `trust.sandbox-smoke-failed`
 remains a blocking content finding.
 
+## Completion evidence: zero findings must be proven
+
+Scan's "succeeded" is not proof that an analyzer looked at anything. Core counts a detector
+run as completed, and its zero findings as zero, only when the SARIF itself proves it
+(`src/trust/scan-sarif.ts`):
+
+- **Shape.** The log must have at least one run. Each run names a tool driver, has a results
+  array, and reports non-empty `invocations`. Every invocation is `executionSuccessful: true`,
+  its notification lists are well formed, and none is at `error` level. This applies to
+  delegated runs, precomputed SARIF (Scanner annexes, joined Cisco shards) and each Cisco shard
+  job.
+- **Subject.** A delegated run, the binding gate and each Cisco shard job must carry Scan's
+  completion evidence v1 in `invocations[0].properties.aihScanCompletionV1` (every run equal).
+  Core recomputes `subjectTreeSha256` and `analyzedFileCount` (subject-files-v1) from the files
+  it submitted, under each detector's rule (`src/trust/scan-subject-files.ts`):
+  - Semgrep and SkillSpector: the whole tree.
+  - Snyk: the tree without its top-level `.git`.
+  - Cisco: the files under each selected `SKILL.md` directory.
+  - mcp-scanner: the MCP config files Core named.
+  - Trust lint and binding gate: the selection Core sent.
+  - A shard job: every file under its job directory.
+
+  The detector must be the one requested, and the analyzer version and uv.lock digest must be
+  the identity Core accepted for the run (`null` for in-process and SkillSpector Docker
+  profiles). Zero files are accepted only for Semgrep, SkillSpector, Snyk, the trust lint and
+  the binding gate.
+- **SkillSpector image.** A SkillSpector run records no uv.lock, so its image is its identity:
+  `evidence.observation.image` must name Core's pinned digest or one Core's policy accepted,
+  with the matching acceptance (`scan-pinned` or `caller-accepted`) and a reference, and the
+  analyzer version must be `<pinned revision>@<that digest>`. No other detector may state an
+  image.
+
+A run that fails either check is `trust.detector-unavailable` with outcome `failed`; a required
+detector fails at enterprise posture. Core binds the subject for each detector call on its
+own: it recomputes it immediately before the call, checks the evidence against that, and
+recomputes it again once the call returns. A tree that changed during the call fails the
+detector, and a change between two detectors is checked against the tree as it stood for each. The trust lint's and binding gate's evidence
+covers the declared selection only.
+
+Precomputed SARIF (a Scanner annex) meets the subject check too, against the tree being
+scanned, and its analyzer must be the one Core pins for the detector under the profile Core
+requires for that evidence: the uv profile the caller states (`uvExecutionProfileId`, from
+policy `trust.uvExecutionProfile`), otherwise Core's default `host-process-uv-v1`. An annex
+naming another profile's pinned analyzer (for example Cisco's host-profile lock when the
+namespace profile is required) fails the detector, naming both profiles. SkillSpector's identity
+is its image, as for a delegated run.
+
+A Scanner publication's (baseline-vet) annexes, consumed as baseline evidence, follow Scan's
+baseline rule (decision D24) and nothing else. Only the Scanner consumer grants that rule: after
+Scan verifies every batch's signed attestation, it wraps each annex for the detector it was
+published for and marks the wrapper privately. A plain string, a caller-built wrapper of the same
+shape, or one detector's annex presented for another is inline SARIF; a live scan has no option
+that claims the baseline rule. For Semgrep, SkillSpector and Cisco alike Core recomputes the
+subject over the consumer's source root as exactly what Scan's batch snapshot received, walking it
+by the snapshot's rules rather than the seal's where they differ:
+
+- the top-level `.git` is left out before the walk and never visited, so nothing inside it (a
+  broken link included) can fail the subject;
+- a link must hold a relative target that resolves, segment by segment, through real directories
+  to a real file or directory inside the root. An absolute target, a link to or through another
+  link, a target inside the top-level `.git`, a broken target, and one leaving the root are
+  refused, as the snapshot refuses them (the seal accepts in-root absolute and chained links);
+- a directory link that names a directory holding a link is refused as a cycle;
+- a file link is keyed by its path and hashed over its target; a directory link is recorded but
+  never copied into the snapshot (D26), so it contributes nothing.
+
+Cisco here is the skill-directory scan of the whole snapshot, never a job set or shard. The
+analyzer must be the one Scan's batch runs: `linux-namespace-uv-v1` for Semgrep and Cisco, and for
+SkillSpector `docker-hardened-skillspector-v1` (no lock; the pinned revision at a digest Core
+accepts). Any other profile's pinned identity or a subject that includes `.git` fails the
+detector; an annex without evidence is still `completion-evidence-absent`. Inline precomputed
+SARIF and delegated runs keep their per-detector rules.
+
+SARIF with no completion evidence at all, which is every publication made before Scan wrote it,
+is never counted complete: it is `trust.detector-unavailable` with reason
+`completion-evidence-absent` and must be republished with evidence. A joined Cisco shard log
+is exempt only when `joinCiscoShardResults` verified it, because each job was already checked
+against its own subject. The exemption is bound to the tree it was verified for: the scanned
+root (by realpath) must be the one the join was issued for, the jobs Core derives from that tree
+now (each directory holding a selected `SKILL.md`) must be exactly the join's jobs, and each
+job's subject, rehashed at the scan, must equal the subject verified at the join. Anything else
+fails the detector with the difference named. No caller can name another root for a join: a
+baseline component scan gets its join through `withCiscoShardJoinProjectionV1`, which creates the
+projection directory itself, copies the included jobs into it from the verified root (only the
+outermost ones: a job nested in another selected job arrives with it, and is still bound and
+rehashed on its own), and binds the join to that directory for the one scan, removing it
+afterwards. The binding is to the
+directory Core created, by identity (device, inode and birth time, a real directory and never a
+link or junction), checked before and after the jobs are rehashed; a directory replaced at the
+same pathname fails the detector. When the scan settles Core revokes the join, so presenting it
+again, even at a recreated pathname holding the same jobs, fails with "the shard join's projection
+no longer exists". A file-system error while Core reads the projection's identity at the scan
+fails the detector with a refusal naming the path and the error code; it never rejects the scan
+and never passes. A projection Core cannot prepare (reading its identity, copying a job,
+resolving it) is never scanned: Core returns a `refused` result holding the failed Cisco detector,
+with the path and error code, and reads nothing more there. Removing the projection never
+replaces the result, or the scan's own error: a removal that fails is returned beside the result
+as a typed `cleanupFailure` naming the path and code. When the scan rejects, the scan's own error
+is rethrown carrying that `cleanupFailure` as a property; only a rejection that cannot take it (a
+frozen error, a thrown primitive, or one already carrying another) is wrapped in a
+`ProjectionCleanupRejectionV1` whose `cause` is the original. Baseline vet keeps the failure on
+the component scan it returns (`projectionCleanupFailures`) and reports it as progress, and its
+own component projection follows the same rules.
+
+## Analyzer execution profiles and their limits
+
+Every detector runs in the installed `@aihq/scan` under an execution profile aih names; no
+profile falls back to another. The uv analyzers (Cisco skill-scanner, Semgrep, Cisco MCP
+scanner, Snyk Agent Scan) run under `host-process-uv-v1` on every OS by default: a host
+process with no isolation and unenforced network. The org policy field
+`trust.uvExecutionProfile: "linux-namespace-uv-v1"` selects Scan's hardened Linux profile,
+which runs the analyzer in a bubblewrap namespace. These limits are known and reported,
+never hidden:
+
+- **The namespace profile runs no source-tree Cisco scan.** Scan accepts a source-tree
+  `detector.cisco` subject only under `host-process-uv-v1`, so under
+  `linux-namespace-uv-v1` `aih trust scan` and `aih skill vet` report Cisco as
+  `trust.detector-unavailable` with Scan's reason (`unsupported-subject-kind`) and an
+  execution outcome of `refused`. That is a skip by default and a fail when Cisco is a
+  required detector at enterprise posture; aih does not rerun it under the host profile.
+  Next route: where Cisco coverage is required, keep the default host profile. Namespace
+  coverage for Cisco needs either Scan to accept a source-tree subject under that profile
+  or aih to route trust-scan Cisco through Scan's shard runner; neither exists yet.
+- **bubblewrap inside Docker needs a relaxed container.** Docker's default seccomp and
+  AppArmor profiles stop bubblewrap from creating namespaces ("No permissions to create
+  new namespace"), and Docker's read-only `/proc/sys` stops it next ("cannot open
+  /proc/sys/user/max_user_namespaces"). Running the namespace profile in a container
+  needs `--security-opt seccomp=unconfined --security-opt apparmor=unconfined
+  --security-opt systempaths=unconfined`. Under default Docker security each uv analyzer
+  is reported as typed `trust.detector-unavailable`, not skipped silently.
+- **Scan refuses analyzers under root.** On Linux, Scan will not execute a uv analyzer under
+  the root identity ("analyzer execution refuses root identity"), under either profile. A
+  root container or CI job gets typed `trust.detector-unavailable` for every uv analyzer;
+  run the scan as an unprivileged user.
+
 ## Recommended scanners
 
 Use a pluggable scanner interface. Do not hardcode only one vendor/tool.
@@ -423,7 +558,7 @@ acknowledgeable by exact fingerprint with a reason at enterprise. This does not
 cover instructions to collect, reveal, or transmit credentials.
 
 The native secret-exfil heuristic
-(`prompt-injection.secret-exfil` in `src/trust/lint.ts`) requires actual intent,
+(`prompt-injection.secret-exfil`, in the `@aihq/scan` trust lint) requires actual intent,
 not just a nearby HTTP verb, endpoint, credential word, or URL. Endpoint
 declarations, HTTP client calls, headings, code samples, ordinary product copy,
 and directly negated security guidance emit no prompt-injection finding. A

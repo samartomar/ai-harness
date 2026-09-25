@@ -97,10 +97,12 @@ Where Core needs Scan's public API it says so instead of substituting a copy: `s
 when Scan is not installed, `scan-package-incompatible` when the installed Scan lacks a
 function Core calls, each naming the install command above. Consuming a Scanner
 baseline publication (for example Workbench source-data import with `--scanner-source`)
-needs Scan and refuses without it. `aih trust scan` and `aih skill vet` still execute
-every detector in Core and name the executor in the runtime advisory
-(`Detector executors: … core-legacy`); with Scan installed they also record Scan's
-`detector.aih-native` identity observation there, with its execution profile and annex
+needs Scan and refuses without it. Core runs no detector of its own: `aih trust scan`,
+`aih skill vet`, workspace acquisition and the binding scan gate run every detector in
+the installed Scan and refuse with `scan-package-unavailable` or
+`scan-package-incompatible` without it. The runtime advisory names each detector's
+executor (`Detector executors: … installed @aihq/scan <profile> (completed)`) and records
+Scan's `detector.aih-native` identity observation, with its execution profile and annex
 digest. That observation is not a finding and does not change a verdict.
 
 ### Catalog beside Core (`@aihq/catalog`)

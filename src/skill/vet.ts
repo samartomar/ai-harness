@@ -5,7 +5,6 @@ import type { Action, CommandSpec, Plan, PlanContext } from "../internals/plan.j
 import { dynamicDigest, plan, structuredChecksProbe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { applyTrustAcknowledgements } from "../trust/acknowledge.js";
-import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   cleanupQuarantine,
   isFirstPartySource,
@@ -15,6 +14,7 @@ import {
   trustFetchExec,
   validateGitHubTrustFetchMetadata,
 } from "../trust/fetch.js";
+import { resolveInternalScopes } from "../trust/internal-scopes.js";
 import {
   githubFetchMetadataCheck,
   scanOptionsFromContext,

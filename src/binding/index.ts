@@ -265,14 +265,19 @@ export {
   writeBindingLockAtomic,
 } from "./lock.js";
 export { type AcquireNpmTreeOptions, acquireNpmTree } from "./npm-source.js";
+export {
+  BINDING_GATE_DETECTOR_ID,
+  BINDING_GATE_DIMENSIONS,
+  BINDING_GATE_EXECUTION_PROFILE,
+  BindingGateScanError,
+  type BindingTypographyFact,
+} from "./scan-binding-gate.js";
 // W7 §C (Phase 2) — the two D12 scan cache tiers (deep-scan + runtime-qualification),
 // the async deep-scanner dimensions (cisco@uvx produced, skillspector@docker missing
 // on this VM), and the canonical tier keys. Off-tuple never satisfies the runtime-qual
 // tier — structurally (the tuple is in the key) and defensively (the read-time guard).
 export {
   type CoverageEntry,
-  ciscoSkillScannerInspector,
-  DEEP_DIMENSION_INSPECTORS,
   DEEP_SCAN_TIMEOUT_MS,
   DEEP_SCANNER_VERSION,
   type DeepDimensionContext,
@@ -295,7 +300,6 @@ export {
   runtimeQualKey,
   SCAN_POLICY_VERSION,
   ScanCacheTierError,
-  skillspectorInspector,
   sourceIdOf,
 } from "./scan-cache-tiers.js";
 export {
@@ -305,8 +309,6 @@ export {
   BindingNotSupportedError,
   BindingScanError,
   bindingCacheHome,
-  type DimensionInspectionContext,
-  type DimensionInspector,
   type DimensionReport,
   type FastScanDeps,
   type FastScanPolicy,
@@ -341,7 +343,7 @@ export {
   scanAcceptanceReport,
   scannableFromGit,
   scannableFromNpm,
-  W2_DEFAULT_INSPECTORS,
+  type TypographyAdvisory,
 } from "./scan-gate.js";
 export {
   assertSingleMethodologyFramework,
@@ -365,14 +367,3 @@ export {
   readBindingDeclaration,
   safeParseBindingDeclaration,
 } from "./schema.js";
-// W5 rule-8 — gate-layer visible-typography reclassifier (advisory demotion of
-// hidden-unicode findings whose file is all prose/comment/human-string typography).
-export {
-  classifyFileTypography,
-  classifySentinelLineShape,
-  enumerateTypography,
-  type FileTypographyVerdict,
-  type SentinelLineShape,
-  type TypographyAdvisory,
-  type TypographyOccurrence,
-} from "./visible-typography.js";

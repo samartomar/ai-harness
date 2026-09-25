@@ -8,7 +8,7 @@ import {
   loadScanPackageExportsV1,
   scanPackageExportsOrThrowV1,
 } from "../scan-package/load-scan-package.js";
-import type { TrustDetectorName } from "../trust/detectors.js";
+import type { ScannerBaselineVetAnnexV1, TrustDetectorName } from "../trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../trust/scan.js";
 import {
   requiredBaselineAnalyzersForComponent,
@@ -262,6 +262,35 @@ function scannerSarif(
 }
 
 /**
+ * The annexes this consumer issued after Scan verified their batches' signed
+ * attestations, each with the detector it was published for. Only these are
+ * checked under Scan's baseline rule (C2a §1.6 [Scan: S2j], decision D24); a
+ * caller cannot mint one.
+ */
+const ISSUED_BASELINE_VET_ANNEXES = new WeakMap<ScannerBaselineVetAnnexV1, TrustDetectorName>();
+
+/** The detector a verified Scanner-publication annex was issued for, or undefined for any other value. */
+export function scannerBaselineVetAnnexDetectorV1(annex: object): TrustDetectorName | undefined {
+  return ISSUED_BASELINE_VET_ANNEXES.get(annex as ScannerBaselineVetAnnexV1);
+}
+
+function issueBaselineVetAnnexes(
+  sarif: Readonly<Partial<Record<TrustDetectorName, string>>>,
+): Readonly<Partial<Record<TrustDetectorName, ScannerBaselineVetAnnexV1>>> {
+  const issued: Partial<Record<TrustDetectorName, ScannerBaselineVetAnnexV1>> = {};
+  for (const [name, bytes] of Object.entries(sarif)) {
+    const detector = name as TrustDetectorName;
+    const annex: ScannerBaselineVetAnnexV1 = Object.freeze({
+      kind: "scanner-baseline-vet-annex-v1",
+      sarif: bytes,
+    });
+    ISSUED_BASELINE_VET_ANNEXES.set(annex, detector);
+    issued[detector] = annex;
+  }
+  return Object.freeze(issued);
+}
+
+/**
  * Verify Scanner custody/signature/replay facts, then let Core interpret the
  * already-produced annexes into its repository-owned vendor evidence.
  * No analyzer command, Docker process, uv process, or network action is run.
@@ -335,6 +364,7 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
   const detectors = EXTERNAL_SCANNER_ANALYZERS.filter(
     (name) => precomputedDetectorSarif[name] !== undefined,
   );
+  const annexes = issueBaselineVetAnnexes(precomputedDetectorSarif);
   const forbiddenRunner = async (): Promise<never> => {
     throw new Error("Core Scanner evidence consumer must not execute analyzer commands");
   };
@@ -346,7 +376,8 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
         platform: "linux",
         run: forbiddenRunner,
         detectors,
-        precomputedDetectorSarif,
+        // Every batch verified: the annexes carry the baseline rule (D24).
+        precomputedDetectorSarif: annexes,
         sandboxSmokeShape: {
           skillDirs: [],
           installScripts: false,
