@@ -8,6 +8,18 @@ const MAX_SOURCE_EVIDENCE_LINE = 10_000;
 
 export type TrustPolicyLevel = "BLOCK" | "REVIEW" | "WARN" | "INFORMATIONAL" | "SUPPRESSED";
 
+/**
+ * Whether a disposition level makes a finding a component carries (D62). BLOCK,
+ * REVIEW and WARN are things the analyzers observed that the consumer should see,
+ * so a component with any of them is `has-findings`. INFORMATIONAL (ordinary
+ * visible Unicode, skipped optional coverage) and SUPPRESSED (non-actionable
+ * heuristics whose raw occurrences are retained) are not findings about the
+ * component; counting them would make every component `has-findings`.
+ */
+export function isFindingLevelV1(level: TrustPolicyLevel): boolean {
+  return level === "BLOCK" || level === "REVIEW" || level === "WARN";
+}
+
 export interface RawScannerOccurrence {
   fingerprint: string;
   analyzer: string;

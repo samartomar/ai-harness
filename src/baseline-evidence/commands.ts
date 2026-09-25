@@ -10,6 +10,7 @@ import {
   plan,
 } from "../internals/plan.js";
 import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
+import { isFindingLevelV1 } from "../trust/evidence.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
@@ -300,7 +301,7 @@ export async function baselineVetPlanForSource(
                   const scan = scans.get(component.id);
                   const dispositions = scan?.policyDispositions ?? [];
                   const correctedVerdict = dispositions.some((disposition) =>
-                    ["WARN", "REVIEW", "BLOCK"].includes(disposition.level),
+                    isFindingLevelV1(disposition.level),
                   )
                     ? "has-findings"
                     : "no-findings";

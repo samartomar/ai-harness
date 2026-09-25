@@ -1,5 +1,6 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { AihError } from "../errors.js";
 import type { Check } from "../internals/verify.js";
 import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
 import { runCiscoSourceShardThroughScanV1 } from "../trust/cisco-shard-delegation.js";
@@ -20,7 +21,13 @@ import {
   type VerifiedCiscoShardSarifV1,
   withCiscoShardJoinProjectionV1,
 } from "../trust/detectors.js";
-import { trustCodeClassV1 } from "../trust/evidence.js";
+import {
+  dispositionForTrustFinding,
+  isFindingLevelV1,
+  type NormalizedTrustFinding,
+  type TrustPolicyLevel,
+  trustCodeClassV1,
+} from "../trust/evidence.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
 import type { BaselineCatalog, BaselineCatalogComponent } from "./catalog.js";
@@ -480,17 +487,61 @@ interface ComponentLabels {
 }
 
 /**
- * Split observed codes into the component's two labels (D50). An integrity
- * failure means the evidence cannot be trusted, so the vet refuses to emit it.
+ * The vet refuses evidence it cannot label truthfully: a scan that reports an
+ * integrity failure (the evidence cannot be trusted), or a trust code with no
+ * class, which could be an integrity failure nobody has classified yet.
  */
-function labelFor(componentId: string, code: string, detail: string): keyof ComponentLabels {
+export class BaselineVetIntegrityError extends AihError {
+  readonly componentId: string;
+  readonly trustCode: string;
+
+  constructor(componentId: string, trustCode: string, message: string) {
+    super(`baseline component ${componentId}: ${message}`, "AIH_TRUST");
+    this.componentId = componentId;
+    this.trustCode = trustCode;
+  }
+}
+
+/** Refuse the evidence for an integrity code or an unclassified trust code, at any level. */
+function assertLabelable(componentId: string, code: string | undefined, detail: string): void {
+  if (code === undefined) return;
   const kind = trustCodeClassV1(code);
   if (kind === "integrity") {
-    throw new Error(
-      `baseline component ${componentId}: evidence integrity failure ${code}: ${detail}`,
+    throw new BaselineVetIntegrityError(
+      componentId,
+      code,
+      `evidence integrity failure ${code}: ${detail}`,
     );
   }
-  return kind === "evidence-problem" ? "evidenceProblems" : "findings";
+  if (kind === undefined && code.startsWith("trust.")) {
+    throw new BaselineVetIntegrityError(
+      componentId,
+      code,
+      `unclassified trust code ${code} (add it to TRUST_CODE_CLASSES_V1): ${detail}`,
+    );
+  }
+}
+
+/**
+ * Split observed codes into the component's two labels (D50). Callers have
+ * already refused integrity and unclassified trust codes (assertLabelable).
+ */
+function labelFor(code: string): keyof ComponentLabels {
+  return trustCodeClassV1(code) === "evidence-problem" ? "evidenceProblems" : "findings";
+}
+
+/**
+ * Whether an observation belongs in the lock: a finding at a finding level (D62),
+ * or a failed evidence problem (evidence that did not run is recorded whatever
+ * its disposition level, so the lock never claims complete evidence).
+ */
+function belongsInLock(
+  code: string,
+  checkVerdict: Check["verdict"] | undefined,
+  level: TrustPolicyLevel,
+): boolean {
+  if (trustCodeClassV1(code) === "evidence-problem") return checkVerdict === "fail";
+  return isFindingLevelV1(level);
 }
 
 function checkLabels(componentId: string, checks: readonly Check[]): ComponentLabels {
@@ -499,6 +550,18 @@ function checkLabels(componentId: string, checks: readonly Check[]): ComponentLa
   for (const check of checks) {
     if (check.verdict !== "fail") continue;
     const code = check.code ?? "trust.detector-finding";
+    const detail = check.detail?.trim() || check.name;
+    assertLabelable(componentId, check.code, detail);
+    // A check-only scan uses the same disposition rule as a normalized one.
+    const { level } = dispositionForTrustFinding({
+      fingerprint: check.fingerprint ?? `check:${code}`,
+      code,
+      checkVerdict: check.verdict,
+      detail,
+      ...(check.location === undefined ? {} : { location: check.location }),
+      rawOccurrenceFingerprints: [],
+    });
+    if (!belongsInLock(code, check.verdict, level)) continue;
     const group = groups.get(code) ?? [];
     group.push(check);
     groups.set(code, group);
@@ -508,7 +571,7 @@ function checkLabels(componentId: string, checks: readonly Check[]): ComponentLa
     const firstDetail = first?.detail?.trim() || first?.name || code;
     const detail =
       group.length === 1 ? firstDetail : `${group.length} findings; first: ${firstDetail}`;
-    labels[labelFor(componentId, code, firstDetail)].push({
+    labels[labelFor(code)].push({
       code,
       ...(group.length > 1 ? { count: group.length } : {}),
       detail: detail.slice(0, 2_000),
@@ -537,15 +600,21 @@ function componentLabels(componentId: string, scan: TrustScanResult): ComponentL
       fingerprints: string[];
     }>
   >();
+  for (const finding of scan.normalizedFindings) {
+    if (finding.checkVerdict === "pass" || finding.checkVerdict === "skip") continue;
+    assertLabelable(componentId, finding.code, finding.detail);
+  }
   for (const disposition of scan.policyDispositions) {
-    if (disposition.level !== "BLOCK" && disposition.level !== "REVIEW") continue;
-    const finding = findingByFingerprint.get(disposition.findingFingerprint);
+    const finding: NormalizedTrustFinding | undefined = findingByFingerprint.get(
+      disposition.findingFingerprint,
+    );
     if (finding === undefined) {
       throw new Error(
         `policy disposition has no normalized finding: ${disposition.findingFingerprint}`,
       );
     }
     const code = finding.code ?? "trust.detector-finding";
+    if (!belongsInLock(code, finding.checkVerdict, disposition.level)) continue;
     const location =
       finding.location === undefined
         ? ""
@@ -566,7 +635,7 @@ function componentLabels(componentId: string, scan: TrustScanResult): ComponentL
   const labels: ComponentLabels = { findings: [], evidenceProblems: [] };
   for (const [code, group] of groups.entries()) {
     const fingerprints = [...new Set(group.flatMap((entry) => entry.fingerprints))];
-    labels[labelFor(componentId, code, group[0]?.detail ?? code)].push({
+    labels[labelFor(code)].push({
       code,
       ...(group.length > 1 ? { count: group.length } : {}),
       detail:

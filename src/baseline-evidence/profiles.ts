@@ -1,5 +1,6 @@
 import {
   dispositionForTrustFinding,
+  isFindingLevelV1,
   type NormalizedTrustFinding,
   TRUST_POLICY_VERSION,
   type TrustPolicyDisposition,
@@ -193,7 +194,7 @@ export function qualifyActiveProfile(
       if (disposition.level === "WARN") warn++;
       if (disposition.level === "REVIEW") review++;
       if (disposition.level === "BLOCK") block++;
-      if (!["WARN", "REVIEW", "BLOCK"].includes(disposition.level)) continue;
+      if (!isFindingLevelV1(disposition.level)) continue;
       const finding = findingByFingerprint(component, disposition.findingFingerprint);
       if (finding === undefined) continue;
       componentHasFindings = true;

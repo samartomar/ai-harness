@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Check } from "../../src/internals/verify.js";
 import {
   dispositionForTrustFinding,
+  isFindingLevelV1,
   normalizeTrustFindings,
   type RawScannerOccurrence,
   trustCodeClassV1,
@@ -353,5 +354,38 @@ describe("trust code classes (D50)", () => {
     expect(trustCodeClassV1("mcp.policy-denied")).toBeUndefined();
     expect(trustCodeClassV1("trust.unapproved-skill")).toBeUndefined();
     expect(trustCodeClassV1("not-a-code")).toBeUndefined();
+  });
+
+  it("classifies every code whose disposition can put it in component evidence (D62)", () => {
+    const verifySource = readFileSync(
+      new URL("../../src/internals/verify.ts", import.meta.url),
+      "utf8",
+    );
+    const union = /export type CheckCode =([\s\S]*?)\nexport /.exec(verifySource)?.[1] ?? "";
+    const codes = [...union.matchAll(/^\s*\| "([a-z0-9-]+\.[a-z0-9-]+)";?$/gm)].map(
+      (m) => m[1] ?? "",
+    );
+    expect(codes.length).toBeGreaterThan(50);
+    const unclassified = codes.filter((code) => {
+      const levels = [[], ["raw:1"]].flatMap((raw) =>
+        (["fail", "skip"] as const).map(
+          (checkVerdict) =>
+            dispositionForTrustFinding({
+              fingerprint: `finding:${code}`,
+              code: code as Check["code"],
+              checkVerdict,
+              detail: `${code} observed`,
+              rawOccurrenceFingerprints: raw,
+            }).level,
+        ),
+      );
+      const reachesEvidence = levels.some(isFindingLevelV1) || code.startsWith("trust.");
+      return reachesEvidence && trustCodeClassV1(code) === undefined;
+    });
+    // trust.unapproved-skill is emitted only by workspace acquire (a missing
+    // approval record), never by a component tree scan.
+    expect(unclassified).toEqual(["trust.unapproved-skill"]);
+    const scanSource = readFileSync(new URL("../../src/trust/scan.ts", import.meta.url), "utf8");
+    expect(scanSource).not.toContain("trust.unapproved-skill");
   });
 });

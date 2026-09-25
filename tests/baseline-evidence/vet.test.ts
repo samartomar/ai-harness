@@ -12,7 +12,11 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
-import { defaultComponentScanner, vetBaselineCatalog } from "../../src/baseline-evidence/vet.js";
+import {
+  BaselineVetIntegrityError,
+  defaultComponentScanner,
+  vetBaselineCatalog,
+} from "../../src/baseline-evidence/vet.js";
 import type { Check } from "../../src/internals/verify.js";
 import {
   buildCiscoShardManifest,
@@ -240,6 +244,159 @@ describe("vetBaselineCatalog", () => {
         fingerprints: ["raw:skill:clean"],
       }),
     ]);
+  });
+
+  it("labels a WARN-only component has-findings and keeps INFORMATIONAL and SUPPRESSED out (D62)", async () => {
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async ({ component }) => {
+        const warnOnly = component.id === "skill:blocked";
+        const findings = warnOnly
+          ? [
+              {
+                fingerprint: "finding:warn",
+                code: "trust.cisco-finding" as const,
+                checkVerdict: "fail" as const,
+                detail: "Cisco rule flagged the skill",
+                location: { uri: "SKILL.md", startLine: 1 },
+                rawOccurrenceFingerprints: ["raw:warn"],
+              },
+            ]
+          : [
+              {
+                fingerprint: "finding:info",
+                code: "trust.visible-unicode" as const,
+                checkVerdict: "fail" as const,
+                detail: "typographic quote",
+                rawOccurrenceFingerprints: ["raw:info"],
+              },
+              {
+                fingerprint: "finding:suppressed",
+                code: "trust.detector-finding" as const,
+                checkVerdict: "fail" as const,
+                detail: "generic heuristic",
+                rawOccurrenceFingerprints: ["raw:suppressed"],
+              },
+            ];
+        return {
+          analyzersRun: ["aih-native"],
+          checks: [pass("scan")],
+          normalizedFindings: findings,
+          policyDispositions: findings.map((finding) => ({
+            findingFingerprint: finding.fingerprint,
+            level: warnOnly
+              ? ("WARN" as const)
+              : finding.code === "trust.visible-unicode"
+                ? ("INFORMATIONAL" as const)
+                : ("SUPPRESSED" as const),
+            reason: "fixture",
+            policyVersion: TRUST_POLICY_VERSION,
+          })),
+        };
+      },
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+
+    expect(evidence.components[1]).toMatchObject({
+      id: "skill:blocked",
+      verdict: "has-findings",
+      evidenceProblems: [],
+      findings: [
+        expect.objectContaining({
+          code: "trust.cisco-finding",
+          detail: "WARN: SKILL.md:1 — Cisco rule flagged the skill",
+          fingerprints: ["raw:warn"],
+        }),
+      ],
+    });
+    expect(evidence.components[0]).toMatchObject({
+      id: "skill:clean",
+      verdict: "no-findings",
+      findings: [],
+      evidenceProblems: [],
+    });
+  });
+
+  it("applies the same finding levels to a check-only scan (D62)", async () => {
+    const check = (code: Check["code"]): Check => ({
+      name: String(code),
+      verdict: "fail",
+      code,
+      detail: `${code} observed`,
+    });
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async ({ component }) => ({
+        analyzersRun: ["aih-native"],
+        checks:
+          component.id === "skill:blocked"
+            ? [check("trust.cisco-finding")]
+            : [check("trust.visible-unicode"), check("trust.legal-text-detector-finding")],
+      }),
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+    expect(evidence.components[1]).toMatchObject({
+      verdict: "has-findings",
+      findings: [{ code: "trust.cisco-finding", detail: "trust.cisco-finding observed" }],
+    });
+    expect(evidence.components[0]).toMatchObject({ verdict: "no-findings", findings: [] });
+  });
+
+  it.each([
+    ["an unclassified trust code", "trust.brand-new-code", "SUPPRESSED"],
+    [
+      "an integrity code at a non-finding level",
+      "trust.fetch-metadata-mismatched",
+      "INFORMATIONAL",
+    ],
+  ] as const)("refuses the evidence for %s at any level", async (_label, code, level) => {
+    const scan = vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({
+        analyzersRun: ["aih-native"],
+        checks: [pass("scan")],
+        normalizedFindings: [
+          {
+            fingerprint: "finding:x",
+            code: code as Check["code"],
+            checkVerdict: "fail" as const,
+            detail: "observed",
+            rawOccurrenceFingerprints: [],
+          },
+        ],
+        policyDispositions: [
+          {
+            findingFingerprint: "finding:x",
+            level,
+            reason: "fixture",
+            policyVersion: TRUST_POLICY_VERSION,
+          },
+        ],
+      }),
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+    await expect(scan).rejects.toBeInstanceOf(BaselineVetIntegrityError);
+    await expect(scan).rejects.toThrow(code);
+  });
+
+  it("refuses the evidence for an unclassified trust code in a check-only scan", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: ["aih-native"],
+          checks: [
+            {
+              name: "new",
+              verdict: "fail",
+              code: "trust.brand-new-code" as Check["code"],
+              detail: "observed",
+            },
+          ],
+        }),
+        requiredAnalyzers: ["aih-native"],
+        analyzerVersions: { "aih-native": "2.7.0" },
+      }),
+    ).rejects.toBeInstanceOf(BaselineVetIntegrityError);
   });
 
   it("fails closed when an analyzer ran without an attributable version receipt", async () => {
