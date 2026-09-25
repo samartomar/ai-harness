@@ -688,7 +688,9 @@ export function registerCommands(
       );
     }
   }
-  const trust = program.command("trust").description("Trust-gate operations for external sources");
+  const trust = program
+    .command("trust")
+    .description("Trust scans and source records for external sources");
   const allow = trust
     .command(trustAllowCommand.name)
     .description(trustAllowCommand.summary)

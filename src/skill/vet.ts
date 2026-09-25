@@ -618,11 +618,13 @@ export const skillVetCommand: CommandSpec = {
     },
     {
       flags: "--acknowledge <fingerprints>",
-      description: "skip exact trust-origin fingerprint(s) for this invocation only",
+      description:
+        "record an acknowledgement of exact trust-origin fingerprint(s) for this invocation only",
     },
     {
       flags: "--acknowledge-all",
-      description: "skip every acknowledgeable trust-origin finding for this invocation only",
+      description:
+        "record an acknowledgement of every acknowledgeable trust-origin finding for this invocation only",
     },
     {
       flags: "--reason <reason>",

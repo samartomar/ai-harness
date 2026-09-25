@@ -19,19 +19,19 @@ These are separate records and must not be read as synonyms:
    duplicate raw rows without deleting them;
 3. a **policy disposition** assigns `BLOCK`, `REVIEW`, `WARN`, `INFORMATIONAL`, or
    `SUPPRESSED` to one normalized finding;
-4. an **active-profile verdict** is calculated only over explicitly selected
-   component closure.
+4. an **active-profile verdict** (`no-findings` or `has-findings`, a label) is
+   calculated only over explicitly selected component closure.
 
 `aih evidence vet-baseline` keeps the concise component lock and writes a separate
 occurrence sidecar. Its primary output reports source integrity, active profile,
-selected components, pass/review/block counts, genuine reasons with source line
-and value, the policy decision, and runtime restrictions.
+selected components, no-findings/has-findings component counts, genuine reasons
+with source line and value, the policy decision, and runtime restrictions.
 
 ECC Lean is `ecc-lean-v1`: the installer plus the exact nine-component Lean
 allowlist. Superpowers standard is `superpowers-standard-v1`: its plugin runtime
 and 14 shipped skills. Every other catalog component remains disclosed as
-`DISCOVERED / NOT SELECTED / NOT AUTHORIZED / NOT INSTALLED`; its findings cannot
-hold or block the active profile.
+`DISCOVERED / NOT SELECTED / NOT INSTALLED`; its findings do not label the
+active profile.
 
 ## Two evidence tiers
 

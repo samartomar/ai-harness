@@ -125,7 +125,8 @@ const SKIP_DIRS = new Set([".git", ".hg", ".svn", ".aih", "coverage", "dist", "n
 
 export const workspaceAddCommand: CommandSpec = {
   name: "add",
-  summary: "Fetch or scan an external skill source, then promote only after trust verification",
+  summary:
+    "Fetch and scan an external skill source, then promote it with the scan's findings recorded as labels",
   options: [
     {
       flags: "--pin <sha>",
@@ -134,11 +135,13 @@ export const workspaceAddCommand: CommandSpec = {
     { flags: "--ref <ref>", description: "GitHub ref to resolve before downloading the tarball" },
     {
       flags: "--acknowledge <fingerprints>",
-      description: "skip exact trust-origin fingerprint(s), comma-separated",
+      description:
+        "record an acknowledgement of exact trust-origin fingerprint(s), comma-separated",
     },
     {
       flags: "--acknowledge-all",
-      description: "skip every current trust-origin finding (requires --reason)",
+      description:
+        "record an acknowledgement of every current trust-origin finding (requires --reason)",
     },
     { flags: "--reason <text>", description: "reason for a trust-origin acknowledgement" },
   ],

@@ -40,7 +40,13 @@ interface LedgerEntry {
    * Absent is the normal case: the hash covers what runs.
    */
   integrityCovers?: "launcher-only";
-  disposition: "active" | "retained" | "blocked";
+  /**
+   * `not-adopted`: an observed version aih does not pin; its findings and consent
+   * facts are stated in `reason` as information. `blocked` remains only on
+   * immutable history entries and on pins whose own provenance or release state
+   * fails.
+   */
+  disposition: "active" | "retained" | "not-adopted" | "blocked";
   reason?: string;
 }
 
@@ -65,6 +71,7 @@ const ledger = JSON.parse(
   verifiedAtPolicy: string;
   historicalEvidencePolicy: string;
   integrityCoveragePolicy: string;
+  dispositionPolicy: string;
   entries: LedgerEntry[];
 };
 
@@ -164,7 +171,7 @@ describe("active external-pin ledger", () => {
       identity: "affaan-m/ECC",
       version: "v2.2.0-147-ge04ea0b9",
       commit: "e04ea0b9cc8248686edf5ac751cadff550e162b8",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("ecc-candidate").reason).toMatch(/OpenCode.*hook-runtime consent/i);
     expect(entry("ecc-candidate").reason).toMatch(/accepts only samartomar\/ECC/i);
@@ -659,30 +666,69 @@ describe("active external-pin ledger", () => {
     );
     expect(entry("anthropic-skills")).toMatchObject({
       commit: "b29e7cf65e5cb78a5ac33d582270551bc74a14eb",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("ui-ux-pro-max-skill")).toMatchObject({
       version: "v2.11.3",
       commit: "4857a2c5ef989794751a0f66b8545a4a49566286",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("aws-mcp-guide-source").reason).toMatch(/Agent Toolkit for AWS/i);
 
-    // The ECC candidate is recorded blocked WITHOUT moving the active pin, so the
+    // The ECC candidate is recorded as not adopted WITHOUT moving the active pin, so the
     // two entries must keep disagreeing on commit: a candidate that silently
     // matched baseline-sources would mean the rotation happened.
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
       version: "v2.2.0-147-ge04ea0b9",
       commit: "e04ea0b9cc8248686edf5ac751cadff550e162b8",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("ecc-candidate").commit).not.toBe(entry("ecc").commit);
+    // Consent is stated as information, never as a gate code.
     expect(entry("ecc-candidate").reason).toMatch(
-      /ECC_OPENCODE_HOOK_CONSENT_AND_FULL_VET_UNQUALIFIED/,
+      /^OpenCode hook-runtime consent: the upstream consent step does not cover the default OpenCode plugin, and the full vet was not run\./,
     );
-    // Live exact-SHA state, the local evidence boundary, and the consent defect
-    // are all load-bearing. Losing any one would make the HOLD unauditable.
+    expect(entry("ecc-candidate").reason).not.toMatch(
+      /UNQUALIFIED|recorded blocked|consent gate failed|prior blocked candidate/,
+    );
+    expect(entry("ecc-latest-stable-candidate")).toMatchObject({
+      version: "v2.2.1",
+      commit: "5064474d4d762dc9640234a41617cccb79185cec",
+      disposition: "not-adopted",
+    });
+    expect(entry("ecc-latest-stable-candidate").reason).toMatch(
+      /The OpenCode hook-consent gap remains:/,
+    );
+    expect(entry("ecc-latest-stable-candidate").reason).not.toMatch(/UNQUALIFIED/);
+    // The consumption summary uses the neutral v2 vocabulary.
+    expect(entry("ecc").reason).toContain(
+      "ECC retains exactly 411 components, 369 with no findings and 42 with findings",
+    );
+    expect(entry("ecc").reason).toContain(
+      "Superpowers retains its identical 15 components with no findings",
+    );
+    expect(entry("ecc").reason).toContain(
+      "The newer e04ea0b9 candidate remains not adopted under #961",
+    );
+    expect(entry("ecc").reason).not.toMatch(/\bpass\b|\bblocked\b|passing components/);
+    // `blocked` stays only where the record is immutable history or the pin's own
+    // provenance or release state fails.
+    expect(
+      ledger.entries
+        .filter((candidate) => candidate.disposition === "blocked")
+        .map((candidate) => candidate.surface)
+        .sort(),
+    ).toEqual([
+      "agentshield",
+      "anthropic-skills-candidate-2026-09-14",
+      "aws-core-mcp-server",
+      "ecc-codex-chrome-devtools-mcp-candidate",
+      "ui-ux-pro-max-skill-candidate-2026-09-14",
+    ]);
+    expect(ledger.dispositionPolicy).toMatch(/not-adopted.*information/i);
+    // Live exact-SHA state, the local evidence boundary, and the consent facts
+    // are all load-bearing. Losing any one would make the record unauditable.
     expect(entry("ecc-candidate").reason).toMatch(
       /GitHub-verified signature.*46 of 46 check runs/i,
     );

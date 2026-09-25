@@ -260,7 +260,7 @@ export async function baselineVetPlanForSource(
             occurrenceRel,
             `${JSON.stringify(
               {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 source: {
                   id: catalog.id,
                   owner: catalog.owner,
@@ -286,7 +286,7 @@ export async function baselineVetPlanForSource(
                   "auto-exec-hook: leading boolean negation expressions are not shell auto-run directives",
                   "hidden-unicode: prose typography, mathematical symbols, Chinese punctuation, emoji, and prose/comment variation selectors are not hidden-control blockers",
                 ],
-                acceptanceRecordsStillRequired: qualification.genuineReasons
+                reviewFindingsWithoutDecision: qualification.genuineReasons
                   .filter((reason) => reason.level === "REVIEW")
                   .map((reason) => ({
                     componentId: reason.componentId,
@@ -299,19 +299,17 @@ export async function baselineVetPlanForSource(
                 components: catalog.components.map((component) => {
                   const scan = scans.get(component.id);
                   const dispositions = scan?.policyDispositions ?? [];
-                  const correctedVerdict = dispositions.some(
-                    (disposition) => disposition.level === "BLOCK",
+                  const correctedVerdict = dispositions.some((disposition) =>
+                    ["WARN", "REVIEW", "BLOCK"].includes(disposition.level),
                   )
-                    ? "BLOCK"
-                    : dispositions.some((disposition) => disposition.level === "REVIEW")
-                      ? "REVIEW"
-                      : "PASS";
+                    ? "has-findings"
+                    : "no-findings";
                   return {
                     id: component.id,
                     selected: profile.selectedComponentIds.includes(component.id),
                     inventoryStatus: profile.selectedComponentIds.includes(component.id)
                       ? "DISCOVERED / SELECTED / NOT INSTALLED"
-                      : "DISCOVERED / NOT SELECTED / NOT AUTHORIZED / NOT INSTALLED",
+                      : "DISCOVERED / NOT SELECTED / NOT INSTALLED",
                     oldVerdict:
                       previousSource?.components.find((entry) => entry.id === component.id)
                         ?.verdict ?? "not previously reported",
@@ -347,7 +345,7 @@ export async function baselineVetPlanForSource(
               `source integrity: EXACT PIN VERIFIED — ${catalog.owner}/${catalog.repo}@${catalog.pinnedSha}`,
               `active profile: ${qualification.profile}`,
               `selected components: ${qualification.selectedComponents.length}/${catalog.components.length}`,
-              `component counts: pass ${qualification.componentCounts.pass}, review ${qualification.componentCounts.review}, block ${qualification.componentCounts.block}`,
+              `component counts: no findings ${qualification.componentCounts.noFindings}, has findings ${qualification.componentCounts.hasFindings}`,
               `finding counts: warn ${qualification.findingCounts.warn}, review ${qualification.findingCounts.review}, block ${qualification.findingCounts.block}`,
               `genuine reasons: ${reasons.length === 0 ? "none" : reasons.join(" | ")}`,
               `policy decision: ${qualification.policyDecision}`,

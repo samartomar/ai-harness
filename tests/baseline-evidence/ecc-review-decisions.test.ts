@@ -46,6 +46,11 @@ describe("ECC residual review decisions", () => {
     const decisions = groupEccResidualReviewDecisions(occurrences);
 
     expect(decisions).toHaveLength(10);
+    for (const decision of decisions) {
+      // Each note states the surface and that ECC Lean does not select it; it never gates.
+      expect(decision.decision).toMatch(/^Full profile: .+ ECC Lean does not select (it|them)\.$/);
+      expect(decision.decision).not.toMatch(/excluded|permit|must not|require|approve|REVIEW/i);
+    }
     expect(decisions.flatMap((decision) => decision.occurrenceFingerprints).sort()).toEqual(
       occurrences.map((entry) => entry.findingFingerprint).sort(),
     );

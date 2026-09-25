@@ -1862,7 +1862,7 @@ async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>>
 export const trustScanCommand: CommandSpec = {
   name: "scan",
   summary:
-    "Scan a local source, GitHub owner/repo, policy-pinned npm package, or artifact intake batch before promotion",
+    "Scan a local source, GitHub owner/repo, policy-pinned npm package, or artifact intake batch and report its findings",
   options: [
     {
       flags: "--pin <sha>",
@@ -1884,12 +1884,12 @@ export const trustScanCommand: CommandSpec = {
     {
       flags: "--acknowledge <fingerprints>",
       description:
-        "skip exact trust-origin fingerprint(s) for this invocation only; use aih workspace add --acknowledge --reason to persist",
+        "record an acknowledgement of exact trust-origin fingerprint(s) for this invocation only; use aih workspace add --acknowledge --reason to persist",
     },
     {
       flags: "--acknowledge-all",
       description:
-        "skip every current trust-origin finding for this invocation only (requires --reason); use aih workspace add to persist",
+        "record an acknowledgement of every current trust-origin finding for this invocation only (requires --reason); use aih workspace add to persist",
     },
     {
       flags: "--reason <text>",

@@ -207,9 +207,14 @@ describe("baseline vet command qualification boundaries", () => {
       normalizedFindings: scan.normalizedFindings,
       policyDispositions: scan.policyDispositions,
     });
-    expect(report.activeProfile.verdict).toBe("BLOCK");
-    expect(report.components[0]).toMatchObject({ correctedVerdict: "BLOCK" });
-    expect(report.acceptanceRecordsStillRequired).toEqual([
+    expect(report.schemaVersion).toBe(2);
+    expect(report.activeProfile.verdict).toBe("has-findings");
+    expect(report.components[0]).toMatchObject({
+      correctedVerdict: "has-findings",
+      inventoryStatus: "DISCOVERED / SELECTED / NOT INSTALLED",
+    });
+    expect(report).not.toHaveProperty("acceptanceRecordsStillRequired");
+    expect(report.reviewFindingsWithoutDecision).toEqual([
       {
         componentId: "skill:x-api",
         fingerprint: "finding:0",
@@ -230,6 +235,10 @@ describe("baseline vet command qualification boundaries", () => {
     );
     expect(result.digests[0]?.text).toContain(
       'BLOCK skill:x-api skills/x-api/SKILL.md:2 = "fixture value 1"',
+    );
+    expect(result.digests[0]?.text).toContain("component counts: no findings 0, has findings 1");
+    expect(result.digests[0]?.text).toContain(
+      "policy decision: the selected components carry 3 finding(s), shown as labels; the consumer decides",
     );
     expect(
       Object.fromEntries(
@@ -301,7 +310,7 @@ describe("baseline vet command qualification boundaries", () => {
     expect(JSON.parse(readFileSync(join(root, OCCURRENCES), "utf8"))).toMatchObject({
       source: { pinnedSha: PIN, integrity: "EXACT PIN VERIFIED" },
       fullSourceDisclosure: { rawOccurrences: 0, normalizedFindings: 0 },
-      activeProfile: { verdict: "PASS", selectedComponents: ["skill:clean"] },
+      activeProfile: { verdict: "no-findings", selectedComponents: ["skill:clean"] },
     });
     expect(
       Object.fromEntries(

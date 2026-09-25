@@ -573,9 +573,9 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "org-policy.effective-blocked": {
     audience: "developer",
     failSeverity: "blocking",
-    title: "requested org policy cannot be made effective safely",
+    title: "requested org policy cannot take effect",
     action:
-      "Run `aih policy evaluate <root> --no-log --json` to inspect requested versus effective candidates. Correct the exact identity, evidence or externally verified approval, target, ownership, or projector finding shown there; unwaivable danger codes cannot be approved. Do not use `aih policy project --apply` until evaluation passes.",
+      "Run `aih policy evaluate <root> --no-log --json` to see requested versus effective candidates and the reason each one cannot take effect. Correct the exact identity, target, ownership, projector, or authority problem named there, then project. Findings and evidence problems are labels on the candidate and do not keep it from taking effect.",
   },
   "org-policy.observe-input-invalid": {
     audience: "developer",
@@ -955,35 +955,35 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "hidden Unicode found in external skill content",
     action:
-      "Reject the external source until the hidden Unicode is removed or the source is replaced with a reviewed, clean commit.",
+      "Review the hidden Unicode at the reported path and line. If it is unwanted, ask upstream to remove it or choose a clean commit; the finding stays on the source as a label either way.",
   },
   "trust.visible-unicode": {
     audience: "developer",
     failSeverity: "degraded",
     title: "ordinary visible Unicode found in external content",
     action:
-      "Keep the text when it is legitimate language, typography, or emoji. Review it for readability; only hidden bidi, zero-width, control, or token-confusable characters are blocking.",
+      "Keep the text when it is legitimate language, typography, or emoji. Review it for readability; hidden bidi, zero-width, control, or token-confusable characters are reported separately as trust.hidden-unicode.",
   },
   "trust.external-egress": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external network request uses a credential",
     action:
-      "Review the exact destination, credential source, and side effect. Enterprise promotion requires an exact-finding acceptance tied to the reviewed source pin.",
+      "Review the exact destination, credential source, and side effect. To record your decision, acknowledge the exact finding at the reviewed source pin; the finding stays on the source as a label either way.",
   },
   "trust.permission-risk": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external component requests broad permissions",
     action:
-      "Review the exact permission, affected resource, and runtime boundary. Enterprise promotion requires an occurrence-bound acceptance or a narrower upstream permission.",
+      "Review the exact permission, affected resource, and runtime boundary. To record your decision, acknowledge the exact occurrence, or ask upstream for a narrower permission.",
   },
   "trust.fetch-blocked": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external trust source could not be fetched",
     action:
-      "Do not promote the external source. Re-run with a reachable repository and an exact reviewed commit SHA, then verify the quarantined scan passes before promotion.",
+      "The source could not be fetched, so there is nothing to scan yet. Re-run with a reachable repository and an exact reviewed commit SHA.",
   },
   "trust.fetch-metadata-missing": {
     audience: "developer",
@@ -1018,49 +1018,49 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "required trust detector unavailable",
     action:
-      "Install the required detector locally or remove it from the enterprise trust.requiredDetectors policy. Optional detector skips only reduce coverage and do not block lower postures.",
+      "The scan ran without this detector, so its coverage is incomplete. Install the detector locally for full coverage, or remove it from the enterprise trust.requiredDetectors policy. An optional detector skip only reduces coverage.",
   },
   "trust.detector-finding": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external trust detector finding",
     action:
-      "Review the exact scanner rule, source path, line, and value. Map known executable danger to a blocking trust code; otherwise enterprise promotion requires exact-pin acceptance.",
+      "Review the exact scanner rule, source path, line, and value. Map known executable danger to a specific trust code; to record your decision, acknowledge the exact finding at the source pin.",
   },
   "trust.legal-text-detector-finding": {
     audience: "developer",
     failSeverity: "degraded",
     title: "external detector finding in legal text",
     action:
-      "Review the complete LICENSE, COPYING, or NOTICE file. Documentation-only heuristic matches remain visible but do not block promotion.",
+      "Review the complete LICENSE, COPYING, or NOTICE file. Documentation-only heuristic matches remain visible as labels.",
   },
   "trust.sandbox-smoke-unavailable": {
     audience: "developer",
     failSeverity: "blocking",
     title: "sandbox smoke test unavailable",
     action:
-      "Install Docker and the pinned sandbox scanner image, or repeat the vetting on a host where the sandbox smoke test can run before promoting runtime-bearing skill sources.",
+      "The sandbox smoke test did not run, so runtime behavior is not covered. Install Docker and the pinned sandbox scanner image, or repeat the vetting on a host where the sandbox smoke test can run.",
   },
   "trust.sandbox-smoke-failed": {
     audience: "developer",
     failSeverity: "blocking",
     title: "sandbox smoke test failed",
     action:
-      "Do not promote the external source until the sandbox smoke test completes in a read-only, no-network container. Inspect the failure detail, fix the sandbox/tooling problem, and re-run the skill vet.",
+      "The sandbox smoke test did not complete in a read-only, no-network container, so runtime behavior is not covered. Inspect the failure detail, fix the sandbox/tooling problem, and re-run the skill vet.",
   },
   "trust.cisco-finding": {
     audience: "developer",
     failSeverity: "blocking",
     title: "Cisco AI Defense skill-scanner finding",
     action:
-      "Review the Cisco AI Defense finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
+      "Review the Cisco AI Defense finding and map the rule to a specific trust check if it is a known-dangerous pattern. If the flagged content is unwanted, ask upstream to remove it or choose another source.",
   },
   "trust.unreviewed-analyzer-rule": {
     audience: "developer",
     failSeverity: "degraded",
     title: "new analyzer rule, not yet reviewed",
     action:
-      "Next: review the rule at the analyzer's pinned release, then map it to a trust code in Core's detector rule map or confirm its generic route, and remove it from src/trust/unreviewed-analyzer-rules.ts. Until then it warns and never blocks.",
+      "Next: review the rule at the analyzer's pinned release, then map it to a trust code in Core's detector rule map or confirm its generic route, and remove it from src/trust/unreviewed-analyzer-rules.ts. Until then it is shown as a warning.",
   },
   "trust.skill-metadata-license": {
     audience: "developer",
@@ -1074,7 +1074,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "prompt-injection shape found in external skill content",
     action:
-      "Reject the external source until the hidden instruction/exfiltration text is removed or the source is replaced with a reviewed, clean commit.",
+      "Review the instruction or exfiltration text at the reported path and line. If it is unwanted, ask upstream to remove it or choose a clean commit; the finding stays on the source as a label either way.",
   },
   "trust.source-changed": {
     audience: "developer",
@@ -1088,28 +1088,28 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "auto-execution hook found in external skill source",
     action:
-      "Reject the external source until the auto-executing hook, install lifecycle script, permission bypass, or auto-run line is removed.",
+      "Review the auto-executing hook, install lifecycle script, permission bypass, or auto-run line, and decide whether it may run in your environment. The finding stays on the source as a label.",
   },
   "trust.dependency-confusion": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external source declares an internal-scope dependency",
     action:
-      "Reject the external source until the dependency is removed or replaced with a reviewed, pinned package from an approved source.",
+      "Review the internal-scope dependency. If it is unwanted, ask upstream to remove it or replace it with a reviewed, pinned package from an approved source.",
   },
   "trust.typosquat": {
     audience: "developer",
     failSeverity: "blocking",
     title: "dependency name resembles a popular package",
     action:
-      "Reject the external source until the dependency name is corrected or the package is independently reviewed and pinned.",
+      "Check the dependency name against the package it resembles. If it is a typo, ask upstream to correct it; otherwise review and pin the package.",
   },
   "trust.malicious-code": {
     audience: "developer",
     failSeverity: "blocking",
     title: "malicious code shape found in external skill source",
     action:
-      "Reject the external source until the reverse shell, remote shell pipe, base64-to-shell payload, or equivalent malicious script shape is removed.",
+      "Review the reverse shell, remote shell pipe, base64-to-shell payload, or equivalent script shape at the reported path and line before running anything from this source. The finding stays on the source as a label.",
   },
   "trust.source-drift": {
     audience: "developer",
@@ -1123,7 +1123,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "external source declares an unpinned dependency",
     action:
-      "Reject the external source until direct dependencies are pinned to exact versions and a package lockfile is committed.",
+      "Direct dependencies are not pinned to exact versions or no package lockfile is committed, so installs may resolve different code. Ask upstream to pin them, or pin them in your copy.",
   },
   "trust.untrusted-publisher": {
     audience: "developer",
@@ -1144,7 +1144,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "external skill source declares no license",
     action:
-      "Do not install the external source until it declares a license (a LICENSE/COPYING file or a package.json license field), or replace it with a licensed alternative.",
+      "The source declares no license (no LICENSE/COPYING file and no package.json license field), so its terms are not determined. Ask upstream to add one, or choose a licensed alternative.",
   },
   "trust.unapproved-skill": {
     audience: "developer",
