@@ -7,6 +7,7 @@ import { type PolicyAuthorityVerification, verifyPolicyAuthorityReceipt } from "
 import { aihPolicyControls } from "./catalog.js";
 import {
   type EffectiveOrgPolicy,
+  type RuntimeMcpIdentity,
   type RuntimeReviewedControl,
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
@@ -20,6 +21,32 @@ export interface RuntimeOrgPolicyResolution {
   catalog: Record<string, McpServer>;
   effective: EffectiveOrgPolicy;
   authorityProblem?: string;
+}
+
+/**
+ * The MCP servers Core would project for this project: the shared catalog with
+ * the root-aware authenticated native launchers in place of the portable ones.
+ */
+export function runtimeMcpCatalog(ctx: PlanContext): Record<string, McpServer> {
+  return mcpServers("project", scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }), {
+    localRuntimeServers: defaultNativeMcpServers(ctx),
+  });
+}
+
+/** The identities the runtime check (`runtime-mcp-identity-mismatch`) compares selections with. */
+export function runtimeMcpIdentities(
+  catalog: Record<string, McpServer>,
+): Record<string, RuntimeMcpIdentity> {
+  return Object.fromEntries(
+    Object.entries(catalog).map(([name, server]) => [
+      name,
+      {
+        subject: mcpApprovalSubject(server),
+        projectable: server.type === "stdio",
+        kiroProjectable: server.type === "stdio",
+      },
+    ]),
+  );
 }
 
 /**
@@ -49,11 +76,7 @@ export async function resolveRuntimeOrgPolicy(
       `refusing invalid Workbench authoring selection: ${(consumed.diagnostics ?? []).join("; ")}`,
     );
   const evaluatedPolicy = consumed?.policy ?? policy;
-  const catalog = mcpServers(
-    "project",
-    scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
-    { localRuntimeServers: defaultNativeMcpServers(ctx) },
-  );
+  const catalog = runtimeMcpCatalog(ctx);
   const governance = governanceOwnsAihSurfaces(evaluatedPolicy)
     ? evaluatedPolicy.governance
     : undefined;
@@ -86,16 +109,7 @@ export async function resolveRuntimeOrgPolicy(
     projectorsEnabled: !projectorsDisabledAtVibe,
     ...(projectorsDisabledAtVibe ? { projectorDisabledReason: "vibe-posture" as const } : {}),
     aihReviewedControls,
-    mcpIdentities: Object.fromEntries(
-      Object.entries(catalog).map(([name, server]) => [
-        name,
-        {
-          subject: mcpApprovalSubject(server),
-          projectable: server.type === "stdio",
-          kiroProjectable: server.type === "stdio",
-        },
-      ]),
-    ),
+    mcpIdentities: runtimeMcpIdentities(catalog),
     hookIdentities: {
       "usage-metering": { scriptDigest: usageControl.source.scriptDigest, projectable: true },
     },

@@ -198,7 +198,27 @@ export function policyAuthoringMcpCatalog(): Record<string, McpServer> {
  * identity's absence in the projectable set: an id whose AIH runtime transport
  * is not stdio cannot be owned by the managed stdio projector.
  */
-function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavailableMcp"] {
+export function policyAuthoringNonProjectableMcpCatalog(
+  catalog: Record<string, McpServer>,
+): PolicyAuthoringCatalog["nonProjectableMcp"] {
+  return Object.entries(catalog).flatMap(([id, server]) =>
+    server.type === "stdio"
+      ? []
+      : [
+          {
+            id,
+            description: server.description,
+            server,
+            transport: server.type,
+            reason:
+              `Not policy-projectable: AIH's runtime identity for this id uses the ${server.type} transport ` +
+              "and the managed stdio projector cannot own it. Selecting it records requested intent only.",
+          },
+        ],
+  );
+}
+
+export function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavailableMcp"] {
   const web = mcpServers("project", {
     ...EMPTY_REPO_STACK,
     frameworks: ["React"],
