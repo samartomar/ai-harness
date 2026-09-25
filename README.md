@@ -83,7 +83,7 @@ aih verify-release "$CORE_VERSION"   # npm signatures, GitHub sums, and cosign e
 
 ### Scanner beside Core (`@aihq/scan`)
 
-`@aihq/scan` is an optional peer dependency of `@aihq/core`, range `>=0.4.0 <1.0.0`.
+`@aihq/scan` is an optional peer dependency of `@aihq/core`, range `>=0.5.0 <0.6.0`.
 Core does not bundle it: Node loads the Scan installed beside Core, so a compatible
 Scan can be updated on its own without reinstalling Core. Install both together:
 

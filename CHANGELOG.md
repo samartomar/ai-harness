@@ -87,6 +87,47 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Findings are labels; nothing blocks on them (D50).** Exact signed evidence about a
+  component's bytes authorizes it whatever the analyzers found, and its findings and evidence
+  problems travel as labels on the verification result, the install plan, receipts, and the
+  governance and policy views. A requested aih-owned MCP control or hook stays effective when a
+  detector reports a finding, a scan fails, evidence is incomplete, or a decision covers
+  different findings or is past its review date: each is shown as `findings`,
+  `evidenceProblems` or `decisionNotes`, and a matching approval or decision is attached as
+  the organization's record. Binding provisions a scanned source whatever its gate label (ALLOW,
+  ALLOW_WITH_CONDITIONS or BLOCK), and `workspace add` and `pack install` promote a source
+  with findings and record them in the trust lock; any finding can be acknowledged, and the
+  acknowledgement is the consumer's record, never a requirement. What still refuses is
+  integrity: evidence that is missing or does not match the selected bytes, a forged or altered
+  disposition, a changed source, a decision that does not bind or was rejected or revoked, a
+  fenced prerequisite, and the organization's own configured source requirements. The
+  `baseline.evidence-blocked` check code and the `vet-blocked` exclusion reason are removed.
+- Evidence formats move to v2 and Core reads v2 only: the vendor lock is schemaVersion 2
+  (verdict `no-findings` or `has-findings`, decided by findings alone, with a required
+  `evidenceProblems` list kept apart from findings; contradictory evidence is refused), with
+  packaged-scanner-collection-evidence/v2, evidence-summary/v2 (outcome `no-findings`,
+  `has-findings` or `unknown`, plus `evidenceProblems`), the ECC runtime declared
+  evaluation v2 and the qualify occurrence report schemaVersion 2. Core needs a Catalog that
+  carries these formats.
+- The skills lockfile, the skill card and the marketplace manifest are written as
+  schemaVersion 2, whose vet verdict can be GREEN, YELLOW, RED or UNKNOWN. Version 1 files
+  still load with their own GREEN/YELLOW value set and are rewritten as version 2 only when aih
+  writes them.
+- The root-aware MCP launchers (code-review-graph, codebase-memory-mcp and serena) have a
+  portable identity (D60): the approval subject hashes a path-free launcher document (server,
+  wrapper id and option contract, package, dependency lock, fixed options, path option names
+  and risk), and the runtime reports it only after verifying that the entry runs Core's own
+  wrapper. A Workbench selection of these launchers now becomes effective. **Upgrade note:** a
+  0.6.2 policy that selected code-review-graph, codebase-memory-mcp or serena names the old
+  machine-bound subject and reads `runtime-mcp-identity-mismatch` until it is re-selected
+  from a Catalog that carries the new declarations.
+- The ECC review records move to v2.2.1 (`5064474d`): the hook-control inventory gains
+  `pre:powershell:gateguard-fact-force` (44 rows, 43 disable-eligible) and binds the OpenCode
+  plugin source `.opencode/plugins/ecc-hooks.ts`; the skill-name set is unchanged; the MCP
+  contract digest is `d93be2b6…` (only the ito-compute description changed). **Upgrade
+  note:** saved `governance.eccMcpApprovals` recorded against `a4426254…` and ECC MCP
+  explicit-add receipts recorded at `5caf398a` no longer match and must be recorded again from
+  the new Catalog.
 - Core accepts the analyzers `@aihq/scan` installs after the U1 upgrade, each by version and
   uv.lock digest: Semgrep 1.178.0, Cisco skill-scanner 2.1.0 (one lock under every profile, so
   the host-profile known gap is gone), cisco-ai-mcp-scanner 4.8.4, snyk-agent-scan 0.6.4, and
@@ -95,9 +136,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Cisco, listed with provenance in `src/trust/unreviewed-analyzer-rules.ts`) report
   `trust.unreviewed-analyzer-rule`, a WARN labelled "new analyzer rule, not yet reviewed" that
   never blocks, wherever no existing route gives them a specific meaning (an egress, legal-text or
-  autonomy classification wins unchanged); any other unmapped id keeps its route. The installed Catalog's vendor lock was
-  vetted at the previous analyzers, so pin currency reports its receipts as drift until the
-  requalified Catalog is adopted. `prepare:workbench-collection-evidence` takes
+  autonomy classification wins unchanged); any other unmapped id keeps its route. The Catalog fixture Core tests against
+  now carries the requalified vendor lock, vetted with these analyzers, so pin currency reports
+  no drift. `prepare:workbench-collection-evidence` takes
   `--definition-overlap <disjoint|compiler-catalog>` (default `disjoint`), as the scanner
   bridge already did.
 - `@aihq/framework-ecc` supports affaan-m/ECC v2.2.1 (`5064474d`) and requires a Catalog that
