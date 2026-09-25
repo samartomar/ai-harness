@@ -4,6 +4,9 @@ import type { CiImpactReceipt, CiOperatingSystem } from "./ci-impact.js";
 export const CI_STATIC_SCRIPTS = [
   "check:artifacts",
   "check:ecc-installer",
+  // The bundled framework plugins (packages/framework-*) load only from their
+  // built dist, which a fresh checkout does not carry: build before any suite.
+  "build:framework-plugins",
   "check:self-hosting-canon",
   "typecheck",
   "lint:ci",

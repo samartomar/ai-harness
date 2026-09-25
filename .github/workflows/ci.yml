@@ -73,6 +73,11 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
+      # The bundled framework plugins load only from their built dist inside
+      # Core's package (packages/framework-*), which a fresh checkout does not
+      # carry; build them before any test, as the packed Core ships them.
+      - name: Build the bundled framework plugins
+        run: npm run build:framework-plugins
       - name: Run the authoritative selected suite
         run: npm run --silent ci:run-selected
 
@@ -93,6 +98,11 @@ jobs:
         run: npm run check:artifacts
       - name: ECC installer package check
         run: npm run check:ecc-installer
+      # The bundled framework plugins load only from their built dist inside
+      # Core's package (packages/framework-*), which a fresh checkout does not
+      # carry; build them before any test, as the packed Core ships them.
+      - name: Build the bundled framework plugins
+        run: npm run build:framework-plugins
       - name: Self-hosting canon gate
         run: npm run check:self-hosting-canon
       - name: Typecheck
@@ -173,6 +183,11 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
+      # The bundled framework plugins load only from their built dist inside
+      # Core's package (packages/framework-*), which a fresh checkout does not
+      # carry; build them before any test, as the packed Core ships them.
+      - name: Build the bundled framework plugins
+        run: npm run build:framework-plugins
       # Enforce the coverage thresholds on one OS (deterministic line/branch hits);
       # the other OSes run the suite to validate cross-platform behavior. Keep
       # two workers here: coverage and the complete policy catalog otherwise
@@ -226,6 +241,11 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
+      # The bundled framework plugins load only from their built dist inside
+      # Core's package (packages/framework-*), which a fresh checkout does not
+      # carry; build them before any test, as the packed Core ships them.
+      - name: Build the bundled framework plugins
+        run: npm run build:framework-plugins
       - name: Test Windows shard
         # Each fixture can spawn native Git/PowerShell children. Reserve runner
         # capacity for those custody checks instead of competing fixture workers;
