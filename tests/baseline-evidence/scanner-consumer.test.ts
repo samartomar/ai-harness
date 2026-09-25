@@ -471,8 +471,7 @@ describe("Core Scanner baseline consumer", () => {
   });
 
   it("accepts a Cisco annex under either uv profile: since U1g both install the one Cisco lock, so the identity names the same analyzer", async () => {
-    // The analyzer identity cannot tell the profiles apart any more; which
-    // profile ran a batch rests on the attested publisher (SI1 gap 1).
+    // D35/D48: the attested publisher workflow at P, not the shared lock, proves the profile.
     const { root, catalog } = sourceFixture();
     const request = createCoreBaselineVetRequest(root, catalog);
     const result = buildResult(root, request, {}, {}, { cisco: "host-process-uv-v1" });
