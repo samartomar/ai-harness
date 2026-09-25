@@ -37,6 +37,7 @@ import {
   approvalAttestationDigest,
   candidateIdentityDigest,
   FENCED_POLICY_PREREQUISITE_CODES,
+  isFencedPrerequisite,
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
   stableJson,
@@ -676,7 +677,8 @@ describe("governed candidate projection", () => {
       requested: true,
       effective: false,
       evidence: "missing",
-      blockingCodes: expect.arrayContaining(["authority-receipt-unverified", "evidence-missing"]),
+      blockingCodes: ["authority-receipt-unverified"],
+      evidenceProblems: ["evidence-missing"],
     });
     expect(runtime.effective.activeMcpServerIds).toEqual([]);
   });
@@ -826,7 +828,7 @@ describe("governed candidate projection", () => {
     const acceptedCheck = await orgPolicyEffectiveCheck(applied);
     expect(acceptedCheck).toMatchObject({ verdict: "pass" });
     expect(acceptedCheck.detail).toContain(
-      "requested candidates: code-review-graph{decision=decision-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=prompt-injection; acceptedGaps=none; risk=accepted; danger=prompt-injection; blocking=none; decisionBlockers=none}",
+      "requested candidates: code-review-graph{decision=decision-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=prompt-injection; acceptedGaps=none; risk=accepted; findings=prompt-injection; evidenceProblems=none; danger=prompt-injection; blocking=none; decisionBlockers=none; decisionNotes=none}",
     );
     expect(acceptedCheck.detail).not.toContain("Review the finding before the decision expires.");
 
@@ -834,7 +836,7 @@ describe("governed candidate projection", () => {
     writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(noDecision));
     const noDecisionCheck = await orgPolicyEffectiveCheck(applied);
     expect(noDecisionCheck.detail).toContain(
-      "requested candidates: code-review-graph{decision=none; observedFindings=none; observedGaps=none; acceptedFindings=none; acceptedGaps=none; risk=none; danger=none; blocking=none; decisionBlockers=none}",
+      "requested candidates: code-review-graph{decision=none; observedFindings=none; observedGaps=none; acceptedFindings=none; acceptedGaps=none; risk=none; findings=none; evidenceProblems=none; danger=none; blocking=none; decisionBlockers=none; decisionNotes=none}",
     );
 
     const blocked = reviewedMcpPolicy();
@@ -855,12 +857,16 @@ describe("governed candidate projection", () => {
     };
     const blockedOutput = blockedEvaluation.candidates[0];
     if (blockedOutput === undefined) throw new Error("expected blocked evaluated candidate");
-    expect(blockedEvaluation.blocking).toBe(true);
+    // A decision that covers other findings is shown beside the observed ones;
+    // it does not take the control away from the administrator who requested it.
+    expect(blockedEvaluation.blocking).toBe(false);
     expect(blockedOutput).toMatchObject({
-      effective: false,
+      effective: true,
+      findings: ["prompt-injection"],
       dangerCodes: ["prompt-injection"],
       blockingCodes: [],
-      decisionBlockers: [expect.objectContaining({ code: "decision-coverage-mismatch" })],
+      decisionBlockers: [],
+      decisionNotes: [expect.objectContaining({ code: "decision-coverage-mismatch" })],
       decision: {
         id: "decision-blocked-parity",
         acceptedFindings: ["hidden-unicode"],
@@ -869,10 +875,15 @@ describe("governed candidate projection", () => {
     });
     expect((blockedOutput.decision as Record<string, unknown>).riskState).toBeUndefined();
     expect(hasKeyRecursively(blockedEvaluation, "conditions")).toBe(false);
+    // The findings are not the problem; the projected settings still carry the
+    // previous decision binding until policy project refreshes them.
     const blockedCheck = await orgPolicyEffectiveCheck(applied);
-    expect(blockedCheck).toMatchObject({ verdict: "fail", code: "org-policy.effective-blocked" });
+    expect(blockedCheck).toMatchObject({
+      verdict: "fail",
+      fingerprint: "org-policy-mcp-receipt:retained-invalid-decision",
+    });
     expect(blockedCheck.detail).toContain(
-      "requested candidates: code-review-graph{decision=decision-blocked-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=hidden-unicode; acceptedGaps=none; risk=blocked; danger=prompt-injection; blocking=none; decisionBlockers=decision-coverage-mismatch}",
+      "requested candidates: code-review-graph{decision=decision-blocked-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=hidden-unicode; acceptedGaps=none; risk=not-covered; findings=prompt-injection; evidenceProblems=none; danger=prompt-injection; blocking=none; decisionBlockers=none; decisionNotes=decision-coverage-mismatch}",
     );
     expect(blockedCheck.detail).not.toContain("Review the finding before the decision expires.");
   });
@@ -925,18 +936,39 @@ describe("governed candidate projection", () => {
     }
   });
 
-  it("fails closed for decision coverage, binding, time, revocation, and signed rejection", async () => {
+  it("shows decision coverage and an overdue review as notes, and keeps the control effective", async () => {
+    for (const item of [
+      { decision: { acceptedFindings: ["malicious-code"] }, code: "decision-coverage-mismatch" },
+      { decision: { acceptedGaps: ["optional-detector"] }, code: "decision-coverage-mismatch" },
+      {
+        decision: { reviewBy: new Date(Date.now() - 30_000).toISOString() },
+        code: "decision-review-overdue",
+      },
+    ] as const) {
+      const policy = reviewedMcpPolicy();
+      const candidate = policy.governance?.catalog.reviewed[0];
+      if (candidate === undefined || policy.governance === undefined) {
+        throw new Error("expected reviewed MCP fixture");
+      }
+      candidate.findings.push("prompt-injection");
+      policy.governance.authority.decisions = ["decision-reviewed-risk"];
+      writeDecisionAuthorityReceipt([currentReviewedDecision(policy, item.decision)]);
+      const runtime = await resolveRuntimeOrgPolicy(ctx(), policy);
+      const resolved = runtime.effective.candidates[0];
+      expect(resolved).toMatchObject({
+        effective: true,
+        findings: ["prompt-injection"],
+        decisionBlockers: [],
+        decisionNotes: [expect.objectContaining({ code: item.code })],
+        decision: { id: "decision-reviewed-risk", observedFindings: ["prompt-injection"] },
+      });
+      expect(resolved?.decision?.riskState).toBeUndefined();
+      expect(runtime.effective.blocking).toBe(false);
+    }
+  });
+
+  it("fails closed for decision binding, time, revocation, and signed rejection", async () => {
     const cases = [
-      {
-        name: "under coverage",
-        decision: { acceptedFindings: ["malicious-code"] },
-        code: "decision-coverage-mismatch",
-      },
-      {
-        name: "nonempty named gap",
-        decision: { acceptedGaps: ["optional-detector"] },
-        code: "decision-coverage-mismatch",
-      },
       {
         name: "candidate kind drift",
         decision: { kind: "hook" },
@@ -966,11 +998,6 @@ describe("governed candidate projection", () => {
         name: "registered effect drift",
         decision: { effects: ["usage-hook"] },
         code: "decision-scope-mismatch",
-      },
-      {
-        name: "review deadline",
-        decision: { reviewBy: new Date(Date.now() - 30_000).toISOString() },
-        code: "decision-review-overdue",
       },
       {
         name: "expiry",
@@ -1905,8 +1932,10 @@ describe("governed candidate projection", () => {
         authority,
         targets: ["claude"],
       });
-      expect(effective.candidates[0]?.blockingCodes).toContain(code);
-      expect(effective.candidates[0]?.effective).toBe(false);
+      // The tampered approval is not attached; the reason is a label beside the gap.
+      expect(effective.candidates[0]?.evidenceProblems).toContain(code);
+      expect(effective.candidates[0]?.blockingCodes).not.toContain(code);
+      expect(effective.candidates[0]?.approval).toBeUndefined();
     }
   });
 
@@ -2014,13 +2043,17 @@ describe("governed candidate projection", () => {
       authority,
       targets: ["claude"],
     });
+    // The unclarified approval is not attached; the gap stays a visible label.
     expect(effective.candidates[0]).toMatchObject({
       effective: false,
-      blockingCodes: expect.arrayContaining(["approval-clarification-missing"]),
+      evidence: "missing",
+      evidenceProblems: ["approval-clarification-missing", "evidence-missing"],
     });
+    expect(effective.candidates[0]?.approval).toBeUndefined();
+    expect(effective.candidates[0]?.blockingCodes).not.toContain("approval-clarification-missing");
   });
 
-  it("never lets an approval waive a mandatory detector failure", async () => {
+  it("labels a mandatory detector failure as an evidence problem, never as the refusal reason", async () => {
     const approval = waivableApproval();
     writeAuthorityReceipt({
       evidence: {
@@ -2031,24 +2064,33 @@ describe("governed candidate projection", () => {
       approvals: [approval],
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
     });
+    const effective = resolveEffectiveOrgPolicy(customPolicy(["claude"], [approval]), {
+      authority: await verifiedAuthority(ctx()),
+      targets: ["claude"],
+    });
+    const candidate = effective.candidates[0];
+    expect(candidate?.dangerCodes).toContain("mandatory-detector-failed");
+    expect(candidate?.evidenceProblems).toContain("mandatory-detector-failed");
+    expect(candidate?.blockingCodes).toEqual([]);
+    // A custom stdio source has no projector; that, not the detector, is what stops it.
     await expect(
       verifiedOrgPolicyProjectionActions(ctx(), customPolicy(["claude"], [approval])),
-    ).rejects.toThrow(/mandatory-detector-failed/);
+    ).rejects.toThrow(/cannot be projected: custom-mcp: missing-projector/);
   });
 
-  it("keeps externally attested unwaivable and nonwaivable evidence outcomes blocking", async () => {
-    for (const { evidence, dangerCode, blockingCode } of [
+  it("labels externally attested findings and evidence gaps instead of blocking on them", async () => {
+    for (const { evidence, finding, evidenceProblem } of [
       {
         evidence: { findings: ["secrets"] },
-        dangerCode: "secrets",
+        finding: "secrets",
       },
       {
         evidence: { state: "failed", waivable: false },
-        blockingCode: "evidence-failed",
+        finding: "evidence-failed",
       },
       {
         evidence: { state: "missing", waivable: false },
-        blockingCode: "evidence-missing",
+        evidenceProblem: "evidence-missing",
       },
     ]) {
       writeAuthorityReceipt({ evidence });
@@ -2058,10 +2100,12 @@ describe("governed candidate projection", () => {
       });
       const candidate = effective.candidates[0];
       if (candidate === undefined) throw new Error("missing custom MCP candidate");
-      expect(effective.blocking).toBe(true);
-      expect(candidate.effective).toBe(false);
-      if (dangerCode !== undefined) expect(candidate.dangerCodes).toContain(dangerCode);
-      if (blockingCode !== undefined) expect(candidate.blockingCodes).toContain(blockingCode);
+      if (finding !== undefined) expect(candidate.findings).toContain(finding);
+      if (evidenceProblem !== undefined)
+        expect(candidate.evidenceProblems).toContain(evidenceProblem);
+      expect(candidate.blockingCodes).toEqual([]);
+      // Only the structural fact remains: a custom stdio source has no projector.
+      expect(candidate.dangerCodes.filter(isFencedPrerequisite)).toContain("missing-projector");
     }
   });
 
@@ -2319,8 +2363,14 @@ describe("governed candidate projection", () => {
       revocations: [{ approval: signed.id, issuer: "platform-security", revokedAt, reason }],
     });
     const governed = customPolicy(["claude"], [signed]);
+    const revoked = resolveEffectiveOrgPolicy(governed, {
+      authority: await verifiedAuthority(ctx()),
+      targets: ["claude"],
+    }).candidates[0];
+    expect(revoked?.evidenceProblems).toContain("approval-revoked");
+    expect(revoked?.revocation).toMatchObject({ issuer: "platform-security", revokedAt, reason });
     await expect(verifiedOrgPolicyProjectionActions(ctx(), governed)).rejects.toThrow(
-      /approval-revoked/,
+      /missing-projector/,
     );
     writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(governed));
     const report = await orgPolicyEffectiveDigest(ctx());
@@ -2398,7 +2448,7 @@ describe("governed candidate projection", () => {
       const replay = waivableApproval(changed);
       await expect(
         verifiedOrgPolicyProjectionActions(ctx(), customPolicy(["claude"], [replay])),
-      ).rejects.toThrow(/policy project refuses blocked candidate activation/);
+      ).rejects.toThrow(/policy project stopped: the requested policy cannot be projected/);
     }
   });
 
@@ -4170,7 +4220,15 @@ describe("policy project — authority note is not a cascade", () => {
     ({
       authorityProblem: "external organization authority registry is unavailable",
       effective: {
-        candidates: [{ requested: true, effective: false, dangerCodes: codes, blockingCodes: [] }],
+        candidates: [
+          {
+            requested: true,
+            effective: false,
+            dangerCodes: codes.filter(isFencedPrerequisite),
+            blockingCodes: codes.filter((code) => !isFencedPrerequisite(code)),
+            decisionBlockers: [],
+          },
+        ],
       },
     }) as never;
 
@@ -4180,9 +4238,11 @@ describe("policy project — authority note is not a cascade", () => {
   });
 
   it("reports the note when the block itself depends on the registry", () => {
-    expect(authoritySuffix(blockedWith(["evidence-missing"]))).toContain("authority:");
+    expect(authoritySuffix(blockedWith(["evidence-identity-drift"]))).toContain("authority:");
     expect(authoritySuffix(blockedWith(["authority-receipt-unverified"]))).toContain("authority:");
-    expect(authoritySuffix(blockedWith(["approval-expired"]))).toContain("authority:");
+    expect(authoritySuffix(blockedWith(["authority-target-coverage-mismatch"]))).toContain(
+      "authority:",
+    );
   });
 
   it("omits the note when the registry is available, whatever the block", () => {

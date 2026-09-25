@@ -3,7 +3,7 @@ import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { applyPolicyBindingDefaults, assertPolicyBindingCurrent } from "./binding.js";
 import { hasCommandPermissionOwnership, inspectCommandPermissions } from "./command-permissions.js";
-import { type EffectiveOrgPolicy, stableJson } from "./effective.js";
+import { candidateNotEffectiveCodes, type EffectiveOrgPolicy, stableJson } from "./effective.js";
 import { hookRegistrarReport } from "./hook-registrar.js";
 import {
   loadPolicyDeliveryEccV1,
@@ -69,7 +69,7 @@ function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
     .sort((left, right) => ordinalCompare(left.id, right.id))
     .map((candidate) => {
       const decision = candidate.decision;
-      const risk = decision === undefined ? "none" : (decision.riskState ?? "blocked");
+      const risk = decision === undefined ? "none" : (decision.riskState ?? "not-covered");
       return (
         `${candidate.id}{decision=${decision?.id ?? "none"}; ` +
         `observedFindings=${publicList(decision?.observedFindings ?? [])}; ` +
@@ -77,9 +77,12 @@ function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
         `acceptedFindings=${publicList(decision?.acceptedFindings ?? [])}; ` +
         `acceptedGaps=${publicList(decision?.acceptedGaps ?? [])}; ` +
         `risk=${risk}; ` +
+        `findings=${publicList(candidate.findings)}; ` +
+        `evidenceProblems=${publicList(candidate.evidenceProblems)}; ` +
         `danger=${publicList(candidate.dangerCodes)}; ` +
         `blocking=${publicList(candidate.blockingCodes)}; ` +
-        `decisionBlockers=${publicList(candidate.decisionBlockers.map((blocker) => blocker.code))}}`
+        `decisionBlockers=${publicList(candidate.decisionBlockers.map((blocker) => blocker.code))}; ` +
+        `decisionNotes=${publicList(candidate.decisionNotes.map((note) => note.code))}}`
       );
     });
   const lifecycle = (effective.npmPackageLifecycle ?? [])
@@ -105,11 +108,7 @@ function blockedDetail(effective: EffectiveOrgPolicy): string {
   const blocked = requestedCandidates(effective).filter((candidate) => !candidate.effective);
   const candidates = blocked
     .map((candidate) => {
-      const codes = [
-        ...candidate.dangerCodes,
-        ...candidate.blockingCodes,
-        ...candidate.decisionBlockers.map((blocker) => blocker.code),
-      ];
+      const codes = candidateNotEffectiveCodes(candidate);
       const reasons = candidate.resolutionReasons;
       return `${candidate.id}: ${codes.length === 0 ? "not-effective" : codes.join(", ")}${
         reasons.length === 0 ? "" : `; resolution=${reasons.join(", ")}`
@@ -308,7 +307,7 @@ export async function orgPolicyEffectiveCheck(
         verdict: "fail",
         code: "org-policy.effective-blocked",
         detail: withRequestedCandidateSummary(
-          `requested policy is blocked: ${blockedDetail(effective)}`,
+          `requested policy cannot take effect: ${blockedDetail(effective)}`,
           effective,
         ),
         location: { uri: "aih-org-policy.json" },
@@ -369,12 +368,13 @@ export async function orgPolicyEffectiveDigest(
     const lifecycle = effective.npmPackageLifecycle ?? [];
     const upstreamLifecycle = effective.upstreamArtifactLifecycle ?? [];
     const body = lines(
-      "Requested vs effective governed candidates. A requested item is never active merely because",
-      "it appears below: evidence/authority, immutable identity, safety, target, ownership, and projector",
-      "gates must all pass. GitHub approval references without separately verified proof remain blocked.",
+      "Requested vs effective governed candidates. A requested item takes effect when its authority,",
+      "immutable identity, target, ownership and projector check out. Findings and evidence problems are",
+      "labels on the row; they never stop it. An approval or decision is attached only when separately",
+      "verified proof matches it.",
       "",
-      "| Candidate | Requested | Effective | Source / evidence | Approval | Target / projector coverage | Receipt / drift | Clarification / annotation | Blocking reason |",
-      "|---|---:|---:|---|---|---|---|---|---|",
+      "| Candidate | Requested | Effective | Source / evidence | Approval | Target / projector coverage | Receipt / drift | Clarification / annotation | Findings / evidence problems | Not effective because |",
+      "|---|---:|---:|---|---|---|---|---|---|---|",
       ...candidates.map((candidate) => {
         const approval = candidate.approval;
         const sourceEvidence = `${candidate.sourceDigest}; ${stableJson(candidate.source)}; evidence=${candidate.evidenceRecord?.evidenceDigest ?? "unverified"}`;
@@ -383,7 +383,7 @@ export async function orgPolicyEffectiveDigest(
             ? approval === undefined
               ? candidate.evidence
               : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`
-            : `${candidate.decision.id}; digest=${candidate.decision.digest}; issuer=${candidate.decision.issuer}; actor=${candidate.decision.actor}; disposition=${candidate.decision.disposition}; risk=${candidate.decision.riskState ?? "blocked"}; accepted=${candidate.decision.acceptedFindings.join(",") || "none"}; observed=${candidate.decision.observedFindings.join(",") || "none"}`;
+            : `${candidate.decision.id}; digest=${candidate.decision.digest}; issuer=${candidate.decision.issuer}; actor=${candidate.decision.actor}; disposition=${candidate.decision.disposition}; risk=${candidate.decision.riskState ?? "not-covered"}; accepted=${candidate.decision.acceptedFindings.join(",") || "none"}; observed=${candidate.decision.observedFindings.join(",") || "none"}`;
         const requestedTargets = candidate.projection.requestedTargets;
         const targetProjector =
           candidate.kind === "mcp" && candidate.projection.projector === "mcp-managed-settings"
@@ -419,12 +419,12 @@ export async function orgPolicyEffectiveDigest(
               : candidate.projection.receipt;
         const notes =
           [candidate.clarification, candidate.annotation].filter(Boolean).join(" / ") || "—";
-        const codes =
-          [
-            ...candidate.dangerCodes,
-            ...candidate.blockingCodes,
-            ...candidate.decisionBlockers.map((blocker) => blocker.code),
-          ].join(", ") || "—";
+        const labels = `findings=${candidate.findings.join(", ") || "none"}; evidence problems=${candidate.evidenceProblems.join(", ") || "none"}${
+          candidate.decisionNotes.length === 0
+            ? ""
+            : `; decision notes=${candidate.decisionNotes.map((note) => note.code).join(", ")}`
+        }`;
+        const codes = candidateNotEffectiveCodes(candidate).join(", ") || "—";
         const blocked =
           candidate.resolutionReasons.length === 0
             ? codes
@@ -433,7 +433,7 @@ export async function orgPolicyEffectiveDigest(
           candidate.revocation === undefined
             ? ""
             : `; revoked by ${candidate.revocation.issuer} at ${candidate.revocation.revokedAt}: ${candidate.revocation.reason}`;
-        return `| ${candidate.id} | ${candidate.requested ? "yes" : "no"} | ${candidate.effective ? "yes" : "no"} | ${sourceEvidence} | ${authority} | ${projection} | ${receipt} | ${notes} | ${blocked}${revocation} |`;
+        return `| ${candidate.id} | ${candidate.requested ? "yes" : "no"} | ${candidate.effective ? "yes" : "no"} | ${sourceEvidence} | ${authority} | ${projection} | ${receipt} | ${notes} | ${labels} | ${blocked}${revocation} |`;
       }),
       "",
       `Hook receipt: ${hookReceipt.state} — ${hookReceipt.detail}.`,
