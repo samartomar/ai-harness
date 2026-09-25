@@ -12,6 +12,7 @@ describe("reviewed Scanner publisher identities", () => {
     "6a39ac3134435b686181ec830e37d09d9d14ffa8",
     "981d50f19ec8923974597de28c4c7b7acf684ded",
     "349fcadac4bdb20807c0f3451f91178a3b5911cd",
+    "42885cd87e65520da5e47494d344d4a600e79ff9",
   ])("retains exact reviewed publisher %s", (commit) => {
     const publisher = scannerBaselinePublicationPublisherForLocatorV1(locator(commit));
     expect(publisher?.commit).toBe(commit);
