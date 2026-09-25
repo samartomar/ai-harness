@@ -3,6 +3,7 @@ import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
 import {
   CATALOG_PACKAGE_NAME,
   type CatalogPackageAccessV1,
@@ -229,7 +230,10 @@ export function openCandidateCatalogV1(path: string, sha256: string): CandidateC
   let identity: Omit<CandidateCatalogV1, "version">;
   if (stat.isFile() && path.endsWith(".tgz")) {
     if (stat.size > LIMITS.tarballBytes) fail("tarball exceeds its size limit");
-    const bytes = readFileSync(path);
+    // One no-follow descriptor, bounded: the bytes digested are the checked file's.
+    const bytes = readRegularFileWithStats(path, { maxBytes: LIMITS.tarballBytes })?.contents;
+    if (bytes === undefined)
+      fail(`${path} is no longer the regular file that was checked, within its size limit`);
     const observed = digest(bytes);
     if (observed !== sha256) fail(`tarball sha256 ${observed} does not match ${sha256}`);
     files = tarballFiles(bytes);
