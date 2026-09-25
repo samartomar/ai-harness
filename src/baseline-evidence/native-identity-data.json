@@ -26,6 +26,7 @@
     "src/trust/inventory.ts",
     "src/trust/lock.ts",
     "src/trust/mcp-classify.ts",
+    "src/trust/report-exit.ts",
     "src/trust/scan-analyzer-identity.ts",
     "src/trust/scan-sarif.ts",
     "src/trust/scan-subject-files.ts",
@@ -36,5 +37,5 @@
     "src/trust/trust-lint-sarif.ts",
     "src/trust/unreviewed-analyzer-rules.ts"
   ],
-  "digest": "e8095468bfe4"
+  "digest": "e129cbc0324b"
 }
