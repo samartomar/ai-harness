@@ -64,9 +64,10 @@ function descriptor(
       id: `raw:${index}`,
       paths: [`raw/${index}`],
       treeSha256: raw(index === 0 ? "5" : "6"),
-      verdict: "pass" as const,
+      verdict: "no-findings" as const,
       analyzers: [],
       findings: [],
+      evidenceProblems: [],
     })),
   };
   const mappings = components.map((component, index) => ({

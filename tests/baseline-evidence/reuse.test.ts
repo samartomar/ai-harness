@@ -15,12 +15,13 @@ function component(overrides: Partial<BaselineComponentEvidence> = {}): Baseline
     id: "skill:example",
     paths: ["skills/example"],
     treeSha256: "a".repeat(64),
-    verdict: "pass",
+    verdict: "no-findings",
     analyzers: [
       { name: "aih-native", version: "native.aaaaaaaaaaaa" },
       { name: "skillspector@docker", version: "rev@sha256:deadbeef" },
     ],
     findings: [],
+    evidenceProblems: [],
     ...overrides,
   };
 }
@@ -158,8 +159,10 @@ describe("decideComponentReuse", () => {
     expect(decision).toEqual({ reuse: false, reason: "full" });
   });
 
-  it("never reuses a hand-crafted pass entry whose treeSha256 does not match the current tree", () => {
-    const staleHashPass = source([component({ verdict: "pass", treeSha256: "c".repeat(64) })]);
+  it("never reuses a hand-crafted no-findings entry whose treeSha256 does not match the current tree", () => {
+    const staleHashPass = source([
+      component({ verdict: "no-findings", treeSha256: "c".repeat(64) }),
+    ]);
     const decision = decideComponentReuse({
       priorSource: staleHashPass,
       component: { id: "skill:example", paths: ["skills/example"] },
@@ -174,26 +177,27 @@ describe("decideComponentReuse", () => {
 });
 
 describe("spliceReusedComponent", () => {
-  it("byte-equal reconstructs a blocked component preserving verdict, count, and fingerprint", () => {
+  it("byte-equal reconstructs a has-findings component preserving verdict, count, fingerprint, and evidence problems", () => {
     const blocked = component({
-      verdict: "blocked",
+      verdict: "has-findings",
       findings: [
         { code: "trust.hidden-unicode", count: 3, detail: "3 findings; first: x" },
         { code: "trust.prompt-injection", detail: "single finding", fingerprint: "fp:1" },
       ],
+      evidenceProblems: [{ code: "trust.detector-unavailable", detail: "cisco did not run" }],
     });
     const spliced = spliceReusedComponent(blocked);
     expect(spliced).toEqual(blocked);
     expect(JSON.stringify(spliced)).toBe(JSON.stringify(blocked));
   });
 
-  it("never flips a blocked verdict to pass and never drops findings", () => {
+  it("never flips a has-findings verdict to no-findings and never drops findings", () => {
     const blocked = component({
-      verdict: "blocked",
+      verdict: "has-findings",
       findings: [{ code: "trust.malicious-code", detail: "danger" }],
     });
     const spliced = spliceReusedComponent(blocked);
-    expect(spliced.verdict).toBe("blocked");
+    expect(spliced.verdict).toBe("has-findings");
     expect(spliced.findings).toEqual(blocked.findings);
   });
 });

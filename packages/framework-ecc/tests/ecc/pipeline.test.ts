@@ -66,9 +66,9 @@ function catalog() {
   });
 }
 
-function vendorLock(verdict: "pass" | "blocked" = "pass") {
+function vendorLock(verdict: "no-findings" | "has-findings" = "no-findings") {
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -83,7 +83,10 @@ function vendorLock(verdict: "pass" | "blocked" = "pass") {
             verdict,
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings:
-              verdict === "blocked" ? [{ code: "prompt-injection", detail: "blocked" }] : [],
+              verdict === "has-findings"
+                ? [{ code: "prompt-injection", detail: "finding fixture" }]
+                : [],
+            evidenceProblems: [],
           },
         ],
       },
@@ -158,7 +161,7 @@ function mixedVendorLock() {
   writeFileSync(join(sourceRoot, "rules-core", "rule.md"), "# Rule\n");
   writeFileSync(join(sourceRoot, "hooks-runtime", "hook.js"), "export {};\n");
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -170,23 +173,25 @@ function mixedVendorLock() {
             id: "runtime:ecc-installer",
             paths: ["install.sh"],
             treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "aih-native", version: "2.8.0" }],
             findings: [],
+            evidenceProblems: [],
           },
           {
             id: "baseline:rules",
             paths: ["rules-core"],
             treeSha256: hashComponentTree(sourceRoot, ["rules-core"]).treeSha256,
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "aih-native", version: "2.8.0" }],
             findings: [],
+            evidenceProblems: [],
           },
           {
             id: "baseline:hooks",
             paths: ["hooks-runtime"],
             treeSha256: hashComponentTree(sourceRoot, ["hooks-runtime"]).treeSha256,
-            verdict: "blocked",
+            verdict: "has-findings",
             analyzers: [{ name: "aih-native", version: "2.8.0" }],
             findings: [
               {
@@ -194,6 +199,7 @@ function mixedVendorLock() {
                 detail: "hook runtime auto-executes",
               },
             ],
+            evidenceProblems: [],
           },
         ],
       },
@@ -550,7 +556,7 @@ describe("ECC baseline evidence pipeline", () => {
     const result = await executeEccEvidencePipeline(context, request, {
       catalog: catalog(),
       source: resolveTrustSource(sourceRoot, { root }),
-      vendorLock: vendorLock("blocked"),
+      vendorLock: vendorLock("has-findings"),
       vendorLockSha256: "f".repeat(64),
       buildInstallPlan,
     });

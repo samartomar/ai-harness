@@ -465,7 +465,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
       unmappedDerivedAssets: prepared.coverage.unmappedDerivedAssets,
     };
     const record: ScannerEvidenceProjectionRecordV1 = {
-      version: "packaged-scanner-collection-evidence/v1",
+      version: "packaged-scanner-collection-evidence/v2",
       authority: "display-only",
       catalog: {
         id: prepared.catalog.id,

@@ -210,7 +210,7 @@ export function verifyBaselineComponents(
     ).treeSha256;
     const vendorEntry = vendorSource?.components.find((candidate) => candidate.id === component.id);
     const exactVendor = exactComponent(vendorSource, component.id, component.paths, actual);
-    if (exactVendor?.verdict === "blocked") {
+    if (exactVendor?.verdict === "has-findings") {
       // Accepted-with-conditions join (W4 ruling (e)): the raw verdict stays
       // blocked; an EXACT signed acceptance (same repo/pin/component/digest,
       // every finding code accepted, none unwaivable, unexpired) may admit the
@@ -274,7 +274,7 @@ export function verifyBaselineComponents(
       );
       continue;
     }
-    if (exactVendor?.verdict === "pass") {
+    if (exactVendor?.verdict === "no-findings") {
       checks.push({
         name,
         verdict: "pass",
@@ -286,7 +286,7 @@ export function verifyBaselineComponents(
 
     const orgEntry = orgSource?.components.find((candidate) => candidate.id === component.id);
     const exactOrg = exactComponent(orgSource, component.id, component.paths, actual);
-    if (exactOrg?.verdict === "blocked") {
+    if (exactOrg?.verdict === "has-findings") {
       const check = blockedCheck(name, exactOrg);
       checks.push(check);
       hold(
@@ -297,7 +297,7 @@ export function verifyBaselineComponents(
       );
       continue;
     }
-    if (exactOrg?.verdict === "pass") {
+    if (exactOrg?.verdict === "no-findings") {
       checks.push({
         name,
         verdict: "pass",

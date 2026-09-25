@@ -414,7 +414,7 @@ describe("committed JSON Schemas", () => {
                 sha256: "b".repeat(64),
                 subjectDigest: { algorithm: "git-sha1", value: "a".repeat(40) },
               },
-              verdict: "pass",
+              verdict: "no-findings",
               findings: [],
             },
           ],

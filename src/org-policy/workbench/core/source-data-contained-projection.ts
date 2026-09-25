@@ -8,7 +8,7 @@ import { BaselineSourceEvidenceSchema } from "../../../baseline-evidence/schema.
 import { canonicalStrictJsonSha256V1 } from "../../../contract/strict-json-v1.js";
 import { evidenceExpiryV1 } from "../../../evidence-freshness.js";
 import { ScannerPublicationProjectionV1Schema } from "../../packaged-collection-evidence-v1.js";
-import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "../contracts.js";
+import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "../contracts.js";
 import { verifyScannerComponentContainmentV1 } from "./source-data-containment.js";
 
 interface DeclaredClosure {
@@ -209,9 +209,9 @@ export function projectContainedScannerEvidenceV1(input: {
     if (Date.parse(expiry) <= Date.parse(preparedAt)) fail();
     const id = `evidence:${asset.id}`;
     if (evidence[id]) fail();
-    evidence[id] = EvidenceSummaryV1Schema.parse({
+    evidence[id] = EvidenceSummaryV2Schema.parse({
       id,
-      projectionVersion: "evidence-summary/v1",
+      projectionVersion: "evidence-summary/v2",
       subjects: [closure.subject],
       evidenceDigest: digest({ sourceReportDigest, mapping, subject: closure.subject }),
       coveredPaths: [...closure.paths].sort(),
@@ -222,7 +222,9 @@ export function projectContainedScannerEvidenceV1(input: {
         contextDigest: sourceReportDigest,
       },
       scan: {
-        outcome: facts.some((item) => item.verdict === "blocked") ? "failed" : "pass",
+        outcome: facts.some((item) => item.verdict === "has-findings")
+          ? "has-findings"
+          : "no-findings",
         coverage: "complete",
         analyzers: [
           ...new Map(

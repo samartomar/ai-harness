@@ -325,7 +325,7 @@ function assemble(args: readonly string[]): void {
   const { catalog: eccCatalog } = assertCheckout(eccRoot, "ecc", args);
   const ecc = sourceEvidence(flag(args, "--ecc-evidence"));
   const superpowers = sourceEvidence(flag(args, "--superpowers-evidence"));
-  const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [ecc, superpowers] });
+  const lock = parseBaselineEvidenceLock({ schemaVersion: 2, sources: [ecc, superpowers] });
   const preview = generateAuthorizedEccInstallPreview({
     eccRoot,
     catalog: eccCatalog,

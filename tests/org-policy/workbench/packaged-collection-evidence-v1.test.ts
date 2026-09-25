@@ -38,7 +38,7 @@ function sealedFixture(bundle: AuthoringCatalogBundleV1) {
     },
   ];
   const record = {
-    version: "packaged-scanner-collection-evidence/v1" as const,
+    version: "packaged-scanner-collection-evidence/v2" as const,
     authority: "display-only" as const,
     catalog: {
       id: "aih" as const,
@@ -83,9 +83,10 @@ function sealedFixture(bundle: AuthoringCatalogBundleV1) {
         id: componentId,
         paths: ["catalog.json"],
         treeSha256: tree,
-        verdict: "pass" as const,
+        verdict: "no-findings" as const,
         analyzers: [{ name: "scanner", version: "1" }],
         findings: [],
+        evidenceProblems: [],
       })),
     },
     publications: components.map((_, index) => ({
@@ -170,7 +171,11 @@ describe("packaged collection evidence for an inventory partition", () => {
       expect(overlay[`evidence:${id}`]).toMatchObject({
         subjects: [expect.objectContaining({ assetId: id })],
         coveredPaths: ["catalog.json"],
-        scan: { outcome: "pass", coverage: "complete", reportSignedAt: "2026-06-01T00:00:00.000Z" },
+        scan: {
+          outcome: "no-findings",
+          coverage: "complete",
+          reportSignedAt: "2026-06-01T00:00:00.000Z",
+        },
       });
     expect(overlay["evidence:fixture:control"]?.evidenceDigest).not.toBe(
       overlay["evidence:fixture:external"]?.evidenceDigest,
@@ -262,7 +267,7 @@ describe("packaged collection evidence", () => {
     );
   });
 
-  it.each(["coverage", "paths", "tree", "verdict", "findings"])(
+  it.each(["coverage", "paths", "tree", "verdict", "findings", "evidenceProblems"])(
     "rejects partial %s substitution even when the outer seal is recomputed",
     (field) => {
       const record = sealedFixture(tinyBackendCatalogFixture().workbenchBundle);
@@ -274,10 +279,15 @@ describe("packaged collection evidence", () => {
           `sha256:${canonicalStrictJsonSha256V1({ version: "packaged-report-component/v1", component: record.report.components[0] })}`;
       }
       if (field === "tree") record.report.components[0]!.treeSha256 = sha("9");
-      if (field === "verdict") Object.assign(record.report.components[0]!, { verdict: "blocked" });
-      if (field === "findings")
+      // The verdict and its findings move together: a has-findings verdict always carries them.
+      if (field === "verdict" || field === "findings")
         Object.assign(record.report.components[0]!, {
+          verdict: "has-findings",
           findings: [{ code: "test-finding", detail: "Retain this finding" }],
+        });
+      if (field === "evidenceProblems")
+        Object.assign(record.report.components[0]!, {
+          evidenceProblems: [{ code: "trust.detector-unavailable", detail: "Retain this problem" }],
         });
       expect(() => encodePackagedScannerCollectionEvidenceRecordV1(record)).toThrow(
         /projection digest|report component digest|report coverage paths/,
@@ -295,7 +305,11 @@ describe("packaged collection evidence", () => {
         verifiedAt: "2026-06-04T00:00:00.000Z",
         validUntil: "2026-08-30T00:00:00Z",
       },
-      scan: { outcome: "pass", coverage: "complete", reportSignedAt: "2026-06-01T00:00:00.000Z" },
+      scan: {
+        outcome: "no-findings",
+        coverage: "complete",
+        reportSignedAt: "2026-06-01T00:00:00.000Z",
+      },
     });
     expect(overlay["evidence:fixture:external"]).toMatchObject({
       verification: {
@@ -303,7 +317,11 @@ describe("packaged collection evidence", () => {
         verifiedAt: "2026-06-04T00:00:00.000Z",
         validUntil: "2026-08-31T00:00:00Z",
       },
-      scan: { outcome: "pass", coverage: "complete", reportSignedAt: "2026-06-02T00:00:00.000Z" },
+      scan: {
+        outcome: "no-findings",
+        coverage: "complete",
+        reportSignedAt: "2026-06-02T00:00:00.000Z",
+      },
     });
   });
 

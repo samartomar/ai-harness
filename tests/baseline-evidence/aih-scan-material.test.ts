@@ -1136,7 +1136,7 @@ describe("AIH scan material", () => {
       },
     });
     expect(record).toMatchObject({
-      version: "packaged-scanner-collection-evidence/v1",
+      version: "packaged-scanner-collection-evidence/v2",
       authority: "display-only",
       catalog: authored.catalog,
       verification: {

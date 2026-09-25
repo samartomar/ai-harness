@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import type { BaselineEvidenceLock, BaselineSourceEvidence } from "../baseline-evidence/schema.js";
 import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 
-export const ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V1 = {
-  version: "ecc-runtime-declared-evaluation/v1",
+export const ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V2 = {
+  version: "ecc-runtime-declared-evaluation/v2",
   projection: "source-data-contained-projection/v1",
-  verdict: "any-mapped-blocked-blocks",
+  verdict: "has-findings-when-any-mapped-has-findings",
   analyzers: "exact-union",
   findings: "exact-union",
+  evidenceProblems: "exact-union",
   tree: "declared-component-identity-paths",
 } as const;
 
@@ -80,26 +81,29 @@ export function deriveEccRuntimeDeclaredEvaluationV1(input: {
     )
       fail();
     const facts = mapping.rawComponentIds.map((id) => rawById.get(id) ?? fail());
+    const findings = orderedUnique(
+      facts.flatMap((fact) => fact.findings),
+      (finding) => canonicalStrictJsonBytesV1(finding).toString("utf8"),
+    );
     return {
       id: component.id,
       paths: [...component.paths].sort(),
       treeSha256: component.identityTreeSha256,
-      verdict: facts.some((fact) => fact.verdict === "blocked")
-        ? ("blocked" as const)
-        : ("pass" as const),
+      verdict: findings.length > 0 ? ("has-findings" as const) : ("no-findings" as const),
       analyzers: orderedUnique(
         facts.flatMap((fact) => fact.analyzers),
         (analyzer) => `${analyzer.name}\0${analyzer.version}`,
       ),
-      findings: orderedUnique(
-        facts.flatMap((fact) => fact.findings),
-        (finding) => canonicalStrictJsonBytesV1(finding).toString("utf8"),
+      findings,
+      evidenceProblems: orderedUnique(
+        facts.flatMap((fact) => fact.evidenceProblems),
+        (problem) => canonicalStrictJsonBytesV1(problem).toString("utf8"),
       ),
     };
   });
   if (new Set(components.map((component) => component.id)).size !== components.length) fail();
   const vendorLock: BaselineEvidenceLock = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: input.rawReport.id,
@@ -114,6 +118,6 @@ export function deriveEccRuntimeDeclaredEvaluationV1(input: {
   return Object.freeze({
     vendorLock,
     coreDerivedEvaluationDigest: sha256(vendorLock),
-    projectionContractDigest: sha256(ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V1),
+    projectionContractDigest: sha256(ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V2),
   });
 }

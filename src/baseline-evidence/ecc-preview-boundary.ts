@@ -171,7 +171,7 @@ export function generateAuthorizedEccInstallPreview(
   if (catalogRuntime === undefined || evidenceRuntime === undefined) {
     throw new Error("runtime:ecc-installer evidence is required before preview generation");
   }
-  if (evidenceRuntime.verdict !== "pass") {
+  if (evidenceRuntime.verdict !== "no-findings") {
     throw new Error("runtime:ecc-installer must pass before preview generation");
   }
   if (

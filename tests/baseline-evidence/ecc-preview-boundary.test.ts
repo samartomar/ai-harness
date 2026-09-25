@@ -72,7 +72,10 @@ function catalog(): BaselineCatalog {
   });
 }
 
-function evidence(root: string, verdict: "pass" | "blocked" = "pass"): BaselineSourceEvidence {
+function evidence(
+  root: string,
+  verdict: "no-findings" | "has-findings" = "no-findings",
+): BaselineSourceEvidence {
   return {
     id: "ecc",
     owner: "affaan-m",
@@ -86,7 +89,8 @@ function evidence(root: string, verdict: "pass" | "blocked" = "pass"): BaselineS
         verdict,
         analyzers: [{ name: "fixture", version: "1" }],
         findings:
-          verdict === "blocked" ? [{ code: "AUTO_EXEC_HOOK", detail: "blocked fixture" }] : [],
+          verdict === "has-findings" ? [{ code: "AUTO_EXEC_HOOK", detail: "finding fixture" }] : [],
+        evidenceProblems: [],
       },
     ],
   };
@@ -132,7 +136,7 @@ describe("ECC install preview execution boundary", () => {
 
     expect(() =>
       generateAuthorizedEccInstallPreview(
-        { eccRoot: root, catalog: catalog(), evidence: evidence(root, "blocked") },
+        { eccRoot: root, catalog: catalog(), evidence: evidence(root, "has-findings") },
         { generate },
       ),
     ).toThrow("must pass");

@@ -1,6 +1,6 @@
 # Packaged-evidence parity fixtures
 
-Shared acceptance fixtures for `packaged-scanner-collection-evidence/v1` records (decision D25).
+Shared acceptance fixtures for `packaged-scanner-collection-evidence/v2` records (decision D25).
 The same JSON files, byte-identical, live in `@aihq/catalog` at
 `tests/fixtures/packaged-evidence-parity/`; change both copies together.
 

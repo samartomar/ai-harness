@@ -20,6 +20,7 @@ import {
   type VerifiedCiscoShardSarifV1,
   withCiscoShardJoinProjectionV1,
 } from "../trust/detectors.js";
+import { trustCodeClassV1 } from "../trust/evidence.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
 import type { BaselineCatalog, BaselineCatalogComponent } from "./catalog.js";
@@ -473,7 +474,27 @@ function analyzerReceipts(
     });
 }
 
-function blockingFindings(checks: readonly Check[]): BaselineEvidenceFinding[] {
+interface ComponentLabels {
+  findings: BaselineEvidenceFinding[];
+  evidenceProblems: BaselineEvidenceFinding[];
+}
+
+/**
+ * Split observed codes into the component's two labels (D50). An integrity
+ * failure means the evidence cannot be trusted, so the vet refuses to emit it.
+ */
+function labelFor(componentId: string, code: string, detail: string): keyof ComponentLabels {
+  const kind = trustCodeClassV1(code);
+  if (kind === "integrity") {
+    throw new Error(
+      `baseline component ${componentId}: evidence integrity failure ${code}: ${detail}`,
+    );
+  }
+  return kind === "evidence-problem" ? "evidenceProblems" : "findings";
+}
+
+function checkLabels(componentId: string, checks: readonly Check[]): ComponentLabels {
+  const labels: ComponentLabels = { findings: [], evidenceProblems: [] };
   const groups = new Map<string, Check[]>();
   for (const check of checks) {
     if (check.verdict !== "fail") continue;
@@ -482,12 +503,12 @@ function blockingFindings(checks: readonly Check[]): BaselineEvidenceFinding[] {
     group.push(check);
     groups.set(code, group);
   }
-  return [...groups.entries()].map(([code, group]) => {
+  for (const [code, group] of groups.entries()) {
     const first = group[0];
     const firstDetail = first?.detail?.trim() || first?.name || code;
     const detail =
       group.length === 1 ? firstDetail : `${group.length} findings; first: ${firstDetail}`;
-    return {
+    labels[labelFor(componentId, code, firstDetail)].push({
       code,
       ...(group.length > 1 ? { count: group.length } : {}),
       detail: detail.slice(0, 2_000),
@@ -497,13 +518,14 @@ function blockingFindings(checks: readonly Check[]): BaselineEvidenceFinding[] {
       ...(group.every((finding) => finding.fingerprint !== undefined)
         ? { fingerprints: group.map((finding) => finding.fingerprint as string) }
         : {}),
-    };
-  });
+    });
+  }
+  return labels;
 }
 
-function decisionFindings(scan: TrustScanResult): BaselineEvidenceFinding[] {
+function componentLabels(componentId: string, scan: TrustScanResult): ComponentLabels {
   if (scan.normalizedFindings === undefined || scan.policyDispositions === undefined) {
-    return blockingFindings(scan.checks);
+    return checkLabels(componentId, scan.checks);
   }
   const findingByFingerprint = new Map(
     scan.normalizedFindings.map((finding) => [finding.fingerprint, finding]),
@@ -541,22 +563,21 @@ function decisionFindings(scan: TrustScanResult): BaselineEvidenceFinding[] {
     });
     groups.set(code, group);
   }
-  return [...groups.entries()].map(([code, group]) => {
+  const labels: ComponentLabels = { findings: [], evidenceProblems: [] };
+  for (const [code, group] of groups.entries()) {
     const fingerprints = [...new Set(group.flatMap((entry) => entry.fingerprints))];
-    return {
+    labels[labelFor(componentId, code, group[0]?.detail ?? code)].push({
       code,
       ...(group.length > 1 ? { count: group.length } : {}),
       detail:
         group.length === 1
           ? (group[0]?.detail ?? code).slice(0, 2_000)
-          : `${group.length} policy-held findings; first: ${group[0]?.detail ?? code}`.slice(
-              0,
-              2_000,
-            ),
+          : `${group.length} findings; first: ${group[0]?.detail ?? code}`.slice(0, 2_000),
       ...(fingerprints.length === 1 ? { fingerprint: fingerprints[0] } : {}),
       fingerprints,
-    };
-  });
+    });
+  }
+  return labels;
 }
 
 export async function vetBaselineCatalog(
@@ -684,12 +705,12 @@ export async function vetBaselineCatalog(
       if (afterScan.treeSha256 !== tree.treeSha256) {
         throw new Error(`baseline component ${component.id} changed during vet scan`);
       }
-      const findings = decisionFindings(scan);
+      const { findings, evidenceProblems } = componentLabels(component.id, scan);
       components[index] = {
         id: component.id,
         paths: [...component.paths],
         treeSha256: tree.treeSha256,
-        verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
+        verdict: findings.length > 0 ? ("has-findings" as const) : ("no-findings" as const),
         analyzers: analyzerReceipts(
           scan.analyzersRun,
           versions,
@@ -698,6 +719,7 @@ export async function vetBaselineCatalog(
           scan.checks,
         ),
         findings,
+        evidenceProblems,
       };
     },
   );

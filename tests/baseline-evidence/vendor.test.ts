@@ -89,23 +89,25 @@ describe("shipped vendor baseline lock", () => {
     expect(verificationLoop).toBeDefined();
     if (verificationLoop === undefined) throw new Error("verification-loop evidence is missing");
     expect(verificationLoop).toMatchObject({
-      verdict: "pass",
+      verdict: "no-findings",
       analyzers: requiredAnalyzerReceipts("ecc", verificationLoop),
       findings: [],
     });
     const tddWorkflow = ecc?.components.find((component) => component.id === "skill:tdd-workflow");
-    expect(tddWorkflow).toMatchObject({ verdict: "pass", findings: [] });
+    expect(tddWorkflow).toMatchObject({ verdict: "no-findings", findings: [] });
     const documentProcessing = ecc?.components.find(
       (component) => component.id === "module:document-processing",
     );
-    expect(documentProcessing).toMatchObject({ verdict: "blocked" });
+    expect(documentProcessing).toMatchObject({ verdict: "has-findings" });
     expect(documentProcessing?.findings).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "trust.external-egress" })]),
     );
     expect(
       lock.sources
         .flatMap((source) => source.components)
-        .every((component) => component.verdict === "pass" || component.findings.length > 0),
+        .every(
+          (component) => (component.verdict === "has-findings") === component.findings.length > 0,
+        ),
     ).toBe(true);
     expect(
       lock.sources.every((source) =>
@@ -141,9 +143,9 @@ describe("shipped vendor baseline lock", () => {
     const lock = readVendorBaselineLock();
     const blocked = lock.sources
       .flatMap((source) => source.components)
-      .find((item) => item.verdict === "blocked");
-    if (blocked === undefined) throw new Error("missing blocked fixture component");
-    blocked.verdict = "pass";
+      .find((item) => item.verdict === "has-findings");
+    if (blocked === undefined) throw new Error("missing has-findings fixture component");
+    blocked.verdict = "no-findings";
     blocked.findings = [];
     const bytes = Buffer.concat([canonicalStrictJsonBytesV1(lock), Buffer.from("\n")]);
     expect(() =>

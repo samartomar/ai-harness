@@ -1,7 +1,7 @@
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
 import { adminBaselineEvidenceTimestampEpochV1 } from "./admin-baseline-evidence-cache-v1.js";
-import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "./workbench/contracts.js";
+import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "./workbench/contracts.js";
 
 export interface BaselineDisplayFactsV1 {
   readonly lock: BaselineEvidenceLock;
@@ -50,9 +50,9 @@ export function projectBaselineDisplayEvidenceV1(
       )
         continue;
       const id = `evidence:${assetId}`;
-      result[id] = EvidenceSummaryV1Schema.parse({
+      result[id] = EvidenceSummaryV2Schema.parse({
         id,
-        projectionVersion: "evidence-summary/v1",
+        projectionVersion: "evidence-summary/v2",
         subjects: [
           {
             assetId,
@@ -76,7 +76,12 @@ export function projectBaselineDisplayEvidenceV1(
             }
           : { state: "stale" },
         scan: {
-          outcome: component.verdict === "blocked" ? "failed" : fresh ? "pass" : "unknown",
+          outcome:
+            component.verdict === "has-findings"
+              ? "has-findings"
+              : fresh
+                ? "no-findings"
+                : "unknown",
           coverage: "complete",
           analyzers: component.analyzers.map(({ name, version }) => ({ name, version })),
         },

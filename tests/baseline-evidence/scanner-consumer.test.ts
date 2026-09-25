@@ -447,7 +447,10 @@ describe("Core Scanner baseline consumer", () => {
       expected: signed.expected,
     });
 
-    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass", "pass"]);
+    expect(evidence.components.map((component) => component.verdict)).toEqual([
+      "no-findings",
+      "no-findings",
+    ]);
     expect(evidence.components[0]?.analyzers).toEqual([
       {
         name: "aih-native",
@@ -486,7 +489,10 @@ describe("Core Scanner baseline consumer", () => {
       roots: signed.roots,
       expected: signed.expected,
     });
-    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass", "pass"]);
+    expect(evidence.components.map((component) => component.verdict)).toEqual([
+      "no-findings",
+      "no-findings",
+    ]);
   });
 
   it("refuses a Cisco annex naming a pre-upgrade Cisco lock", async () => {
@@ -528,7 +534,10 @@ describe("Core Scanner baseline consumer", () => {
       expected: signed.expected,
     });
 
-    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass", "pass"]);
+    expect(evidence.components.map((component) => component.verdict)).toEqual([
+      "no-findings",
+      "no-findings",
+    ]);
   });
 
   it("rejects source drift, replay, and a signed but unpinned analyzer identity", async () => {
@@ -637,7 +646,7 @@ async function consumeVector(
 describe("verified Scanner-publication annexes follow Scan's baseline rule (D24, S2j vector)", () => {
   it("completes Semgrep, SkillSpector and Cisco evidence for F without the top-level .git", async () => {
     const evidence = await consumeVector(vectorAnnexes());
-    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass"]);
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["no-findings"]);
   });
 
   it.each([
@@ -661,7 +670,7 @@ describe("verified Scanner-publication annexes follow Scan's baseline rule (D24,
     const evidence = await consumeVector(vectorAnnexes(), (root) =>
       symlinkSync("missing-object", join(root, ".git", "dangling"), "file"),
     );
-    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass"]);
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["no-findings"]);
   });
 
   it("refuses a source holding a link Scan's snapshot refuses, naming it", async () => {

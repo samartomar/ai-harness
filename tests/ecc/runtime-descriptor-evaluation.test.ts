@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { deriveEccRuntimeDeclaredEvaluationV1 } from "../../src/ecc/runtime-descriptor-evaluation.js";
 
 const raw = (value: string) => value.repeat(64).slice(0, 64);
-const report = (blocked = false) => ({
+const report = (hasFindings = false) => ({
   id: "ecc",
   owner: "affaan-m",
   repo: "ECC",
@@ -13,17 +13,19 @@ const report = (blocked = false) => ({
       id: "runtime:raw-a",
       paths: ["runtime/a"],
       treeSha256: raw("b"),
-      verdict: blocked ? ("blocked" as const) : ("pass" as const),
+      verdict: hasFindings ? ("has-findings" as const) : ("no-findings" as const),
       analyzers: [{ name: "semgrep@uvx", version: "1" }],
-      findings: blocked ? [{ code: "blocked", detail: "raw finding" }] : [],
+      findings: hasFindings ? [{ code: "trust.malicious-code", detail: "raw finding" }] : [],
+      evidenceProblems: [],
     },
     {
       id: "runtime:raw-b",
       paths: ["runtime/b"],
       treeSha256: raw("c"),
-      verdict: "pass" as const,
+      verdict: "no-findings" as const,
       analyzers: [{ name: "trivy@uvx", version: "2" }],
       findings: [],
+      evidenceProblems: [] as { code: string; detail: string }[],
     },
   ],
 });
@@ -44,23 +46,37 @@ describe("ECC runtime declared evaluation", () => {
       components,
     });
     expect(result.vendorLock.sources[0]?.components).toEqual([
-      expect.objectContaining({ id: "skill:alpha", verdict: "pass", treeSha256: raw("d") }),
-      expect.objectContaining({ id: "skill:beta", verdict: "pass", treeSha256: raw("e") }),
+      expect.objectContaining({ id: "skill:alpha", verdict: "no-findings", treeSha256: raw("d") }),
+      expect.objectContaining({ id: "skill:beta", verdict: "no-findings", treeSha256: raw("e") }),
     ]);
     expect(result.vendorLock.sources[0]?.components[0]?.analyzers).toEqual([
       { name: "semgrep@uvx", version: "1" },
     ]);
   });
 
-  it("keeps a mapped raw block and its full finding instead of inventing a pass", () => {
+  it("keeps a mapped raw finding as a has-findings label instead of inventing no findings", () => {
     const result = deriveEccRuntimeDeclaredEvaluationV1({
       rawReport: report(true),
       mappings,
       components,
     });
     expect(result.vendorLock.sources[0]?.components[0]).toMatchObject({
-      verdict: "blocked",
-      findings: [{ code: "blocked", detail: "raw finding" }],
+      verdict: "has-findings",
+      findings: [{ code: "trust.malicious-code", detail: "raw finding" }],
+      evidenceProblems: [],
+    });
+  });
+
+  it("carries a mapped raw evidence problem as its own label, not as a finding", () => {
+    const rawReport = report();
+    rawReport.components[1]!.evidenceProblems = [
+      { code: "trust.detector-unavailable", detail: "cisco did not run" },
+    ];
+    const result = deriveEccRuntimeDeclaredEvaluationV1({ rawReport, mappings, components });
+    expect(result.vendorLock.sources[0]?.components[1]).toMatchObject({
+      verdict: "no-findings",
+      findings: [],
+      evidenceProblems: [{ code: "trust.detector-unavailable", detail: "cisco did not run" }],
     });
   });
 

@@ -670,7 +670,7 @@ describe("Workbench reducer", () => {
       evidence: {
         "evidence:one": {
           id: "evidence:one",
-          projectionVersion: "evidence-summary/v1",
+          projectionVersion: "evidence-summary/v2",
           subjects: [
             {
               assetId: "control:one",

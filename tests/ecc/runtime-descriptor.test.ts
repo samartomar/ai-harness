@@ -34,9 +34,10 @@ function seal() {
         id: "runtime:raw",
         paths: ["runtime"],
         treeSha256: raw("b"),
-        verdict: "blocked" as const,
+        verdict: "has-findings" as const,
         analyzers: [{ name: "semgrep@uvx", version: "1" }],
         findings: [{ code: "unsafe", detail: "Original raw finding" }],
+        evidenceProblems: [],
       },
     ],
   };
@@ -100,13 +101,13 @@ function seal() {
 }
 
 describe("ECC runtime descriptor", () => {
-  it("retains raw blocked findings through the package-only containment mapping", () => {
+  it("retains raw has-findings labels through the package-only containment mapping", () => {
     const owner = {};
     registerPackagedEccRuntimeDescriptorsV1(owner, [seal()]);
     const [descriptor] = packagedEccRuntimeDescriptorsV1(owner);
     expect(descriptor?.evidence.rawReport.components[0]).toMatchObject({
       id: "runtime:raw",
-      verdict: "blocked",
+      verdict: "has-findings",
       findings: [{ code: "unsafe", detail: "Original raw finding" }],
     });
     expect(descriptor?.evidence.mappings).toEqual([

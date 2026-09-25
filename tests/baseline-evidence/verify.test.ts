@@ -31,10 +31,12 @@ function catalog(pin = "a".repeat(40)) {
   });
 }
 
-function lock(over: { hash?: string; verdict?: "pass" | "blocked"; pin?: string } = {}) {
-  const verdict = over.verdict ?? "pass";
+function lock(
+  over: { hash?: string; verdict?: "no-findings" | "has-findings"; pin?: string } = {},
+) {
+  const verdict = over.verdict ?? "no-findings";
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -49,7 +51,7 @@ function lock(over: { hash?: string; verdict?: "pass" | "blocked"; pin?: string 
             verdict,
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings:
-              verdict === "blocked"
+              verdict === "has-findings"
                 ? [
                     {
                       code: "trust.hidden-unicode",
@@ -57,6 +59,7 @@ function lock(over: { hash?: string; verdict?: "pass" | "blocked"; pin?: string 
                     },
                   ]
                 : [],
+            evidenceProblems: [],
           },
         ],
       },
@@ -133,7 +136,7 @@ describe("verifyBaselineComponents", () => {
       ],
     });
     const mixedLock = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "ecc",
@@ -145,15 +148,16 @@ describe("verifyBaselineComponents", () => {
               id: "skill:clean",
               paths: ["skills/clean"],
               treeSha256: hashComponentTree(root, ["skills/clean"]).treeSha256,
-              verdict: "pass",
+              verdict: "no-findings",
               analyzers: [{ name: "aih-native", version: "2.8.0" }],
               findings: [],
+              evidenceProblems: [],
             },
             {
               id: "skill:held",
               paths: ["skills/held"],
               treeSha256: hashComponentTree(root, ["skills/held"]).treeSha256,
-              verdict: "blocked",
+              verdict: "has-findings",
               analyzers: [{ name: "aih-native", version: "2.8.0" }],
               findings: [
                 {
@@ -161,6 +165,7 @@ describe("verifyBaselineComponents", () => {
                   detail: "SKILL body contains a leading ! auto-run line",
                 },
               ],
+              evidenceProblems: [],
             },
           ],
         },
@@ -193,7 +198,7 @@ describe("verifyBaselineComponents", () => {
     "fails closed on uncovered evidence at %s posture",
     (posture) => {
       const empty = parseBaselineEvidenceLock({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sources: [
           {
             id: "other",
@@ -205,9 +210,10 @@ describe("verifyBaselineComponents", () => {
                 id: "skill:other",
                 paths: ["skills/other"],
                 treeSha256: "c".repeat(64),
-                verdict: "pass",
+                verdict: "no-findings",
                 analyzers: [{ name: "aih-native", version: "2.7.0" }],
                 findings: [],
+                evidenceProblems: [],
               },
             ],
           },
@@ -223,7 +229,7 @@ describe("verifyBaselineComponents", () => {
 
   it("warns but does not invent an authorization for uncovered vibe installs", () => {
     const empty = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "other",
@@ -235,9 +241,10 @@ describe("verifyBaselineComponents", () => {
               id: "skill:other",
               paths: ["skills/other"],
               treeSha256: "c".repeat(64),
-              verdict: "pass",
+              verdict: "no-findings",
               analyzers: [{ name: "aih-native", version: "2.7.0" }],
               findings: [],
+              evidenceProblems: [],
             },
           ],
         },
@@ -253,7 +260,7 @@ describe("verifyBaselineComponents", () => {
   it.each(["vibe", "enterprise", "enterprise"] as const)(
     "never permits an exact component whose signed verdict is blocked at %s",
     (posture) => {
-      const result = verify(posture, lock({ verdict: "blocked" }));
+      const result = verify(posture, lock({ verdict: "has-findings" }));
       expect(result.checks).toEqual([
         expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
       ]);
@@ -328,7 +335,7 @@ describe("verifyBaselineComponents", () => {
           tier: "org",
           issuer: "github:acme/engineering-governance",
           evidenceSha256: "e".repeat(64),
-          lock: lock({ pin: newerPin, verdict: "blocked" }),
+          lock: lock({ pin: newerPin, verdict: "has-findings" }),
         },
       });
       expect(result.checks).toEqual([
@@ -344,7 +351,7 @@ describe("verifyBaselineComponents", () => {
       catalog: catalog(),
       componentIds: ["skill:clean"],
       posture: "enterprise",
-      vendorLock: lock({ verdict: "blocked" }),
+      vendorLock: lock({ verdict: "has-findings" }),
       vendorLockSha256: "f".repeat(64),
       orgEvidence: {
         tier: "org",

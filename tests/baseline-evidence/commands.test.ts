@@ -95,9 +95,10 @@ function evidence() {
         id: "skill:clean",
         paths: ["skills/clean"],
         treeSha256: hashComponentTree(sourceRoot, ["skills/clean"]).treeSha256,
-        verdict: "pass",
+        verdict: "no-findings",
         analyzers: [{ name: "aih-native", version: "2.7.0" }],
         findings: [],
+        evidenceProblems: [],
       },
     ],
   });
@@ -153,7 +154,7 @@ describe("baseline vet command plan", () => {
     );
     expect(existsSync(join(root, rel))).toBe(true);
     expect(JSON.parse(readFileSync(join(root, rel), "utf8"))).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [evidence()],
     });
     expect(result.execs).toHaveLength(0);

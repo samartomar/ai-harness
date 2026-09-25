@@ -67,7 +67,7 @@ function mixedCatalog() {
 
 function vendorLock(hash = hashComponentTree(root, ["skills/clean"]).treeSha256) {
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -79,9 +79,10 @@ function vendorLock(hash = hashComponentTree(root, ["skills/clean"]).treeSha256)
             id: "skill:clean",
             paths: ["skills/clean"],
             treeSha256: hash,
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings: [],
+            evidenceProblems: [],
           },
         ],
       },
@@ -93,7 +94,7 @@ function mixedVendorLock() {
   mkdirSync(join(root, "skills", "held"), { recursive: true });
   writeFileSync(join(root, "skills", "held", "SKILL.md"), "# Held\n");
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -105,15 +106,16 @@ function mixedVendorLock() {
             id: "skill:clean",
             paths: ["skills/clean"],
             treeSha256: hashComponentTree(root, ["skills/clean"]).treeSha256,
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "aih-native", version: "2.8.0" }],
             findings: [],
+            evidenceProblems: [],
           },
           {
             id: "skill:held",
             paths: ["skills/held"],
             treeSha256: hashComponentTree(root, ["skills/held"]).treeSha256,
-            verdict: "blocked",
+            verdict: "has-findings",
             analyzers: [{ name: "aih-native", version: "2.8.0" }],
             findings: [
               {
@@ -121,6 +123,7 @@ function mixedVendorLock() {
                 detail: "SKILL body contains a leading ! auto-run line",
               },
             ],
+            evidenceProblems: [],
           },
         ],
       },

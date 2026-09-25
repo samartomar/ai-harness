@@ -193,7 +193,7 @@ describe("fresh organization preparation custody", () => {
       const { assembly, result } = evidence(prepared);
       expect(result).toMatchObject({
         verification: { state: "verified" },
-        scan: { outcome: "pass", coverage: "complete" },
+        scan: { outcome: "no-findings", coverage: "complete" },
         qualification: { state: "unknown" },
       });
       expect(result.subjects[0]?.contentDigest).toBe(
@@ -253,7 +253,7 @@ describe("fresh organization preparation custody", () => {
       const prepared = prepareOrganizationManifestWithFreshScanV1(manifest, witness, now);
       expect(evidence(prepared).result).toMatchObject({
         verification: { state: "verified" },
-        scan: { outcome: "failed", coverage: "complete" },
+        scan: { outcome: "has-findings", coverage: "complete" },
       });
       const expired = prepareOrganizationManifestWithFreshScanV1(
         manifest,

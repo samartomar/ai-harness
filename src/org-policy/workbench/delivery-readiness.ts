@@ -1,8 +1,8 @@
 import { evidenceIsCurrentV1 } from "../../evidence-freshness.js";
 import {
   type AuthoringCatalogBundleV1,
-  type EvidenceSummaryV1,
-  EvidenceSummaryV1Schema,
+  type EvidenceSummaryV2,
+  EvidenceSummaryV2Schema,
 } from "./contracts.js";
 import {
   resolveWorkbenchEvidenceCompositionV1,
@@ -26,12 +26,12 @@ type AssetAssessment = {
   sourceId: string;
   sourceRevisionId: string;
   contentDigest: string;
-  report?: EvidenceSummaryV1;
+  report?: EvidenceSummaryV2;
   problem?: WorkbenchEvidenceCoverageProblemV1;
 };
 
 function reportProblem(
-  reports: readonly EvidenceSummaryV1[],
+  reports: readonly EvidenceSummaryV2[],
   invalid: boolean,
   clock: number,
 ): WorkbenchEvidenceCoverageProblemV1 | undefined {
@@ -65,15 +65,15 @@ export function inspectWorkbenchEvidenceCoverageV1(
 ) {
   const clock = Date.parse(now);
   if (!Number.isFinite(clock)) throw new Error("Evidence coverage requires a valid clock.");
-  const byAsset = new Map<string, EvidenceSummaryV1[]>();
+  const byAsset = new Map<string, EvidenceSummaryV2[]>();
   const invalidEvidenceIds: string[] = [];
   const invalidAssetIds = new Set<string>();
   for (const [id, value] of Object.entries(bundle.evidence)) {
-    const parsed = EvidenceSummaryV1Schema.safeParse(value);
+    const parsed = EvidenceSummaryV2Schema.safeParse(value);
     if (!parsed.success) {
       invalidEvidenceIds.push(id);
       // Subject diagnostics are parsed independently; never traverse malformed values.
-      const subjects = EvidenceSummaryV1Schema.shape.subjects.safeParse(
+      const subjects = EvidenceSummaryV2Schema.shape.subjects.safeParse(
         typeof value === "object" && value !== null ? value.subjects : undefined,
       );
       if (subjects.success)

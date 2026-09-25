@@ -7,6 +7,7 @@ import {
   dispositionForTrustFinding,
   normalizeTrustFindings,
   type RawScannerOccurrence,
+  trustCodeClassV1,
 } from "../../src/trust/evidence.js";
 
 const roots: string[] = [];
@@ -301,5 +302,56 @@ describe("trust evidence layers", () => {
     expect(dispositionForTrustFinding(finding("trust.legal-text-detector-finding")).level).toBe(
       "SUPPRESSED",
     );
+  });
+});
+
+describe("trust code classes (D50)", () => {
+  it.each([
+    "trust.auto-exec-hook",
+    "trust.dependency-confusion",
+    "trust.hidden-unicode",
+    "trust.malicious-code",
+    "trust.prompt-injection",
+    "trust.typosquat",
+    "trust.unpinned-dependency",
+    "trust.external-egress",
+    "trust.license-missing",
+    "trust.permission-risk",
+    "trust.skill-metadata-license",
+    "trust.untrusted-publisher",
+    "trust.cisco-finding",
+    "trust.detector-finding",
+    "trust.legal-text-detector-finding",
+    "trust.visible-unicode",
+    "trust.unreviewed-analyzer-rule",
+  ] as const)("classifies %s as a finding: information about the component", (code) => {
+    expect(trustCodeClassV1(code)).toBe("finding");
+  });
+
+  it.each([
+    "trust.detector-unavailable",
+    "trust.sandbox-smoke-unavailable",
+    "trust.sandbox-smoke-failed",
+    "trust.fetch-blocked",
+    "trust.unsigned-source",
+  ] as const)("classifies %s as an evidence problem: the evidence is incomplete", (code) => {
+    expect(trustCodeClassV1(code)).toBe("evidence-problem");
+  });
+
+  it.each([
+    "trust.source-changed",
+    "trust.source-drift",
+    "trust.fetch-metadata-missing",
+    "trust.fetch-metadata-unreadable",
+    "trust.fetch-metadata-malformed",
+    "trust.fetch-metadata-mismatched",
+  ] as const)("classifies %s as integrity: the evidence cannot be trusted", (code) => {
+    expect(trustCodeClassV1(code)).toBe("integrity");
+  });
+
+  it("leaves codes outside the trust lane unclassified", () => {
+    expect(trustCodeClassV1("mcp.policy-denied")).toBeUndefined();
+    expect(trustCodeClassV1("trust.unapproved-skill")).toBeUndefined();
+    expect(trustCodeClassV1("not-a-code")).toBeUndefined();
   });
 });

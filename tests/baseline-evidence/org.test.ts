@@ -89,7 +89,7 @@ function resolveWithPosture(input: OrgEvidenceInputWithPosture) {
 function defaultLock(): unknown {
   const catalog = baselineCatalogById("ecc");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -101,9 +101,10 @@ function defaultLock(): unknown {
             id: "skill:verification-loop",
             paths: ["skills/verification-loop"],
             treeSha256: "a".repeat(64),
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings: [],
+            evidenceProblems: [],
           },
         ],
       },
@@ -181,7 +182,7 @@ describe("resolveOrgBaselineEvidence", () => {
       tier: "org",
       issuer: "github:acme/engineering-governance",
       evidenceSha256: artifactSha256,
-      lock: { schemaVersion: 1 },
+      lock: { schemaVersion: 2 },
     });
   });
 
@@ -221,7 +222,7 @@ describe("resolveOrgBaselineEvidence", () => {
 
   it("rejects a signed lock newer than this build loudly, never as absent evidence", async () => {
     const lock = defaultLock() as { schemaVersion: number };
-    seedBundle({ ...lock, schemaVersion: 2 });
+    seedBundle({ ...lock, schemaVersion: 3 });
     const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
@@ -232,15 +233,15 @@ describe("resolveOrgBaselineEvidence", () => {
     expect(result.evidence).toBeUndefined();
     const failure = result.checks.find((check) => check.verdict === "fail");
     expect(failure?.code).toBe("baseline.evidence-schema-unsupported");
-    expect(failure?.detail).toContain("schema version 2");
-    expect(failure?.detail).toContain("version 1");
+    expect(failure?.detail).toContain("schema version 3");
+    expect(failure?.detail).toContain("version 2");
     // The misdiagnosis this floor exists to stop: skew must never be reported
     // as the absence it causes.
     expect(failure?.detail).not.toContain("contains no baseline evidence");
   });
 
   it("rejects a signed artifact this build cannot parse instead of silently skipping it", async () => {
-    seedBundle({ schemaVersion: 1, sources: [{ id: "ecc", componentsRenamed: [] }] });
+    seedBundle({ schemaVersion: 2, sources: [{ id: "ecc", componentsRenamed: [] }] });
     const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),

@@ -87,8 +87,8 @@ describe("vetBaselineCatalog", () => {
       repo: "ECC",
       pinnedSha: "d".repeat(40),
       components: [
-        { id: "skill:clean", verdict: "pass", findings: [] },
-        { id: "skill:blocked", verdict: "pass", findings: [] },
+        { id: "skill:clean", verdict: "no-findings", findings: [], evidenceProblems: [] },
+        { id: "skill:blocked", verdict: "no-findings", findings: [], evidenceProblems: [] },
       ],
     });
     expect(evidence.components[0]?.treeSha256).toBe(
@@ -97,7 +97,7 @@ describe("vetBaselineCatalog", () => {
     expect(evidence.components[0]?.analyzers).toEqual([{ name: "aih-native", version: "2.7.0" }]);
   });
 
-  it("preserves failing danger checks as a blocked verdict instead of acknowledging them", async () => {
+  it("labels failing danger checks as has-findings instead of acknowledging them", async () => {
     const danger: Check = {
       name: "trust.hidden-unicode",
       verdict: "fail",
@@ -116,7 +116,8 @@ describe("vetBaselineCatalog", () => {
 
     expect(evidence.components[1]).toMatchObject({
       id: "skill:blocked",
-      verdict: "blocked",
+      verdict: "has-findings",
+      evidenceProblems: [],
       findings: [
         {
           code: "trust.hidden-unicode",
@@ -127,7 +128,7 @@ describe("vetBaselineCatalog", () => {
     });
   });
 
-  it("treats a required unavailable detector failure as blocked evidence", async () => {
+  it("records a required unavailable detector as an evidence problem, not a finding", async () => {
     const unavailable: Check = {
       name: "trust detector skillspector",
       verdict: "fail",
@@ -139,7 +140,34 @@ describe("vetBaselineCatalog", () => {
       requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
-    expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
+    expect(evidence.components.every((component) => component.verdict === "no-findings")).toBe(
+      true,
+    );
+    expect(evidence.components[0]).toMatchObject({
+      findings: [],
+      evidenceProblems: [
+        {
+          code: "trust.detector-unavailable",
+          detail: "required detector skillspector unavailable",
+        },
+      ],
+    });
+  });
+
+  it("refuses to emit evidence when a component scan reports an integrity failure", async () => {
+    const drift: Check = {
+      name: "trust upstream drift",
+      verdict: "fail",
+      code: "trust.source-drift",
+      detail: "HEAD now resolves to another revision",
+    };
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: [drift] }),
+        requiredAnalyzers: ["aih-native"],
+        analyzerVersions: { "aih-native": "2.7.0" },
+      }),
+    ).rejects.toThrow(/evidence integrity.*trust.source-drift/);
   });
 
   it("summarizes repeated findings by code for a bounded shipped lock", async () => {
@@ -171,7 +199,7 @@ describe("vetBaselineCatalog", () => {
     ]);
   });
 
-  it("holds REVIEW dispositions and binds them to raw occurrence fingerprints", async () => {
+  it("labels REVIEW dispositions as findings bound to raw occurrence fingerprints", async () => {
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async ({ component }) => {
         const fingerprint = `finding:${component.id}`;
@@ -203,7 +231,9 @@ describe("vetBaselineCatalog", () => {
       analyzerVersions: { "aih-native": "2.7.0" },
     });
 
-    expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
+    expect(evidence.components.every((component) => component.verdict === "has-findings")).toBe(
+      true,
+    );
     expect(evidence.components[0]?.findings).toEqual([
       expect.objectContaining({
         code: "trust.external-egress",
@@ -436,7 +466,9 @@ describe("vetBaselineCatalog", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(scanTree).toHaveBeenCalledTimes(2);
     expect(seenCiscoUris).toEqual([["skills/clean/SKILL.md"], ["skills/blocked/SKILL.md"]]);
-    expect(evidence.components.every((component) => component.verdict === "pass")).toBe(true);
+    expect(evidence.components.every((component) => component.verdict === "no-findings")).toBe(
+      true,
+    );
   });
 
   it("does not run a source-wide Cisco scan when every exact receipt is reusable", async () => {
@@ -463,7 +495,7 @@ describe("vetBaselineCatalog", () => {
       scanTree,
       requiredAnalyzers: ["aih-native", "cisco@uvx"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [first] },
+      reuseFrom: { schemaVersion: 2, sources: [first] },
       sourceWideCisco: {
         analyzerLockSha256: "a".repeat(64),
         dispatch,
@@ -700,7 +732,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: mustNotScan,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(mustNotScan).not.toHaveBeenCalled();
@@ -727,7 +759,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanOnly,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanOnly).toHaveBeenCalledTimes(1);
@@ -758,7 +790,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: mustNotScan,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(mustNotScan).not.toHaveBeenCalled();
@@ -796,7 +828,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanBoth,
       requiredAnalyzers: ["aih-native", "skillspector@docker"],
       analyzerVersions: versionsR2,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanBoth).toHaveBeenCalledTimes(2);
@@ -845,7 +877,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanCiscoOnly,
       requiredAnalyzers,
       analyzerVersions: versionsR2,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanCiscoOnly).toHaveBeenCalledTimes(1);
@@ -873,7 +905,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanAll,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "native.new000000000b" },
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanAll).toHaveBeenCalledTimes(2);
@@ -889,7 +921,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
     ).toBe(true);
   });
 
-  it("preserves a blocked verdict and its findings byte-identically on reuse, never fabricating (bullet 5)", async () => {
+  it("preserves a has-findings verdict and its findings byte-identically on reuse, never fabricating (bullet 5)", async () => {
     const danger: Check = {
       name: "trust.hidden-unicode",
       verdict: "fail",
@@ -907,7 +939,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       analyzerVersions,
     });
     const blockedPrior = priorEvidence.components.find((c) => c.id === "skill:blocked");
-    expect(blockedPrior?.verdict).toBe("blocked");
+    expect(blockedPrior?.verdict).toBe("has-findings");
 
     const mustNotScan = vi.fn(async () => {
       throw new Error("must not rescan on full reuse");
@@ -916,18 +948,18 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: mustNotScan,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     const blocked = evidence.components.find((c) => c.id === "skill:blocked");
     expect(blocked).toEqual(blockedPrior);
-    expect(blocked?.verdict).toBe("blocked");
+    expect(blocked?.verdict).toBe("has-findings");
     expect(blocked?.findings).toEqual(blockedPrior?.findings);
   });
 
   it("never reuses a hand-crafted pass entry whose treeSha256 does not match the current tree", async () => {
     const staleLock = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       sources: [
         {
           id: "ecc",
@@ -939,17 +971,19 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
               id: "skill:clean",
               paths: ["skills/clean"],
               treeSha256: "0".repeat(64),
-              verdict: "pass" as const,
+              verdict: "no-findings" as const,
               analyzers: [{ name: "aih-native", version: analyzerVersions["aih-native"] }],
               findings: [],
+              evidenceProblems: [],
             },
             {
               id: "skill:blocked",
               paths: ["skills/blocked"],
               treeSha256: "1".repeat(64),
-              verdict: "pass" as const,
+              verdict: "no-findings" as const,
               analyzers: [{ name: "aih-native", version: analyzerVersions["aih-native"] }],
               findings: [],
+              evidenceProblems: [],
             },
           ],
         },
@@ -992,7 +1026,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanAll,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
       full: true,
     });
 
@@ -1021,7 +1055,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanOptions: { progress },
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     const lines = progress.mock.calls.map((call) => call[0] as string);
@@ -1060,7 +1094,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanOptions: { progress },
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
       full: true,
     });
 

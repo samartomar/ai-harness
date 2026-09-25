@@ -16,10 +16,13 @@ export interface PolicyAuthoringVetFinding {
   detail: string;
 }
 export interface PolicyAuthoringVet {
-  verdict: "pass" | "blocked";
+  /** Whether the vet reported findings: a label for the administrator, never a gate. */
+  verdict: "no-findings" | "has-findings";
   treeSha256: string;
   analyzers: Array<{ name: string; version: string }>;
   findings: PolicyAuthoringVetFinding[];
+  /** Problems with the evidence itself (a detector that did not run), kept apart from findings. */
+  evidenceProblems: PolicyAuthoringVetFinding[];
 }
 export interface PolicyAuthoringAsset {
   kind: PolicyAuthoringAssetKind;

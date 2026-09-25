@@ -161,7 +161,7 @@ export function prepareOrganizationManifestWithFreshScanV1(
         : { state: expired ? ("stale" as const) : ("missing" as const) };
     evidence[`evidence:${assetId}`] = {
       id: `evidence:${assetId}`,
-      projectionVersion: "evidence-summary/v1",
+      projectionVersion: "evidence-summary/v2",
       subjects: [
         {
           assetId,
@@ -181,9 +181,9 @@ export function prepareOrganizationManifestWithFreshScanV1(
       coveredPaths: [subject.path],
       verification,
       scan: passed
-        ? { outcome: "pass", coverage }
+        ? { outcome: "no-findings", coverage }
         : failed
-          ? { outcome: "failed", coverage }
+          ? { outcome: "has-findings", coverage }
           : { outcome: "unknown", coverage: "none" },
       qualification: { state: "unknown" },
       findings: [

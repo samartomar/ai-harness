@@ -321,7 +321,7 @@ function catalog() {
 
 function vendorLock() {
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -333,10 +333,11 @@ function vendorLock() {
           paths: item.paths,
           treeSha256: hashComponentTree(sourceRoot, componentIdentityPaths(sourceRoot, item.paths))
             .treeSha256,
-          verdict: item.id === BLOCKED.id ? "blocked" : "pass",
+          verdict: item.id === BLOCKED.id ? "has-findings" : "no-findings",
           analyzers: [{ name: "aih-native", version: "2.7.0" }],
           findings:
             item.id === BLOCKED.id ? [{ code: "malicious-code", detail: "blocked by vet" }] : [],
+          evidenceProblems: [],
         })),
       },
     ],
@@ -1886,8 +1887,9 @@ describe("the governed framework lifecycle for the Kiro target", () => {
           component.id === KIRO_RUNTIME.id
             ? {
                 ...component,
-                verdict: "blocked" as const,
+                verdict: "has-findings" as const,
                 findings: [{ code: "malicious-code", detail: "runtime held by vet" }],
+                evidenceProblems: [],
               }
             : component,
         ),

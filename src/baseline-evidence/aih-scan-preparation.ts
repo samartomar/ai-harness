@@ -477,7 +477,7 @@ export function authorPackagedAihScannerEvidenceRecordV1(
     unmappedDerivedAssets: output.coverage.unmappedDerivedAssets,
   };
   return encodePackagedScannerCollectionEvidenceRecordV1({
-    version: "packaged-scanner-collection-evidence/v1" as const,
+    version: "packaged-scanner-collection-evidence/v2" as const,
     authority: "display-only" as const,
     catalog: {
       ...output.catalog,

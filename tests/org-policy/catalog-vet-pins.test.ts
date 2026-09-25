@@ -30,19 +30,19 @@ describe("pinned Catalog vet verdicts", () => {
     }
   });
 
-  it("marks exactly the components the vet blocked", () => {
-    const blocked = allAssets().filter((asset) => asset.vet?.verdict === "blocked");
+  it("labels exactly the components the vet found findings in", () => {
+    const blocked = allAssets().filter((asset) => asset.vet?.verdict === "has-findings");
     const expected = readVendorBaselineLock()
       .sources.flatMap((source) => source.components)
-      .filter((component) => component.verdict === "blocked")
+      .filter((component) => component.verdict === "has-findings")
       .map((component) => component.id);
     expect(blocked.map((asset) => asset.id).sort()).toStrictEqual([...expected].sort());
     expect(blocked.length).toBeGreaterThan(0);
   });
 
-  it("retains a finding for every blocked component", () => {
+  it("retains a finding for every has-findings component", () => {
     for (const asset of allAssets()) {
-      if (asset.vet?.verdict !== "blocked") continue;
+      if (asset.vet?.verdict !== "has-findings") continue;
       expect(asset.vet.findings.length, `${asset.id} is blocked with no finding`).toBeGreaterThan(
         0,
       );

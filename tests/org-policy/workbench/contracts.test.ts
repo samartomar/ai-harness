@@ -32,7 +32,7 @@ function catalog() {
   const asset = bundle.assets.external!;
   bundle.evidence.evidence = {
     id: "evidence",
-    projectionVersion: "evidence-summary/v1",
+    projectionVersion: "evidence-summary/v2",
     subjects: [
       {
         assetId: asset.id,
@@ -118,7 +118,7 @@ it("accepts a tiny source-neutral catalog and rejects dangling, conflicting, uno
       b.evidence.evidence!.verification = { state: "missing", verifiedAt: "2026-09-04T00:00:00Z" };
     },
     (b) => {
-      b.evidence.evidence!.scan = { outcome: "pass", coverage: "partial" };
+      b.evidence.evidence!.scan = { outcome: "no-findings", coverage: "partial" };
     },
     (b) => {
       b.evidence.evidence!.scan.analyzers = [{ name: "unsafe\u202E", version: "1" }];

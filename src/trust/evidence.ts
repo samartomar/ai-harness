@@ -68,6 +68,52 @@ const SUPPRESSED_CODES = new Set<CheckCode>([
   "trust.legal-text-detector-finding",
 ]);
 
+/**
+ * What a trust code says (D50): a FINDING is information about the component;
+ * an EVIDENCE PROBLEM says the evidence is incomplete; an INTEGRITY failure says
+ * the evidence cannot be trusted. Findings and evidence problems are labels the
+ * consumer decides on; only integrity failures refuse evidence.
+ */
+export type TrustCodeClassV1 = "finding" | "evidence-problem" | "integrity";
+
+const TRUST_CODE_CLASSES_V1: Readonly<Record<string, TrustCodeClassV1>> = {
+  "trust.auto-exec-hook": "finding",
+  "trust.dependency-confusion": "finding",
+  "trust.hidden-unicode": "finding",
+  "trust.malicious-code": "finding",
+  "trust.prompt-injection": "finding",
+  "trust.typosquat": "finding",
+  "trust.unpinned-dependency": "finding",
+  "trust.external-egress": "finding",
+  "trust.license-missing": "finding",
+  "trust.permission-risk": "finding",
+  "trust.skill-metadata-license": "finding",
+  "trust.untrusted-publisher": "finding",
+  "trust.cisco-finding": "finding",
+  "trust.detector-finding": "finding",
+  "trust.legal-text-detector-finding": "finding",
+  "trust.visible-unicode": "finding",
+  "trust.unreviewed-analyzer-rule": "finding",
+  "trust.detector-unavailable": "evidence-problem",
+  "trust.sandbox-smoke-unavailable": "evidence-problem",
+  "trust.sandbox-smoke-failed": "evidence-problem",
+  "trust.fetch-blocked": "evidence-problem",
+  "trust.unsigned-source": "evidence-problem",
+  "trust.source-changed": "integrity",
+  "trust.source-drift": "integrity",
+  "trust.fetch-metadata-missing": "integrity",
+  "trust.fetch-metadata-unreadable": "integrity",
+  "trust.fetch-metadata-malformed": "integrity",
+  "trust.fetch-metadata-mismatched": "integrity",
+};
+
+/** The class of a trust code, or undefined for a code outside the trust lane. */
+export function trustCodeClassV1(code: string | undefined): TrustCodeClassV1 | undefined {
+  return code === undefined || !Object.hasOwn(TRUST_CODE_CLASSES_V1, code)
+    ? undefined
+    : TRUST_CODE_CLASSES_V1[code];
+}
+
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }

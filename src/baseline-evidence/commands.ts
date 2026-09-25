@@ -166,7 +166,7 @@ export async function baselineVetPlanForSource(
           sourceWideScan = scan;
         };
         const evidence: BaselineSourceEvidence = await vet(sourceRoot, catalog, vetOptions);
-        const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [evidence] });
+        const lock = parseBaselineEvidenceLock({ schemaVersion: 2, sources: [evidence] });
         const rel = reportPath(catalog);
         writeArtifact(digestCtx, rel, `${JSON.stringify(lock, null, 2)}\n`);
         const profileId = options.profileId ?? defaultProfileId(catalog);

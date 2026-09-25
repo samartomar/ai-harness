@@ -134,7 +134,7 @@ describe("shipped baseline installability", () => {
       (candidate) => candidate.id === "runtime:ecc-installer",
     );
     if (installer === undefined) throw new Error("ECC installer evidence missing from vendor lock");
-    installer.verdict = "blocked";
+    installer.verdict = "has-findings";
     installer.findings = [
       { code: "trust.synthetic-test-block", detail: "synthetic test-only block for issue #438" },
     ];
@@ -159,7 +159,7 @@ describe("shipped baseline installability", () => {
     if (component === undefined) {
       throw new Error("superpowers skill:brainstorming evidence missing");
     }
-    component.verdict = "blocked";
+    component.verdict = "has-findings";
     component.findings = [
       { code: "trust.synthetic-test-block", detail: "synthetic test-only active-profile block" },
     ];

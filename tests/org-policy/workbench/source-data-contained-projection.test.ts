@@ -43,7 +43,7 @@ function fixture(blocked = false) {
           id: "runtime:shared",
           paths: ["shared"],
           treeSha256: material.treeSha256,
-          verdict: blocked ? "blocked" : "pass",
+          verdict: blocked ? "has-findings" : "no-findings",
           analyzers: Object.entries(SCANNER_BASELINE_ANALYZER_VERSIONS)
             .filter(([name]) => name !== "cisco@uvx")
             .map(([name, version]) => ({ name, version })),
@@ -53,6 +53,7 @@ function fixture(blocked = false) {
                 detail: "Original broader component finding",
               }))
             : [],
+          evidenceProblems: [],
         },
       ],
     },
@@ -131,7 +132,7 @@ describe("source-level report projection after independent consumption", () => {
         id: component.id,
         paths: component.paths,
         treeSha256: hashComponentTree(input.sourceRoot, component.paths).treeSha256,
-        verdict: index === 0 ? "pass" : "blocked",
+        verdict: index === 0 ? "no-findings" : "has-findings",
         analyzers: Object.entries(SCANNER_BASELINE_ANALYZER_VERSIONS)
           .filter(([name]) => index === 0 || name !== "cisco@uvx")
           .map(([name, version]) => ({ name, version })),
@@ -139,6 +140,7 @@ describe("source-level report projection after independent consumption", () => {
           index === 0
             ? []
             : [{ code: "helper-finding", detail: "Original helper finding remains" }],
+        evidenceProblems: [],
       }));
       const publication = input.consumed.provenance[0];
       const request = input.requests[0];
@@ -172,7 +174,7 @@ describe("source-level report projection after independent consumption", () => {
       });
       const original = JSON.stringify(input.consumed);
       const result = Object.values(projectContainedScannerEvidenceV1(input));
-      expect(result[0]?.scan).toMatchObject({ coverage: "complete", outcome: "failed" });
+      expect(result[0]?.scan).toMatchObject({ coverage: "complete", outcome: "has-findings" });
       expect(result[0]?.findings.join(" ")).toContain("Original helper finding remains");
       expect(result[0]?.scan.reportSignedAt).toBe(publication.reportSignedAt);
       expect(result[0]?.scan.publishedAt).toBe(publication.attestedAt);
@@ -219,7 +221,7 @@ describe("source-level report projection after independent consumption", () => {
     expect(Object.keys(result)).toHaveLength(2);
     for (const summary of Object.values(result)) {
       expect(summary.scan).toMatchObject({
-        outcome: "failed",
+        outcome: "has-findings",
         coverage: "complete",
         scope: "published-component-containment",
         publishedComponentIds: ["runtime:shared"],

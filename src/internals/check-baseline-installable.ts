@@ -164,7 +164,7 @@ function evaluateCatalog(
     const exact =
       entry !== undefined && samePaths(entry.paths, component.paths) ? entry : undefined;
 
-    if (exact?.verdict === "pass") {
+    if (exact?.verdict === "no-findings") {
       authorizations.push({
         componentId: component.id,
         source: `${catalog.owner}/${catalog.repo}`,
@@ -176,7 +176,7 @@ function evaluateCatalog(
       });
       continue;
     }
-    if (exact?.verdict === "blocked") {
+    if (exact?.verdict === "has-findings") {
       const codes = [...new Set(exact.findings.map((finding) => finding.code))];
       // Accepted-with-conditions join (W4 ruling (e)) — mirrors verify.ts's
       // runtime join against the LOCK's recorded component digest (the release

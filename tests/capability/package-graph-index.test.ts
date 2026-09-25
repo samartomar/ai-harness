@@ -27,7 +27,7 @@ function risk(
       sha256: evidenceSha256,
       subjectDigest: { algorithm: "git-sha1", value: subjectValue },
     },
-    verdict: "warn",
+    verdict: "has-findings",
     findings: [{ code: "trust.zeta", count: 2 }, { code: "trust.alpha" }],
   };
 }

@@ -3,7 +3,7 @@
   "structure": "refused",
   "coreAdmission": "refused",
   "record": {
-    "version": "packaged-scanner-collection-evidence/v1",
+    "version": "packaged-scanner-collection-evidence/v2",
     "authority": "display-only",
     "catalog": {
       "id": "aih",
@@ -83,7 +83,7 @@
             "catalog.json"
           ],
           "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "verdict": "pass",
+          "verdict": "has-findings",
           "analyzers": [
             {
               "name": "scanner",
@@ -101,7 +101,8 @@
                 "fp-2"
               ]
             }
-          ]
+          ],
+          "evidenceProblems": []
         },
         {
           "id": "component:second",
@@ -109,14 +110,15 @@
             "catalog.json"
           ],
           "treeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-          "verdict": "pass",
+          "verdict": "no-findings",
           "analyzers": [
             {
               "name": "scanner",
               "version": "1"
             }
           ],
-          "findings": []
+          "findings": [],
+          "evidenceProblems": []
         }
       ]
     },
@@ -155,7 +157,7 @@
         "requestSha256": "2222222222222222222222222222222222222222222222222222222222222222",
         "publicationSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "receiptSha256": "4444444444444444444444444444444444444444444444444444444444444444",
-        "reportComponentDigest": "sha256:bf63997977f45e1bda13c848cb44f2c9b87ca70e5b6c0fec0e6b0522a4013045"
+        "reportComponentDigest": "sha256:2cb2d891fa55c619ec4cbb8169434cec5ed259ba7466f77d73284d4915c2f5de"
       },
       {
         "componentId": "component:second",
@@ -165,7 +167,7 @@
         "requestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
         "publicationSha256": "1111111111111111111111111111111111111111111111111111111111111111",
         "receiptSha256": "5555555555555555555555555555555555555555555555555555555555555555",
-        "reportComponentDigest": "sha256:d2c59a0e59428f773f631099c545eb75b80e0b0899f8f42494962775f9f8a7c2"
+        "reportComponentDigest": "sha256:3854321dcfa0c9427bd88f06aff7254529891668b3be6241a6267f10686816c1"
       }
     ],
     "verification": {

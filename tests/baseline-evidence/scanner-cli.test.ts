@@ -430,7 +430,7 @@ describe("baseline Scanner bridge CLI", () => {
     ]);
 
     expect(mocks.lockParse).toHaveBeenCalledWith({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         { id: "ecc", pinnedSha: PIN },
         { id: "superpowers", pinnedSha: "b".repeat(40) },
@@ -439,7 +439,7 @@ describe("baseline Scanner bridge CLI", () => {
     expect(mocks.generatePreview).toHaveBeenCalledWith(
       expect.objectContaining({ eccRoot, evidence: { id: "ecc", pinnedSha: PIN } }),
     );
-    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ schemaVersion: 1 });
+    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ schemaVersion: 2 });
     expect(JSON.parse(readFileSync(previewOutput, "utf8"))).toMatchObject({
       format: "aih-ecc-install-preview",
     });

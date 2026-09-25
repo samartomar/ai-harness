@@ -560,7 +560,7 @@ export function authorPackagedScannerCollectionEvidenceRecordV1(
     unmappedDerivedAssets: output.coverage.unmappedDerivedAssets,
   };
   return encodePackagedScannerCollectionEvidenceRecordV1({
-    version: "packaged-scanner-collection-evidence/v1",
+    version: "packaged-scanner-collection-evidence/v2",
     authority: "display-only",
     catalog: {
       ...output.catalog,

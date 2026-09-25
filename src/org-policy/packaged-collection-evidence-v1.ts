@@ -18,7 +18,7 @@ import {
 } from "../contract/strict-json-v1.js";
 import { evidenceExpiryV1, isExactUtcTimestampV1 } from "../evidence-freshness.js";
 import { packagedScannerCollectionEvidenceInputV1 } from "./packaged-collection-evidence-data.js";
-import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "./workbench/contracts.js";
+import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "./workbench/contracts.js";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
@@ -153,7 +153,7 @@ const catalogSourceSchema = z
 function collectionEvidenceRecordSchema(publication: typeof publicationStructureSchema) {
   return z
     .object({
-      version: z.literal("packaged-scanner-collection-evidence/v1"),
+      version: z.literal("packaged-scanner-collection-evidence/v2"),
       authority: z.literal("display-only"),
       catalog: z
         .object({
@@ -632,9 +632,9 @@ export function projectScannerCollectionEvidenceV1(
       for (const subject of componentSubjectsV1(component)) {
         if (!exactAsset(bundle, subject, record)) continue;
         const id = `evidence:${subject.assetId}`;
-        result[id] = EvidenceSummaryV1Schema.parse({
+        result[id] = EvidenceSummaryV2Schema.parse({
           id,
-          projectionVersion: "evidence-summary/v1",
+          projectionVersion: "evidence-summary/v2",
           subjects: [subject],
           evidenceDigest: `sha256:${canonicalStrictJsonSha256V1({ record: recordDigest, component, observation, ...("subject" in component ? {} : { subject }) })}`,
           coveredPaths: [...component.paths].sort(),
@@ -645,7 +645,7 @@ export function projectScannerCollectionEvidenceV1(
             contextDigest: `sha256:${canonicalStrictJsonSha256V1({ record: recordDigest, publication: observation.publicationSha256, receipt: observation.receiptSha256 })}`,
           },
           scan: {
-            outcome: report.verdict === "blocked" ? "failed" : "pass",
+            outcome: report.verdict,
             coverage: "complete",
             analyzers: [...report.analyzers].sort((left, right) => {
               const leftKey = `${left.name}\u0000${left.version}`;

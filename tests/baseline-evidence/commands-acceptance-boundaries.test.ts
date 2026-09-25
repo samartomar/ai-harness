@@ -97,9 +97,10 @@ function evidence(sourceCatalog = catalog()) {
       id: component.id,
       paths: component.paths,
       treeSha256: hashComponentTree(sourceRoot, component.paths).treeSha256,
-      verdict: "pass",
+      verdict: "no-findings",
       analyzers: [{ name: "aih-native", version: "2.7.0" }],
       findings: [],
+      evidenceProblems: [],
     })),
   });
 }

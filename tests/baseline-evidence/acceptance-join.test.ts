@@ -54,7 +54,7 @@ function catalog() {
 
 function blockedLock(hash = subtreeHash()) {
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -66,7 +66,7 @@ function blockedLock(hash = subtreeHash()) {
             id: "skill:risky",
             paths: ["skills/risky"],
             treeSha256: hash,
-            verdict: "blocked",
+            verdict: "has-findings",
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings: CODES.map((code) => ({
               code,
@@ -74,6 +74,7 @@ function blockedLock(hash = subtreeHash()) {
               fingerprint: `finding:${code}`,
               fingerprints: [`finding:${code}`],
             })),
+            evidenceProblems: [],
           },
         ],
       },
@@ -132,7 +133,7 @@ function verify(decisions: AcceptanceDecision[], lock = blockedLock()) {
 describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
   it("keeps a signed vet pass installable with no acceptance involved", () => {
     const lock = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "ecc",
@@ -144,9 +145,10 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
               id: "skill:risky",
               paths: ["skills/risky"],
               treeSha256: subtreeHash(),
-              verdict: "pass",
+              verdict: "no-findings",
               analyzers: [{ name: "aih-native", version: "2.7.0" }],
               findings: [],
+              evidenceProblems: [],
             },
           ],
         },
