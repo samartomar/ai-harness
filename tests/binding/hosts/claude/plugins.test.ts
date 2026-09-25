@@ -409,24 +409,24 @@ describe("bindPlugin — disposition authorization (D12) refused before any upst
     expect(calls).toHaveLength(0);
   });
 
-  it("rejects a blocked-verdict disposition (danger floor) and runs no CLI", async () => {
+  it("binds a disposition carrying a critical finding and keeps its block label", async () => {
     const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" }, [
       producedCritical,
     ]);
     const { runner, calls } = recordingRunner();
+    expect(disposition.verdict).toBe("block");
 
-    await expect(
-      bindPlugin(
-        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-        {
-          root,
-          runner,
-          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
-          locateCache: () => resolved.treePath,
-        },
-      ),
-    ).rejects.toBeInstanceOf(BindingScanError);
-    expect(calls).toHaveLength(0);
+    const result = await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
+    );
+    expect(calls[0]).toEqual(["claude", "plugin", "marketplace", "add", resolved.treePath]);
+    expect(result.identity.match).toBe(true);
   });
 });
 

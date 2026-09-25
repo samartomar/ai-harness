@@ -232,7 +232,7 @@ describe("adapter contract — provision authorization (D12 code path)", () => {
     await expect(adapter.provision(request, disposition)).rejects.toBeInstanceOf(BindingScanError);
   });
 
-  it("rejects a block-verdict disposition", async () => {
+  it("provisions a block-labelled disposition", async () => {
     const adapter = createFakeAdapter({
       framework: "ecc",
       adapterType: "host-plugin",
@@ -244,10 +244,11 @@ describe("adapter contract — provision authorization (D12 code path)", () => {
       allowIncompleteAtVibe: true,
     });
     const request: ProvisionRequest = { context: { declaration: eccDeclaration() }, resolved };
-    await expect(adapter.provision(request, blocked)).rejects.toBeInstanceOf(BindingScanError);
+    expect(blocked.verdict).toBe("block");
+    await expect(adapter.provision(request, blocked)).resolves.toBeDefined();
   });
 
-  it("handles incomplete coverage per posture", async () => {
+  it("labels incomplete coverage per posture and provisions either way", async () => {
     const adapter = createFakeAdapter({
       framework: "ecc",
       adapterType: "host-plugin",
@@ -262,12 +263,14 @@ describe("adapter contract — provision authorization (D12 code path)", () => {
     });
     await expect(adapter.provision(request, vibeAllows)).resolves.toBeDefined();
 
-    const enterpriseBlocks = await makeDisposition([producedClean, missingDim], {
+    const enterpriseLabels = await makeDisposition([producedClean, missingDim], {
       posture: "enterprise",
     });
-    await expect(adapter.provision(request, enterpriseBlocks)).rejects.toBeInstanceOf(
-      BindingScanError,
+    expect(enterpriseLabels.selectedProfileGate).toBe("BLOCK");
+    expect(enterpriseLabels.findings.some((finding) => finding.coverage === "incomplete")).toBe(
+      true,
     );
+    await expect(adapter.provision(request, enterpriseLabels)).resolves.toBeDefined();
   });
 });
 

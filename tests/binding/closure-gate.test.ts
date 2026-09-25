@@ -15,7 +15,6 @@ import {
 import {
   type AcceptedContentFinding,
   assertProvisionAuthorized,
-  BindingScanError,
   type DimensionReport,
   resolveGitSource,
   runFastScanGate,
@@ -698,9 +697,30 @@ describe("W4 full-tree closure reproduces the legacy verdict (byte-identical out
     expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).not.toThrow();
   });
 
-  it("a block disposition refuses provisioning under both models", async () => {
+  it("a BLOCK-labelled disposition provisions under both models and keeps its label", async () => {
     const { legacy, fullTree } = await bothGates({ "SKILL.md": `# s\n${HIDDEN}` });
-    expect(() => assertProvisionAuthorized(legacy, legacy.digest)).toThrow(BindingScanError);
-    expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).toThrow(BindingScanError);
+    expect(legacy.selectedProfileGate).toBe("BLOCK");
+    expect(fullTree.selectedProfileGate).toBe("BLOCK");
+    expect(legacy.rawSourceScan).toBe("FINDINGS_PRESENT");
+    expect(() => assertProvisionAuthorized(legacy, legacy.digest)).not.toThrow();
+    expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).not.toThrow();
+  });
+
+  it("refuses a disposition whose accepted conditions were altered after the gate produced it", async () => {
+    const skill = `# s\n${HIDDEN}`;
+    const accepted: AcceptedContentFinding[] = [
+      {
+        repository: "test/w4",
+        code: "trust.hidden-unicode",
+        path: "SKILL.md",
+        fileSha256: sha256Lf(skill),
+      },
+    ];
+    const { fullTree } = await bothGates({ "SKILL.md": skill, "README.md": "hi\n" }, accepted);
+    expect(fullTree.selectedProfileGate).toBe("ALLOW_WITH_CONDITIONS");
+    for (const finding of fullTree.findings) (finding as { accepted?: boolean }).accepted = false;
+    expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).toThrow(
+      /was altered after the scan gate produced it/,
+    );
   });
 });

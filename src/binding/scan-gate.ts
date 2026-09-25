@@ -35,10 +35,10 @@ import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug }
  *
  * The {@link ScanDisposition} is brand-protected: it can only be minted inside
  * this module, and `provision` must revalidate it at runtime (brand present, its
- * digest equal to the resolved source digest, and its SELECTED-PROFILE gate
- * authorizing — ALLOW, or ALLOW_WITH_CONDITIONS with its conditions still in
- * force) before it runs any upstream code. A forged, blocked, or stale token
- * fails closed. W5 (a2) adds the closure-aware disposition: the raw source scan
+ * digest equal to the resolved source digest, and an ALLOW_WITH_CONDITIONS
+ * disposition still carrying the conditions it names) before it runs any upstream
+ * code. A forged, altered or stale token fails closed; the gate value and the
+ * findings are labels that never refuse (D50). W5 (a2) adds the closure-aware disposition: the raw source scan
  * and the selected-profile gate are reported separately, and only the executed/
  * loaded closure (plus unresolved reachability) gates — see `closure/`.
  */
@@ -451,11 +451,11 @@ export type ScanCoverage = "complete" | "incomplete";
 export type ScanSeverity = "info" | "low" | "medium" | "high" | "critical";
 
 /**
- * The two independent (a2) outcomes. `rawSourceScan` describes the WHOLE hashed
- * tree (honest: findings present or not); `selectedProfileGate` is the actionable
- * verdict for the selected install/runtime closure — the only one that authorizes
- * provisioning. `ALLOW_WITH_CONDITIONS` means "allowed because the named accepted
- * runtime findings were in force" (see {@link assertProvisionAuthorized}).
+ * The two independent (a2) outcomes, both labels. `rawSourceScan` describes the WHOLE
+ * hashed tree (findings present or not); `selectedProfileGate` labels the selected
+ * install/runtime closure: `BLOCK` when an unaccepted finding at the policy threshold or
+ * incomplete coverage is present, `ALLOW_WITH_CONDITIONS` when accepted runtime findings
+ * are in force. Neither refuses provisioning (D50; see {@link assertProvisionAuthorized}).
  */
 export type RawSourceOutcome = "FINDINGS_PRESENT" | "CLEAN";
 export type SelectedProfileGate = "ALLOW" | "ALLOW_WITH_CONDITIONS" | "BLOCK";
@@ -1413,14 +1413,13 @@ function computeClosureForSource(
 // -- Provision authorization guard (D12 code-path invariant) -----------------
 
 /**
- * The gate every adapter's `provision` MUST pass before running any upstream
- * code: the disposition must be genuine (branded by this module), its digest must
- * equal the EXACT resolved source digest being provisioned, and its
- * SELECTED-PROFILE gate must authorize. `BLOCK` fails closed; `ALLOW` passes;
- * `ALLOW_WITH_CONDITIONS` passes only when every condition it named is still in
- * force — i.e. each `requiredAcceptanceKeys` entry corresponds to a finding the
- * disposition actually carries as accepted (a tamper/integrity check). A legacy
- * disposition with no `selectedProfileGate` falls back to its `verdict`.
+ * The integrity check every adapter's `provision` MUST pass before running any
+ * upstream code: the disposition must be genuine (branded by this module), its
+ * digest must equal the EXACT resolved source digest being provisioned, and an
+ * `ALLOW_WITH_CONDITIONS` disposition must still carry, as accepted findings, every
+ * condition it names (a tamper check). The selected-profile gate value itself —
+ * `ALLOW`, `ALLOW_WITH_CONDITIONS` or `BLOCK` — is a label with the findings and
+ * coverage; it never refuses (D50).
  */
 export function assertProvisionAuthorized(
   disposition: ScanDisposition,
@@ -1436,18 +1435,15 @@ export function assertProvisionAuthorized(
       `refusing to provision: scan disposition digest ${disposition.digest} does not match the resolved source digest ${expectedDigest}`,
     );
   }
+  // The gate value is the disposition's label for the selected closure (V1 names
+  // kept); a BLOCK label travels with the findings and never refuses (D50).
   const gate: SelectedProfileGate =
     disposition.selectedProfileGate ?? (disposition.verdict === "allow" ? "ALLOW" : "BLOCK");
-  if (gate === "BLOCK") {
-    throw new BindingScanError(
-      `refusing to provision: selected-profile gate is "BLOCK" (verdict "${disposition.verdict}")`,
-    );
-  }
   if (gate === "ALLOW_WITH_CONDITIONS") {
     const required = disposition.closure?.requiredAcceptanceKeys ?? [];
     if (required.length === 0) {
       throw new BindingScanError(
-        "refusing to provision: ALLOW_WITH_CONDITIONS disposition names no acceptance conditions",
+        "refusing to provision: the scan disposition was altered after the scan gate produced it — it claims accepted conditions but names none",
       );
     }
     const acceptedKeys = new Set(
@@ -1465,7 +1461,7 @@ export function assertProvisionAuthorized(
     const unmet = required.filter((key) => !acceptedKeys.has(key));
     if (unmet.length > 0) {
       throw new BindingScanError(
-        `refusing to provision: ${unmet.length} ALLOW_WITH_CONDITIONS acceptance condition(s) are no longer in force`,
+        `refusing to provision: the scan disposition was altered after the scan gate produced it — ${unmet.length} accepted condition(s) it names are not among its accepted findings`,
       );
     }
   }

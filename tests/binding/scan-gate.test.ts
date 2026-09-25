@@ -848,7 +848,7 @@ describe("provision authorization guard (D12 code-path invariant)", () => {
     expect(() => assertProvisionAuthorized(disposition, "f".repeat(64))).toThrow(BindingScanError);
   });
 
-  it("rejects a block verdict", async () => {
+  it("provisions a block-labelled disposition and keeps the label", async () => {
     initGitRepo(repoDir, { "SKILL.md": "# skill\n" });
     const resolved = await resolveGitSource(
       { repository: repoDir, ref: "HEAD" },
@@ -860,7 +860,9 @@ describe("provision authorization guard (D12 code-path invariant)", () => {
       { posture: "enterprise" },
       gateDeps([producedCritical]),
     );
-    expect(() => assertProvisionAuthorized(blocked, src.digest)).toThrow(BindingScanError);
+    expect(blocked.verdict).toBe("block");
+    expect(blocked.findings.length).toBeGreaterThan(0);
+    expect(() => assertProvisionAuthorized(blocked, src.digest)).not.toThrow();
   });
 
   it("rejects a forged, structurally identical disposition with no brand", async () => {
