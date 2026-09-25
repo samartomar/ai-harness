@@ -108,6 +108,10 @@ try {
   const installed = join(consumer, "node_modules", "@aihq", "core");
   const cli = join(installed, "dist", "cli.js");
   if (!existsSync(cli)) throw new Error("installed Core CLI missing");
+  // The framework plugins ship inside Core (D71); a pack before their build would lack them.
+  for (const relative of ["packages/framework-ecc/dist/index.js", "packages/framework-superpowers/dist/index.js"]) {
+    if (!existsSync(join(installed, relative))) throw new Error(`installed Core lacks its bundled framework plugin: ${relative}`);
+  }
   for (const relative of [
     "dist/default-catalog-preassembly.generated.cjs",
     "dist/packaged-source-data-data.json",
@@ -133,7 +137,7 @@ try {
     }
   }
   const receipt = { ok: true, version, archiveSha256, archiveRetained: Boolean(evidenceDir),
-    installedPackageSource: "disposable consumer", checks: 9 };
+    installedPackageSource: "disposable consumer", checks: 10 };
   if (evidenceDir) {
     const evidenceArchive = join(evidenceDir, `core-policy-${archiveSha256}.tgz`);
     const evidenceReceipt = join(evidenceDir, `core-policy-${archiveSha256}.json`);

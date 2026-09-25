@@ -38,24 +38,21 @@
  * so this tool records that refusal and never asserts a full ECC lifecycle success.
  *
  * usage:
- *   node tools/verify-packed-catalog-boundary.mjs --scan <aihq-scan.tgz> --catalog <aihq-catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <aihq-core.tgz> --ecc-plugin <aihq-framework-ecc.tgz> | --stage-from <core-repo> [--core-version 0.7.0]) [--work <dir>] [--keep]
+ *   node tools/verify-packed-catalog-boundary.mjs --scan <aihq-scan.tgz> --catalog <aihq-catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <aihq-core.tgz> | --stage-from <core-repo> [--core-version 0.7.0]) [--work <dir>] [--keep]
  *
  * `--stage-from` builds the given Core checkout's dist with its own tsup config
- * and declaration emit into a staging directory and packs that; it never writes
- * into the checkout. The work directory must not be inside a git repository.
- * Every consumer also installs `@aihq/framework-ecc`: the ECC route is the
- * plugin's, and the plugin reaches the Catalog only through Core. `--stage-from`
- * builds and packs it from the checkout's `packages/framework-ecc`; with `--core`,
- * pass its tarball as `--ecc-plugin`. No install bypasses peer validation: with
- * `--stage-from`, the staged Core (a copy; the checkout's manifest is never
- * edited) is versioned `<--core-version, default 0.7.0>+<checkout short sha>`,
- * which satisfies the plugin's `@aihq/core` peer range while naming the
- * checkout it was built from (a `-<sha>` prerelease would not satisfy it); a
- * `--core` tarball must satisfy it as it is. The one deliberately out-of-range
- * package, `--incompatible-catalog`, is first shown to be refused by npm itself,
- * then added on its own (the only `--legacy-peer-deps`) to a consumer whose
- * Core and plugin were installed peer-validated, so Core's runtime refusal of it
- * can be exercised.
+ * and declaration emit, and both framework plugins with theirs, into a staging
+ * directory and packs that; it never writes into the checkout. The work
+ * directory must not be inside a git repository. The ECC route is the ECC
+ * plugin's, which ships inside @aihq/core (D71) and reaches the Catalog only
+ * through Core, so every consumer has it with Core itself. The staged Core (a
+ * copy; the checkout's manifest is never edited) is versioned
+ * `<--core-version, default 0.7.0>+<checkout short sha>`, naming the checkout it
+ * was built from. No install bypasses peer validation. The one deliberately
+ * out-of-range package, `--incompatible-catalog`, is first shown to be refused
+ * by npm itself, then added on its own (the only `--legacy-peer-deps`) to a
+ * consumer whose Core was installed peer-validated, so Core's runtime refusal
+ * of it can be exercised.
  *
  * Prints one JSON summary line last; exits non-zero if any check fails.
  */
@@ -174,11 +171,10 @@ const catalogTarball = option("--catalog");
 const incompatibleCatalogTarball = option("--incompatible-catalog");
 const coreTarballArg = option("--core");
 const stageFrom = option("--stage-from");
-const eccPluginTarballArg = option("--ecc-plugin");
 const coreVersionBase = option("--core-version") ?? "0.7.0";
-if (!scanTarball || !catalogTarball || (!coreTarballArg) === !stageFrom || (coreTarballArg !== undefined && !eccPluginTarballArg)) {
+if (!scanTarball || !catalogTarball || (!coreTarballArg) === !stageFrom) {
   process.stderr.write(
-    "usage: verify-packed-catalog-boundary.mjs --scan <scan.tgz> --catalog <catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <core.tgz> --ecc-plugin <framework-ecc.tgz> | --stage-from <core-repo> [--core-version 0.7.0]) [--work <dir>] [--keep]\n",
+    "usage: verify-packed-catalog-boundary.mjs --scan <scan.tgz> --catalog <catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <core.tgz> | --stage-from <core-repo> [--core-version 0.7.0]) [--work <dir>] [--keep]\n",
   );
   process.exit(2);
 }
@@ -212,7 +208,6 @@ try {
   // ---- Core tarball ------------------------------------------------------
   let coreTarball = coreTarballArg === undefined ? undefined : resolve(coreTarballArg);
   let stagedCoreVersion;
-  let eccPluginTarball = eccPluginTarballArg === undefined ? undefined : resolve(eccPluginTarballArg);
   if (stageFrom !== undefined) {
     const repo = resolve(stageFrom);
     const stage = join(work, "stage");
@@ -225,15 +220,22 @@ try {
       run(process.execPath, [join(repo, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.dts.json", "--outDir", join(stage, "dist")], repo),
       "declaration emit",
     );
+    // The framework plugins ship inside Core, each built at its source layout.
+    for (const directory of ["packages/framework-ecc", "packages/framework-superpowers"])
+      must(
+        run(process.execPath, [join(repo, "node_modules/tsup/dist/cli-default.js"), "--out-dir", join(stage, directory, "dist")], join(repo, directory)),
+        `${directory} tsup`,
+      );
     cpSync(join(repo, "schemas"), join(stage, "schemas"), { recursive: true });
     const packageManifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
-    // The staged copy carries a version inside the plugin's peer range, with the
-    // checkout's short sha as build metadata; the checkout's manifest is untouched.
+    // The staged copy carries the release version with the checkout's short sha
+    // as build metadata; the checkout's manifest is untouched.
     const shortSha = must(run("git", ["-C", repo, "rev-parse", "--short=8", "HEAD"], repo), "git rev-parse").trim();
     stagedCoreVersion = `${coreVersionBase}+${shortSha}`;
     writeFileSync(join(stage, "package.json"), `${JSON.stringify({ ...packageManifest, version: stagedCoreVersion }, null, 2)}\n`);
     for (const entry of packageManifest.files ?? []) {
-      if (entry === "dist" || entry === "schemas" || entry.startsWith("!")) continue;
+      // Build outputs come from the builds above, never from whatever the checkout holds.
+      if (/^(packages\/[^/]+\/)?dist$/.test(entry) || entry === "schemas" || entry.startsWith("!")) continue;
       const source = join(repo, entry);
       if (!existsSync(source)) continue;
       cpSync(source, join(stage, entry), { recursive: true });
@@ -242,31 +244,10 @@ try {
       must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], stage), "npm pack"),
     );
     coreTarball = join(work, packed[0].filename);
-    // The ECC framework plugin, built the same way from its own package.
-    const pluginSource = join(repo, "packages", "framework-ecc");
-    const pluginStage = join(work, "stage-framework-ecc");
-    mkdirSync(pluginStage, { recursive: true });
-    must(
-      run(process.execPath, [join(repo, "node_modules/tsup/dist/cli-default.js"), "--out-dir", join(pluginStage, "dist")], pluginSource),
-      "framework-ecc tsup",
-    );
-    // The manifest plus every other entry it ships (README, LICENSE, the ECC opt-out
-    // predicate module); a declared entry that is missing fails the build.
-    cpSync(join(pluginSource, "package.json"), join(pluginStage, "package.json"));
-    for (const entry of JSON.parse(readFileSync(join(pluginSource, "package.json"), "utf8")).files) {
-      if (entry === "dist") continue;
-      mkdirSync(dirname(join(pluginStage, entry)), { recursive: true });
-      cpSync(join(pluginSource, entry), join(pluginStage, entry), { recursive: true });
-    }
-    const pluginPacked = JSON.parse(
-      must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], pluginStage), "framework-ecc npm pack"),
-    );
-    eccPluginTarball = join(work, pluginPacked[0].filename);
   }
   const coreSha256 = sha256(coreTarball);
   process.stdout.write(`core tarball ${coreTarball} sha256 ${coreSha256}\n`);
   process.stdout.write(`scan tarball ${resolve(scanTarball)} sha256 ${sha256(resolve(scanTarball))}\n`);
-  process.stdout.write(`framework-ecc tarball ${eccPluginTarball} sha256 ${sha256(eccPluginTarball)}\n`);
   process.stdout.write(`catalog tarball ${resolve(catalogTarball)} sha256 ${sha256(resolve(catalogTarball))}\n`);
 
   // ---- Packed dist: no Catalog implementation, one dynamic import --------
@@ -456,19 +437,18 @@ try {
   const coreOnly = join(work, "consumer-core-only");
   mkdirSync(coreOnly, { recursive: true });
   writeFileSync(join(coreOnly, "package.json"), JSON.stringify({ name: "core-only-consumer", private: true, type: "module" }));
-  must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball, eccPluginTarball], coreOnly), "Core-only install");
+  must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball], coreOnly), "Core-only install");
   const installedCoreVersion = JSON.parse(readFileSync(join(coreOnly, "node_modules", "@aihq", "core", "package.json"), "utf8")).version;
-  const eccPeerRange = JSON.parse(readFileSync(join(coreOnly, "node_modules", "@aihq", "framework-ecc", "package.json"), "utf8")).peerDependencies?.["@aihq/core"];
   check(
-    "Core-only: Core and the ECC plugin install with peer validation (no --legacy-peer-deps)",
-    typeof eccPeerRange === "string" && eccPeerRange.length > 0,
-    `@aihq/core ${installedCoreVersion}; @aihq/framework-ecc peer @aihq/core ${eccPeerRange}`,
+    "Core-only: the ECC plugin ships inside the installed Core, not beside it",
+    existsSync(join(coreOnly, "node_modules", "@aihq", "core", "packages", "framework-ecc", "dist", "index.js")) &&
+      !existsSync(join(coreOnly, "node_modules", "@aihq", "framework-ecc")),
+    `@aihq/core ${installedCoreVersion}`,
   );
   check(
-    "Core-only consumer has neither @aihq/scan nor @aihq/catalog installed (the ECC plugin is)",
+    "Core-only consumer has neither @aihq/scan nor @aihq/catalog installed",
     !existsSync(join(coreOnly, "node_modules", "@aihq", "catalog")) &&
-      !existsSync(join(coreOnly, "node_modules", "@aihq", "scan")) &&
-      existsSync(join(coreOnly, "node_modules", "@aihq", "framework-ecc", "package.json")),
+      !existsSync(join(coreOnly, "node_modules", "@aihq", "scan")),
   );
   // Startup and index load must be unaffected by the Catalog cutover.
   const coreOnlyLibrary = run(
@@ -513,8 +493,8 @@ try {
     const old = join(work, "consumer-core-incompatible-catalog");
     mkdirSync(old, { recursive: true });
     writeFileSync(join(old, "package.json"), JSON.stringify({ name: "core-incompatible-catalog-consumer", private: true, type: "module" }));
-    // Core and the plugin first, peer-validated.
-    must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball, eccPluginTarball], old), "Core+plugin install");
+    // Core first, peer-validated.
+    must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball], old), "Core install");
     // npm itself refuses the out-of-range Catalog while peers are validated.
     const peerRefused = npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", resolve(incompatibleCatalogTarball)], old);
     check(
@@ -547,7 +527,7 @@ try {
   mkdirSync(full, { recursive: true });
   writeFileSync(join(full, "package.json"), JSON.stringify({ name: "core-scan-catalog-consumer", private: true, type: "module" }));
   must(
-    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball, eccPluginTarball, resolve(scanTarball), resolve(catalogTarball)], full),
+    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball, resolve(scanTarball), resolve(catalogTarball)], full),
     "Core+Scan+Catalog install",
   );
   const catalogManifest = JSON.parse(readFileSync(join(full, "node_modules", "@aihq", "catalog", "package.json"), "utf8"));
@@ -668,7 +648,7 @@ try {
   mkdirSync(globalPrefix, { recursive: true });
   must(
     npmRun(
-      ["install", "--global", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", "--prefix", globalPrefix, coreTarball, eccPluginTarball, resolve(scanTarball), resolve(catalogTarball)],
+      ["install", "--global", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", "--prefix", globalPrefix, coreTarball, resolve(scanTarball), resolve(catalogTarball)],
       work,
     ),
     "global-prefix install",
@@ -722,7 +702,6 @@ try {
       coreSha256,
       stagedCoreVersion,
       installedCoreVersion,
-      eccPeerRange,
       peerBypass: incompatibleCatalogTarball === undefined ? "none" : "only the deliberately incompatible Catalog",
       scanTarball: resolve(scanTarball),
       scanSha256: sha256(resolve(scanTarball)),

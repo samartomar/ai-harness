@@ -1,32 +1,38 @@
 #!/usr/bin/env node
 /**
- * Packed-consumer proof of the Core / framework plugin boundary (C3).
+ * Packed-consumer proof that the framework plugins ship inside @aihq/core (D71).
  *
- * Builds @aihq/core and @aihq/framework-superpowers from the given checkout
- * into staging directories OUTSIDE the checkout, packs both, and installs the
- * tarballs into a disposable consumer (always `--ignore-scripts`, an empty npm
- * user config, never `npm link`). It then checks:
+ * Builds @aihq/core from the given checkout into a staging directory OUTSIDE
+ * the checkout, with both framework plugins built into the stage at their
+ * source layout (`packages/framework-*`), packs Core alone, and installs that
+ * one tarball into a disposable project AND a disposable global prefix (always
+ * `--ignore-scripts`, an empty npm user config, never `npm link`). It then checks:
  *
- *   Tarballs: Core carries no plugin code (no `packages/`, no plugin-only
- *     identifiers in dist, each plugin imported only dynamically from one
- *     module) and ships `dist/framework-host.js` with its declarations; the
- *     plugin carries only its dist, which imports Core only through
- *     `@aihq/core/framework-host` and Node built-ins.
- *   Core + plugin, no Catalog: `aih superpowers` refuses with
+ *   Tarball: Core carries each plugin's manifest and built entry and, under
+ *     `packages/`, nothing but the entries its `files` names (no sources, no
+ *     tests); Core's own dist carries no plugin code and imports no plugin by
+ *     package name; each plugin's dist imports Core only through
+ *     `@aihq/core/framework-host` and Node built-ins; Core declares no
+ *     dependency or peer on the plugins, which stay private at 0.1.0.
+ *   Core alone, no Catalog: `aih superpowers` refuses with
  *     `catalog-package-unavailable`; the descriptor is Catalog data.
- *   Core + plugin + the pinned Catalog 0.3.0: `aih superpowers <fixture>` exits 0 with the
- *     exact-pinned acquisition preview, loaded from the INSTALLED plugin, whose
- *     `@aihq/core/framework-host` resolved to the INSTALLED Core; `aih init`
- *     (dry run) runs the same evidence-gated preview.
- *   Installed plugin damaged (package.json version changed): the command
- *     refuses with `framework-plugin-incompatible`, never treating it as absent.
- *   Plugin uninstalled: `aih superpowers` refuses with
- *     `framework-plugin-unavailable` naming the install command and without a
- *     stack trace; `aih init` (dry run) reports the Superpowers phase as refused
- *     with that reason and still exits 0.
+ *   Core + the pinned Catalog 0.3.0, project and global install: `aih
+ *     superpowers <fixture>` exits 0 with the exact-pinned acquisition preview
+ *     and `aih ecc --lifecycle install <fixture>` previews the ECC profile from
+ *     the installed Catalog, writing nothing, each plugin loaded from INSIDE the
+ *     installed Core and its `@aihq/core/framework-host` resolved to that same
+ *     Core; `aih init` (dry run) runs the Superpowers evidence-gated preview.
+ *   Bundled plugin damaged (package.json version changed): the command refuses
+ *     with `framework-plugin-incompatible`, never treating it as absent.
+ *   Catalog identity record differs, or a Catalog without identities (0.2.0):
+ *     `framework-plugin-incompatible`.
+ *   Bundled plugin removed from the install: `aih superpowers` and `aih ecc`
+ *     refuse with `framework-plugin-unavailable` naming the `@aihq/core`
+ *     reinstall and without a stack trace; `aih init` (dry run) reports the
+ *     Superpowers phase as refused with that reason and still exits 0.
  *
  * The staged Core manifest carries `--core-version` (default 0.7.0, the
- * candidate the plugin's peer range names); the checkout is never modified.
+ * candidate the plugins' identity records name); the checkout is never modified.
  *
  * usage:
  *   node tools/verify-packed-framework-plugins.mjs --stage-from <core-repo> [--core-version 0.7.0] [--work <dir>] [--keep] [--report <file>]
@@ -40,6 +46,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -50,15 +57,25 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { globalNodeModules } from "./lib/packed-consumer.mjs";
 
 const PIN = "5bf4e78011075bcfc0dc295f0724994cd123ee71";
-const PLUGIN = "@aihq/framework-superpowers";
-/** Identifiers that exist only in the plugin's sources, never in Core's. */
+const SUPERPOWERS = "@aihq/framework-superpowers";
+const ECC = "@aihq/framework-ecc";
+const BUNDLED = [
+  { frameworkId: "ecc", name: ECC, directory: "packages/framework-ecc" },
+  { frameworkId: "superpowers", name: SUPERPOWERS, directory: "packages/framework-superpowers" },
+];
+const REINSTALL = "Reinstall @aihq/core with: npm install -g @aihq/core";
+/** Identifiers that exist only in the plugins' sources, never in Core's. */
 const PLUGIN_ONLY_MARKERS = [
   "superpowers descriptor refused",
   "readSuperpowersHookInventory",
   "readSuperpowersDescriptor",
   "superpowersActionsForCli",
+  "executeEccEvidencePipeline",
+  "applyPreparedGovernedEccDelivery",
+  "planEccMaterialization",
 ];
 
 function option(name) {
@@ -155,6 +172,8 @@ const npmRun = (args, cwd) =>
     timeout: 10 * 60 * 1000,
     env: { ...isolatedNpmEnv, npm_config_userconfig: emptyUserConfig, npm_execpath: npm },
   });
+const npmInstall = (args, cwd, label) =>
+  must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", ...args], cwd), label);
 // Build tools resolve from the checkout's own dependency tree (a worktree resolves
 // them from an ancestor node_modules).
 const requireFromRepo = createRequire(join(repo, "package.json"));
@@ -163,55 +182,72 @@ const tscCli = join(dirname(requireFromRepo.resolve("typescript/package.json")),
 
 const summary = { ok: false, work, coreVersion };
 try {
-  // ---- stage and pack Core ---------------------------------------------------
+  // ---- stage and pack Core, the plugins built inside it ------------------------
   const coreStage = join(work, "stage-core");
   mkdirSync(coreStage, { recursive: true });
+  let started = Date.now();
   must(run(process.execPath, [tsupCli, "--out-dir", join(coreStage, "dist")], repo), "Core tsup build");
   must(
     run(process.execPath, [tscCli, "-p", "tsconfig.dts.json", "--outDir", join(coreStage, "dist")], repo),
     "Core declaration emit",
   );
+  for (const { directory } of BUNDLED)
+    must(
+      run(process.execPath, [tsupCli, "--out-dir", join(coreStage, directory, "dist")], join(repo, directory)),
+      `${directory} tsup build`,
+    );
   const coreManifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+  // Build outputs come from the builds above, never from whatever the checkout holds.
   for (const entry of coreManifest.files) {
-    if (entry.startsWith("!") || entry === "dist") continue;
+    if (entry.startsWith("!") || /^(packages\/[^/]+\/)?dist$/.test(entry)) continue;
     const source = join(repo, entry);
     if (!existsSync(source)) continue;
     mkdirSync(dirname(join(coreStage, entry)), { recursive: true });
     cpSync(source, join(coreStage, entry), { recursive: true });
   }
   writeFileSync(join(coreStage, "package.json"), `${JSON.stringify({ ...coreManifest, version: coreVersion }, null, 2)}\n`);
+  summary.buildMs = Date.now() - started;
+  started = Date.now();
   const corePacked = JSON.parse(
     must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], coreStage), "Core npm pack"),
   );
+  summary.packMs = Date.now() - started;
   const coreTarball = join(work, corePacked[0].filename);
-
-  // ---- stage and pack the Superpowers plugin -----------------------------------
-  const pluginSource = join(repo, "packages", "framework-superpowers");
-  const pluginStage = join(work, "stage-framework-superpowers");
-  mkdirSync(pluginStage, { recursive: true });
-  must(run(process.execPath, [tsupCli, "--out-dir", join(pluginStage, "dist")], pluginSource), "plugin tsup build");
-  for (const file of ["package.json", "README.md", "LICENSE"]) cpSync(join(pluginSource, file), join(pluginStage, file));
-  const pluginPacked = JSON.parse(
-    must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], pluginStage), "plugin npm pack"),
-  );
-  const pluginTarball = join(work, pluginPacked[0].filename);
   Object.assign(summary, {
     coreTarball,
     coreSha256: sha256(coreTarball),
-    pluginTarball,
-    pluginSha256: sha256(pluginTarball),
+    coreTarballBytes: corePacked[0].size,
+    coreUnpackedBytes: corePacked[0].unpackedSize,
+    coreFileCount: corePacked[0].entryCount,
   });
   process.stdout.write(`core tarball ${coreTarball} sha256 ${summary.coreSha256}\n`);
-  process.stdout.write(`plugin tarball ${pluginTarball} sha256 ${summary.pluginSha256}\n`);
 
   // ---- tarball contents ---------------------------------------------------------
   const coreFiles = readPackedFiles(coreTarball);
   const corePaths = [...coreFiles.keys()];
-  check("Core tarball has no packages/ entry", corePaths.every((path) => !path.startsWith("package/packages/")));
+  for (const { name, directory } of BUNDLED)
+    check(
+      `Core tarball carries ${name}'s manifest and built entry`,
+      coreFiles.has(`package/${directory}/package.json`) && coreFiles.has(`package/${directory}/dist/index.js`),
+    );
+  const bundledEntries = coreManifest.files.filter((entry) => entry.startsWith("packages/"));
+  const strayPackagePaths = corePaths.filter((path) => {
+    if (!path.startsWith("package/packages/")) return false;
+    const inner = path.slice("package/".length);
+    return !bundledEntries.some((entry) => inner === entry || inner.startsWith(`${entry}/`));
+  });
   check(
-    "Core tarball has no framework plugin package file",
-    corePaths.every((path) => !/framework-(superpowers|ecc)/.test(path)),
-    corePaths.filter((path) => /framework-(superpowers|ecc)/.test(path)).join(", "),
+    "Core tarball carries under packages/ only the entries its files names",
+    strayPackagePaths.length === 0,
+    strayPackagePaths.join(", "),
+  );
+  const packedSourcesOrTests = corePaths.filter(
+    (path) => path.startsWith("package/packages/") && (/\.tsx?$/.test(path) || /\/tests?\//.test(path)),
+  );
+  check(
+    "Core tarball carries no plugin source or test file",
+    packedSourcesOrTests.length === 0,
+    packedSourcesOrTests.join(", "),
   );
   const coreJs = [...coreFiles]
     .filter(([path]) => /^package\/dist\/[^/]+\.js$/.test(path))
@@ -220,15 +256,12 @@ try {
     PLUGIN_ONLY_MARKERS.filter((marker) => body.includes(marker)).map((marker) => `${file}: ${marker}`),
   );
   check("Core dist carries no plugin-only identifier", markerHits.length === 0, markerHits.join("; "));
-  for (const name of ["@aihq/framework-superpowers", "@aihq/framework-ecc"]) {
+  for (const { name } of BUNDLED) {
     const escaped = name.replace(/[/.]/g, (c) => `\\${c}`);
-    const staticHits = coreJs.filter(([, body]) => new RegExp(`from\\s*"${escaped}"|import\\s*"${escaped}"`).test(body));
-    const dynamicHits = coreJs.filter(([, body]) => new RegExp(`import\\s*\\(\\s*"${escaped}"\\s*\\)`).test(body));
-    check(
-      `Core dist imports ${name} only dynamically, from one module`,
-      staticHits.length === 0 && dynamicHits.length === 1,
-      `static: ${staticHits.map(([f]) => f).join(",") || "none"}; dynamic: ${dynamicHits.map(([f]) => f).join(",") || "none"}`,
+    const hits = coreJs.filter(([, body]) =>
+      new RegExp(`from\\s*"${escaped}"|import\\s*"${escaped}"|import\\s*\\(\\s*"${escaped}"\\s*\\)`).test(body),
     );
+    check(`Core dist imports ${name} by no package specifier`, hits.length === 0, hits.map(([file]) => file).join(","));
   }
   check(
     "Core tarball ships dist/framework-host.js and its declarations",
@@ -236,40 +269,61 @@ try {
   );
   const packedCoreManifest = JSON.parse(coreFiles.get("package/package.json").toString("utf8"));
   check(
-    "Core manifest exports ./framework-host and peers the plugins optionally",
+    "Core manifest exports ./framework-host and declares no dependency or peer on the plugins",
     packedCoreManifest.exports?.["./framework-host"]?.import === "./dist/framework-host.js" &&
-      packedCoreManifest.peerDependenciesMeta?.[PLUGIN]?.optional === true &&
-      packedCoreManifest.dependencies?.[PLUGIN] === undefined,
+      BUNDLED.every(
+        ({ name }) =>
+          packedCoreManifest.dependencies?.[name] === undefined &&
+          packedCoreManifest.peerDependencies?.[name] === undefined &&
+          packedCoreManifest.peerDependenciesMeta?.[name] === undefined,
+      ),
   );
-  const pluginFiles = readPackedFiles(pluginTarball);
-  const pluginPaths = [...pluginFiles.keys()].sort();
-  check(
-    "plugin tarball carries only its dist, manifest, README and LICENSE",
-    pluginPaths.join(",") === ["package/LICENSE", "package/README.md", "package/dist/index.js", "package/package.json"].join(","),
-    pluginPaths.join(", "),
-  );
-  const pluginJs = pluginFiles.get("package/dist/index.js").toString("utf8");
-  const pluginImports = [...pluginJs.matchAll(/(?:from\s*|import\s*\(?\s*)"([^"]+)"/g)].map((match) => match[1]);
-  check(
-    "plugin dist imports only @aihq/core/framework-host and node:*",
-    pluginImports.length > 0 && pluginImports.every((specifier) => specifier === "@aihq/core/framework-host" || specifier.startsWith("node:")),
-    [...new Set(pluginImports)].join(", "),
-  );
+  for (const { name, directory } of BUNDLED) {
+    const bundledManifest = JSON.parse(coreFiles.get(`package/${directory}/package.json`).toString("utf8"));
+    check(
+      `bundled ${name} keeps its name and version and stays private`,
+      bundledManifest.name === name && bundledManifest.version === "0.1.0" && bundledManifest.private === true,
+      `${bundledManifest.name}@${bundledManifest.version} private=${bundledManifest.private}`,
+    );
+    const pluginJs = coreFiles.get(`package/${directory}/dist/index.js`).toString("utf8");
+    // Module statements only: top-level import/export ... from, side-effect imports, and dynamic import().
+    const pluginImports = [
+      ...pluginJs.matchAll(/^(?:import|export)\s[^;"]*?from\s*"([^"]+)"/gm),
+      ...pluginJs.matchAll(/^import\s*"([^"]+)"/gm),
+      ...pluginJs.matchAll(/\bimport\(\s*"([^"]+)"\s*\)/g),
+    ].map((match) => match[1]);
+    check(
+      `bundled ${name} dist imports only @aihq/core/framework-host and node:*`,
+      pluginImports.length > 0 &&
+        pluginImports.every((specifier) => specifier === "@aihq/core/framework-host" || specifier.startsWith("node:")),
+      [...new Set(pluginImports)].join(", "),
+    );
+  }
 
-  // ---- consumer: Core + plugin ----------------------------------------------------
+  // ---- consumers: Core alone, project and global -----------------------------------
   const consumer = join(work, "consumer");
   mkdirSync(consumer, { recursive: true });
   writeFileSync(join(consumer, "package.json"), JSON.stringify({ name: "framework-plugin-consumer", private: true, type: "module" }));
-  must(
-    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball, pluginTarball], consumer),
-    "Core + plugin install",
-  );
-  const installedPlugin = join(consumer, "node_modules", "@aihq", "framework-superpowers");
-  const installedCore = join(consumer, "node_modules", "@aihq", "core");
-  check(
-    "consumer has Core and the plugin installed side by side",
-    existsSync(join(installedPlugin, "package.json")) && existsSync(join(installedCore, "package.json")),
-  );
+  started = Date.now();
+  npmInstall([coreTarball], consumer, "Core install");
+  const globalPrefix = join(work, "global");
+  mkdirSync(globalPrefix, { recursive: true });
+  npmInstall(["--global", "--prefix", globalPrefix, coreTarball], work, "Core global install");
+  summary.installMs = Date.now() - started;
+  const installs = [
+    { label: "project", modules: join(consumer, "node_modules") },
+    { label: "global", modules: globalNodeModules(globalPrefix) },
+  ].map((install) => ({ ...install, core: join(install.modules, "@aihq", "core") }));
+  for (const { label, modules, core } of installs)
+    check(
+      `${label} install has only @aihq/core, carrying both plugins inside it`,
+      existsSync(join(core, "package.json")) &&
+        BUNDLED.every(
+          ({ name, directory }) =>
+            existsSync(join(core, directory, "dist", "index.js")) && !existsSync(join(modules, ...name.split("/"))),
+        ),
+    );
+  const [project, global] = installs;
   const home = join(work, "home");
   mkdirSync(home, { recursive: true });
   const cliEnv = {
@@ -291,15 +345,15 @@ try {
       "registerHooks({",
       "  resolve(specifier, context, nextResolve) {",
       "    const resolved = nextResolve(specifier, context);",
-      `    if (/@aihq[\\\\/](framework-superpowers|core)[\\\\/]/.test(resolved.url)) appendFileSync(${JSON.stringify(traceLog)}, specifier + " -> " + resolved.url + "\\n");`,
+      `    if (/@aihq[\\\\/]core[\\\\/](packages|dist[\\\\/]framework-host)/.test(resolved.url)) appendFileSync(${JSON.stringify(traceLog)}, specifier + " -> " + resolved.url + "\\n");`,
       "    return resolved;",
       "  },",
       "});",
       "",
     ].join("\n"),
   );
-  const aih = (args, extraNodeArgs = []) => {
-    const result = spawnSync(process.execPath, [...extraNodeArgs, join(installedCore, "dist", "cli.js"), ...args], {
+  const aihAt = (core, args, extraNodeArgs = []) => {
+    const result = spawnSync(process.execPath, [...extraNodeArgs, join(core, "dist", "cli.js"), ...args], {
       cwd: work,
       encoding: "utf8",
       windowsHide: true,
@@ -310,6 +364,7 @@ try {
     if (result.error) throw new Error(`aih ${args.join(" ")}: ${result.error.message}`);
     return result;
   };
+  const aih = (args, extraNodeArgs = []) => aihAt(project.core, args, extraNodeArgs);
   const json = (result) => {
     try {
       return JSON.parse(result.stdout);
@@ -317,66 +372,101 @@ try {
       return undefined;
     }
   };
+  const errorText = (result) => (json(result)?.error?.message ?? `${result.stdout}\n${result.stderr}`).trim().slice(0, 300);
   const noStack = (result) => !/\n\s+at .+\(.+:\d+:\d+\)/.test(`${result.stdout}\n${result.stderr}`);
   const fixture = join(work, "fixture");
   mkdirSync(fixture, { recursive: true });
 
-  // ---- plugin installed, Catalog absent: the descriptor is Catalog data (C1) ------
+  // ---- Catalog absent: the descriptor is Catalog data (C1) --------------------------
   const withoutCatalog = aih(["superpowers", fixture, "--json", "--no-log"]);
   const withoutCatalogError = json(withoutCatalog)?.error;
   summary.withoutCatalog = { exit: withoutCatalog.status, error: withoutCatalogError };
   check(
     "without Catalog, aih superpowers refuses with catalog-package-unavailable and no embedded fallback",
     withoutCatalog.status === 1 && withoutCatalogError?.message?.includes("catalog-package-unavailable") === true,
-    withoutCatalogError?.message?.slice(0, 300) ?? withoutCatalog.stdout.slice(0, 300),
+    errorText(withoutCatalog),
   );
 
-  // The real Catalog 0.3.0 this repository pins carries the Superpowers descriptor
-  // and the plugin identity record the loader checks.
+  // The real Catalog 0.3.0 this repository pins carries both framework
+  // descriptors and the plugin identity records the loader checks.
   const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-c8e2c03.tgz");
-  must(
-    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", pinnedCatalog], consumer),
-    "Catalog 0.3.0 install",
-  );
-  const withPlugin = aih(["superpowers", fixture, "--json", "--no-log"], ["--import", pathToFileURL(trace).href]);
-  const withPluginResult = json(withPlugin);
-  summary.withPlugin = {
-    exit: withPlugin.status,
-    capability: withPluginResult?.capability,
-    execs: withPluginResult?.execs?.map((entry) => ({ describe: entry.describe, ran: entry.ran })),
-  };
-  check(
-    "aih superpowers <fixture> succeeds through the installed plugin",
-    withPlugin.status === 0 &&
-      withPluginResult?.capability === "superpowers: acquire exact baseline source" &&
-      withPluginResult.execs?.length === 1 &&
-      withPluginResult.execs[0].ran === false &&
-      JSON.stringify(withPluginResult).includes(PIN),
-    `exit ${withPlugin.status}; ${withPlugin.stderr.trim().slice(0, 300)}`,
-  );
-  const traced = existsSync(traceLog) ? [...new Set(readFileSync(traceLog, "utf8").trim().split(/\r?\n/))] : [];
-  summary.moduleTrace = traced;
-  const pluginUrl = pathToFileURL(realpathSync(installedPlugin)).href.toLowerCase();
-  const coreUrl = pathToFileURL(realpathSync(installedCore)).href.toLowerCase();
-  check(
-    "the INSTALLED plugin was loaded",
-    traced.some((line) => line.startsWith(`${PLUGIN} -> `) && line.toLowerCase().includes(`${pluginUrl}/dist/index.js`)),
-    traced.join(" | ") || "<nothing traced>",
-  );
-  check(
-    "the plugin's @aihq/core/framework-host resolved to the INSTALLED Core",
-    traced.some(
-      (line) =>
-        line.startsWith("@aihq/core/framework-host -> ") &&
-        line.toLowerCase().includes(`${coreUrl}/dist/framework-host.js`),
-    ),
-  );
+  npmInstall([pinnedCatalog], consumer, "Catalog 0.3.0 install");
+  npmInstall(["--global", "--prefix", globalPrefix, pinnedCatalog], work, "Catalog 0.3.0 global install");
+
+  // ---- one plugin-backed path per framework, from each install --------------------
+  summary.paths = {};
+  for (const { label, core } of installs) {
+    const coreUrl = pathToFileURL(realpathSync(core)).href.toLowerCase();
+    const traced = (result) => {
+      const lines = existsSync(traceLog) ? [...new Set(readFileSync(traceLog, "utf8").trim().split(/\r?\n/))] : [];
+      rmSync(traceLog, { force: true });
+      return { result, lines };
+    };
+    const superpowers = traced(aihAt(core, ["superpowers", fixture, "--json", "--no-log"], ["--import", pathToFileURL(trace).href]));
+    const superpowersResult = json(superpowers.result);
+    const eccRoot = join(work, `fixture-ecc-${label}`);
+    mkdirSync(eccRoot, { recursive: true });
+    const ecc = traced(
+      aihAt(core, ["ecc", "--lifecycle", "install", eccRoot, "--json", "--no-log"], ["--import", pathToFileURL(trace).href]),
+    );
+    const eccResult = json(ecc.result);
+    summary.paths[label] = {
+      superpowers: {
+        exit: superpowers.result.status,
+        capability: superpowersResult?.capability,
+        execs: superpowersResult?.execs?.map((entry) => ({ describe: entry.describe, ran: entry.ran })),
+        moduleTrace: superpowers.lines,
+      },
+      ecc: {
+        exit: ecc.result.status,
+        capability: eccResult?.capability,
+        previewedWrites: eccResult?.writes?.length,
+        moduleTrace: ecc.lines,
+      },
+    };
+    check(
+      `aih superpowers <fixture> previews the exact pin through the bundled plugin (${label} install)`,
+      superpowers.result.status === 0 &&
+        superpowersResult?.capability === "superpowers: acquire exact baseline source" &&
+        superpowersResult.execs?.length === 1 &&
+        superpowersResult.execs[0].ran === false &&
+        JSON.stringify(superpowersResult).includes(PIN),
+      `exit ${superpowers.result.status}; ${errorText(superpowers.result)}`,
+    );
+    check(
+      `aih ecc --lifecycle install <fixture> previews the profile from the installed Catalog through the bundled plugin, writing nothing (${label} install)`,
+      ecc.result.status === 0 &&
+        eccResult?.capability === "ecc-profile: atomic projection and native registration install" &&
+        eccResult.applied === false &&
+        eccResult.writes?.length > 0 &&
+        readdirSync(eccRoot).length === 0,
+      `exit ${ecc.result.status}; ${errorText(ecc.result)}`,
+    );
+    for (const [{ directory }, { lines }] of [
+      [BUNDLED[1], superpowers],
+      [BUNDLED[0], ecc],
+    ]) {
+      check(
+        `${directory} was loaded from inside the INSTALLED Core (${label} install)`,
+        lines.some((line) => line.toLowerCase().endsWith(`-> ${coreUrl}/${directory}/dist/index.js`)),
+        lines.join(" | ") || "<nothing traced>",
+      );
+      check(
+        `${directory}'s @aihq/core/framework-host resolved to that same Core (${label} install)`,
+        lines.some(
+          (line) =>
+            line.startsWith("@aihq/core/framework-host -> ") &&
+            line.toLowerCase().endsWith(`${coreUrl}/dist/framework-host.js`),
+        ),
+      );
+    }
+  }
   const initFixture = join(work, "fixture-init");
   mkdirSync(initFixture, { recursive: true });
   const initWithPlugin = aih(["init", initFixture, "--json", "--no-log"]);
   const initWithPluginResult = json(initWithPlugin);
   check(
-    "aih init (dry run) runs the plugin's evidence-gated preview",
+    "aih init (dry run) runs the bundled Superpowers plugin's evidence-gated preview",
     initWithPlugin.status === 0 &&
       (initWithPluginResult?.execs ?? []).some(
         (entry) => entry.describe.includes(`obra/Superpowers@${PIN}`) && entry.ran === false,
@@ -384,33 +474,35 @@ try {
     `exit ${initWithPlugin.status}; ${initWithPlugin.stderr.trim().slice(0, 300)}`,
   );
 
-  // ---- installed plugin damaged: incompatible, never absent -----------------------
-  const pluginManifestPath = join(installedPlugin, "package.json");
+  // ---- bundled plugin damaged: incompatible, never absent -------------------------
+  const superpowersDirectory = join(project.core, ...BUNDLED[1].directory.split("/"));
+  const pluginManifestPath = join(superpowersDirectory, "package.json");
   const pluginManifestBytes = readFileSync(pluginManifestPath);
   writeFileSync(pluginManifestPath, `${JSON.stringify({ ...JSON.parse(pluginManifestBytes.toString("utf8")), version: "0.1.1" }, null, 2)}\n`);
   const damaged = aih(["superpowers", fixture, "--json", "--no-log"]);
   const damagedError = json(damaged)?.error;
   summary.damaged = { exit: damaged.status, error: damagedError };
   check(
-    "a damaged installed plugin refuses as framework-plugin-incompatible",
+    "a damaged bundled plugin refuses as framework-plugin-incompatible and names the Core reinstall",
     damaged.status === 1 &&
       damagedError?.code === "AIH_FRAMEWORK_PLUGIN" &&
       typeof damagedError.message === "string" &&
-      damagedError.message.startsWith("framework-plugin-incompatible: "),
-    damagedError?.message?.slice(0, 300) ?? damaged.stdout.slice(0, 300),
+      damagedError.message.startsWith("framework-plugin-incompatible: ") &&
+      damagedError.message.includes(REINSTALL),
+    errorText(damaged),
   );
   writeFileSync(pluginManifestPath, pluginManifestBytes);
 
-  // ---- Catalog installed: the plugin must equal Catalog's identity record ----------
-  // The pinned real Catalog 0.3.0 (its identity record, then a rewritten record),
-  // then the real 0.2.0 tarball, which does not publish plugin identities.
+  // ---- the plugin must equal Catalog's identity record ----------------------------
+  // The pinned real Catalog 0.3.0 (a rewritten record), then the real 0.2.0
+  // tarball, which does not publish plugin identities.
   const identities = (superpowersVersion) => ({
     format: "aih-catalog-framework-plugins",
     version: 1,
     entries: [
       {
         frameworkId: "ecc",
-        packageName: "@aihq/framework-ecc",
+        packageName: ECC,
         version: "0.1.0",
         contractVersion: 1,
         upstream: { repository: "affaan-m/ECC", commit: "5064474d4d762dc9640234a41617cccb79185cec" },
@@ -420,7 +512,7 @@ try {
       },
       {
         frameworkId: "superpowers",
-        packageName: PLUGIN,
+        packageName: SUPERPOWERS,
         version: superpowersVersion,
         contractVersion: 1,
         upstream: { repository: "obra/Superpowers", commit: PIN },
@@ -430,12 +522,6 @@ try {
       },
     ],
   });
-  const matched = aih(["superpowers", fixture, "--json", "--no-log"]);
-  check(
-    "with Catalog's matching identity record installed, aih superpowers succeeds",
-    matched.status === 0 && json(matched)?.capability === "superpowers: acquire exact baseline source",
-    `exit ${matched.status}; ${(json(matched)?.error?.message ?? matched.stderr).slice(0, 300)}`,
-  );
   const installedIdentities = join(consumer, "node_modules", "@aihq", "catalog", "defaults", "catalog-framework-plugins-v1.json");
   writeFileSync(installedIdentities, `${JSON.stringify(identities("0.1.9"))}\n`);
   const mismatched = aih(["superpowers", fixture, "--json", "--no-log"]);
@@ -445,45 +531,48 @@ try {
     "a plugin version that differs from Catalog's identity record refuses as incompatible",
     mismatched.status === 1 &&
       mismatchedError?.message?.startsWith("framework-plugin-incompatible: ") === true &&
-      mismatchedError.message.includes("does not equal @aihq/catalog 0.3.0's identity record @aihq/framework-superpowers 0.1.9"),
-    mismatchedError?.message?.slice(0, 300) ?? mismatched.stdout.slice(0, 300),
+      mismatchedError.message.includes(`does not equal @aihq/catalog 0.3.0's identity record ${SUPERPOWERS} 0.1.9`),
+    errorText(mismatched),
   );
-  const realCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.2.0-517e43d.tgz");
-  if (existsSync(realCatalog)) {
-    must(
-      npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", realCatalog], consumer),
-      "Catalog 0.2.0 install",
-    );
-    const oldCatalog = aih(["superpowers", fixture, "--json", "--no-log"]);
-    const oldCatalogError = json(oldCatalog)?.error;
-    summary.catalogWithoutIdentities = { exit: oldCatalog.status, error: oldCatalogError };
+  const oldCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.2.0-517e43d.tgz");
+  if (existsSync(oldCatalog)) {
+    npmInstall([oldCatalog], consumer, "Catalog 0.2.0 install");
+    const withOldCatalog = aih(["superpowers", fixture, "--json", "--no-log"]);
+    const withOldCatalogError = json(withOldCatalog)?.error;
+    summary.catalogWithoutIdentities = { exit: withOldCatalog.status, error: withOldCatalogError };
     check(
       "a Catalog without plugin identities (0.2.0) is incompatible, never treated as absent",
-      oldCatalog.status === 1 &&
-        oldCatalogError?.message?.startsWith("framework-plugin-incompatible: ") === true &&
-        oldCatalogError.message.includes("catalog-package-incompatible"),
-      oldCatalogError?.message?.slice(0, 300) ?? oldCatalog.stdout.slice(0, 300),
+      withOldCatalog.status === 1 &&
+        withOldCatalogError?.message?.startsWith("framework-plugin-incompatible: ") === true &&
+        withOldCatalogError.message.includes("catalog-package-incompatible"),
+      errorText(withOldCatalog),
     );
   } else {
-    check("the repository's Catalog 0.2.0 fixture tarball exists", false, realCatalog);
+    check("the repository's Catalog 0.2.0 fixture tarball exists", false, oldCatalog);
   }
   must(npmRun(["uninstall", "--ignore-scripts", "--no-audit", "--no-fund", "@aihq/catalog"], consumer), "Catalog uninstall");
 
-  // ---- plugin uninstalled: explicit refusal ---------------------------------------
-  must(npmRun(["uninstall", "--ignore-scripts", "--no-audit", "--no-fund", PLUGIN], consumer), "plugin uninstall");
-  check("the plugin is uninstalled", !existsSync(installedPlugin));
-  const without = aih(["superpowers", fixture, "--json", "--no-log"]);
-  const withoutError = json(without)?.error;
-  summary.withoutPlugin = { exit: without.status, error: withoutError };
-  check(
-    "aih superpowers refuses with framework-plugin-unavailable and names the install command",
-    without.status === 1 &&
-      withoutError?.code === "AIH_FRAMEWORK_PLUGIN" &&
-      typeof withoutError.message === "string" &&
-      withoutError.message.startsWith("framework-plugin-unavailable: ") &&
-      withoutError.message.includes(`npm install -g @aihq/core ${PLUGIN}`),
-    withoutError?.message?.slice(0, 300) ?? without.stdout.slice(0, 300),
-  );
+  // ---- bundled plugins removed from the install: explicit refusal ------------------
+  for (const { directory } of BUNDLED) rmSync(join(project.core, ...directory.split("/")), { recursive: true, force: true });
+  check("the bundled plugins are removed from the project install", BUNDLED.every(({ directory }) => !existsSync(join(project.core, directory))));
+  for (const [command, name] of [
+    ["superpowers", SUPERPOWERS],
+    ["ecc", ECC],
+  ]) {
+    const without = aih([command, fixture, "--json", "--no-log"]);
+    const withoutError = json(without)?.error;
+    summary[`${command}WithoutPlugin`] = { exit: without.status, error: withoutError };
+    check(
+      `aih ${command} refuses with framework-plugin-unavailable and names the @aihq/core reinstall`,
+      without.status === 1 &&
+        withoutError?.code === "AIH_FRAMEWORK_PLUGIN" &&
+        typeof withoutError.message === "string" &&
+        withoutError.message.startsWith(`framework-plugin-unavailable: ${name} ships inside @aihq/core`) &&
+        withoutError.message.includes(REINSTALL) &&
+        !withoutError.message.includes(`npm install -g @aihq/core ${name}`),
+      errorText(without),
+    );
+  }
   const withoutText = aih(["superpowers", fixture, "--no-log"]);
   check(
     "the text-mode refusal carries no stack trace",
@@ -505,6 +594,16 @@ try {
       refusedCheck?.verdict === "skip",
     `exit ${initWithout.status}; ${initWithout.stderr.trim().slice(0, 300)}`,
   );
+
+  // ---- the refusal's reinstall routes restore the bundled plugins -------------------
+  const restored = (core) => BUNDLED.every(({ directory }) => existsSync(join(core, ...directory.split("/"), "dist", "index.js")));
+  rmSync(project.core, { recursive: true, force: true });
+  npmInstall([], consumer, "project reinstall");
+  check("in a project, deleting node_modules/@aihq/core and running npm install restores both bundled plugins", restored(project.core));
+  for (const { directory } of BUNDLED) rmSync(join(global.core, ...directory.split("/")), { recursive: true, force: true });
+  npmInstall(["--global", "--prefix", globalPrefix, coreTarball], work, "global reinstall");
+  check("npm install -g of Core restores both bundled plugins in a global install", restored(global.core));
+  summary.globalModules = global.modules;
 
   const failed = results.filter((entry) => !entry.ok);
   summary.ok = failed.length === 0;

@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /**
- * Packed-consumer proof of the ECC framework plugin (C3, phase 2).
+ * Packed-consumer proof of the ECC framework plugin (C3, phase 2), which ships
+ * inside @aihq/core (D71).
  *
- * Builds @aihq/core, @aihq/framework-ecc and @aihq/framework-superpowers from
- * the given checkout into staging directories OUTSIDE the checkout, packs the
- * given Catalog candidate (a checkout, or a tarball used as it is), and installs the four tarballs into a
+ * Builds @aihq/core from the given checkout, with both framework plugins built
+ * into it at their source layout (`packages/framework-*`), into a staging
+ * directory OUTSIDE the checkout, packs the given Catalog candidate (a
+ * checkout, or a tarball used as it is), and installs the two tarballs into a
  * disposable project AND a disposable global prefix (always `--ignore-scripts`,
  * an empty npm user config, never `npm link`). Against temp fixture roots only,
  * it then checks:
  *
- *   Tarballs: Core carries no ECC implementation (no plugin package file, no
- *     ECC implementation function name in dist); the ECC plugin carries only its
- *     dist, which imports Core only through `@aihq/core/framework-host`.
- *   `aih ecc <tmpRoot>` previews through the INSTALLED plugin, from the project
- *     install and from the global install.
+ *   Tarball: Core's own dist carries no ECC implementation function name; the
+ *     bundled ECC plugin carries only its manifest, dist, opt-out predicate,
+ *     README and LICENSE, and its dist imports Core only through
+ *     `@aihq/core/framework-host`.
+ *   `aih ecc <tmpRoot>` previews through the plugin inside the INSTALLED Core,
+ *     from the project install and from the global install.
  *   Native ECC runtime: resolved from the installed plugin, framework-host's
  *     `eccRuntimeScriptPath()` names the installed Core's `dist/ecc-runtime.js`;
  *     the plugin dist ships no runtime script of its own.
@@ -30,10 +33,12 @@
  *     `aih uninstall --apply` removes exactly the receipt-owned content.
  *   Hook controls: an ECC hook disabled by policy and another by the project's
  *     user list both reach the projected Claude `settings.json` env.
- *   Plugin removed: `aih ecc`, governed projection, uninstall, prune and hook
- *     controls refuse with `framework-plugin-unavailable` naming the install
- *     command and write nothing; doctor and the policy delivery report state the
- *     ECC checks were not run. The plugin is then reinstalled and the uninstall
+ *   Bundled plugin removed from both installs: `aih ecc`, governed
+ *     projection, uninstall, prune and hook controls refuse with
+ *     `framework-plugin-unavailable` naming the @aihq/core reinstall and write
+ *     nothing; doctor and the policy delivery report state the ECC checks were
+ *     not run. The project's Core is then reinstalled the way the refusal says
+ *     (delete node_modules/@aihq/core, run npm install) and the uninstall
  *     completes the round trip.
  *
  * usage:
@@ -63,7 +68,8 @@ import { gunzipSync } from "node:zlib";
 import { globalNodeModules } from "./lib/packed-consumer.mjs";
 
 const ECC = "@aihq/framework-ecc";
-const SUPERPOWERS = "@aihq/framework-superpowers";
+const BUNDLED_DIRECTORIES = ["packages/framework-ecc", "packages/framework-superpowers"];
+const ECC_DIRECTORY = BUNDLED_DIRECTORIES[0];
 /** ECC implementation function names; Core keeps names in its build, so a bundled copy would carry them. */
 const ECC_IMPLEMENTATION_NAMES = [
   "executeEccEvidencePipeline",
@@ -213,7 +219,7 @@ function coreBuildRoot() {
   mkdirSync(copy, { recursive: true });
   const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
   for (const entry of ["src", "tsup.config.ts", "tsconfig.json", "tsconfig.dts.json", "package.json", ...manifest.files]) {
-    if (entry.startsWith("!") || entry === "dist" || !existsSync(join(repo, entry))) continue;
+    if (entry.startsWith("!") || /^(packages\/[^/]+\/)?dist$/.test(entry) || !existsSync(join(repo, entry))) continue;
     mkdirSync(dirname(join(copy, entry)), { recursive: true });
     cpSync(join(repo, entry), join(copy, entry), { recursive: true });
   }
@@ -256,9 +262,17 @@ function stageAndPack() {
   ]) {
     if (existsSync(join(coreRoot, source))) cpSync(join(coreRoot, source), join(coreStage, "dist", source.split("/").at(-1)));
   }
+  // Each plugin builds into the stage at its source layout; Core's `files` names
+  // the plugin manifests and every other entry they ship (README, LICENSE, the
+  // ECC opt-out predicate module), copied below.
+  for (const directory of BUNDLED_DIRECTORIES)
+    must(
+      run(process.execPath, [tsupCli, "--out-dir", join(coreStage, directory, "dist")], join(repo, directory)),
+      `${directory} tsup build`,
+    );
   const coreManifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
   for (const entry of coreManifest.files) {
-    if (entry.startsWith("!") || entry === "dist") continue;
+    if (entry.startsWith("!") || /^(packages\/[^/]+\/)?dist$/.test(entry)) continue;
     const source = join(repo, entry);
     if (!existsSync(source)) continue;
     mkdirSync(dirname(join(coreStage, entry)), { recursive: true });
@@ -266,33 +280,12 @@ function stageAndPack() {
   }
   writeFileSync(join(coreStage, "package.json"), `${JSON.stringify({ ...coreManifest, version: coreVersion }, null, 2)}\n`);
   const core = pack(coreStage, "Core");
-  // ---- the two framework plugins ------------------------------------------------------
-  const plugins = {};
-  for (const [name, dir] of [
-    [ECC, "framework-ecc"],
-    [SUPERPOWERS, "framework-superpowers"],
-  ]) {
-    const source = join(repo, "packages", dir);
-    const stage = join(work, `stage-${dir}`);
-    rmSync(stage, { recursive: true, force: true });
-    mkdirSync(stage, { recursive: true });
-    must(run(process.execPath, [tsupCli, "--out-dir", join(stage, "dist")], source), `${name} tsup build`);
-    // The manifest plus every other entry it ships (README, LICENSE, the ECC opt-out
-    // predicate module); a declared entry that is missing fails the build.
-    cpSync(join(source, "package.json"), join(stage, "package.json"));
-    for (const entry of JSON.parse(readFileSync(join(source, "package.json"), "utf8")).files) {
-      if (entry === "dist") continue;
-      mkdirSync(dirname(join(stage, entry)), { recursive: true });
-      cpSync(join(source, entry), join(stage, entry), { recursive: true });
-    }
-    plugins[name] = pack(stage, name);
-  }
   // ---- the Catalog candidate: a tarball used as it is, or a checkout packed as it is -------
   if (resolve(catalogRepo).endsWith(".tgz")) {
     const catalog = join(tarballs, resolve(catalogRepo).split(/[\\/]/).at(-1));
     cpSync(resolve(catalogRepo), catalog);
     summary.catalogCandidate = { tarball: resolve(catalogRepo) };
-    return { core, ecc: plugins[ECC], superpowers: plugins[SUPERPOWERS], catalog };
+    return { core, catalog };
   }
   const catalogHead = run("git", ["-C", resolve(catalogRepo), "rev-parse", "HEAD"], resolve(catalogRepo));
   const catalogStatus = run("git", ["-C", resolve(catalogRepo), "status", "--porcelain"], resolve(catalogRepo));
@@ -301,7 +294,7 @@ function stageAndPack() {
     uncommitted: catalogStatus.status === 0 ? catalogStatus.stdout.split("\n").filter(Boolean) : undefined,
   };
   const catalog = pack(resolve(catalogRepo), "Catalog");
-  return { core, ecc: plugins[ECC], superpowers: plugins[SUPERPOWERS], catalog };
+  return { core, catalog };
 }
 
 function existingTarballs() {
@@ -313,8 +306,6 @@ function existingTarballs() {
   };
   return {
     core: find("aihq-core-"),
-    ecc: find("aihq-framework-ecc-"),
-    superpowers: find("aihq-framework-superpowers-"),
     catalog: find("aihq-catalog-"),
   };
 }
@@ -330,8 +321,10 @@ try {
   const coreFiles = readPackedFiles(packed.core);
   const corePaths = [...coreFiles.keys()];
   check(
-    "Core tarball has no framework plugin package file",
-    corePaths.every((path) => !path.startsWith("package/packages/") && !/framework-(superpowers|ecc)/.test(path)),
+    "Core tarball carries both bundled plugins' manifests and built entries",
+    BUNDLED_DIRECTORIES.every(
+      (directory) => coreFiles.has(`package/${directory}/package.json`) && coreFiles.has(`package/${directory}/dist/index.js`),
+    ),
   );
   const coreJs = [...coreFiles]
     .filter(([path]) => /^package\/dist\/[^/]+\.js$/.test(path))
@@ -340,10 +333,13 @@ try {
     ECC_IMPLEMENTATION_NAMES.filter((name) => body.includes(name)).map((name) => `${file}: ${name}`),
   );
   check("Core dist carries no ECC implementation function", implementationHits.length === 0, implementationHits.join("; "));
-  const eccFiles = readPackedFiles(packed.ecc);
+  const eccPrefix = `package/${ECC_DIRECTORY}/`;
+  const eccFiles = new Map(
+    corePaths.filter((path) => path.startsWith(eccPrefix)).map((path) => [`package/${path.slice(eccPrefix.length)}`, coreFiles.get(path)]),
+  );
   const eccPaths = [...eccFiles.keys()].sort();
   check(
-    "ECC plugin tarball carries only its dist, opt-out predicate, manifest, README and LICENSE",
+    "bundled ECC plugin carries only its dist, opt-out predicate, manifest, README and LICENSE",
     eccPaths.join(",") ===
       [
         "package/LICENSE",
@@ -356,7 +352,7 @@ try {
   );
   const packedPredicate = eccFiles.get("package/src/ecc/chrome-devtools-opt-out.cjs");
   check(
-    "ECC plugin tarball ships the Chrome DevTools opt-out predicate byte-identical to the checkout's",
+    "bundled ECC plugin ships the Chrome DevTools opt-out predicate byte-identical to the checkout's",
     packedPredicate !== undefined &&
       packedPredicate.equals(readFileSync(join(repo, "packages", "framework-ecc", "src", "ecc", "chrome-devtools-opt-out.cjs"))),
   );
@@ -386,14 +382,14 @@ try {
   const project = join(work, "project");
   const globalPrefix = join(work, "global");
   const globalModules = globalNodeModules(globalPrefix);
-  // A previous run ends with the plugin removed from the global prefix; reinstall then.
-  if (!reuse || ![join(project, "node_modules"), globalModules].every((modules) => existsSync(join(modules, "@aihq", "framework-ecc")))) {
+  // A previous run ends with the plugin removed from the global Core; reinstall then.
+  if (!reuse || ![join(project, "node_modules"), globalModules].every((modules) => existsSync(join(modules, "@aihq", "core", ECC_DIRECTORY)))) {
     rmSync(project, { recursive: true, force: true });
     rmSync(globalPrefix, { recursive: true, force: true });
     mkdirSync(project, { recursive: true });
     mkdirSync(globalPrefix, { recursive: true });
     writeFileSync(join(project, "package.json"), JSON.stringify({ name: "framework-ecc-consumer", private: true, type: "module" }));
-    const all = [packed.core, packed.catalog, packed.ecc, packed.superpowers];
+    const all = [packed.core, packed.catalog];
     must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", ...all], project), "project install");
     must(
       npmRun(["install", "-g", "--prefix", globalPrefix, "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", ...all], work),
@@ -403,9 +399,13 @@ try {
   const projectCore = join(project, "node_modules", "@aihq", "core");
   const globalCore = join(globalModules, "@aihq", "core");
   check(
-    "project and global prefix each have Core, Catalog and both plugins installed side by side",
-    [join(project, "node_modules"), globalModules].every((modules) =>
-      ["core", "catalog", "framework-ecc", "framework-superpowers"].every((name) => existsSync(join(modules, "@aihq", name, "package.json"))),
+    "project and global prefix each have Core and Catalog, both plugins inside Core and none beside it",
+    [join(project, "node_modules"), globalModules].every(
+      (modules) =>
+        ["core", "catalog"].every((name) => existsSync(join(modules, "@aihq", name, "package.json"))) &&
+        BUNDLED_DIRECTORIES.every((directory) => existsSync(join(modules, "@aihq", "core", directory, "dist", "index.js"))) &&
+        !existsSync(join(modules, "@aihq", "framework-ecc")) &&
+        !existsSync(join(modules, "@aihq", "framework-superpowers")),
     ),
   );
 
@@ -448,13 +448,13 @@ try {
   const previewResult = json(preview);
   summary.preview = { exit: preview.status, capability: previewResult?.capability };
   check(
-    "aih ecc <tmpRoot> previews through the installed plugin (project install)",
+    "aih ecc <tmpRoot> previews through the bundled plugin (project install)",
     preview.status === 0 && typeof previewResult?.capability === "string" && previewResult.capability.startsWith("ecc"),
     `exit ${preview.status}; ${(previewResult?.error?.message ?? preview.stderr).slice(0, 300)}`,
   );
   const previewGlobal = aihGlobal("ECC preview (global install)", ["ecc", previewRoot, "--json", "--no-log"]);
   check(
-    "aih ecc <tmpRoot> previews through the installed plugin (global install)",
+    "aih ecc <tmpRoot> previews through the bundled plugin (global install)",
     previewGlobal.status === 0 && json(previewGlobal)?.capability === previewResult?.capability,
     `exit ${previewGlobal.status}; ${(json(previewGlobal)?.error?.message ?? previewGlobal.stderr).slice(0, 300)}`,
   );
@@ -468,7 +468,7 @@ try {
     const located = run(
       process.execPath,
       ["--input-type=module", "-e", 'const m = await import("@aihq/core/framework-host"); process.stdout.write(m.eccRuntimeScriptPath());'],
-      join(modules, "@aihq", "framework-ecc"),
+      join(coreDir, ECC_DIRECTORY),
     );
     const scriptPath = located.status === 0 ? located.stdout.trim() : "";
     check(
@@ -853,14 +853,14 @@ try {
   userList(["stop:desktop-notify"]);
 
   // ---- plugin removed: refusals, then reinstall and finish the round trip ---------------------------
-  must(npmRun(["uninstall", "--no-audit", "--no-fund", ECC], project), "project plugin uninstall");
-  must(npmRun(["uninstall", "-g", "--prefix", globalPrefix, "--no-audit", "--no-fund", ECC], work), "global plugin uninstall");
+  for (const coreDir of [projectCore, globalCore]) rmSync(join(coreDir, ECC_DIRECTORY), { recursive: true, force: true });
   check(
-    "the plugin is gone from the project and the global prefix; Core, Catalog and Superpowers stay",
+    "the bundled ECC plugin is gone from the project and the global Core; Core, Catalog and Superpowers stay",
     [join(project, "node_modules"), globalModules].every(
       (modules) =>
-        !existsSync(join(modules, "@aihq", "framework-ecc")) &&
-        ["core", "catalog", "framework-superpowers"].every((name) => existsSync(join(modules, "@aihq", name, "package.json"))),
+        !existsSync(join(modules, "@aihq", "core", ECC_DIRECTORY)) &&
+        existsSync(join(modules, "@aihq", "core", BUNDLED_DIRECTORIES[1], "dist", "index.js")) &&
+        ["core", "catalog"].every((name) => existsSync(join(modules, "@aihq", name, "package.json"))),
     ),
   );
   const refusal = (result) => {
@@ -869,7 +869,9 @@ try {
       result.status !== 0 &&
       json(result)?.error?.code === "AIH_FRAMEWORK_PLUGIN" &&
       message.startsWith("framework-plugin-unavailable:") &&
-      message.includes("npm install -g @aihq/core @aihq/framework-ecc") &&
+      message.startsWith(`framework-plugin-unavailable: ${ECC} ships inside @aihq/core`) &&
+      message.includes("Reinstall @aihq/core with: npm install -g @aihq/core") &&
+      !message.includes(`npm install -g @aihq/core ${ECC}`) &&
       !/\n\s+at /.test(`${result.stdout}\n${result.stderr}`)
     );
   };
@@ -881,7 +883,7 @@ try {
   ]) {
     const refused = runner(`plugin removed: aih ecc (${label} install)`, ["ecc", previewRoot, "--json", "--no-log"]);
     summary.refusals[`ecc-${label}`] = json(refused)?.error?.message;
-    check(`aih ecc refuses with framework-plugin-unavailable and the install command (${label} install)`, refusal(refused), refusalDetail(refused));
+    check(`aih ecc refuses with framework-plugin-unavailable and the @aihq/core reinstall (${label} install)`, refusal(refused), refusalDetail(refused));
   }
   const governedBefore = snapshot(governed);
   const refusedApply = aih("plugin removed: governed ECC delivery", projectArgs);
@@ -913,8 +915,11 @@ try {
   summary.refusals.policyDeliveryReport = evaluateNotRun;
   check("the policy delivery report states the ECC checks were not run", evaluateNotRun !== undefined && notRun.test(evaluateNotRun), `exit ${evaluate.status}`);
 
-  must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", packed.ecc], project), "project plugin reinstall");
-  const uninstalled = aih("governed ECC uninstall after the plugin is reinstalled", ["uninstall", governed, "--apply", "--force", "--json", "--no-log"]);
+  // The project route the refusal names: npm keeps a package whose manifest is present.
+  rmSync(projectCore, { recursive: true, force: true });
+  must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline"], project), "project Core reinstall");
+  check("reinstalling the project's Core restores the bundled ECC plugin", existsSync(join(projectCore, ECC_DIRECTORY, "dist", "index.js")));
+  const uninstalled = aih("governed ECC uninstall after Core is reinstalled", ["uninstall", governed, "--apply", "--force", "--json", "--no-log"]);
   summary.governed.uninstallExit = uninstalled.status;
   summary.governed.eccCleanup = json(uninstalled)?.digests?.find?.((digest) => digest.data?.eccCleanup)?.data?.eccCleanup;
   check(
