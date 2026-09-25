@@ -87,6 +87,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Behavior change: a carried pin's definition authority is the Catalog's DECLARED definition
+  (D79).** For a framework pin the installed Catalog carries, Core derives its baseline catalog
+  from the accepted descriptor's `componentDefinitions` — the declared definition — instead of the
+  component list of the `vendorLock` evidence lock, which records whatever definition was current
+  when that evidence was sealed. A `--definition` equal to the declared catalog is accepted and
+  `baseline:request`, `baseline:consume-publication(s)` and `baseline:assemble` use exactly that
+  catalog; any other definition for a carried pin is refused, including the earlier `vendorLock`
+  one when it differs. `skillContent` is decided at the checked-out pin by Core's analyzer-profile
+  rule, so a component whose declared path is a host directory ECC mirrors skills into (`.kiro`,
+  `.cursor`, `.agents`) is skill content when the checkout holds those files. A descriptor whose
+  declared definition is missing or malformed refuses with `AIH_CATALOG_DECLARED_DEFINITION`; it
+  never falls back to `vendorLock`. The `vendorLock` document is still verified as the evidence it
+  is.
 - **Behavior change: `aih trust scan` and `aih skill vet` exit 0 on findings and evidence
   problems (D66).** A report whose every failed check is a finding or an evidence problem exits 0;
   the findings and problems are still in the output as labels. Exit 1 remains for integrity and
