@@ -304,7 +304,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `catalog-descriptor-absent`, `catalog-descriptor-unverified`,
   `catalog-descriptor-not-accepted`), never an embedded fallback. The registry's
   `@aihq/catalog` 0.2.0 is outside the peer range. The same bytes
-  are accepted as before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`), and the
+  are accepted as before (`sha256 52e67554…` for `affaan-m/ECC@5064474d…`), and the
   source used is printed on stderr.
 - `@aihq/scan` is now an optional peer dependency (`>=0.5.0 <0.6.0`) and is no longer
   bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
