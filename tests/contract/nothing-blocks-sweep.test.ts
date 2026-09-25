@@ -66,7 +66,31 @@ const GATE_BRANCH = new RegExp(
   String.raw`if\s*\([^;{}]{0,300}?${LABEL_TEST}[^;{}]{0,200}?\)\s*(\{[^{}]{0,600}?\}|[^;]{0,300};)`,
   "gs",
 );
-const STOPS = /\bthrow\b|refus|process\.exitCode\s*=\s*1|exit\(1\)/;
+// Any non-zero exit counts, not only 1.
+const STOPS =
+  /\bthrow\b|refus|process\.exitCode\s*=\s*(?!0\b)[\w.]+|\bexit\(\s*(?!0\s*\))[\w.]+\s*\)/;
+
+// A stop reached from a finding label through a ternary or a short-circuit
+// instead of an `if`: `label ? refuse() : x`, `label ? x : fail()`, `label && throwIt()`.
+const STOP_EXPR = String.raw`(?:\(\s*\(\)\s*=>\s*\{\s*throw\b|throw\b|new \w*Error\(|refus\w*\(|fail\w*\(|process\.exit\()`;
+const EXPR_STOP = new RegExp(
+  String.raw`${LABEL_TEST}\s*\)?\s*(?:\?\s*${STOP_EXPR}|&&\s*${STOP_EXPR}|\?[^:;?]{0,160}:\s*${STOP_EXPR})`,
+  "g",
+);
+
+// A silent drop: a `.filter(` whose predicate keeps only items with a clean label.
+// A drop through an intermediate set (the pre-D50 G7 shape, `filter(authorized)`)
+// is out of a text detector's reach; the behavioral inclusion tests in
+// packages/framework-ecc/tests/ecc/verified.test.ts ("includes a component whose
+// exact evidence carries findings, like any other authorization") cover it.
+const CLEAN = '(?:"no-findings"|"pass"|"GREEN"|"ALLOW"|"allow")';
+const DIRTY =
+  '(?:"has-findings"|"blocked"|"BLOCK"|"block"|"RED"|"UNKNOWN"|"REVIEW"|"fail"|"failed")';
+const KEEP_CLEAN = String.raw`(?:===\s*${CLEAN}|${CLEAN}\s*===|!==\s*${DIRTY}|${DIRTY}\s*!==|findings\.length\s*===\s*0|!\s*[\w.]*hasFindings|[\w.]*(?:report|scan|result|vet|grade|trust)\.ok\b(?!\s*===\s*false))`;
+const FILTER_DROP = new RegExp(
+  String.raw`\.filter\(\s*(?:\([^()]*\)|\w+)\s*=>[^;]{0,200}?${KEEP_CLEAN}`,
+  "g",
+);
 
 const GATE_PHRASE =
   /(blocked, do not install|do not install|only (GREEN|approvable)|is not authorized|NOT AUTHORIZED|not authorized until|is blocked by|blocked by (genuine|finding|danger)|requested policy is blocked|vet-blocked|NOT installable|refusing to provision|failed trust scan|Reject the external source|excluded from ECC Lean|Permit only with|promote only after|must pass before|cannot be approved|findings? (block|blocks|blocked)\b|\bblocks? (install|promotion|approval|export|provision))/i;
@@ -84,6 +108,16 @@ function findGateBranches(files: readonly SourceFile[]): Hit[] {
         line: lineOf(file.text, match.index ?? 0),
         text: match[0].replace(/\s+/g, " "),
       })),
+  );
+}
+
+function findMatches(files: readonly SourceFile[], pattern: RegExp): Hit[] {
+  return files.flatMap((file) =>
+    [...file.text.matchAll(pattern)].map((match) => ({
+      path: file.path,
+      line: lineOf(file.text, match.index ?? 0),
+      text: match[0].replace(/\s+/g, " "),
+    })),
   );
 }
 
@@ -228,6 +262,29 @@ const ALLOWED_PHRASES: readonly Allowed[] = [
   },
 ];
 
+const ALLOWED_FILTERS: readonly Allowed[] = [
+  {
+    path: "src/heal/cert-verify.ts",
+    contains: 'os.verdict === "pass"',
+    why: "TLS certificate probe results, not a trust finding",
+  },
+  {
+    path: "src/mcp/policy.ts",
+    contains: 'p.verdict === "allow"',
+    why: "partitions MCP policy results for display; denied and warned servers are listed beside it",
+  },
+  {
+    path: "src/report/mcp-governance.ts",
+    contains: 'p.verdict === "allow"',
+    why: "partitions MCP policy results for display; denied and warned servers are listed beside it",
+  },
+  {
+    path: "src/trust/acknowledge.ts",
+    contains: 'check.verdict !== "fail"',
+    why: "selects the failing checks the consumer asked to acknowledge; keeps findings, drops passes",
+  },
+];
+
 function isAllowed(hit: Hit, allowed: readonly Allowed[]): boolean {
   return allowed.some((entry) => entry.path === hit.path && hit.text.includes(entry.contains));
 }
@@ -258,6 +315,24 @@ const REMOVED_GATE_PHRASES: readonly string[] = [
   '"REVIEW for the full profile; excluded from ECC Lean. Permit only with an explicit X API egress and credential decision."',
   '"Reject the external source until the hidden Unicode is removed."',
   'summary: "Fetch or scan an external skill source, then promote only after trust verification",',
+];
+
+// Shapes no pre-D50 site used, pinned so the added detectors cannot go blunt.
+const SYNTHETIC_FILTER_DROPS: readonly string[] = [
+  'const kept = components.filter((component) => component.verdict === "no-findings");',
+  'const kept = skills.filter((skill) => skill.verdict !== "RED");',
+  "const kept = scans.filter((scan) => scan.findings.length === 0);",
+];
+
+const SYNTHETIC_EXPR_STOPS: readonly string[] = [
+  'return evidence.verdict === "has-findings" ? refuse("has findings") : proceed();',
+  'const next = gate !== "BLOCK" ? proceed() : fail("blocked");',
+  '!report.ok && (() => { throw new Error("x"); })();',
+];
+
+const SYNTHETIC_EXIT_BRANCHES: readonly string[] = [
+  'if (verdict === "RED") {\n  process.exitCode = 2;\n}',
+  "if (hasFindings) process.exit(EXIT_FINDINGS);",
 ];
 
 /** The trust code class table, read from its source text. */
@@ -291,12 +366,22 @@ describe("nothing blocks (D50 sweep)", () => {
     expect(unexplained(findGatePhrases(files), ALLOWED_PHRASES)).toEqual([]);
   });
 
+  it("has no ternary or short-circuit where a finding label stops the consumer", () => {
+    expect(unexplained(findMatches(files, EXPR_STOP), [])).toEqual([]);
+  });
+
+  it("drops no item from a list because of its finding label", () => {
+    expect(unexplained(findMatches(files, FILTER_DROP), ALLOWED_FILTERS)).toEqual([]);
+  });
+
   it("keeps every allowlisted integrity site live, so the allowlist cannot go stale", () => {
     const branches = findGateBranches(files);
     const phrases = findGatePhrases(files);
+    const filters = findMatches(files, FILTER_DROP);
     const stale = [
       ...ALLOWED_BRANCHES.filter((entry) => !branches.some((hit) => isAllowed(hit, [entry]))),
       ...ALLOWED_PHRASES.filter((entry) => !phrases.some((hit) => isAllowed(hit, [entry]))),
+      ...ALLOWED_FILTERS.filter((entry) => !filters.some((hit) => isAllowed(hit, [entry]))),
     ].map((entry) => `${entry.path}: ${entry.contains}`);
     expect(stale).toEqual([]);
   });
@@ -307,6 +392,18 @@ describe("nothing blocks (D50 sweep)", () => {
     }
     for (const [index, text] of REMOVED_GATE_PHRASES.entries()) {
       expect(findGatePhrases([{ path: `removed-${index}.ts`, text }])).toHaveLength(1);
+    }
+  });
+
+  it("recognises filter drops, expression stops and any non-zero exit", () => {
+    for (const [index, text] of SYNTHETIC_FILTER_DROPS.entries()) {
+      expect(findMatches([{ path: `drop-${index}.ts`, text }], FILTER_DROP), text).toHaveLength(1);
+    }
+    for (const [index, text] of SYNTHETIC_EXPR_STOPS.entries()) {
+      expect(findMatches([{ path: `expr-${index}.ts`, text }], EXPR_STOP), text).toHaveLength(1);
+    }
+    for (const [index, text] of SYNTHETIC_EXIT_BRANCHES.entries()) {
+      expect(findGateBranches([{ path: `exit-${index}.ts`, text }]), text).toHaveLength(1);
     }
   });
 
