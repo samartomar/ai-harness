@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type Action,
   digest,
+  inspectContainedPath,
   inspectContainedRelativePath,
   readContainedRegularFile,
   readEccInstallManifest,
@@ -19,7 +21,14 @@ function destinationIdentity(root: string, path: string): string {
   const portable =
     process.platform === "win32" ? parts.map((part) => part.replace(/[. ]+$/g, "")) : parts;
   const identity = resolve(root, ...portable);
-  return process.platform === "win32" ? identity.toLowerCase() : identity;
+  let canonical = identity;
+  try {
+    const inspected = inspectContainedPath(realpathSync.native(root), identity);
+    if (inspected.state === "present" && inspected.kind === "file") canonical = inspected.realPath;
+  } catch {
+    // An absent root has no canonical file; retain the lexical identity.
+  }
+  return process.platform === "win32" ? canonical.toLowerCase() : canonical;
 }
 
 function hash(contents: Buffer): string {

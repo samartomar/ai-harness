@@ -181,8 +181,8 @@ interface SingleLinkLockFile {
 interface FsTransactionOptions {
   commitNotAfter?: number;
   commitLock?: CommitLock;
-  /** Test seam: observe each completed filesystem effect, including before receipt commits. */
-  onEffectCommitted?: (kind: "write" | "remove", path: string) => void;
+  /** Test seam: observe each completed filesystem effect, including scratch and backup effects. */
+  onEffectCommitted?: (kind: "backup" | "temp" | "write" | "remove", path: string) => void;
 }
 
 export interface FsTxnResult {
@@ -1059,6 +1059,7 @@ export class FsTransaction {
             this.assertCommitDeadline();
             return copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
           });
+          this.options.onEffectCommitted?.("backup", backupPath);
           const saved = readRegularFile(backupPath);
           if (
             saved === undefined ||
@@ -1073,6 +1074,7 @@ export class FsTransaction {
           this.assertCommitDeadline();
           return writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" });
         });
+        this.options.onEffectCommitted?.("temp", tmpPath);
         if (w.mode !== undefined) {
           this.guardParents(w.path, w.root, false);
           this.assertCommitDeadline();

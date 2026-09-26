@@ -320,6 +320,7 @@ export {
 export { entry as cliRegistryEntry } from "../internals/cli-registry.js";
 export { resolveClis } from "../internals/clis.js";
 export {
+  inspectContainedPath,
   inspectContainedRelativePath,
   readContainedRegularFile,
 } from "../internals/contained-path.js";

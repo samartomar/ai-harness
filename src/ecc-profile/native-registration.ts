@@ -733,6 +733,34 @@ function assertInstalled(current: CurrentFile | undefined, file: NativeRegistrat
   }
 }
 
+function nativeFragmentAbsent(
+  current: CurrentFile | undefined,
+  file: NativeRegistrationFile,
+): boolean {
+  if (current === undefined) return true;
+  if (file.ownership === "toml-block") {
+    return (
+      !current.contents.includes(beginMarker(NATIVE_REGISTRATION_SCOPE)) &&
+      tomlMcpOwnershipConflicts(current.contents, file).length === 0
+    );
+  }
+  const root = parseObject(current.contents, file.destination);
+  const [parentKey, managedChildren] = fragmentRoot(file);
+  const parent = root[parentKey];
+  if (parent === undefined) return true;
+  if (!plainObject(parent)) return false;
+  return Object.entries(managedChildren).every(([childKey, managedValue]) => {
+    const existing = parent[childKey];
+    if (file.ownership === "json-object-children") return existing === undefined;
+    return (
+      existing === undefined ||
+      (Array.isArray(existing) &&
+        Array.isArray(managedValue) &&
+        managedValue.every((item) => !existing.some((candidate) => sameJson(candidate, item))))
+    );
+  });
+}
+
 function receiptFor(
   registration: NativeEccRegistration,
   files: NativeRegistrationFile[],
@@ -971,14 +999,17 @@ export function planNativeEccRegistration(
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
-    actions.push(
-      writePinned(
+    actions.push({
+      ...writePinned(
         file.destination,
         file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
         current,
         `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
       ),
-    );
+      ...(file.ownership === "toml-block"
+        ? { removeManagedTextBlockScope: NATIVE_REGISTRATION_SCOPE }
+        : {}),
+    });
   }
   actions.push(
     remove(NATIVE_ECC_REGISTRATION_RECEIPT, "remove native ECC registration receipt", {
@@ -1050,20 +1081,24 @@ function planInstalledRegistrationFromReceipt(
   const actions: Action[] = [];
   for (const file of found.receipt.files) {
     const current = readCurrent(root, file.destination);
+    if (nativeFragmentAbsent(current, file)) continue;
     assertInstalled(current, file);
     if (!current) continue;
     const stripped =
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
-    actions.push(
-      writePinned(
+    actions.push({
+      ...writePinned(
         file.destination,
         file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
         current,
         `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
       ),
-    );
+      ...(file.ownership === "toml-block"
+        ? { removeManagedTextBlockScope: NATIVE_REGISTRATION_SCOPE }
+        : {}),
+    });
   }
   actions.push(
     remove(NATIVE_ECC_REGISTRATION_RECEIPT, "remove native ECC registration receipt", {

@@ -2007,6 +2007,62 @@ describe("FsTransaction — conditional write pins", () => {
 describe("executePlan — envblock folding", () => {
   const profile = "profile.ps1";
 
+  it.each(["text-first", "block-first"] as const)(
+    "commits both text and environment block bytes in %s order",
+    async (order) => {
+      const text = writeText(profile, "export OPERATOR=keep\n", "operator text");
+      const block = envBlock(profile, "certs", "posix", [{ key: "A", value: "1" }], "certs env");
+      const actions = order === "text-first" ? [text, block] : [block, text];
+      const result = await executePlan(plan("mixed", ...actions), ctx({ apply: true }));
+      const committed = readFileSync(join(dir, profile), "utf8");
+      expect(committed).toContain("export OPERATOR=keep\n");
+      expect(committed).toContain("# >>> aih managed (certs) >>>");
+      expect(committed).toContain("export A=1");
+      expect(result.writes.find((write) => write.merged)?.effect).toMatch(/create|merge/);
+    },
+  );
+
+  it("rejects a JSON merge and environment block collision before writing", async () => {
+    const path = "settings.json";
+    const actions = [
+      writeJson(path, { operator: true }, "merge JSON", { merge: true }),
+      envBlock(path, "certs", "posix", [{ key: "A", value: "1" }], "certs env"),
+    ];
+    await expect(
+      executePlan(plan("mixed", ...actions), ctx({ apply: true })),
+    ).rejects.toMatchObject({
+      code: "AIH_CONFIG",
+    });
+    expect(existsSync(join(dir, path))).toBe(false);
+  });
+
+  it("composes a text JSON seed with a following merge using committed bytes", async () => {
+    const path = "settings.json";
+    await executePlan(
+      plan(
+        "mixed",
+        writeExactText(path, '{"operator":true}\n', "seed JSON"),
+        writeJson(path, { managed: true }, "merge JSON", { merge: true }),
+      ),
+      ctx({ apply: true }),
+    );
+    expect(JSON.parse(readFileSync(join(dir, path), "utf8"))).toEqual({
+      operator: true,
+      managed: true,
+    });
+  });
+
+  it("rejects conflicting whole-text writes before any filesystem effect", async () => {
+    const path = "profile.ps1";
+    await expect(
+      executePlan(
+        plan("collision", writeText(path, "first", "first"), writeText(path, "second", "second")),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_CONFIG" });
+    expect(existsSync(join(dir, path))).toBe(false);
+  });
+
   it("renders a single managed block with markers (dry-run writes nothing)", async () => {
     const p = plan(
       "t",
@@ -2057,6 +2113,24 @@ describe("executePlan — envblock folding", () => {
     expect(second).toBe(first); // byte-identical re-apply
     expect(second).toContain("export USER_VAR=keep");
   });
+});
+
+it("keeps the interruption callback unreachable from production callers", () => {
+  const referenced: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(join(process.cwd(), directory), { withFileTypes: true })) {
+      const path = `${directory}/${entry.name}`;
+      if (entry.isDirectory()) visit(path);
+      else if (
+        entry.name.endsWith(".ts") &&
+        readFileSync(join(process.cwd(), path), "utf8").includes("onEffectCommitted")
+      )
+        referenced.push(path);
+    }
+  };
+  visit("src");
+  visit("packages");
+  expect(referenced.sort()).toEqual(["src/internals/execute.ts", "src/internals/fsxn.ts"]);
 });
 
 describe("writeArtifact", () => {

@@ -56,6 +56,8 @@ export interface WriteAction {
   sensitive?: ActionSensitivity;
   /** Raw file contents (for text files). */
   contents?: string;
+  /** Subtract one receipt-verified managed text block from the evolving destination. */
+  removeManagedTextBlockScope?: string;
   /** Closed opt-in for trusted source assets whose exact bytes are contractual. */
   exactContents?: true;
   /** Structured value (for JSON files); enables `merge`. */

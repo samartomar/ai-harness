@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +18,11 @@ import {
   explicitEccMcpRenderPlan,
 } from "../../packages/framework-ecc/src/legacy-cleanup/explicit-mcp.js";
 import { planGovernedCodexRoleRegistration } from "../../packages/framework-ecc/src/profile/governed-codex-roles.js";
+import {
+  ECC_MATERIALIZATION_RECEIPT_PATH,
+  ownedFileSha256,
+  serializeEccMaterializationReceipt,
+} from "../../src/ecc/materialization-receipt.js";
 import {
   buildNativeEccRegistration,
   planNativeEccRegistration,
@@ -116,6 +129,160 @@ function manifestFixture(): void {
   );
 }
 
+function materializationFixture(): void {
+  const clean = "# aih agent\n";
+  const modified = "# operator changed rule\n";
+  put(".claude/agents/owned.md", clean);
+  put(".claude/rules/modified.md", modified);
+  const authorization = (componentId: string) => ({
+    componentId,
+    source: "affaan-m/ECC",
+    pinnedSha: "a".repeat(40),
+    treeSha256: "b".repeat(64),
+    tier: "vendor" as const,
+    issuer: "@aihq/core release",
+    evidenceSha256: "c".repeat(64),
+  });
+  put(
+    ECC_MATERIALIZATION_RECEIPT_PATH,
+    serializeEccMaterializationReceipt({
+      format: "aih-ecc-materialization-receipt",
+      schemaVersion: 1,
+      components: [
+        {
+          id: "agent:owned",
+          authorization: authorization("agent:owned"),
+          provenance: {
+            repository: "affaan-m/ECC",
+            commit: "a".repeat(40),
+            componentPath: "agents/owned.md",
+          },
+          files: [
+            {
+              path: ".claude/agents/owned.md",
+              operation: "copy-file",
+              contentSha256: ownedFileSha256(clean),
+            },
+          ],
+        },
+        {
+          id: "rule:modified",
+          authorization: authorization("rule:modified"),
+          provenance: {
+            repository: "affaan-m/ECC",
+            commit: "a".repeat(40),
+            componentPath: "rules/modified.md",
+          },
+          files: [
+            {
+              path: ".claude/rules/modified.md",
+              operation: "copy-file",
+              contentSha256: ownedFileSha256("# original rule\n"),
+            },
+          ],
+        },
+      ],
+    }),
+  );
+}
+
+async function multiFamilyFixture(): Promise<void> {
+  manifestFixture();
+  const manifestPath = join(root, ".aih/ecc/install-manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  put(".kiro/skills/modified.md", "operator manifest edit\n");
+  manifest.installs[0].files.push({
+    path: "skills/modified.md",
+    sha256: createHash("sha256").update("original manifest bytes\n").digest("hex"),
+  });
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  materializationFixture();
+  nativeStateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-native-state-"));
+  const runtimeRoot = join(nativeStateRoot, "runtime");
+  mkdirSync(runtimeRoot);
+  const executable = join(runtimeRoot, process.platform === "win32" ? "node.exe" : "node");
+  const cliScript = join(runtimeRoot, "cli.js");
+  writeFileSync(executable, "fixture executable\n");
+  writeFileSync(cliScript, "fixture script\n");
+  const serenaRuntimeRoot = fileURLToPath(
+    new URL("../../src/ecc-profile/serena-runtime", import.meta.url),
+  );
+  await executePlan(
+    planNativeEccRegistration(
+      root,
+      buildNativeEccRegistration({
+        root,
+        stateRoot: nativeStateRoot,
+        executable,
+        cliScript,
+        serenaRuntimeRoot,
+      }),
+      "install",
+    ),
+    context(true),
+  );
+  const policy = {
+    schemaVersion: 2,
+    minimumPosture: "vibe",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "2026.08",
+      catalog: { reviewed: [], custom: [] },
+      activations: [],
+      authority: { approvals: [] },
+      supportedClis: ["claude"],
+      eccMcpApprovals: [
+        {
+          id: "memxus",
+          sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+          state: "approved",
+          approvedBy: "security-admin",
+          authenticationMode: "api-key",
+          allowedDataClasses: ["non-sensitive-context"],
+        },
+      ],
+    },
+  };
+  const rendered = explicitEccMcpRenderPlan(policy, "memxus", "claude");
+  const mcpPath = join(root, ".mcp.json");
+  const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
+  mcp.mcpServers.memxus = rendered.rendered;
+  writeFileSync(mcpPath, JSON.stringify(mcp));
+  put(
+    ".aih/ecc-mcp-explicit-add-v1.json",
+    JSON.stringify({
+      format: "aih-ecc-mcp-explicit-add",
+      version: 1,
+      records: [explicitEccMcpReceiptRecord(rendered)],
+    }),
+  );
+}
+
+function shortBasename(path: string): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  const result = spawnSync("cmd.exe", ["/d", "/c", `for %I in (${path}) do @echo %~snxI`], {
+    encoding: "utf8",
+  });
+  const name = result.status === 0 ? result.stdout.trim() : "";
+  return name.includes("~") &&
+    existsSync(join(dirname(path), name)) &&
+    name.toLowerCase() !== path.split(/[\\/]/).at(-1)?.toLowerCase()
+    ? name
+    : undefined;
+}
+
+const supportsEightDotThree = (() => {
+  if (process.platform !== "win32") return false;
+  const probe = mkdtempSync(join(tmpdir(), "aih-short-name-probe-"));
+  try {
+    const file = join(probe, "long-filename-for-short-name-check.txt");
+    writeFileSync(file, "probe");
+    return shortBasename(file) !== undefined;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
 describe("legacy ECC cleanup through public lifecycle commands", () => {
   it("preserves every duplicate and normalized-alias manifest claim with its bytes and receipt", async () => {
     manifestFixture();
@@ -133,6 +300,52 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
       "duplicate ownership claim",
     );
   });
+
+  it.runIf(process.platform === "win32")(
+    "preserves claims through a Windows directory junction to the same file",
+    async () => {
+      manifestFixture();
+      const receiptPath = join(root, ".aih/ecc/install-manifest.json");
+      const filePath = join(root, ".kiro/skills/owned.md");
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+      symlinkSync(join(root, ".kiro/skills"), join(root, ".kiro/alias"), "junction");
+      receipt.installs[0].files.push({ ...receipt.installs[0].files[0], path: "alias/owned.md" });
+      writeFileSync(receiptPath, JSON.stringify(receipt));
+      const before = readFileSync(receiptPath);
+      const result = await executeUninstallCommand(context(true));
+      expect(readFileSync(filePath, "utf8")).toBe("aih created\n");
+      expect(readFileSync(receiptPath)).toEqual(before);
+      expect(result.digests.map((entry) => entry.text).join("\n")).toContain(
+        "duplicate ownership claim",
+      );
+    },
+  );
+
+  it.runIf(supportsEightDotThree)(
+    "preserves both 8.3 and long-name claims for one existing file when the volume supports 8.3 names",
+    async () => {
+      manifestFixture();
+      const receiptPath = join(root, ".aih/ecc/install-manifest.json");
+      const name = "very-long-owned-filename.md";
+      const filePath = join(root, ".kiro/skills", name);
+      writeFileSync(filePath, "aih created\n");
+      const alias = shortBasename(filePath);
+      expect(alias).toBeDefined();
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+      receipt.installs[0].files = [
+        { ...receipt.installs[0].files[0], path: `skills/${name}` },
+        { ...receipt.installs[0].files[0], path: `skills/${alias}` },
+      ];
+      writeFileSync(receiptPath, JSON.stringify(receipt));
+      const before = readFileSync(receiptPath);
+      const result = await executeUninstallCommand(context(true));
+      expect(readFileSync(filePath, "utf8")).toBe("aih created\n");
+      expect(readFileSync(receiptPath)).toEqual(before);
+      expect(result.digests.map((entry) => entry.text).join("\n")).toContain(
+        "duplicate ownership claim",
+      );
+    },
+  );
 
   it("preserves an identical global MCP entry when its receipt came from another home", async () => {
     const oldHome = join(root, "old-home");
@@ -316,6 +529,14 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
     };
     await executePlan(planExplicitEccMcpAdd({ root, policy, id: "memxus", target: "claude" }), ctx);
     await executeUninstallCommand(ctx);
+    expect(readFileSync(settingsPath)).toEqual(
+      Buffer.from('{\n  "env": {\n    "OPERATOR": "keep"\n  }\n}\n'),
+    );
+    expect(readFileSync(join(root, ".mcp.json"))).toEqual(
+      Buffer.from(
+        '{\n  "mcpServers": {\n    "operator": {\n      "url": "https://operator.invalid"\n    }\n  }\n}\n',
+      ),
+    );
     const afterSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
     expect(afterSettings.env).toEqual({ OPERATOR: "keep" });
     expect(afterSettings.hooks).toBeUndefined();
@@ -332,9 +553,55 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
     ).toEqual([]);
   });
 
-  it.each([1, 2])(
-    "recovers a real process interruption after cleanup effect %i",
-    async (boundary) => {
+  it("subtracts native and governed role TOML blocks together and retires both receipts", async () => {
+    nativeStateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-native-state-"));
+    const runtimeRoot = join(nativeStateRoot, "runtime");
+    mkdirSync(runtimeRoot);
+    const executable = join(runtimeRoot, process.platform === "win32" ? "node.exe" : "node");
+    const cliScript = join(runtimeRoot, "cli.js");
+    writeFileSync(executable, "fixture executable\n");
+    writeFileSync(cliScript, "fixture script\n");
+    const serenaRuntimeRoot = fileURLToPath(
+      new URL("../../src/ecc-profile/serena-runtime", import.meta.url),
+    );
+    const registration = buildNativeEccRegistration({
+      root,
+      stateRoot: nativeStateRoot,
+      executable,
+      cliScript,
+      serenaRuntimeRoot,
+    });
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
+    const operator = 'model = "operator-choice"\r\n';
+    put(".codex/config.toml", operator);
+    const ctx = context(true);
+    await executePlan(planNativeEccRegistration(root, registration, "install"), ctx);
+    await executePlan(
+      planGovernedCodexRoleRegistration(root, [
+        { id: "reviewer", description: "reviewer", configFile: ".codex/agents/reviewer.toml" },
+      ]),
+      ctx,
+    );
+    await executeUninstallCommand(ctx);
+    expect(readFileSync(join(root, ".codex/config.toml"))).toEqual(Buffer.from(operator));
+    expect(existsSync(join(root, ".aih/ecc-profile/native-registration-v1.json"))).toBe(false);
+    expect(existsSync(join(root, ".aih/ecc/codex-role-registration-v1.json"))).toBe(false);
+  });
+
+  it("recovers manifest cleanup after every temp, backup, write, and remove effect", async () => {
+    const fixturePath = fileURLToPath(
+      new URL("../fixtures/legacy-cleanup-interrupt.ts", import.meta.url),
+    );
+    const run = (boundary: number) =>
+      spawnSync(process.execPath, ["--import", "tsx", fixturePath, root, String(boundary)], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+    const prepare = () => {
       manifestFixture();
       const receiptPath = join(root, ".aih/ecc/install-manifest.json");
       const manifest = JSON.parse(readFileSync(receiptPath, "utf8"));
@@ -345,18 +612,19 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
         sha256: createHash("sha256").update("original aih bytes\n").digest("hex"),
       });
       writeFileSync(receiptPath, JSON.stringify(manifest));
-      const child = spawnSync(
-        process.execPath,
-        [
-          "--import",
-          "tsx",
-          fileURLToPath(new URL("../fixtures/legacy-cleanup-interrupt.ts", import.meta.url)),
-          root,
-          String(boundary),
-        ],
-        { cwd: process.cwd(), encoding: "utf8", timeout: 30_000 },
-      );
-      expect(child.status, child.stderr).toBe(77);
+    };
+    prepare();
+    const completed = run(0);
+    expect(completed.status, completed.stderr).toBe(0);
+    const observed = JSON.parse(completed.stdout);
+    expect(observed.kinds).toEqual(["backup", "remove", "temp", "write"]);
+    for (let boundary = 1; boundary <= observed.effects; boundary += 1) {
+      rmSync(root, { recursive: true, force: true });
+      root = mkdtempSync(join(tmpdir(), "aih-ecc-legacy-"));
+      prepare();
+      const child = run(boundary);
+      expect(child.status, `effect ${boundary}: ${child.stderr}`).toBe(77);
+      const receiptPath = join(root, ".aih/ecc/install-manifest.json");
       const interruptedReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
       if (existsSync(join(root, ".kiro/skills/owned.md"))) {
         expect(
@@ -367,12 +635,125 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
       }
       await executeUninstallCommand(context(true));
       expect(existsSync(join(root, ".kiro/skills/owned.md"))).toBe(false);
-      expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe(modified);
+      expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe("operator edit\n");
       const finalReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
       expect(finalReceipt.installs[0].files.map((file: { path: string }) => file.path)).toEqual([
         "skills/modified.md",
       ]);
+    }
+  }, 90_000);
+
+  it.each(["materialization", "multi"] as const)(
+    "recovers %s cleanup after every temp, backup, write, and remove effect",
+    async (family) => {
+      const fixturePath = fileURLToPath(
+        new URL("../fixtures/legacy-cleanup-interrupt.ts", import.meta.url),
+      );
+      const run = (boundary: number) =>
+        spawnSync(
+          process.execPath,
+          ["--import", "tsx", fixturePath, root, String(boundary), family],
+          { cwd: process.cwd(), encoding: "utf8", timeout: 30_000 },
+        );
+      const prepare = async () => {
+        if (family === "multi") await multiFamilyFixture();
+        else materializationFixture();
+      };
+      await prepare();
+      const completed = run(0);
+      expect(completed.status, completed.stderr).toBe(0);
+      const observed = JSON.parse(completed.stdout);
+      const boundaries = observed.effects as number;
+      expect(boundaries).toBeGreaterThan(3);
+      expect(observed.kinds).toEqual(["backup", "remove", "temp", "write"]);
+      for (let boundary = 1; boundary <= boundaries; boundary += 1) {
+        rmSync(root, { recursive: true, force: true });
+        if (nativeStateRoot !== undefined)
+          rmSync(nativeStateRoot, { recursive: true, force: true });
+        nativeStateRoot = undefined;
+        root = mkdtempSync(join(tmpdir(), "aih-ecc-legacy-"));
+        await prepare();
+        const interrupted = run(boundary);
+        expect(interrupted.status, `effect ${boundary}: ${interrupted.stderr}`).toBe(77);
+        const materialized = join(root, ".claude/agents/owned.md");
+        if (existsSync(materialized)) {
+          const receipt = JSON.parse(
+            readFileSync(join(root, ECC_MATERIALIZATION_RECEIPT_PATH), "utf8"),
+          );
+          expect(
+            receipt.components.some((component: { id: string }) => component.id === "agent:owned"),
+            `effect ${boundary}`,
+          ).toBe(true);
+        }
+        if (family === "multi" && existsSync(join(root, ".kiro/skills/owned.md"))) {
+          const receipt = JSON.parse(
+            readFileSync(join(root, ".aih/ecc/install-manifest.json"), "utf8"),
+          );
+          expect(
+            receipt.installs[0].files.some(
+              (file: { path: string }) => file.path === "skills/owned.md",
+            ),
+            `effect ${boundary}`,
+          ).toBe(true);
+        }
+        if (family === "multi") {
+          const mcp = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
+          if (mcp.mcpServers?.memxus !== undefined) {
+            const receipt = JSON.parse(
+              readFileSync(join(root, ".aih/ecc-mcp-explicit-add-v1.json"), "utf8"),
+            );
+            expect(
+              receipt.records.some((record: { id: string }) => record.id === "memxus"),
+              `effect ${boundary}`,
+            ).toBe(true);
+          }
+          if (
+            mcp.mcpServers?.serena !== undefined ||
+            readFileSync(join(root, ".codex/config.toml"), "utf8").includes(
+              "aih managed (ecc-native-registration)",
+            )
+          ) {
+            expect(
+              existsSync(join(root, ".aih/ecc-profile/native-registration-v1.json")),
+              `effect ${boundary}`,
+            ).toBe(true);
+          }
+          expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe(
+            "operator manifest edit\n",
+          );
+        }
+        expect(readFileSync(join(root, ".claude/rules/modified.md"), "utf8")).toBe(
+          "# operator changed rule\n",
+        );
+        const rerun = run(0);
+        expect(rerun.status, `rerun after effect ${boundary}: ${rerun.stderr}`).toBe(0);
+        expect(existsSync(materialized), `effect ${boundary}`).toBe(false);
+        expect(readFileSync(join(root, ".claude/rules/modified.md"), "utf8")).toBe(
+          "# operator changed rule\n",
+        );
+        if (family === "multi") {
+          expect(existsSync(join(root, ".kiro/skills/owned.md")), `effect ${boundary}`).toBe(false);
+          expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe(
+            "operator manifest edit\n",
+          );
+          expect(
+            existsSync(join(root, ".aih/ecc-profile/native-registration-v1.json")),
+            `effect ${boundary}`,
+          ).toBe(false);
+          expect(
+            JSON.parse(readFileSync(join(root, ".aih/ecc-mcp-explicit-add-v1.json"), "utf8"))
+              .records,
+          ).toEqual([]);
+          const mcp = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
+          expect(mcp.mcpServers?.memxus).toBeUndefined();
+          expect(mcp.mcpServers?.serena).toBeUndefined();
+          expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).not.toContain(
+            "aih managed (ecc-native-registration)",
+          );
+        }
+      }
     },
+    180_000,
   );
   it("aih ecc --lifecycle uninstall reaches the receipt cleanup bridge", async () => {
     manifestFixture();

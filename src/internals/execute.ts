@@ -24,7 +24,7 @@ import type {
   VerificationResult,
 } from "../verification/types.js";
 import { isWellFormedUtf16 } from "../verification/validation.js";
-import { upsertManagedBlock } from "./envfile.js";
+import { removeManagedBlock, upsertManagedBlock } from "./envfile.js";
 import { registeredExecStdinPayload } from "./exec-stdin.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, duplicateRootKeys, isPlainObject, parseJsoncText } from "./merge.js";
@@ -40,7 +40,13 @@ import type {
   WriteAction,
 } from "./plan.js";
 import { parseCommitNotAfter } from "./plan.js";
-import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
+import {
+  beginMarker,
+  ensureTrailingNewline,
+  indent,
+  jsonFile,
+  stripTrailingNewlines,
+} from "./render.js";
 import { type Check, VerificationReport } from "./verify.js";
 import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
@@ -782,6 +788,13 @@ export function resolveContents(
   absPath: string,
   sourceOverride?: string,
 ): string {
+  if (action.removeManagedTextBlockScope !== undefined) {
+    const source = sourceOverride ?? readIfExists(absPath);
+    const marker = beginMarker(action.removeManagedTextBlockScope);
+    if (source === undefined || !source.includes(marker))
+      throw new AihError(`managed text block is absent in ${action.path}`, "AIH_TRUST");
+    return removeManagedBlock(source, action.removeManagedTextBlockScope);
+  }
   if (action.json !== undefined) {
     let value: unknown = action.json;
     // Only a merge has a destination to preserve: every other JSON write is a
@@ -862,7 +875,7 @@ export async function executePlan(
   ctx: PlanContext,
   opts: {
     skipWorktreeGate?: boolean;
-    onEffectCommitted?: (kind: "write" | "remove", path: string) => void;
+    onEffectCommitted?: (kind: "backup" | "temp" | "write" | "remove", path: string) => void;
   } = {},
 ): Promise<PlanResult> {
   const commitNotAfter = parseCommitNotAfter(plan.commitNotAfter);
@@ -1030,10 +1043,13 @@ export async function executePlan(
       sensitive: boolean;
     }
   >();
+  const removedTextBlocks = new Map<string, Set<string>>();
+  const jsonWritePaths = new Set<string>();
 
   for (const action of plan.actions) {
     if (action.kind === "write") {
       const absPath = resolvePath(ctx, action.path);
+      if (action.json !== undefined) jsonWritePaths.add(absPath);
       if (!action.external) {
         assertContained(ctx.root, absPath);
         assertNoSymlinkParents(ctx.root, absPath, action.path);
@@ -1063,6 +1079,15 @@ export async function executePlan(
           effect: "kept",
         });
       } else {
+        const prior = pendingWrites.get(absPath);
+        if (
+          prior !== undefined &&
+          action.merge !== true &&
+          action.removeManagedTextBlockScope === undefined &&
+          resolveContents(action, absPath, existing) !== existing
+        ) {
+          throw new AihError(`incompatible writes to ${action.path}`, "AIH_CONFIG");
+        }
         const contents = resolveContents(action, absPath, existing);
         // Skip a write whose rendered content already matches disk — true idempotency:
         // no rewrite, no `.aih.bak`, surfaced as `unchanged` in the plan.
@@ -1089,7 +1114,6 @@ export async function executePlan(
             );
           }
         } else if (ctx.apply && effect !== "unchanged") {
-          const prior = pendingWrites.get(absPath);
           pendingWrites.set(absPath, {
             contents,
             mode: action.mode ?? prior?.mode,
@@ -1102,6 +1126,11 @@ export async function executePlan(
             ),
             sensitive: Boolean(action.sensitive?.path || prior?.sensitive),
           });
+        }
+        if (action.removeManagedTextBlockScope !== undefined) {
+          const scopes = removedTextBlocks.get(absPath) ?? new Set<string>();
+          scopes.add(action.removeManagedTextBlockScope);
+          removedTextBlocks.set(absPath, scopes);
         }
         writes.push({
           path: collectedPath(action),
@@ -1194,9 +1223,7 @@ export async function executePlan(
     }
   }
 
-  // Fold env-block actions per file so multiple scopes COMPOSE (rather than the
-  // last write clobbering earlier ones): start from on-disk content and upsert
-  // each scope's managed block in order.
+  // Fold env-block actions onto the same pending destination as text and JSON.
   const envByPath = new Map<
     string,
     {
@@ -1220,7 +1247,13 @@ export async function executePlan(
     envByPath.set(abs, group);
   }
   for (const [absPath, { display, blocks, sensitive, requiresPriorExecSuccess }] of envByPath) {
-    const existing = readIfExists(absPath);
+    if (jsonWritePaths.has(absPath))
+      throw new AihError(
+        `incompatible JSON and environment block writes to ${display}`,
+        "AIH_CONFIG",
+      );
+    const prior = pendingWrites.get(absPath);
+    const existing = prior?.contents ?? readIfExists(absPath);
     let content = existing ?? "";
     for (const b of blocks) {
       content = upsertManagedBlock(content, b.scope, b.vars, b.shell, b.unsetKeys);
@@ -1228,11 +1261,16 @@ export async function executePlan(
     const effect: WriteSummary["effect"] =
       existing === undefined ? "create" : existing === content ? "unchanged" : "merge";
     if (ctx.apply && effect !== "unchanged") {
-      const targetTxn = requiresPriorExecSuccess ? deferredTxn : txn;
-      targetTxn.stage(absPath, content, undefined, undefined, {
-        root: localTransactionRoot(ctx, absPath),
+      pendingWrites.set(absPath, {
+        contents: content,
+        mode: prior?.mode,
+        expect: prior?.expect,
+        root: prior?.root ?? localTransactionRoot(ctx, absPath),
+        durable: prior?.durable,
+        expectScratch: prior?.expectScratch,
+        deferred: Boolean(requiresPriorExecSuccess || prior?.deferred),
+        sensitive: Boolean(sensitive || prior?.sensitive),
       });
-      if (sensitive) sensitiveBackupTargets.add(absPath);
     }
     writes.push({
       path: sensitive ? REDACTED_PATH : display,
@@ -1240,6 +1278,12 @@ export async function executePlan(
       merged: true,
       effect,
     });
+  }
+
+  for (const [path, scopes] of removedTextBlocks) {
+    const final = pendingWrites.get(path)?.contents;
+    if (final === undefined || [...scopes].some((scope) => final.includes(beginMarker(scope))))
+      throw new AihError(`managed text block subtraction was not retained in ${path}`, "AIH_TRUST");
   }
 
   for (const [path, write] of pendingWrites) {

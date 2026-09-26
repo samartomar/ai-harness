@@ -44,7 +44,7 @@ export function inspectContainedPath(rootReal: string, absPath: string): Contain
   if (stats.isSymbolicLink()) return { state: "unsafe", reason: "symlink" };
   let realPath: string;
   try {
-    realPath = realpathSync(absPath);
+    realPath = realpathSync.native(absPath);
   } catch {
     return { state: "unsafe", reason: "inaccessible" };
   }
@@ -60,7 +60,7 @@ export function inspectContainedPath(rootReal: string, absPath: string): Contain
 export function inspectContainedRelativePath(root: string, relPath: string): ContainedPathInfo {
   let rootReal: string;
   try {
-    rootReal = realpathSync(root);
+    rootReal = realpathSync.native(root);
   } catch {
     return { state: "absent" };
   }

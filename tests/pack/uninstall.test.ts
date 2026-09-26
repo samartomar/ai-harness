@@ -202,9 +202,9 @@ describe("packUninstallCommand — pack closure", () => {
     const c = ctx({ apply: false, options: { pack: "docs" } });
     const result = await executePlan(await planOf(c), c);
 
-    // Planned: 2 dir removes + 2 card removes, 2 lockfile writes — none executed.
+    // Planned: 2 dir removes + 2 card removes, one composed lockfile write — none executed.
     expect(result.removed).toHaveLength(4);
-    expect(result.writes).toHaveLength(2);
+    expect(result.writes).toHaveLength(1);
     expect(existsSync(promotedDir("src-a", "alpha"))).toBe(true);
     expect(existsSync(promotedDir("src-b", "beta"))).toBe(true);
     expect(existsSync(cardPath("alpha"))).toBe(true);
