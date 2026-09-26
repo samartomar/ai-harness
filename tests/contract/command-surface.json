@@ -1068,22 +1068,13 @@
           "defaultValue": "ai-coding"
         },
         {
-          "flags": "--detect"
-        },
-        {
           "flags": "--ecc-path <dir>"
-        },
-        {
-          "flags": "--force"
         },
         {
           "flags": "--json"
         },
         {
           "flags": "--lifecycle <operation>"
-        },
-        {
-          "flags": "--no-log"
         },
         {
           "flags": "--policy <file>"
@@ -1093,23 +1084,16 @@
           "defaultValue": "vibe"
         },
         {
-          "flags": "--profile <profile>",
-          "defaultValue": "minimal"
+          "flags": "--profile <profile>"
         },
         {
           "flags": "--root <dir>"
         },
         {
-          "flags": "--support-out <dir>"
-        },
-        {
-          "flags": "--verify"
+          "flags": "--status"
         },
         {
           "flags": "--with <component>"
-        },
-        {
-          "flags": "--yes"
         }
       ],
       "commands": [
@@ -1130,9 +1114,6 @@
               ],
               "options": [
                 {
-                  "flags": "--all-tools"
-                },
-                {
                   "flags": "--apply"
                 },
                 {
@@ -1143,16 +1124,7 @@
                   "defaultValue": "ai-coding"
                 },
                 {
-                  "flags": "--detect"
-                },
-                {
-                  "flags": "--force"
-                },
-                {
                   "flags": "--json"
-                },
-                {
-                  "flags": "--no-log"
                 },
                 {
                   "flags": "--policy <file>"
@@ -1163,15 +1135,6 @@
                 },
                 {
                   "flags": "--root <dir>"
-                },
-                {
-                  "flags": "--support-out <dir>"
-                },
-                {
-                  "flags": "--verify"
-                },
-                {
-                  "flags": "--yes"
                 }
               ],
               "commands": []

@@ -197,6 +197,11 @@ const ALLOWED_BRANCHES: readonly Allowed[] = [
     why: "ECC hook runtime protocol: a handler returned a block decision for an event that cannot be blocked",
   },
   {
+    path: "src/framework-plugin/cleanup-v1.ts",
+    contains: "if (!result.ok) throw new FrameworkPluginRefusalError(result.refusal);",
+    why: "plugin cleanup load failure, not a trust finding label",
+  },
+  {
     path: "src/governance-doctor/repair-outcome-v1.ts",
     contains: 'verification.outcome === "failed"',
     why: "aih's own repair did not verify after applying (integrity)",
