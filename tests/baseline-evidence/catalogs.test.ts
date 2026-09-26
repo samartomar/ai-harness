@@ -242,6 +242,30 @@ const syntheticSections = (
   ...extra,
 });
 
+/**
+ * A hostile `componentDefinitions` section: one valid declaration with exactly the named
+ * changes applied, so each refusal below is the declaration's own field, never the
+ * requested-pin argument.
+ */
+function hostileDefinitions(
+  section: Readonly<Record<string, unknown>> = {},
+  framework: Readonly<Record<string, unknown>> = {},
+): Readonly<Record<string, unknown>> {
+  return {
+    componentDefinitions: {
+      version: "pinned-baseline/v1",
+      framework: {
+        id: "ecc",
+        repository: "affaan-m/ECC",
+        commit: DECLARED_PIN,
+        assets: [syntheticAsset("x:y", "module", ["a"])],
+        ...framework,
+      },
+      ...section,
+    },
+  };
+}
+
 describe("declared framework catalog (D79)", () => {
   it("reads the declared componentDefinitions, not an evidence lock's component list", () => {
     const catalog = declaredFrameworkCatalogV1("ecc", k1DeclaredSectionsAtFixturePin(), {
@@ -398,41 +422,100 @@ describe("declared framework catalog (D79)", () => {
       "missing-definition",
     ],
     [
-      "another framework id",
-      syntheticSections([syntheticAsset("x:y", "module", ["a"])], {
-        componentDefinitions: {
-          version: "pinned-baseline/v1",
-          framework: {
-            id: "superpowers",
-            repository: "affaan-m/ECC",
-            commit: DECLARED_PIN,
-            assets: [],
-          },
-        },
-      }),
-      "malformed-definition",
+      "a wrong section version",
+      hostileDefinitions({ version: "pinned-baseline/v2" }),
+      "unsupported-version",
     ],
     [
+      "an unknown field on the section",
+      hostileDefinitions({ curatedBy: "hostile" }),
+      "unknown-field",
+    ],
+    [
+      "an unknown field on the framework",
+      hostileDefinitions({}, { label: "hostile" }),
+      "unknown-field",
+    ],
+    [
+      "an unknown field on an asset",
+      hostileDefinitions(
+        {},
+        { assets: [{ ...syntheticAsset("x:y", "module", ["a"]), label: "x" }] },
+      ),
+      "unknown-field",
+    ],
+    [
+      "an unknown field on an asset source",
+      hostileDefinitions(
+        {},
+        {
+          assets: [
+            {
+              ...syntheticAsset("x:y", "module", ["a"]),
+              source: {
+                repository: "affaan-m/ECC",
+                commit: DECLARED_PIN,
+                path: "a",
+                branch: "main",
+              },
+            },
+          ],
+        },
+      ),
+      "unknown-field",
+    ],
+    [
+      "an unknown asset kind",
+      hostileDefinitions({}, { assets: [syntheticAsset("x:y", "widget", ["a"])] }),
+      "unknown-asset-kind",
+    ],
+    [
+      "an asset without a source",
+      hostileDefinitions({}, { assets: [{ id: "x:y", kind: "module", sourcePaths: ["a"] }] }),
+      "missing-asset-source",
+    ],
+    [
+      "an asset authored at another repository",
+      hostileDefinitions(
+        {},
+        {
+          assets: [
+            {
+              ...syntheticAsset("x:y", "module", ["a"]),
+              source: { repository: "someone/else", commit: DECLARED_PIN, path: "a" },
+            },
+          ],
+        },
+      ),
+      "asset-source-mismatch",
+    ],
+    [
+      "an asset authored at another commit",
+      hostileDefinitions(
+        {},
+        {
+          assets: [
+            {
+              ...syntheticAsset("x:y", "module", ["a"]),
+              source: { repository: "affaan-m/ECC", commit: "b".repeat(40), path: "a" },
+            },
+          ],
+        },
+      ),
+      "asset-source-mismatch",
+    ],
+    ["another framework id", hostileDefinitions({}, { id: "superpowers" }), "malformed-definition"],
+    [
       "a malformed asset",
-      syntheticSections([
-        { id: "x:y", kind: "module", source: {}, sourcePaths: [] },
-        syntheticAsset("x:z", "module", ["a"]),
-      ]),
+      hostileDefinitions(
+        {},
+        { assets: [{ ...syntheticAsset("x:y", "module", ["a"]), sourcePaths: [] }] },
+      ),
       "malformed-definition",
     ],
     [
       "a repository that is not owner/repo",
-      syntheticSections([syntheticAsset("x:y", "module", ["a"])], {
-        componentDefinitions: {
-          version: "pinned-baseline/v1",
-          framework: {
-            id: "ecc",
-            repository: "ECC",
-            commit: DECLARED_PIN,
-            assets: [syntheticAsset("x:y", "module", ["a"])],
-          },
-        },
-      }),
+      hostileDefinitions({}, { repository: "ECC" }),
       "malformed-definition",
     ],
     [

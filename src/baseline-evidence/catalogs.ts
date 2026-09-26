@@ -80,6 +80,41 @@ interface DeclaredAssetV1 {
 const DECLARED_PIN_V1 = /^[0-9a-f]{40}$/;
 const DECLARED_REPOSITORY_V1 = /^([^/]+)\/([^/]+)$/;
 const SKILL_ID_PREFIX_V1 = "skill:";
+/** The only `componentDefinitions` shape Core reads exactly. */
+const DECLARED_SECTION_VERSION_V1 = "pinned-baseline/v1";
+const DECLARED_SECTION_FIELDS_V1 = ["framework", "version"] as const;
+const DECLARED_FRAMEWORK_FIELDS_V1 = ["assets", "commit", "id", "repository"] as const;
+/**
+ * The fields Catalog's compiler states an asset with. `curationKind`, `members`,
+ * `dependencies`, `metadata` and `riders` are compiler bookkeeping the conversion does not
+ * read; anything else is a field Core cannot account for and is refused.
+ */
+const DECLARED_ASSET_FIELDS_V1 = [
+  "curationKind",
+  "dependencies",
+  "id",
+  "kind",
+  "members",
+  "metadata",
+  "riders",
+  "source",
+  "sourcePaths",
+] as const;
+const DECLARED_ASSET_SOURCE_FIELDS_V1 = ["commit", "path", "repository"] as const;
+/** The asset kinds Catalog's compiler emits anywhere in its asset inventory. */
+const DECLARED_ASSET_KINDS_V1: ReadonlySet<string> = new Set([
+  "agent",
+  "baseline",
+  "capability",
+  "framework",
+  "hook",
+  "lang",
+  "mcp",
+  "module",
+  "profile",
+  "runtime",
+  "skill",
+]);
 
 /** The installed Catalog carries one layout per framework, bound to its own pin; the policy never rebinds it. */
 function refuseUncarriedPin(id: BaselineCatalogId, carried: string, pin: string): never {
@@ -99,22 +134,63 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+/** The names of the fields a record carries that the conversion does not read, sorted. */
+function unknownFieldsV1(value: Record<string, unknown>, known: readonly string[]): string {
+  const admitted = new Set<string>(known);
+  return Object.keys(value)
+    .filter((key) => !admitted.has(key))
+    .sort()
+    .join(", ");
+}
+
 /**
- * `componentDefinitions.framework.assets` as the descriptor states it: every asset declares
- * the upstream repository, commit and primary path it is authored at, plus the material it
- * covers (`sourcePaths`).
+ * `componentDefinitions` as the descriptor states it: the section version, and a framework
+ * whose every asset declares the upstream repository, commit and primary path it is authored
+ * at plus the material it covers (`sourcePaths`). Read strictly: an unknown field at any
+ * level, a version Core does not know, an asset kind outside Catalog's vocabulary, an asset
+ * with no source or one authored at another repository or commit, and a malformed field all
+ * refuse with a stable reason instead of being normalized. The checks run in that order —
+ * section, framework, then each asset — so a hostile declaration always yields the reason of
+ * the outermost thing it got wrong.
  */
 function declaredFrameworkAssetsV1(
   id: BaselineCatalogId,
   section: unknown,
 ): {
-  readonly repository: string;
+  readonly owner: string;
+  readonly repo: string;
   readonly commit: string;
   readonly assets: readonly DeclaredAssetV1[];
 } {
-  const framework = recordOf(recordOf(section)?.framework);
+  const definitions = recordOf(section);
+  if (definitions === undefined)
+    refuseDeclared("missing-definition", `Catalog ${id} carries no componentDefinitions section`);
+  const sectionUnknown = unknownFieldsV1(definitions, DECLARED_SECTION_FIELDS_V1);
+  if (sectionUnknown.length > 0)
+    refuseDeclared(
+      "unknown-field",
+      `Catalog ${id} componentDefinitions carries unknown field(s) ${sectionUnknown}`,
+    );
+  const { version } = definitions;
+  if (typeof version !== "string")
+    refuseDeclared(
+      "malformed-definition",
+      `Catalog ${id} componentDefinitions.version is ${JSON.stringify(version)}`,
+    );
+  if (version !== DECLARED_SECTION_VERSION_V1)
+    refuseDeclared(
+      "unsupported-version",
+      `Catalog ${id} componentDefinitions.version is ${JSON.stringify(version)}; expected ${DECLARED_SECTION_VERSION_V1}`,
+    );
+  const framework = recordOf(definitions.framework);
   if (framework === undefined)
     refuseDeclared("missing-definition", `Catalog ${id} carries no componentDefinitions.framework`);
+  const frameworkUnknown = unknownFieldsV1(framework, DECLARED_FRAMEWORK_FIELDS_V1);
+  if (frameworkUnknown.length > 0)
+    refuseDeclared(
+      "unknown-field",
+      `Catalog ${id} componentDefinitions.framework carries unknown field(s) ${frameworkUnknown}`,
+    );
   const {
     assets,
     commit,
@@ -142,6 +218,12 @@ function declaredFrameworkAssetsV1(
       "malformed-definition",
       `Catalog ${id} componentDefinitions.framework names ${JSON.stringify(declaredId)}`,
     );
+  const split = DECLARED_REPOSITORY_V1.exec(repository);
+  if (split?.[1] === undefined || split[2] === undefined)
+    refuseDeclared(
+      "malformed-definition",
+      `Catalog ${id} componentDefinitions.framework.repository is ${JSON.stringify(repository)}`,
+    );
   if (!DECLARED_PIN_V1.test(commit))
     refuseDeclared(
       "malformed-definition",
@@ -149,23 +231,77 @@ function declaredFrameworkAssetsV1(
     );
   const declared: DeclaredAssetV1[] = [];
   for (const [index, entry] of assets.entries()) {
-    const asset = recordOf(entry) as Partial<DeclaredAssetV1> | undefined;
-    if (
-      asset === undefined ||
-      typeof asset.id !== "string" ||
-      asset.id.length === 0 ||
-      typeof asset.kind !== "string" ||
-      !Array.isArray(asset.sourcePaths) ||
-      asset.sourcePaths.length === 0 ||
-      asset.sourcePaths.some((path) => typeof path !== "string" || path.length === 0)
-    )
+    const asset = recordOf(entry);
+    if (asset === undefined || typeof asset.id !== "string" || asset.id.length === 0)
       refuseDeclared(
         "malformed-definition",
         `Catalog ${id} componentDefinitions asset ${index} is malformed`,
       );
-    declared.push({ id: asset.id, kind: asset.kind, sourcePaths: asset.sourcePaths });
+    const assetUnknown = unknownFieldsV1(asset, DECLARED_ASSET_FIELDS_V1);
+    if (assetUnknown.length > 0)
+      refuseDeclared(
+        "unknown-field",
+        `Catalog ${id} componentDefinitions asset ${asset.id} carries unknown field(s) ${assetUnknown}`,
+      );
+    const { kind, source, sourcePaths } = asset as {
+      kind?: unknown;
+      source?: unknown;
+      sourcePaths?: unknown;
+    };
+    if (typeof kind !== "string")
+      refuseDeclared(
+        "malformed-definition",
+        `Catalog ${id} componentDefinitions asset ${asset.id} has no kind`,
+      );
+    if (!DECLARED_ASSET_KINDS_V1.has(kind))
+      refuseDeclared(
+        "unknown-asset-kind",
+        `Catalog ${id} componentDefinitions asset ${asset.id} has kind ${JSON.stringify(kind)}`,
+      );
+    const authored = recordOf(source);
+    if (authored === undefined)
+      refuseDeclared(
+        "missing-asset-source",
+        `Catalog ${id} componentDefinitions asset ${asset.id} declares no source`,
+      );
+    const sourceUnknown = unknownFieldsV1(authored, DECLARED_ASSET_SOURCE_FIELDS_V1);
+    if (sourceUnknown.length > 0)
+      refuseDeclared(
+        "unknown-field",
+        `Catalog ${id} componentDefinitions asset ${asset.id} source carries unknown field(s) ${sourceUnknown}`,
+      );
+    const {
+      commit: assetCommit,
+      path: assetPath,
+      repository: assetRepository,
+    } = authored as { commit?: unknown; path?: unknown; repository?: unknown };
+    if (
+      typeof assetRepository !== "string" ||
+      typeof assetCommit !== "string" ||
+      typeof assetPath !== "string" ||
+      assetPath.length === 0
+    )
+      refuseDeclared(
+        "missing-asset-source",
+        `Catalog ${id} componentDefinitions asset ${asset.id} source is not a repository, commit and path`,
+      );
+    if (assetRepository !== repository || assetCommit !== commit)
+      refuseDeclared(
+        "asset-source-mismatch",
+        `Catalog ${id} componentDefinitions asset ${asset.id} is authored at ${assetRepository}@${assetCommit}, not ${repository}@${commit}`,
+      );
+    if (
+      !Array.isArray(sourcePaths) ||
+      sourcePaths.length === 0 ||
+      sourcePaths.some((path) => typeof path !== "string" || path.length === 0)
+    )
+      refuseDeclared(
+        "malformed-definition",
+        `Catalog ${id} componentDefinitions asset ${asset.id} sourcePaths are malformed`,
+      );
+    declared.push({ id: asset.id, kind, sourcePaths: sourcePaths as readonly string[] });
   }
-  return { repository, commit, assets: declared };
+  return { owner: split[1], repo: split[2], commit, assets: declared };
 }
 
 /**
@@ -297,14 +433,6 @@ export function declaredFrameworkCatalogV1(
       `Catalog ${id} declared definition needs the checkout at its pin to decide skillContent`,
     );
   const framework = declaredFrameworkAssetsV1(id, sections.componentDefinitions);
-  const repository = DECLARED_REPOSITORY_V1.exec(framework.repository);
-  const owner = repository?.[1];
-  const repo = repository?.[2];
-  if (owner === undefined || repo === undefined)
-    refuseDeclared(
-      "malformed-definition",
-      `Catalog ${id} componentDefinitions.framework.repository is ${JSON.stringify(framework.repository)}`,
-    );
   const committedSkillDirectories = committedSkillDirectoriesV1(
     committedTreeAtPinV1(id, sourceRoot, framework.commit),
   );
@@ -320,8 +448,8 @@ export function declaredFrameworkCatalogV1(
   try {
     return defineBaselineCatalog({
       id,
-      owner,
-      repo,
+      owner: framework.owner,
+      repo: framework.repo,
       pinnedSha: framework.commit,
       components,
     });

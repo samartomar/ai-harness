@@ -188,9 +188,9 @@ describe("definition resolution against the declared Catalog definition (D79)", 
     // read it at the pin, or the carried definition would silently disagree with the
     // declared one.
     write(".agents/skills/extra/SKILL.md");
-    const nextPin = commitSource("container");
+    pin = commitSource("container");
     currentDescriptor = descriptor(
-      declaration([...declaredAssets(), asset("module:container", "module", [".agents"])], nextPin),
+      declaration([...declaredAssets(), asset("module:container", "module", [".agents"])]),
     );
 
     const declared = declaredFrameworkCatalogV1(
@@ -201,7 +201,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
     expect(
       declared.components.find((component) => component.id === "module:container"),
     ).toMatchObject({ skillContent: true });
-    expect(resolve(declared, nextPin).route).toBe("installed");
+    expect(resolve(declared).route).toBe("installed");
   });
 
   it("refuses the earlier evidence lock's definition while the declared one is carried", () => {
@@ -272,10 +272,12 @@ describe("definition resolution against the declared Catalog definition (D79)", 
   });
 
   it.each([
-    ["a missing section", { vendorLock: { components: [] } }, "missing-definition"],
+    ["a missing section", undefined, "missing-definition"],
     [
       "a malformed asset",
-      declaration([asset("runtime:ecc-installer", "runtime", [])]),
+      declaration([
+        { ...asset("runtime:ecc-installer", "runtime", ["package.json"]), sourcePaths: [] },
+      ]),
       "malformed-definition",
     ],
   ])(
