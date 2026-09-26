@@ -62,37 +62,51 @@ export function planExplicitEccMcpRemoveMany(options: {
   const selected = new Set(options.selected.map(({ id, target }) => `${id}\0${target}`));
   const retired = new Set<EccMcpExplicitAddRecord>();
   const notes: string[] = [];
-  const groups = new Map<string, {
-    source: string;
-    config: ResolvedConfig;
-    format: "json" | "toml";
-    key: string;
-    ids: string[];
-  }>();
+  const groups = new Map<
+    string,
+    {
+      source: string;
+      config: ResolvedConfig;
+      format: "json" | "toml";
+      key: string;
+      ids: string[];
+    }
+  >();
   for (const record of state.receipt.records) {
     if (!selected.has(`${record.id}\0${record.target}`)) continue;
     try {
       const rendered = renderPlan(catalogHttpsEntry(record.id), record.target);
       if (!sameRecord(record, rendered)) {
-        notes.push(`${record.id}/${record.target}: receipt does not match the reviewed renderer; preserve it`);
+        notes.push(
+          `${record.id}/${record.target}: receipt does not match the reviewed renderer; preserve it`,
+        );
         continue;
       }
       if (isExternalMcp(rendered.config.path)) {
-        notes.push(`${record.id}/${record.target}: historical global MCP receipt has no independently established home destination; preserve it and inspect ${rendered.config.path} manually`);
+        notes.push(
+          `${record.id}/${record.target}: historical global MCP receipt has no independently established home destination; preserve it and inspect ${rendered.config.path} manually`,
+        );
         continue;
       }
       const config = resolvedConfig(options.root, options.home, rendered);
       if (config.source === undefined) {
         retired.add(record);
-        notes.push(`${record.id}/${record.target}: project config already absent; retire its stale receipt claim`);
+        notes.push(
+          `${record.id}/${record.target}: project config already absent; retire its stale receipt claim`,
+        );
         continue;
       }
-      const current = rendered.config.format === "json"
-        ? jsonServers(jsonRoot(config.source, config.path), rendered.config.key, config.path)[record.id]
-        : tomlServerSection(config.source, record.id);
+      const current =
+        rendered.config.format === "json"
+          ? jsonServers(jsonRoot(config.source, config.path), rendered.config.key, config.path)[
+              record.id
+            ]
+          : tomlServerSection(config.source, record.id);
       if (current === undefined) {
         retired.add(record);
-        notes.push(`${record.id}/${record.target}: entry already absent; retire its stale receipt claim`);
+        notes.push(
+          `${record.id}/${record.target}: entry already absent; retire its stale receipt claim`,
+        );
         continue;
       }
       if (explicitAddDigest(current) !== record.config.renderedSha256) {
@@ -100,39 +114,71 @@ export function planExplicitEccMcpRemoveMany(options: {
         continue;
       }
       const group = groups.get(config.path);
-      if (group !== undefined && (group.format !== rendered.config.format || group.key !== rendered.config.key || group.source !== config.source)) {
-        notes.push(`${record.id}/${record.target}: ambiguous shared config; preserve it and its receipt`);
+      if (
+        group !== undefined &&
+        (group.format !== rendered.config.format ||
+          group.key !== rendered.config.key ||
+          group.source !== config.source)
+      ) {
+        notes.push(
+          `${record.id}/${record.target}: ambiguous shared config; preserve it and its receipt`,
+        );
         continue;
       }
-      if (group === undefined) groups.set(config.path, {
-        source: config.source, config, format: rendered.config.format,
-        key: rendered.config.key, ids: [record.id],
-      });
+      if (group === undefined)
+        groups.set(config.path, {
+          source: config.source,
+          config,
+          format: rendered.config.format,
+          key: rendered.config.key,
+          ids: [record.id],
+        });
       else group.ids.push(record.id);
       retired.add(record);
     } catch (error) {
-      notes.push(`${record.id}/${record.target}: ${(error as Error).message}; preserve it and its receipt`);
+      notes.push(
+        `${record.id}/${record.target}: ${(error as Error).message}; preserve it and its receipt`,
+      );
     }
   }
   const actions: Action[] = [];
   for (const [path, group] of groups) {
-    actions.push(withExpectedSource(group.format === "json"
-      ? writeJson(path, {}, `subtract receipt-owned ECC MCP entries from ${path}`, {
-          merge: true, removeJsonKeys: { [group.key]: group.ids }, ...writeOptions(group.config),
-        })
-      : writeText(path, removeMcpTomlServers(group.source, group.ids),
-          `subtract receipt-owned ECC MCP entries from ${path}`, writeOptions(group.config)),
-      group.source));
+    actions.push(
+      withExpectedSource(
+        group.format === "json"
+          ? writeJson(path, {}, `subtract receipt-owned ECC MCP entries from ${path}`, {
+              merge: true,
+              removeJsonKeys: { [group.key]: group.ids },
+              ...writeOptions(group.config),
+            })
+          : writeText(
+              path,
+              removeMcpTomlServers(group.source, group.ids),
+              `subtract receipt-owned ECC MCP entries from ${path}`,
+              writeOptions(group.config),
+            ),
+        group.source,
+      ),
+    );
   }
   if (retired.size > 0) {
     actions.push({
-      ...withExpectedSource(writeText(ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
-        receiptJson({ ...state.receipt, records: state.receipt.records.filter((record) => !retired.has(record)) }),
-        "retire verified explicit ECC MCP ownership records"), state.source),
+      ...withExpectedSource(
+        writeText(
+          ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
+          receiptJson({
+            ...state.receipt,
+            records: state.receipt.records.filter((record) => !retired.has(record)),
+          }),
+          "retire verified explicit ECC MCP ownership records",
+        ),
+        state.source,
+      ),
       afterRemovals: true,
     });
   }
-  if (notes.length > 0) actions.push(digest("Explicit ECC MCP cleanup review", notes.join("\n"), { notes }));
+  if (notes.length > 0)
+    actions.push(digest("Explicit ECC MCP cleanup review", notes.join("\n"), { notes }));
   return plan("explicit ECC MCP cleanup", ...actions);
 }
 

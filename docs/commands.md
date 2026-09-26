@@ -894,11 +894,12 @@ difference still fails closed under the ordinary drift codes.
 the live AIH MCP or hook adapter and reports requested versus effective state, exact source and evidence
 digest, approval reference, target coverage, projection ownership/receipt/drift state, clarification or
 annotation, and the blocking reason. A config entry is not active merely because it is listed. Custom
-stdio MCP candidates name a pinned package identity and HTTPS registry for curation/evidence only. They
-remain blocked by the unwaivable `missing-projector` danger until AIH has an integrity-enforcing
-materialization and rollback lifecycle; policy evaluation and projection never construct or launch their
-commands. Unsafe inputs, collisions, missing projectors, unsupported targets, and all unwaivable danger
-codes remain blocked.
+stdio MCP candidates name a pinned package identity and HTTPS registry for curation/evidence only.
+Third-party selection remains available; AIH-owned projection reports `missing-projector` because
+it has no integrity-enforcing materialization and rollback lifecycle for those candidates. Policy
+evaluation and projection never construct or launch their commands. AIH-owned projection refuses
+unsafe inputs, collisions, missing projectors, and unsupported targets because it cannot establish
+an owned, valid destination for those effects.
 
 When `governance.authority.decisions` is non-empty, each value is an untrusted decision-id reference.
 Only the byte-exact copy inside a currently verified authority receipt V2 can affect resolution. A
@@ -963,8 +964,8 @@ an authority root. The strict receipt format is published as
 authority. A decision binds candidate id/kind, immutable
 source and evidence digests, projector, policy version, reason, signed clarification for a waiver, target scope, signer repository, and
 validity window; legacy receipt inputs may omit clarification but cannot waive a gap, and its post-signing transport locator is not part of the signed digest. Requested ECC or
-Superpowers framework intents remain visibly report-only and hard-blocked until a separately designed
-policy-gated binding lifecycle exists — this command does not select, install, or project ECC/Superpowers
+Superpowers framework intents remain visibly report-only with developer-managed external installation
+guidance. Third-party selection remains available; this command does not install or project ECC/Superpowers
 agents, skills, commands, or bindings. AIH-owned hook rollback removes only unchanged receipt-proven host
 entries and retains drifted user edits for doctor remediation. When `governance` is present it exclusively
 owns AIH MCP and usage-hook projection: `aih mcp` and `aih usage` fail closed, `aih init` suppresses their
@@ -1361,8 +1362,9 @@ fake `gh`, never installs/configures/executes the observed tool, and does not cl
 the host ACL protecting the policy file.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
-and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
-with an otherwise valid approval.
+and last at most 90 days. Mandatory detector failures remain visible evidence problems and never block
+third-party selection. Integrity refusals on AIH-owned projection still apply despite an approval because
+an approval cannot establish a missing projector, valid destination, or receipt ownership.
 
 `validate` is the **read-only CI gate** over the active local org policy source: the default
 committed `aih-org-policy.json`, or an explicit `AIH_ORG_POLICY` override. The policy source is

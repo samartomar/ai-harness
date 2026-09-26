@@ -1,12 +1,15 @@
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  explicitEccMcpReceiptRecord,
+  explicitEccMcpRenderPlan,
+} from "../../packages/framework-ecc/src/legacy-cleanup/explicit-mcp.js";
 import { planGovernedCodexRoleRegistration } from "../../packages/framework-ecc/src/profile/governed-codex-roles.js";
-import { explicitEccMcpReceiptRecord, explicitEccMcpRenderPlan } from "../../packages/framework-ecc/src/legacy-cleanup/explicit-mcp.js";
 import {
   buildNativeEccRegistration,
   planNativeEccRegistration,
@@ -146,24 +149,30 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
         activations: [],
         authority: { approvals: [] },
         supportedClis: ["codex"],
-        eccMcpApprovals: [{
-          id: "memxus",
-          sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
-          state: "approved",
-          approvedBy: "security-admin",
-          authenticationMode: "api-key",
-          allowedDataClasses: ["non-sensitive-context"],
-        }],
+        eccMcpApprovals: [
+          {
+            id: "memxus",
+            sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+            state: "approved",
+            approvedBy: "security-admin",
+            authenticationMode: "api-key",
+            allowedDataClasses: ["non-sensitive-context"],
+          },
+        ],
       },
     };
     const rendered = explicitEccMcpRenderPlan(policy, "memxus", "codex");
     const oldConfig = join(oldHome, ".codex/config.toml");
     mkdirSync(dirname(oldConfig), { recursive: true });
     writeFileSync(oldConfig, `${String(rendered.rendered)}\n`);
-    put(".aih/ecc-mcp-explicit-add-v1.json", JSON.stringify({
-      format: "aih-ecc-mcp-explicit-add", version: 1,
-      records: [explicitEccMcpReceiptRecord(rendered)],
-    }));
+    put(
+      ".aih/ecc-mcp-explicit-add-v1.json",
+      JSON.stringify({
+        format: "aih-ecc-mcp-explicit-add",
+        version: 1,
+        records: [explicitEccMcpReceiptRecord(rendered)],
+      }),
+    );
     const newConfig = join(newHome, ".codex/config.toml");
     mkdirSync(dirname(newConfig), { recursive: true });
     writeFileSync(newConfig, readFileSync(oldConfig));
@@ -178,38 +187,59 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
   });
 
   it("continues past modified and absent MCP records to remove later owned entries", async () => {
-    put(".aih-config.json", JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }));
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
     const ids = ["memxus", "cloudflare-docs", "vercel"];
     const policy = {
-      schemaVersion: 2, minimumPosture: "vibe",
+      schemaVersion: 2,
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       governance: {
-        policyVersion: "2026.08", catalog: { reviewed: [], custom: [] },
-        activations: [], authority: { approvals: [] }, supportedClis: ["claude"],
+        policyVersion: "2026.08",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        supportedClis: ["claude"],
         eccMcpApprovals: ids.map((id) => ({
-          id, sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
-          state: "approved", approvedBy: "security-admin", authenticationMode: "api-key",
+          id,
+          sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+          state: "approved",
+          approvedBy: "security-admin",
+          authenticationMode: "api-key",
           allowedDataClasses: ["non-sensitive-context"],
         })),
       },
     };
     const rendered = ids.map((id) => explicitEccMcpRenderPlan(policy, id, "claude"));
-    put(".mcp.json", JSON.stringify({ mcpServers: {
-      operator: { url: "https://operator.invalid" },
-      memxus: { url: "https://operator-edit.invalid" },
-      vercel: rendered[2]?.rendered,
-    } }));
-    put(".aih/ecc-mcp-explicit-add-v1.json", JSON.stringify({
-      format: "aih-ecc-mcp-explicit-add", version: 1,
-      records: rendered.map(explicitEccMcpReceiptRecord),
-    }));
+    put(
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          operator: { url: "https://operator.invalid" },
+          memxus: { url: "https://operator-edit.invalid" },
+          vercel: rendered[2]?.rendered,
+        },
+      }),
+    );
+    put(
+      ".aih/ecc-mcp-explicit-add-v1.json",
+      JSON.stringify({
+        format: "aih-ecc-mcp-explicit-add",
+        version: 1,
+        records: rendered.map(explicitEccMcpReceiptRecord),
+      }),
+    );
     const result = await executeUninstallCommand(context(true));
     const servers = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8")).mcpServers;
     expect(servers.operator).toEqual({ url: "https://operator.invalid" });
     expect(servers.memxus).toEqual({ url: "https://operator-edit.invalid" });
     expect(servers.vercel).toBeUndefined();
     expect(servers["cloudflare-docs"]).toBeUndefined();
-    const receipt = JSON.parse(readFileSync(join(root, ".aih/ecc-mcp-explicit-add-v1.json"), "utf8"));
+    const receipt = JSON.parse(
+      readFileSync(join(root, ".aih/ecc-mcp-explicit-add-v1.json"), "utf8"),
+    );
     expect(receipt.records.map((record: { id: string }) => record.id)).toEqual(["memxus"]);
     expect(result.digests.map((entry) => entry.text).join("\n")).toContain("memxus");
   });
@@ -222,11 +252,25 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
     const cliScript = join(runtimeRoot, "cli.js");
     writeFileSync(executable, "fixture executable\n");
     writeFileSync(cliScript, "fixture script\n");
-    const serenaRuntimeRoot = fileURLToPath(new URL("../../src/ecc-profile/serena-runtime", import.meta.url));
-    const registration = buildNativeEccRegistration({ root, stateRoot: nativeStateRoot, executable, cliScript, serenaRuntimeRoot });
-    put(".aih-config.json", JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }));
+    const serenaRuntimeRoot = fileURLToPath(
+      new URL("../../src/ecc-profile/serena-runtime", import.meta.url),
+    );
+    const registration = buildNativeEccRegistration({
+      root,
+      stateRoot: nativeStateRoot,
+      executable,
+      cliScript,
+      serenaRuntimeRoot,
+    });
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
     put(".claude/settings.json", JSON.stringify({ env: { OPERATOR: "keep" } }));
-    put(".mcp.json", JSON.stringify({ mcpServers: { operator: { url: "https://operator.invalid" } } }));
+    put(
+      ".mcp.json",
+      JSON.stringify({ mcpServers: { operator: { url: "https://operator.invalid" } } }),
+    );
     const ctx = context(true);
     await executePlan(planNativeEccRegistration(root, registration, "install"), ctx);
     const settingsPath = join(root, ".claude/settings.json");
@@ -234,20 +278,40 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
     settings.env.ECC_HOOK_PROFILE = "minimal";
     settings.env.ECC_DISABLED_HOOKS = "hook:one";
     writeFileSync(settingsPath, JSON.stringify(settings));
-    put(".aih/org-policy-framework-hook-controls-receipt.json", JSON.stringify({
-      format: "aih-org-policy-framework-hook-controls-receipt", version: 1,
-      destination: ".claude/settings.json", frameworks: {
-        ecc: { keys: ["ECC_HOOK_PROFILE", "ECC_DISABLED_HOOKS"],
-          set: { ECC_HOOK_PROFILE: "minimal", ECC_DISABLED_HOOKS: "hook:one" } },
-      },
-    }));
+    put(
+      ".aih/org-policy-framework-hook-controls-receipt.json",
+      JSON.stringify({
+        format: "aih-org-policy-framework-hook-controls-receipt",
+        version: 1,
+        destination: ".claude/settings.json",
+        frameworks: {
+          ecc: {
+            keys: ["ECC_HOOK_PROFILE", "ECC_DISABLED_HOOKS"],
+            set: { ECC_HOOK_PROFILE: "minimal", ECC_DISABLED_HOOKS: "hook:one" },
+          },
+        },
+      }),
+    );
     const policy = {
-      schemaVersion: 2, minimumPosture: "vibe", references: { repoContract: "ai-coding/project.json" },
-      governance: { policyVersion: "2026.08", catalog: { reviewed: [], custom: [] },
-        activations: [], authority: { approvals: [] }, supportedClis: ["claude"],
-        eccMcpApprovals: [{ id: "memxus", sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
-          state: "approved", approvedBy: "security-admin", authenticationMode: "api-key",
-          allowedDataClasses: ["non-sensitive-context"] }],
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "2026.08",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        supportedClis: ["claude"],
+        eccMcpApprovals: [
+          {
+            id: "memxus",
+            sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+            state: "approved",
+            approvedBy: "security-admin",
+            authenticationMode: "api-key",
+            allowedDataClasses: ["non-sensitive-context"],
+          },
+        ],
       },
     };
     await executePlan(planExplicitEccMcpAdd({ root, policy, id: "memxus", target: "claude" }), ctx);
@@ -260,37 +324,56 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
     expect(servers.serena).toBeUndefined();
     expect(servers.memxus).toBeUndefined();
     expect(existsSync(join(root, ".aih/ecc-profile/native-registration-v1.json"))).toBe(false);
-    expect(existsSync(join(root, ".aih/org-policy-framework-hook-controls-receipt.json"))).toBe(false);
-    expect(JSON.parse(readFileSync(join(root, ".aih/ecc-mcp-explicit-add-v1.json"), "utf8")).records).toEqual([]);
+    expect(existsSync(join(root, ".aih/org-policy-framework-hook-controls-receipt.json"))).toBe(
+      false,
+    );
+    expect(
+      JSON.parse(readFileSync(join(root, ".aih/ecc-mcp-explicit-add-v1.json"), "utf8")).records,
+    ).toEqual([]);
   });
 
-  it.each([1, 2])("recovers a real process interruption after cleanup effect %i", async (boundary) => {
-    manifestFixture();
-    const receiptPath = join(root, ".aih/ecc/install-manifest.json");
-    const manifest = JSON.parse(readFileSync(receiptPath, "utf8"));
-    const modified = "operator edit\n";
-    put(".kiro/skills/modified.md", modified);
-    manifest.installs[0].files.push({
-      path: "skills/modified.md",
-      sha256: createHash("sha256").update("original aih bytes\n").digest("hex"),
-    });
-    writeFileSync(receiptPath, JSON.stringify(manifest));
-    const child = spawnSync(process.execPath, [
-      "--import", "tsx",
-      fileURLToPath(new URL("../fixtures/legacy-cleanup-interrupt.ts", import.meta.url)),
-      root, String(boundary),
-    ], { cwd: process.cwd(), encoding: "utf8", timeout: 30_000 });
-    expect(child.status, child.stderr).toBe(77);
-    const interruptedReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
-    if (existsSync(join(root, ".kiro/skills/owned.md"))) {
-      expect(interruptedReceipt.installs[0].files.some((file: { path: string }) => file.path === "skills/owned.md")).toBe(true);
-    }
-    await executeUninstallCommand(context(true));
-    expect(existsSync(join(root, ".kiro/skills/owned.md"))).toBe(false);
-    expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe(modified);
-    const finalReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
-    expect(finalReceipt.installs[0].files.map((file: { path: string }) => file.path)).toEqual(["skills/modified.md"]);
-  });
+  it.each([1, 2])(
+    "recovers a real process interruption after cleanup effect %i",
+    async (boundary) => {
+      manifestFixture();
+      const receiptPath = join(root, ".aih/ecc/install-manifest.json");
+      const manifest = JSON.parse(readFileSync(receiptPath, "utf8"));
+      const modified = "operator edit\n";
+      put(".kiro/skills/modified.md", modified);
+      manifest.installs[0].files.push({
+        path: "skills/modified.md",
+        sha256: createHash("sha256").update("original aih bytes\n").digest("hex"),
+      });
+      writeFileSync(receiptPath, JSON.stringify(manifest));
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../fixtures/legacy-cleanup-interrupt.ts", import.meta.url)),
+          root,
+          String(boundary),
+        ],
+        { cwd: process.cwd(), encoding: "utf8", timeout: 30_000 },
+      );
+      expect(child.status, child.stderr).toBe(77);
+      const interruptedReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+      if (existsSync(join(root, ".kiro/skills/owned.md"))) {
+        expect(
+          interruptedReceipt.installs[0].files.some(
+            (file: { path: string }) => file.path === "skills/owned.md",
+          ),
+        ).toBe(true);
+      }
+      await executeUninstallCommand(context(true));
+      expect(existsSync(join(root, ".kiro/skills/owned.md"))).toBe(false);
+      expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe(modified);
+      const finalReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+      expect(finalReceipt.installs[0].files.map((file: { path: string }) => file.path)).toEqual([
+        "skills/modified.md",
+      ]);
+    },
+  );
   it("aih ecc --lifecycle uninstall reaches the receipt cleanup bridge", async () => {
     manifestFixture();
     const ctx = { ...context(true), options: { lifecycle: "uninstall" } };
@@ -411,12 +494,18 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
   );
 
   it("keeps a pre-existing empty TOML file after governed Codex role cleanup", async () => {
-    put(".aih-config.json", JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }));
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
     put(".codex/config.toml", "");
     const ctx = context(true);
-    await executePlan(planGovernedCodexRoleRegistration(root, [
-      { id: "reviewer", description: "reviewer", configFile: ".codex/agents/reviewer.toml" },
-    ]), ctx);
+    await executePlan(
+      planGovernedCodexRoleRegistration(root, [
+        { id: "reviewer", description: "reviewer", configFile: ".codex/agents/reviewer.toml" },
+      ]),
+      ctx,
+    );
     await executeUninstallCommand(ctx);
     expect(existsSync(join(root, ".codex/config.toml"))).toBe(true);
     expect(readFileSync(join(root, ".codex/config.toml"), "utf8").trim()).toBe("");

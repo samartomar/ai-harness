@@ -79,11 +79,19 @@ describe("native ECC registration", () => {
     writeFileSync(join(input.root, ".claude/settings.json"), "{}\n");
     writeFileSync(join(input.root, ".codex/config.toml"), "");
     const registration = buildNativeEccRegistration(input);
-    await executePlan(planNativeEccRegistration(input.root, registration, "install"), context(input.root));
-    await executePlan(planInstalledNativeEccRegistration(input.root, "uninstall"), context(input.root));
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+    await executePlan(
+      planInstalledNativeEccRegistration(input.root, "uninstall"),
+      context(input.root),
+    );
     expect(existsSync(join(input.root, ".claude/settings.json"))).toBe(true);
     expect(existsSync(join(input.root, ".codex/config.toml"))).toBe(true);
-    expect(readFileSync(join(input.root, ".claude/settings.json"), "utf8")).toMatch(/^\s*\{\s*\}\s*$/);
+    expect(readFileSync(join(input.root, ".claude/settings.json"), "utf8")).toMatch(
+      /^\s*\{\s*\}\s*$/,
+    );
     expect(readFileSync(join(input.root, ".codex/config.toml"), "utf8").trim()).toBe("");
     expect(existsSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
   });

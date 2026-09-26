@@ -28,9 +28,9 @@ import {
   planInstalledEccProfileLifecycle,
   readEccProfileOwnership,
 } from "../profile/lifecycle.js";
+import { planExplicitEccMcpRemoveMany } from "./explicit-mcp.js";
 import { legacyManifestCleanupActions } from "./manifest.js";
 import { materializationPruneActions } from "./materialization.js";
-import { planExplicitEccMcpRemoveMany } from "./explicit-mcp.js";
 
 /**
  * Legacy aih ECC ownership inventory. Each row names its proof, never a

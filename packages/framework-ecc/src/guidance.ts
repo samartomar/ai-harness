@@ -19,9 +19,8 @@ export function eccGuidance(targets: readonly Cli[], platform: string): string {
   const installer = platform === "win32" ? "./install.ps1" : "./install.sh";
   const homeTargets = selected.filter((target) => HOME_TARGETS.has(target));
   const projectTargets = selected.filter((target) => !HOME_TARGETS.has(target));
-  const projectInstaller = platform === "win32"
-    ? "pwsh /path/to/ECC/install.ps1"
-    : "bash /path/to/ECC/install.sh";
+  const projectInstaller =
+    platform === "win32" ? "pwsh /path/to/ECC/install.ps1" : "bash /path/to/ECC/install.sh";
   const lines = [
     `ECC ${UPSTREAM.repository}@${UPSTREAM.commit} — developer-managed installation`,
     "Clone the reviewed source, then run these commands from the ECC checkout:",
@@ -31,11 +30,15 @@ export function eccGuidance(targets: readonly Cli[], platform: string): string {
     `Home-scoped targets: ${homeTargets.join(", ") || "none"} (install into the current user's home).`,
     ...homeTargets.map((target) => `${installer} --profile minimal --target ${target}`),
     `Project-scoped targets: ${projectTargets.join(", ") || "none"} (install into the current project).`,
-    ...(projectTargets.length === 0 ? [] : [
-      "Enter the project receiving ECC before running a project-scoped target:",
-      "cd /path/to/project",
-      ...projectTargets.map((target) => `${projectInstaller} --profile minimal --target ${target}`),
-    ]),
+    ...(projectTargets.length === 0
+      ? []
+      : [
+          "Enter the project receiving ECC before running a project-scoped target:",
+          "cd /path/to/project",
+          ...projectTargets.map(
+            (target) => `${projectInstaller} --profile minimal --target ${target}`,
+          ),
+        ]),
     "On Windows use ./install.ps1; on Unix use ./install.sh.",
     "Kiro: bash .kiro/install.sh <project> (standalone script; no managed uninstall).",
     "From the ECC checkout, preview home-scoped removals:",
@@ -43,14 +46,16 @@ export function eccGuidance(targets: readonly Cli[], platform: string): string {
       `node scripts/uninstall.js --target ${target} --dry-run`,
       `node scripts/uninstall.js --target ${target}`,
     ]),
-    ...(projectTargets.length === 0 ? [] : [
-      "From the project receiving ECC, preview project-scoped removals:",
-      "cd /path/to/project",
-      ...projectTargets.flatMap((target) => [
-        `node /path/to/ECC/scripts/uninstall.js --target ${target} --dry-run`,
-        `node /path/to/ECC/scripts/uninstall.js --target ${target}`,
-      ]),
-    ]),
+    ...(projectTargets.length === 0
+      ? []
+      : [
+          "From the project receiving ECC, preview project-scoped removals:",
+          "cd /path/to/project",
+          ...projectTargets.flatMap((target) => [
+            `node /path/to/ECC/scripts/uninstall.js --target ${target} --dry-run`,
+            `node /path/to/ECC/scripts/uninstall.js --target ${target}`,
+          ]),
+        ]),
     "Claude and Codex marketplace routes are mutable external routes; they do not prove the reviewed pin:",
     "/plugin marketplace add https://github.com/affaan-m/ECC",
     "/plugin install ecc@ecc",

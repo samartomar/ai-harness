@@ -258,9 +258,14 @@ export function planGovernedCodexRoleRegistration(
     if (receipt === undefined) return plan("ecc: governed Codex role registration");
     const actions = [];
     actions.push(
-      writeText(CONFIG, base, "withdraw governed Codex role registration; keep config because whole-file creation is unproven", {
-        expect: { sha256: sha256(current) },
-      }),
+      writeText(
+        CONFIG,
+        base,
+        "withdraw governed Codex role registration; keep config because whole-file creation is unproven",
+        {
+          expect: { sha256: sha256(current) },
+        },
+      ),
     );
     actions.push(
       remove(GOVERNED_CODEX_ROLE_RECEIPT, "withdraw governed Codex role receipt", {

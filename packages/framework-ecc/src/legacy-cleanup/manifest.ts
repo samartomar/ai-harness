@@ -16,7 +16,8 @@ const MAX_FILE_BYTES = 64 * 1024 * 1024;
 
 function destinationIdentity(root: string, path: string): string {
   const parts = path.replaceAll("\\", "/").split("/");
-  const portable = process.platform === "win32" ? parts.map((part) => part.replace(/[. ]+$/g, "")) : parts;
+  const portable =
+    process.platform === "win32" ? parts.map((part) => part.replace(/[. ]+$/g, "")) : parts;
   const identity = resolve(root, ...portable);
   return process.platform === "win32" ? identity.toLowerCase() : identity;
 }
@@ -132,7 +133,11 @@ export function legacyManifestCleanupActions(root: string): Action[] {
   } catch (error) {
     notes.push(`.kiro: cannot enumerate unowned files: ${(error as Error).message}`);
   }
-  if (retiredAbsentClaim || retained.length !== manifest.manifest.installs.length || actions.length > 0) {
+  if (
+    retiredAbsentClaim ||
+    retained.length !== manifest.manifest.installs.length ||
+    actions.length > 0
+  ) {
     if (retained.length === 0) {
       actions.push(
         remove(RECEIPT, "retire completed ECC install manifest", {

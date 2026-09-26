@@ -971,12 +971,14 @@ export function planNativeEccRegistration(
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
-    actions.push(writePinned(
-      file.destination,
-      file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
-      current,
-      `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
-    ));
+    actions.push(
+      writePinned(
+        file.destination,
+        file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
+        current,
+        `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
+      ),
+    );
   }
   actions.push(
     remove(NATIVE_ECC_REGISTRATION_RECEIPT, "remove native ECC registration receipt", {
@@ -1054,12 +1056,14 @@ function planInstalledRegistrationFromReceipt(
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
-    actions.push(writePinned(
-      file.destination,
-      file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
-      current,
-      `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
-    ));
+    actions.push(
+      writePinned(
+        file.destination,
+        file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
+        current,
+        `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
+      ),
+    );
   }
   actions.push(
     remove(NATIVE_ECC_REGISTRATION_RECEIPT, "remove native ECC registration receipt", {

@@ -777,7 +777,11 @@ function editedJsonText(source: string, base: unknown, value: unknown): string |
 }
 
 /** Compute final file contents for a write action, applying JSON merge if requested. */
-export function resolveContents(action: WriteAction, absPath: string, sourceOverride?: string): string {
+export function resolveContents(
+  action: WriteAction,
+  absPath: string,
+  sourceOverride?: string,
+): string {
   if (action.json !== undefined) {
     let value: unknown = action.json;
     // Only a merge has a destination to preserve: every other JSON write is a
@@ -856,7 +860,10 @@ function changedDirtyTargets(plan: Plan, ctx: PlanContext, dirty: Set<string>): 
 export async function executePlan(
   plan: Plan,
   ctx: PlanContext,
-  opts: { skipWorktreeGate?: boolean; onEffectCommitted?: (kind: "write" | "remove", path: string) => void } = {},
+  opts: {
+    skipWorktreeGate?: boolean;
+    onEffectCommitted?: (kind: "write" | "remove", path: string) => void;
+  } = {},
 ): Promise<PlanResult> {
   const commitNotAfter = parseCommitNotAfter(plan.commitNotAfter);
   const commitLock = resolveCommitLock(plan, ctx);
@@ -1010,16 +1017,19 @@ export async function executePlan(
   const digestActions: DigestAction[] = [];
   const execActions: ExecAction[] = [];
   const envBlockActions: EnvBlockAction[] = [];
-  const pendingWrites = new Map<string, {
-    contents: string;
-    mode: number | undefined;
-    expect: WriteAction["expect"];
-    root: string | undefined;
-    durable: WriteAction["durable"];
-    expectScratch: WriteAction["expectScratch"];
-    deferred: boolean;
-    sensitive: boolean;
-  }>();
+  const pendingWrites = new Map<
+    string,
+    {
+      contents: string;
+      mode: number | undefined;
+      expect: WriteAction["expect"];
+      root: string | undefined;
+      durable: WriteAction["durable"];
+      expectScratch: WriteAction["expectScratch"];
+      deferred: boolean;
+      sensitive: boolean;
+    }
+  >();
 
   for (const action of plan.actions) {
     if (action.kind === "write") {
@@ -1034,9 +1044,7 @@ export async function executePlan(
       const existing = pendingWrites.get(absPath)?.contents ?? disk;
       if (ctx.apply && action.expect !== undefined) {
         const live =
-          disk === undefined
-            ? undefined
-            : createHash("sha256").update(disk, "utf8").digest("hex");
+          disk === undefined ? undefined : createHash("sha256").update(disk, "utf8").digest("hex");
         const unchanged =
           "absent" in action.expect ? disk === undefined : live === action.expect.sha256;
         if (!unchanged) {
@@ -1071,7 +1079,8 @@ export async function executePlan(
             throw new AihError(`invalid unchanged-file assertion for ${action.path}`, "AIH_CONFIG");
           }
           if (ctx.apply) {
-            const targetTxn = action.requiresPriorExecSuccess || action.afterRemovals ? deferredTxn : txn;
+            const targetTxn =
+              action.requiresPriorExecSuccess || action.afterRemovals ? deferredTxn : txn;
             targetTxn.stageAssertion(
               absPath,
               action.expect.sha256,
@@ -1088,7 +1097,9 @@ export async function executePlan(
             root: action.external ? action.trustedBase : ctx.root,
             durable: action.durable ?? prior?.durable,
             expectScratch: prior?.expectScratch ?? action.expectScratch,
-            deferred: Boolean(action.requiresPriorExecSuccess || action.afterRemovals || prior?.deferred),
+            deferred: Boolean(
+              action.requiresPriorExecSuccess || action.afterRemovals || prior?.deferred,
+            ),
             sensitive: Boolean(action.sensitive?.path || prior?.sensitive),
           });
         }

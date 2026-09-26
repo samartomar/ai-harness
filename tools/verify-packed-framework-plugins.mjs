@@ -18,8 +18,8 @@
  *     `catalog-package-unavailable`; the descriptor is Catalog data.
  *   Core + the pinned Catalog 0.3.0, project and global install: `aih
  *     superpowers <fixture>` exits 0 with the exact-pinned acquisition preview
- *     and `aih ecc --lifecycle install <fixture>` previews the ECC profile from
- *     the installed Catalog, writing nothing, each plugin loaded from INSIDE the
+ *     and `aih ecc <fixture>` gives reviewed-source guidance/status, typed
+ *     retirement and receipt-bound cleanup, each plugin loaded from INSIDE the
  *     installed Core and its `@aihq/core/framework-host` resolved to that same
  *     Core; `aih init` (dry run) runs the Superpowers evidence-gated preview.
  *   Bundled plugin damaged (package.json version changed): the command refuses
@@ -406,10 +406,29 @@ try {
     const superpowersResult = json(superpowers.result);
     const eccRoot = join(work, `fixture-ecc-${label}`);
     mkdirSync(eccRoot, { recursive: true });
-    const ecc = traced(
-      aihAt(core, ["ecc", "--lifecycle", "install", eccRoot, "--json", "--no-log"], ["--import", pathToFileURL(trace).href]),
-    );
+    const ecc = traced(aihAt(core, ["ecc", eccRoot, "--json"], ["--import", pathToFileURL(trace).href]));
     const eccResult = json(ecc.result);
+    const eccStatus = aihAt(core, ["ecc", "--status", eccRoot, "--json"]);
+    const eccStatusResult = json(eccStatus);
+    const eccRetired = aihAt(core, ["ecc", "--lifecycle", "install", eccRoot, "--json"]);
+    const eccRetiredError = json(eccRetired)?.error;
+    const cleanupRoot = join(work, `fixture-ecc-cleanup-${label}`);
+    const managedRoot = join(cleanupRoot, ".kiro");
+    const ownedPath = join(managedRoot, "skills", "owned.md");
+    const manifestPath = join(cleanupRoot, ".aih", "ecc", "install-manifest.json");
+    mkdirSync(dirname(ownedPath), { recursive: true });
+    mkdirSync(dirname(manifestPath), { recursive: true });
+    writeFileSync(ownedPath, "aih created\n");
+    writeFileSync(join(cleanupRoot, ".aih-config.json"), JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }));
+    writeFileSync(manifestPath, JSON.stringify({
+      schemaVersion: "aih.ecc.install-manifest.v1",
+      installs: [{ target: "kiro", mechanism: "native-script", root: managedRoot,
+        installedAt: "2026-01-01T00:00:00Z",
+        source: { kind: "git-checkout", ref: null, commit: "a".repeat(40), package: null, version: null },
+        files: [{ path: "skills/owned.md", sha256: createHash("sha256").update("aih created\n").digest("hex") }],
+      }],
+    }));
+    const eccCleanup = aihAt(core, ["ecc", "--lifecycle", "uninstall", cleanupRoot, "--apply", "--json"]);
     summary.paths[label] = {
       superpowers: {
         exit: superpowers.result.status,
@@ -420,7 +439,9 @@ try {
       ecc: {
         exit: ecc.result.status,
         capability: eccResult?.capability,
-        previewedWrites: eccResult?.writes?.length,
+        statusExit: eccStatus.status,
+        retiredExit: eccRetired.status,
+        cleanupExit: eccCleanup.status,
         moduleTrace: ecc.lines,
       },
     };
@@ -434,14 +455,25 @@ try {
       `exit ${superpowers.result.status}; ${errorText(superpowers.result)}`,
     );
     check(
-      `aih ecc --lifecycle install <fixture> previews the profile from the installed Catalog through the bundled plugin, writing nothing (${label} install)`,
+      `aih ecc <fixture> gives reviewed-source guidance from the installed bundled plugin (${label} install)`,
       ecc.result.status === 0 &&
-        eccResult?.capability === "ecc-profile: atomic projection and native registration install" &&
+        eccResult?.capability === "ecc: guidance" &&
         eccResult.applied === false &&
-        eccResult.writes?.length > 0 &&
+        JSON.stringify(eccResult).includes("5064474d4d762dc9640234a41617cccb79185cec") &&
         readdirSync(eccRoot).length === 0,
       `exit ${ecc.result.status}; ${errorText(ecc.result)}`,
     );
+    check(`aih ecc --status is read-only from the installed plugin (${label} install)`,
+      eccStatus.status === 0 && eccStatusResult?.capability === "ecc: status" &&
+        JSON.stringify(eccStatusResult).includes("file presence only") && readdirSync(eccRoot).length === 0,
+      `exit ${eccStatus.status}; ${errorText(eccStatus)}`);
+    check(`aih ecc --lifecycle install gives a typed retirement (${label} install)`,
+      eccRetired.status === 1 && eccRetiredError?.code === "AIH_CONFIG" &&
+        eccRetiredError?.message?.includes("was retired") === true && readdirSync(eccRoot).length === 0,
+      `exit ${eccRetired.status}; ${errorText(eccRetired)}`);
+    check(`aih ecc --lifecycle uninstall removes receipt-owned legacy files (${label} install)`,
+      eccCleanup.status === 0 && !existsSync(ownedPath) && !existsSync(manifestPath),
+      `exit ${eccCleanup.status}; ${errorText(eccCleanup)}`);
     for (const [{ directory }, { lines }] of [
       [BUNDLED[1], superpowers],
       [BUNDLED[0], ecc],
@@ -559,7 +591,7 @@ try {
     ["superpowers", SUPERPOWERS],
     ["ecc", ECC],
   ]) {
-    const without = aih([command, fixture, "--json", "--no-log"]);
+    const without = aih(command === "ecc" ? [command, fixture, "--json"] : [command, fixture, "--json", "--no-log"]);
     const withoutError = json(without)?.error;
     summary[`${command}WithoutPlugin`] = { exit: without.status, error: withoutError };
     check(

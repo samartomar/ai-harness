@@ -44,7 +44,10 @@ afterEach(() => {
 
 describe("ECC basic guidance", () => {
   it("runs project targets from the project and names home target scope", () => {
-    const text = eccGuidance(["claude", "codex", "opencode", "cursor", "gemini", "zed", "antigravity"], "linux");
+    const text = eccGuidance(
+      ["claude", "codex", "opencode", "cursor", "gemini", "zed", "antigravity"],
+      "linux",
+    );
     expect(text).toContain("Home-scoped targets: claude, codex, opencode");
     expect(text).toContain("Project-scoped targets: cursor, gemini, zed, antigravity");
     expect(text).toContain("cd /path/to/project");
