@@ -264,7 +264,11 @@ describe("targets whose pinned adapter keeps the scaffold identity", () => {
     ).toBe("ecc-content");
     expect(
       classifyGovernedEccOperation(
-        operation("agents/code-reviewer.md", `${HOME_DIR}/.codex/agents/code-reviewer.md`, "agents-core"),
+        operation(
+          "agents/code-reviewer.md",
+          `${HOME_DIR}/.codex/agents/code-reviewer.md`,
+          "agents-core",
+        ),
         CODEX,
       ),
     ).toBe("ecc-content");
