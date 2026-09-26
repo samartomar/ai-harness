@@ -1,4 +1,4 @@
-import { loadFrameworkDescriptorV1 } from "../catalog-package/framework-descriptors.js";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import { AihError } from "../errors.js";
 import type { BaselineCatalog, BaselineCatalogComponent } from "./catalog.js";
 import { defineBaselineCatalog } from "./catalog.js";
@@ -6,7 +6,20 @@ import { componentContainsSkillContentV1 } from "./skill-content.js";
 
 export const BASELINE_CATALOG_IDS = ["ecc", "superpowers"] as const;
 export type BaselineCatalogId = (typeof BASELINE_CATALOG_IDS)[number];
-const admittedCatalogs = new Map<string, Readonly<BaselineCatalog>>();
+const admittedCatalogs = new Map<BaselineCatalogId, Readonly<BaselineCatalog>>();
+
+interface FrameworkDefinitionsV1 {
+  readonly framework: {
+    readonly id: string;
+    readonly repository: string;
+    readonly commit: string;
+    readonly assets: readonly {
+      readonly id: string;
+      readonly curationKind?: string;
+      readonly sourcePaths: readonly string[];
+    }[];
+  };
+}
 
 /** Why a framework descriptor cannot state an exact declared definition for a pin. */
 export type DeclaredFrameworkCatalogRefusalReasonV1 = "missing-definition" | "malformed-definition";
@@ -243,32 +256,62 @@ export function declaredFrameworkCatalogV1(
   }
 }
 
-function catalogFromDescriptor(
-  id: BaselineCatalogId,
-  pin?: string,
-  options: DeclaredFrameworkCatalogOptionsV1 = {},
-): BaselineCatalog {
-  const key = options.sourceRoot === undefined ? id : `${id}\u0000${options.sourceRoot}`;
-  const admitted = admittedCatalogs.get(key);
+/**
+ * The catalog of the SEALED evidence lock the accepted descriptor carries: the
+ * `vendorLock` section's component list. Every evidence consumer joins against this
+ * (coverage, installability, package graph, plugin runtime), exactly as before D79 —
+ * the lock is the evidence those joins bind to, whatever definition it was sealed for.
+ * Only the definition resolver route (`resolveScannerDefinitionV1`) and the Scanner
+ * bridge read the DECLARED definition instead ({@link declaredFrameworkCatalogV1}).
+ */
+function catalogFromDescriptor(id: BaselineCatalogId, pin?: string): BaselineCatalog {
+  const admitted = admittedCatalogs.get(id);
   if (admitted !== undefined) {
     if (pin !== undefined && pin !== admitted.pinnedSha)
       refuseUncarriedPin(id, admitted.pinnedSha, pin);
     return structuredClone(admitted);
   }
-  const catalog = declaredFrameworkCatalogV1(id, loadFrameworkDescriptorV1(id).sections, options);
-  if (pin !== undefined && pin !== catalog.pinnedSha)
-    refuseUncarriedPin(id, catalog.pinnedSha, pin);
-  admittedCatalogs.set(key, catalog);
+  const { framework } = loadFrameworkDescriptorSectionV1<FrameworkDefinitionsV1>(
+    id,
+    "componentDefinitions",
+  );
+  const vendor = loadFrameworkDescriptorSectionV1<{
+    owner: string;
+    repo: string;
+    pinnedSha: string;
+    components: readonly {
+      id: string;
+      paths: readonly string[];
+      analyzers?: readonly { name: string }[];
+    }[];
+  }>(id, "vendorLock");
+  const repository = /^([^/]+)\/([^/]+)$/.exec(framework.repository);
+  if (framework.id !== id || repository === null) {
+    throw new TypeError(`Catalog ${id} framework definitions are malformed`);
+  }
+  if (pin !== undefined && pin !== vendor.pinnedSha) refuseUncarriedPin(id, vendor.pinnedSha, pin);
+  const catalog = defineBaselineCatalog({
+    id,
+    owner: vendor.owner,
+    repo: vendor.repo,
+    pinnedSha: vendor.pinnedSha,
+    components: vendor.components.map((component) => ({
+      id: component.id,
+      paths: [...component.paths],
+      ...(component.analyzers?.some((analyzer) => analyzer.name === "cisco@uvx") === true ||
+      component.id.startsWith("skill:") ||
+      component.paths.some((path) => path === "skills" || path.includes("/skills/"))
+        ? { skillContent: true as const }
+        : {}),
+    })),
+  });
+  admittedCatalogs.set(id, catalog);
   return structuredClone(catalog);
 }
 
 /** Compatibility facade for callers that still select a source by id. */
-export function baselineCatalogById(
-  id: string,
-  pin?: string,
-  options: DeclaredFrameworkCatalogOptionsV1 = {},
-): BaselineCatalog {
-  if (id === "ecc" || id === "superpowers") return catalogFromDescriptor(id, pin, options);
+export function baselineCatalogById(id: string, pin?: string): BaselineCatalog {
+  if (id === "ecc" || id === "superpowers") return catalogFromDescriptor(id, pin);
   throw new Error(
     `unknown baseline catalog ${JSON.stringify(id)}; expected ${BASELINE_CATALOG_IDS.join("|")}`,
   );

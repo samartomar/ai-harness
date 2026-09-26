@@ -273,10 +273,10 @@ describe("definition resolution against the declared Catalog definition (D79)", 
     },
   );
 
-  it("refuses a pin the declared definition does not carry, by both identities", () => {
+  it("refuses a pin the installed Catalog does not carry, by both identities", () => {
     let refusal: unknown;
     try {
-      baselineCatalogById("ecc", EARLIER_PIN, { sourceRoot: source });
+      baselineCatalogById("ecc", EARLIER_PIN);
     } catch (error) {
       refusal = error;
     }

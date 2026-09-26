@@ -3,13 +3,15 @@ import { lstatSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
+import type { CatalogFrameworkIdV1 } from "../catalog-package/framework-descriptors.js";
+import { loadFrameworkDescriptorV1 } from "../catalog-package/framework-descriptors.js";
 import {
   canonicalStrictJsonSha256V1,
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { type BaselineCatalog, BaselineCatalogSchema } from "./catalog.js";
-import { baselineCatalogById } from "./catalogs.js";
+import { declaredFrameworkCatalogV1 } from "./catalogs.js";
 import {
   admittedSourceFromCandidateBundleV1,
   assertCollectionSnapshotBytesV1,
@@ -337,21 +339,23 @@ function catalogIdentity(catalog: BaselineCatalog): string {
   })}`;
 }
 
+/** The registry's framework entries are exactly the ids of the Catalog's framework descriptors. */
+function isFrameworkIdV1(id: DefinitionSourceId): id is CatalogFrameworkIdV1 {
+  return SCANNER_DEFINITION_SOURCES_V1[id].kind === "framework";
+}
+
 /**
  * The installed Catalog's catalog for one subject. A framework's is the DECLARED definition
  * the accepted descriptor states for that pin (D79), read at the checkout that decides which
- * components its material makes skill content; the resolver always has that checkout.
+ * components its material makes skill content; the resolver always has that checkout. A
+ * collection keeps its registered collection input.
  */
 function installedCarriedCatalog(
   id: DefinitionSourceId,
-  sourceRoot: string | undefined,
+  sourceRoot: string,
 ): BaselineCatalog | undefined {
-  if (SCANNER_DEFINITION_SOURCES_V1[id].kind === "framework")
-    return sourceRoot === undefined
-      ? baselineCatalogById(id)
-      : baselineCatalogById(id, undefined, {
-          sourceRoot,
-        });
+  if (isFrameworkIdV1(id))
+    return declaredFrameworkCatalogV1(id, loadFrameworkDescriptorV1(id).sections, { sourceRoot });
   const input = registeredCollectionInputV1(id);
   return input === undefined ? undefined : collectionBaselineCatalogV1(input);
 }

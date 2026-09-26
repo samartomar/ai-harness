@@ -7,7 +7,7 @@ import {
   DeclaredFrameworkCatalogRefusalError,
   declaredFrameworkCatalogV1,
 } from "../../src/baseline-evidence/catalogs.js";
-import { loadFrameworkDescriptorSectionV1 } from "../../src/catalog-package/framework-descriptors.js";
+import { loadFrameworkDescriptorV1 } from "../../src/catalog-package/framework-descriptors.js";
 import { AihError } from "../../src/errors.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 
@@ -21,9 +21,9 @@ function registryPin(owner: string, repo: string): string {
 
 describe("production baseline catalogs", () => {
   it("binds ECC components to the existing registry pin and locked common baseline", () => {
-    const eccProfiles = loadFrameworkDescriptorSectionV1<{
+    const eccProfiles = loadFrameworkDescriptorV1("ecc").sections.profileGraph as {
       profiles: { full: { modules: string[] } };
-    }>("ecc", "profileGraph");
+    };
     const catalog = baselineCatalogById("ecc");
     expect(catalog.pinnedSha).toBe(registryPin("affaan-m", "ECC"));
     const ids = catalog.components.map((component) => component.id);
@@ -80,15 +80,16 @@ describe("production baseline catalogs", () => {
       ),
     ).toBe(false);
     expect(new Set(ids).size).toBe(ids.length);
-    // D79: `skillContent` is Core's analyzer-profile decision at the pinned checkout. Without
-    // a checkout only the declared path names decide it; the next test passes one.
-    expect(
-      catalog.components.find((component) => component.id === "skill:tdd-workflow"),
-    ).toMatchObject({ skillContent: true });
-    for (const id of ["runtime:ecc-kiro", "module:agents-core", "module:platform-configs"]) {
-      expect(catalog.components.find((component) => component.id === id)).not.toHaveProperty(
-        "skillContent",
-      );
+    // The evidence catalog reads `vendorLock`, whose receipts and paths decide `skillContent`.
+    for (const id of [
+      "runtime:ecc-kiro",
+      "module:agents-core",
+      "module:platform-configs",
+      "skill:tdd-workflow",
+    ]) {
+      expect(catalog.components.find((component) => component.id === id)).toMatchObject({
+        skillContent: true,
+      });
     }
     expect(
       catalog.components.find((component) => component.id === "runtime:ecc-installer"),
@@ -192,7 +193,9 @@ const syntheticSections = (
 
 describe("declared framework catalog (D79)", () => {
   it("reads the declared componentDefinitions, not an evidence lock's component list", () => {
-    const catalog = baselineCatalogById("ecc");
+    const catalog = declaredFrameworkCatalogV1("ecc", loadFrameworkDescriptorV1("ecc").sections, {
+      sourceRoot: declaredCheckout,
+    });
     const installer = catalog.components.find(
       (component) => component.id === "runtime:ecc-installer",
     );
@@ -210,7 +213,9 @@ describe("declared framework catalog (D79)", () => {
   });
 
   it("decides skillContent at the pinned checkout for material only the file system shows", () => {
-    const catalog = baselineCatalogById("ecc", undefined, { sourceRoot: declaredCheckout });
+    const catalog = declaredFrameworkCatalogV1("ecc", loadFrameworkDescriptorV1("ecc").sections, {
+      sourceRoot: declaredCheckout,
+    });
     for (const id of ["runtime:ecc-kiro", "module:agents-core", "module:platform-configs"]) {
       expect(catalog.components.find((component) => component.id === id)).toMatchObject({
         skillContent: true,
