@@ -749,6 +749,12 @@ function nativeFragmentAbsent(
   const parent = root[parentKey];
   if (parent === undefined) return true;
   if (!plainObject(parent)) return false;
+  const commands = (entry: unknown): string[] =>
+    plainObject(entry) && Array.isArray(entry.hooks)
+      ? entry.hooks.flatMap((hook: unknown) =>
+          plainObject(hook) && typeof hook.command === "string" ? [hook.command] : [],
+        )
+      : [];
   return Object.entries(managedChildren).every(([childKey, managedValue]) => {
     const existing = parent[childKey];
     if (file.ownership === "json-object-children") return existing === undefined;
@@ -756,7 +762,12 @@ function nativeFragmentAbsent(
       existing === undefined ||
       (Array.isArray(existing) &&
         Array.isArray(managedValue) &&
-        managedValue.every((item) => !existing.some((candidate) => sameJson(candidate, item))))
+        managedValue.every(
+          (item) =>
+            !existing.some((candidate) =>
+              commands(candidate).some((command) => commands(item).includes(command)),
+            ),
+        ))
     );
   });
 }

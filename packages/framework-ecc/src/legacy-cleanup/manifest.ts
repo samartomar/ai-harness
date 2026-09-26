@@ -16,7 +16,10 @@ import {
 const RECEIPT = ".aih/ecc/install-manifest.json";
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
 
-function destinationIdentity(root: string, path: string): string {
+function destinationIdentity(
+  root: string,
+  path: string,
+): { identity: string } | { reason: string } {
   const parts = path.replaceAll("\\", "/").split("/");
   const portable =
     process.platform === "win32" ? parts.map((part) => part.replace(/[. ]+$/g, "")) : parts;
@@ -24,11 +27,18 @@ function destinationIdentity(root: string, path: string): string {
   let canonical = identity;
   try {
     const inspected = inspectContainedPath(realpathSync.native(root), identity);
-    if (inspected.state === "present" && inspected.kind === "file") canonical = inspected.realPath;
-  } catch {
-    // An absent root has no canonical file; retain the lexical identity.
+    if (inspected.state === "present") {
+      if (inspected.kind !== "file") return { reason: `destination is ${inspected.kind}` };
+      canonical = inspected.realPath;
+    } else if (inspected.state === "unsafe") {
+      return { reason: `destination is ${inspected.reason}` };
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      return { reason: `destination cannot be canonicalized: ${(error as Error).message}` };
+    }
   }
-  return process.platform === "win32" ? canonical.toLowerCase() : canonical;
+  return { identity: process.platform === "win32" ? canonical.toLowerCase() : canonical };
 }
 
 function hash(contents: Buffer): string {
@@ -73,11 +83,24 @@ export function legacyManifestCleanupActions(root: string): Action[] {
   const managedRoot = join(root, ".kiro");
   // Validate the entire receipt before any claim can authorize a removal.
   const claims = new Map<string, number>();
+  const identities = new Map<object, string>();
+  const unresolved: string[] = [];
   for (const install of manifest.manifest.installs) {
     for (const file of install.files) {
-      const key = destinationIdentity(install.root, file.path);
-      claims.set(key, (claims.get(key) ?? 0) + 1);
+      const result = destinationIdentity(install.root, file.path);
+      if ("reason" in result) unresolved.push(`${file.path}: ${result.reason}`);
+      else {
+        identities.set(file, result.identity);
+        claims.set(result.identity, (claims.get(result.identity) ?? 0) + 1);
+      }
     }
+  }
+  if (unresolved.length > 0) {
+    const reason = `manifest destination identity unresolved (${unresolved.join("; ")})`;
+    const review = manifest.manifest.installs.flatMap((install) =>
+      install.files.map((file) => `${file.path}: ${reason}; preserved for manual review`),
+    );
+    return [digest("Legacy ECC manifest review", review.join("\n"), { notes: review })];
   }
   const allOwned = new Set<string>();
   for (const install of manifest.manifest.installs) {
@@ -90,7 +113,7 @@ export function legacyManifestCleanupActions(root: string): Action[] {
     }
     const remaining: typeof install.files = [];
     for (const file of install.files) {
-      const key = destinationIdentity(install.root, file.path);
+      const key = identities.get(file) as string;
       if ((claims.get(key) ?? 0) > 1) {
         remaining.push(file);
         notes.push(`${file.path}: duplicate ownership claim; preserved for manual review`);

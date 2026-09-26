@@ -2063,6 +2063,24 @@ describe("executePlan — envblock folding", () => {
     expect(existsSync(join(dir, path))).toBe(false);
   });
 
+  it("rejects a differing text write marked merge before any filesystem effect", async () => {
+    const path = "profile.ps1";
+    const target = join(dir, path);
+    writeFileSync(target, "operator bytes\r\n");
+    const before = readFileSync(target);
+    await expect(
+      executePlan(
+        plan(
+          "collision",
+          writeText(path, "first", "first"),
+          writeText(path, "second", "second", { merge: true }),
+        ),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_CONFIG" });
+    expect(readFileSync(target)).toEqual(before);
+  });
+
   it("renders a single managed block with markers (dry-run writes nothing)", async () => {
     const p = plan(
       "t",

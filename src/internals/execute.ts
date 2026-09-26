@@ -1082,7 +1082,7 @@ export async function executePlan(
         const prior = pendingWrites.get(absPath);
         if (
           prior !== undefined &&
-          action.merge !== true &&
+          !(action.json !== undefined && action.merge === true) &&
           action.removeManagedTextBlockScope === undefined &&
           resolveContents(action, absPath, existing) !== existing
         ) {
@@ -1113,7 +1113,7 @@ export async function executePlan(
               action.external ? action.trustedBase : ctx.root,
             );
           }
-        } else if (ctx.apply && effect !== "unchanged") {
+        } else if (effect !== "unchanged") {
           pendingWrites.set(absPath, {
             contents,
             mode: action.mode ?? prior?.mode,
@@ -1260,7 +1260,7 @@ export async function executePlan(
     }
     const effect: WriteSummary["effect"] =
       existing === undefined ? "create" : existing === content ? "unchanged" : "merge";
-    if (ctx.apply && effect !== "unchanged") {
+    if (effect !== "unchanged") {
       pendingWrites.set(absPath, {
         contents: content,
         mode: prior?.mode,
@@ -1286,14 +1286,16 @@ export async function executePlan(
       throw new AihError(`managed text block subtraction was not retained in ${path}`, "AIH_TRUST");
   }
 
-  for (const [path, write] of pendingWrites) {
-    const targetTxn = write.deferred ? deferredTxn : txn;
-    targetTxn.stage(path, write.contents, write.mode, write.expect, {
-      root: write.root,
-      durable: write.durable,
-      expectScratch: write.expectScratch,
-    });
-    if (write.sensitive) sensitiveBackupTargets.add(path);
+  if (ctx.apply) {
+    for (const [path, write] of pendingWrites) {
+      const targetTxn = write.deferred ? deferredTxn : txn;
+      targetTxn.stage(path, write.contents, write.mode, write.expect, {
+        root: write.root,
+        durable: write.durable,
+        expectScratch: write.expectScratch,
+      });
+      if (write.sensitive) sensitiveBackupTargets.add(path);
+    }
   }
 
   let backups: string[] = [];

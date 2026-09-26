@@ -31,6 +31,7 @@ const ctx: PlanContext = {
 };
 let effects = 0;
 const kinds = new Set<string>();
+let scratchRemovals = 0;
 const actions =
   family === "manifest"
     ? legacyManifestCleanupActions(ctx.root)
@@ -42,11 +43,12 @@ const actions =
         ];
 await executePlan(plan(`interrupted legacy ${family} cleanup`, ...actions), ctx, {
   skipWorktreeGate: true,
-  onEffectCommitted: (kind) => {
+  onEffectCommitted: (kind, path) => {
     effects += 1;
     kinds.add(kind);
+    if (kind === "remove" && /\.aih\.(?:tmp|bak)$/.test(path)) scratchRemovals += 1;
     if (effects === boundary) process.exit(77);
   },
 });
-process.stdout.write(JSON.stringify({ effects, kinds: [...kinds].sort() }));
+process.stdout.write(JSON.stringify({ effects, kinds: [...kinds].sort(), scratchRemovals }));
 process.exit(0);

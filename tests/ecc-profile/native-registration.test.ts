@@ -21,7 +21,7 @@ import {
   planInstalledNativeEccRegistration,
   planNativeEccRegistration,
 } from "../../src/ecc-profile/native-registration.js";
-import { executePlan } from "../../src/internals/execute.js";
+import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -72,6 +72,79 @@ function context(root: string): PlanContext {
 }
 
 describe("native ECC registration", () => {
+  it("previews native subtraction without writes and commits the same complete bytes", async () => {
+    const input = fixture();
+    const registration = buildNativeEccRegistration(input);
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+    const planned = planInstalledNativeEccRegistration(input.root, "uninstall");
+    const destinations = nativeRegistrationFiles(registration).map((file) => file.destination);
+    const before = new Map(
+      destinations.map((path) => [path, readFileSync(join(input.root, path))]),
+    );
+    const receiptBefore = readFileSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT));
+    const final = new Map<string, Buffer>();
+    for (const action of planned.actions) {
+      if (action.kind !== "write") continue;
+      const target = join(input.root, action.path);
+      final.set(action.path, Buffer.from(resolveContents(action, target), "utf8"));
+    }
+    const preview = await executePlan(planned, { ...context(input.root), apply: false });
+    expect(preview.applied).toBe(false);
+    expect(preview.writes.length).toBe(final.size);
+    for (const [path, bytes] of before) expect(readFileSync(join(input.root, path))).toEqual(bytes);
+    expect(readFileSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toEqual(receiptBefore);
+    await executePlan(planned, context(input.root));
+    for (const [path, bytes] of final) expect(readFileSync(join(input.root, path))).toEqual(bytes);
+  });
+
+  it("reports modified managed hooks and keeps their bytes and receipt", async () => {
+    const input = fixture();
+    const registration = buildNativeEccRegistration(input);
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+    const receipt = readFileSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT));
+    for (const path of [".claude/settings.json", ".codex/hooks.json"]) {
+      const target = join(input.root, path);
+      const data = JSON.parse(readFileSync(target, "utf8"));
+      for (const entries of Object.values(data.hooks) as Array<
+        Array<{ hooks: Array<{ timeout: number }> }>
+      >) {
+        for (const entry of entries) for (const hook of entry.hooks) hook.timeout = 45;
+      }
+      writeFileSync(target, `${JSON.stringify(data, null, 2)}\n`);
+      const modified = readFileSync(target);
+      expect(() => planInstalledNativeEccRegistration(input.root, "uninstall")).toThrow(
+        /modified native registration managed hook/i,
+      );
+      expect(readFileSync(target)).toEqual(modified);
+      expect(readFileSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toEqual(receipt);
+    }
+  });
+
+  it("retires the native receipt after managed hook fragments are genuinely absent", async () => {
+    const input = fixture();
+    const registration = buildNativeEccRegistration(input);
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+    for (const path of [".claude/settings.json", ".codex/hooks.json"]) {
+      const target = join(input.root, path);
+      writeFileSync(target, "{}\n");
+    }
+    await executePlan(
+      planInstalledNativeEccRegistration(input.root, "uninstall"),
+      context(input.root),
+    );
+    expect(readFileSync(join(input.root, ".claude/settings.json"))).toEqual(Buffer.from("{}\n"));
+    expect(readFileSync(join(input.root, ".codex/hooks.json"))).toEqual(Buffer.from("{}\n"));
+    expect(existsSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
+  });
   it("keeps pre-existing empty JSON and TOML configs after subtracting owned fragments", async () => {
     const input = fixture();
     mkdirSync(join(input.root, ".claude"));

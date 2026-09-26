@@ -1032,18 +1032,26 @@ export class FsTransaction {
         // like a symlinked target. Reject a planted link and clear any stale scratch so
         // the exclusive create below can't be tricked into following one.
         const clearExpectedScratch = (): void =>
-          clearScratch(tmpPath, () => {
-            this.guardParents(w.path, w.root, false);
-            this.assertCommitDeadline();
-            validateScratchExpectation(tmpPath, w.expectScratch, w.contents);
-          });
+          clearScratch(
+            tmpPath,
+            () => {
+              this.guardParents(w.path, w.root, false);
+              this.assertCommitDeadline();
+              validateScratchExpectation(tmpPath, w.expectScratch, w.contents);
+            },
+            () => this.options.onEffectCommitted?.("remove", tmpPath),
+          );
         // Recheck again in the same clearScratch call immediately before the
         // unlink. The earlier check guarantees no prior transaction mutation.
         if (w.expectScratch !== undefined) clearExpectedScratch();
-        clearScratch(backupPath, () => {
-          this.guardParents(w.path, w.root, false);
-          this.assertCommitDeadline();
-        });
+        clearScratch(
+          backupPath,
+          () => {
+            this.guardParents(w.path, w.root, false);
+            this.assertCommitDeadline();
+          },
+          () => this.options.onEffectCommitted?.("remove", backupPath),
+        );
         if (w.expectScratch === undefined) clearExpectedScratch();
         let backup: string | undefined;
         let backupSha256: string | undefined;
@@ -1452,7 +1460,7 @@ function lstatSafe(path: string): Stats | undefined {
  * the repo), and remove a stale REGULAR leftover from a prior aborted run so the
  * exclusive create doesn't `EEXIST`. Never follows or deletes through a link.
  */
-function clearScratch(path: string, assertCommitDeadline: () => void): void {
+function clearScratch(path: string, assertCommitDeadline: () => void, onRemoved: () => void): void {
   const st = lstatSafe(path);
   if (st === undefined) return;
   if (st.isSymbolicLink()) {
@@ -1460,6 +1468,7 @@ function clearScratch(path: string, assertCommitDeadline: () => void): void {
   }
   assertCommitDeadline();
   rmSync(path, { force: true });
+  onRemoved();
 }
 
 /** Validate a write-local scratch precondition at the consume boundary. */
