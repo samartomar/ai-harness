@@ -777,7 +777,7 @@ function editedJsonText(source: string, base: unknown, value: unknown): string |
 }
 
 /** Compute final file contents for a write action, applying JSON merge if requested. */
-export function resolveContents(action: WriteAction, absPath: string): string {
+export function resolveContents(action: WriteAction, absPath: string, sourceOverride?: string): string {
   if (action.json !== undefined) {
     let value: unknown = action.json;
     // Only a merge has a destination to preserve: every other JSON write is a
@@ -785,7 +785,7 @@ export function resolveContents(action: WriteAction, absPath: string): string {
     let source: string | undefined;
     let base: unknown;
     if (action.merge) {
-      source = readIfExists(absPath);
+      source = sourceOverride ?? readIfExists(absPath);
       base = source !== undefined ? parseJsoncText(source) : undefined;
       value = base !== undefined ? deepMerge(base, action.json) : action.json;
       value = replaceJsonKeys(value, action.json, action.replaceJsonKeys);
@@ -856,7 +856,7 @@ function changedDirtyTargets(plan: Plan, ctx: PlanContext, dirty: Set<string>): 
 export async function executePlan(
   plan: Plan,
   ctx: PlanContext,
-  opts: { skipWorktreeGate?: boolean } = {},
+  opts: { skipWorktreeGate?: boolean; onEffectCommitted?: (kind: "write" | "remove", path: string) => void } = {},
 ): Promise<PlanResult> {
   const commitNotAfter = parseCommitNotAfter(plan.commitNotAfter);
   const commitLock = resolveCommitLock(plan, ctx);
@@ -923,6 +923,7 @@ export async function executePlan(
   const transactionOptions = {
     commitNotAfter,
     ...(commitLock === undefined ? {} : { commitLock }),
+    ...(opts.onEffectCommitted === undefined ? {} : { onEffectCommitted: opts.onEffectCommitted }),
   };
   const txn = new FsTransaction(transactionOptions);
   const deferredTxn = new FsTransaction(transactionOptions);
@@ -1009,6 +1010,16 @@ export async function executePlan(
   const digestActions: DigestAction[] = [];
   const execActions: ExecAction[] = [];
   const envBlockActions: EnvBlockAction[] = [];
+  const pendingWrites = new Map<string, {
+    contents: string;
+    mode: number | undefined;
+    expect: WriteAction["expect"];
+    root: string | undefined;
+    durable: WriteAction["durable"];
+    expectScratch: WriteAction["expectScratch"];
+    deferred: boolean;
+    sensitive: boolean;
+  }>();
 
   for (const action of plan.actions) {
     if (action.kind === "write") {
@@ -1019,14 +1030,15 @@ export async function executePlan(
       } else if (action.trustedBase !== undefined) {
         assertTrustedExternalPath(action.trustedBase, absPath, action.path);
       }
-      const existing = readIfExists(absPath);
+      const disk = readIfExists(absPath);
+      const existing = pendingWrites.get(absPath)?.contents ?? disk;
       if (ctx.apply && action.expect !== undefined) {
         const live =
-          existing === undefined
+          disk === undefined
             ? undefined
-            : createHash("sha256").update(existing, "utf8").digest("hex");
+            : createHash("sha256").update(disk, "utf8").digest("hex");
         const unchanged =
-          "absent" in action.expect ? existing === undefined : live === action.expect.sha256;
+          "absent" in action.expect ? disk === undefined : live === action.expect.sha256;
         if (!unchanged) {
           throw new AihError(
             `refusing to write ${action.path} — it changed after the plan was computed; re-run the command`,
@@ -1043,7 +1055,7 @@ export async function executePlan(
           effect: "kept",
         });
       } else {
-        const contents = resolveContents(action, absPath);
+        const contents = resolveContents(action, absPath, existing);
         // Skip a write whose rendered content already matches disk — true idempotency:
         // no rewrite, no `.aih.bak`, surfaced as `unchanged` in the plan.
         const effect: WriteSummary["effect"] =
@@ -1059,7 +1071,7 @@ export async function executePlan(
             throw new AihError(`invalid unchanged-file assertion for ${action.path}`, "AIH_CONFIG");
           }
           if (ctx.apply) {
-            const targetTxn = action.requiresPriorExecSuccess ? deferredTxn : txn;
+            const targetTxn = action.requiresPriorExecSuccess || action.afterRemovals ? deferredTxn : txn;
             targetTxn.stageAssertion(
               absPath,
               action.expect.sha256,
@@ -1068,13 +1080,17 @@ export async function executePlan(
             );
           }
         } else if (ctx.apply && effect !== "unchanged") {
-          const targetTxn = action.requiresPriorExecSuccess ? deferredTxn : txn;
-          targetTxn.stage(absPath, contents, action.mode, action.expect, {
+          const prior = pendingWrites.get(absPath);
+          pendingWrites.set(absPath, {
+            contents,
+            mode: action.mode ?? prior?.mode,
+            expect: prior?.expect ?? action.expect,
             root: action.external ? action.trustedBase : ctx.root,
-            durable: action.durable,
-            expectScratch: action.expectScratch,
+            durable: action.durable ?? prior?.durable,
+            expectScratch: prior?.expectScratch ?? action.expectScratch,
+            deferred: Boolean(action.requiresPriorExecSuccess || action.afterRemovals || prior?.deferred),
+            sensitive: Boolean(action.sensitive?.path || prior?.sensitive),
           });
-          if (action.sensitive?.path) sensitiveBackupTargets.add(absPath);
         }
         writes.push({
           path: collectedPath(action),
@@ -1213,6 +1229,16 @@ export async function executePlan(
       merged: true,
       effect,
     });
+  }
+
+  for (const [path, write] of pendingWrites) {
+    const targetTxn = write.deferred ? deferredTxn : txn;
+    targetTxn.stage(path, write.contents, write.mode, write.expect, {
+      root: write.root,
+      durable: write.durable,
+      expectScratch: write.expectScratch,
+    });
+    if (write.sensitive) sensitiveBackupTargets.add(path);
   }
 
   let backups: string[] = [];

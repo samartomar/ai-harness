@@ -14,6 +14,13 @@ import {
 const RECEIPT = ".aih/ecc/install-manifest.json";
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
 
+function destinationIdentity(root: string, path: string): string {
+  const parts = path.replaceAll("\\", "/").split("/");
+  const portable = process.platform === "win32" ? parts.map((part) => part.replace(/[. ]+$/g, "")) : parts;
+  const identity = resolve(root, ...portable);
+  return process.platform === "win32" ? identity.toLowerCase() : identity;
+}
+
 function hash(contents: Buffer): string {
   return createHash("sha256").update(contents).digest("hex");
 }
@@ -51,9 +58,17 @@ export function legacyManifestCleanupActions(root: string): Action[] {
   if (!manifest.present) return [];
   const actions: Action[] = [];
   const retained: typeof manifest.manifest.installs = [];
+  let retiredAbsentClaim = false;
   const notes: string[] = [];
   const managedRoot = join(root, ".kiro");
-  const seen = new Set<string>();
+  // Validate the entire receipt before any claim can authorize a removal.
+  const claims = new Map<string, number>();
+  for (const install of manifest.manifest.installs) {
+    for (const file of install.files) {
+      const key = destinationIdentity(install.root, file.path);
+      claims.set(key, (claims.get(key) ?? 0) + 1);
+    }
+  }
   const allOwned = new Set<string>();
   for (const install of manifest.manifest.installs) {
     if (install.target !== "kiro" || resolve(install.root) !== resolve(managedRoot)) {
@@ -65,18 +80,18 @@ export function legacyManifestCleanupActions(root: string): Action[] {
     }
     const remaining: typeof install.files = [];
     for (const file of install.files) {
-      const key = file.path.toLowerCase();
-      if (seen.has(key)) {
+      const key = destinationIdentity(install.root, file.path);
+      if ((claims.get(key) ?? 0) > 1) {
         remaining.push(file);
         notes.push(`${file.path}: duplicate ownership claim; preserved for manual review`);
         continue;
       }
-      seen.add(key);
       allOwned.add(file.path);
       const current = readContainedRegularFile(managedRoot, file.path, {
         maxBytes: MAX_FILE_BYTES,
       });
       if (current.state === "absent") {
+        retiredAbsentClaim = true;
         notes.push(`${file.path}: already absent; retiring its receipt entry`);
         continue;
       }
@@ -117,7 +132,7 @@ export function legacyManifestCleanupActions(root: string): Action[] {
   } catch (error) {
     notes.push(`.kiro: cannot enumerate unowned files: ${(error as Error).message}`);
   }
-  if (retained.length !== manifest.manifest.installs.length || actions.length > 0) {
+  if (retiredAbsentClaim || retained.length !== manifest.manifest.installs.length || actions.length > 0) {
     if (retained.length === 0) {
       actions.push(
         remove(RECEIPT, "retire completed ECC install manifest", {
@@ -126,8 +141,8 @@ export function legacyManifestCleanupActions(root: string): Action[] {
         }),
       );
     } else {
-      actions.push(
-        writeText(
+      actions.push({
+        ...writeText(
           RECEIPT,
           `${JSON.stringify({ ...manifest.manifest, installs: retained }, null, 2)}\n`,
           "retain unresolved ECC manifest claims",
@@ -135,7 +150,8 @@ export function legacyManifestCleanupActions(root: string): Action[] {
             expect: { sha256: hash(raw.contents) },
           },
         ),
-      );
+        afterRemovals: true,
+      });
     }
   }
   if (notes.length > 0)

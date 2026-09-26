@@ -110,6 +110,8 @@ export interface WriteAction {
   trustedBase?: string;
   /** Commit this file only after every non-allowed exec in the plan has succeeded. */
   requiresPriorExecSuccess?: boolean;
+  /** Commit a reduced ownership receipt only after staged removals have completed. */
+  afterRemovals?: true;
 }
 
 export interface DocAction {

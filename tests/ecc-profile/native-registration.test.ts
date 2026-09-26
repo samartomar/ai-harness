@@ -72,6 +72,21 @@ function context(root: string): PlanContext {
 }
 
 describe("native ECC registration", () => {
+  it("keeps pre-existing empty JSON and TOML configs after subtracting owned fragments", async () => {
+    const input = fixture();
+    mkdirSync(join(input.root, ".claude"));
+    mkdirSync(join(input.root, ".codex"));
+    writeFileSync(join(input.root, ".claude/settings.json"), "{}\n");
+    writeFileSync(join(input.root, ".codex/config.toml"), "");
+    const registration = buildNativeEccRegistration(input);
+    await executePlan(planNativeEccRegistration(input.root, registration, "install"), context(input.root));
+    await executePlan(planInstalledNativeEccRegistration(input.root, "uninstall"), context(input.root));
+    expect(existsSync(join(input.root, ".claude/settings.json"))).toBe(true);
+    expect(existsSync(join(input.root, ".codex/config.toml"))).toBe(true);
+    expect(readFileSync(join(input.root, ".claude/settings.json"), "utf8")).toMatch(/^\s*\{\s*\}\s*$/);
+    expect(readFileSync(join(input.root, ".codex/config.toml"), "utf8").trim()).toBe("");
+    expect(existsSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
+  });
   it("renders one composite native hook per supported event and four selected MCPs", () => {
     const input = fixture();
     const registration = buildNativeEccRegistration(input);

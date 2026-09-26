@@ -181,6 +181,8 @@ interface SingleLinkLockFile {
 interface FsTransactionOptions {
   commitNotAfter?: number;
   commitLock?: CommitLock;
+  /** Test seam: observe each completed filesystem effect, including before receipt commits. */
+  onEffectCommitted?: (kind: "write" | "remove", path: string) => void;
 }
 
 export interface FsTxnResult {
@@ -1096,6 +1098,7 @@ export class FsTransaction {
         });
         this.guardParents(w.path, w.root, false);
         if (w.durable) this.syncDurableWrite(w.path, w.root);
+        this.options.onEffectCommitted?.("write", w.path);
       }
       // Removals commit AFTER writes so a partial failure rolls both back in order.
       for (const r of removals) {
@@ -1144,6 +1147,7 @@ export class FsTransaction {
             throw new FsTxnError(`removal target changed before commit: ${r.path}`);
           }
         }
+        this.options.onEffectCommitted?.("remove", r.path);
       }
       this.assertCommitDeadline();
       for (const assertion of assertions) this.guardAssertionParents(assertion);

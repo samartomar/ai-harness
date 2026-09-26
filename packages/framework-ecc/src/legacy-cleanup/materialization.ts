@@ -107,6 +107,7 @@ export function materializationPruneActions(
       exactContents: true,
       mode: step.mode,
       expect: "absent" in step.expect ? { absent: true } : { sha256: step.expect.sha256 },
+      ...(step.phase === "receipt" ? { afterRemovals: true as const } : {}),
     });
   }
   if (unsafeConversion)

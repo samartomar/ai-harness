@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
@@ -588,7 +589,7 @@ function fragmentRoot(file: NativeRegistrationFile): [string, Record<string, unk
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function mergeJsonFragment(current: CurrentFile | undefined, file: NativeRegistrationFile): string {
@@ -970,18 +971,12 @@ export function planNativeEccRegistration(
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
-    actions.push(
-      stripped.trim().length === 0
-        ? remove(file.destination, `unregister ECC profile from ${file.destination}`, {
-            expect: { sha256: current.sha256 },
-          })
-        : writePinned(
-            file.destination,
-            stripped,
-            current,
-            `unregister ECC profile from ${file.destination}`,
-          ),
-    );
+    actions.push(writePinned(
+      file.destination,
+      file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
+      current,
+      `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
+    ));
   }
   actions.push(
     remove(NATIVE_ECC_REGISTRATION_RECEIPT, "remove native ECC registration receipt", {
@@ -1059,18 +1054,12 @@ function planInstalledRegistrationFromReceipt(
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
-    actions.push(
-      stripped.trim().length === 0
-        ? remove(file.destination, `unregister ECC profile from ${file.destination}`, {
-            expect: { sha256: current.sha256 },
-          })
-        : writePinned(
-            file.destination,
-            stripped,
-            current,
-            `unregister ECC profile from ${file.destination}`,
-          ),
-    );
+    actions.push(writePinned(
+      file.destination,
+      file.ownership === "toml-block" || stripped.trim().length > 0 ? stripped : "{}\n",
+      current,
+      `unregister ECC profile from ${file.destination}; preserve the config file because whole-file creation is unproven`,
+    ));
   }
   actions.push(
     remove(NATIVE_ECC_REGISTRATION_RECEIPT, "remove native ECC registration receipt", {

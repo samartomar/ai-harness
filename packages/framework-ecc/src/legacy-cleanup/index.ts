@@ -30,7 +30,7 @@ import {
 } from "../profile/lifecycle.js";
 import { legacyManifestCleanupActions } from "./manifest.js";
 import { materializationPruneActions } from "./materialization.js";
-import { legacyMcpRemoveRecord } from "./mcp-command.js";
+import { planExplicitEccMcpRemoveMany } from "./explicit-mcp.js";
 
 /**
  * Legacy aih ECC ownership inventory. Each row names its proof, never a
@@ -175,16 +175,11 @@ function explicitMcpActions(
     (record) => mode === "uninstall" || retired(record.target as Cli, dropped, kept),
   );
   if (selected.length === 0) return [];
-  // A receipt update for each entry must be planned against the previous one.
-  // One pass handles one entry, and a rerun completes any remaining entries.
-  const first = selected[0];
-  if (first === undefined) return [];
   const home = ctx.env.HOME ?? ctx.env.USERPROFILE;
-  return legacyMcpRemoveRecord({
+  return planExplicitEccMcpRemoveMany({
     root: ctx.root,
     ...(home === undefined ? {} : { home }),
-    id: first.id,
-    target: first.target,
+    selected,
   }).actions;
 }
 
