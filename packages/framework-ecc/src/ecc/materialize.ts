@@ -383,8 +383,15 @@ function operationIdentity(operation: EccManifestOperation): string {
   ].join("\0");
 }
 
+/**
+ * The operation kinds Core's governed boundary models. The install preview route
+ * models one more (`update-claude-settings`); see the D82 preview block below.
+ */
+const GOVERNED_MANIFEST_OPERATION_KINDS = ["copy-file", "merge-json"] as const;
+
 function assertPlanShape<Operation extends EccManifestOperation>(
   plan: EccManifestPlan<Operation>,
+  allowedKinds: readonly string[] = GOVERNED_MANIFEST_OPERATION_KINDS,
 ): void {
   if (!Array.isArray(plan.operations) || !Array.isArray(plan.statePreview?.operations)) {
     throw new Error("invalid ECC manifest plan operation arrays");
@@ -399,7 +406,7 @@ function assertPlanShape<Operation extends EccManifestOperation>(
     throw new Error("ECC manifest operation/state preview drift");
   }
   for (const operation of plan.operations) {
-    if (operation.kind !== "copy-file" && operation.kind !== "merge-json") {
+    if (!allowedKinds.includes(operation.kind)) {
       throw new Error(`unsupported ECC manifest operation kind: ${operation.kind}`);
     }
     if (
@@ -629,16 +636,115 @@ function containedRelative(root: string, destination: string): string | undefine
     : normalized;
 }
 
+/**
+ * Where the PINNED ECC install target writes one source file, relative to the
+ * root its own `resolveRoot` returned.
+ *
+ * This is not `eccContentDestinationMapping`. That mapping answers where Core's
+ * governed PROJECT install puts a source, which for Claude, Cursor, Antigravity
+ * and Zed is deliberately its own layout. The install boundary instead has to
+ * describe what the pinned framework's adapter actually writes, because the
+ * operations it classifies came out of that adapter's own plan. The rows below
+ * are transcribed from the adapters at 5064474d —
+ * `scripts/lib/install-targets/{claude-home,cursor-project,antigravity-project,zed-project}.js`
+ * with the shared `helpers.js` flattening — and K1's sealed install preview for
+ * the same sources shows every one of them.
+ *
+ * `identity` is the shared `createScaffoldOperation` default: the source path
+ * joined under the resolved root. `unwritten` is an adapter that plans NO
+ * operation for the source (it dropped the file), so any destination claiming
+ * that source refuses.
+ */
+export type EccAdapterDestinationV1 =
+  | { readonly state: "identity" }
+  | { readonly state: "relative"; readonly relative: string }
+  | { readonly state: "unwritten" };
+
+/** The shared `helpers.js` flattening: a directory source becomes one flat name. */
+function flattenedFileName(relative: string): string {
+  return relative.replace(/\//g, "-");
+}
+
+export function eccAdapterDestinationV1(
+  source: string,
+  target: string | undefined,
+): EccAdapterDestinationV1 {
+  if (target === "claude") {
+    // claude-home.js: rules are namespaced under `rules/ecc/`; skills and docs
+    // keep the root-relative path, and everything else scaffolds.
+    if (source === "rules") return { state: "relative", relative: "rules/ecc" };
+    if (source.startsWith("rules/")) {
+      return { state: "relative", relative: `rules/ecc/${source.slice("rules/".length)}` };
+    }
+    return { state: "identity" };
+  }
+  if (target === "cursor") {
+    // cursor-project.js: rules flatten into `rules/` and gain `.mdc`, a README
+    // rule is dropped, and agent files gain the `ecc-` prefix.
+    if (source === "rules" || source.startsWith("rules/")) {
+      const relative = source.slice("rules".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      const file = relative.slice(relative.lastIndexOf("/") + 1);
+      if (file.toLowerCase() === "readme.md") return { state: "unwritten" };
+      const flattened = flattenedFileName(relative);
+      return {
+        state: "relative",
+        relative: `rules/${flattened.endsWith(".md") ? `${flattened.slice(0, -3)}.mdc` : flattened}`,
+      };
+    }
+    if (source === "agents" || source.startsWith("agents/")) {
+      const relative = source.slice("agents".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      const flattened = flattenedFileName(relative);
+      return {
+        state: "relative",
+        relative: `agents/${flattened.startsWith("ecc-") ? flattened : `ecc-${flattened}`}`,
+      };
+    }
+    return { state: "identity" };
+  }
+  if (target === "antigravity") {
+    // antigravity-project.js: rules flatten under `rules/`, commands become
+    // `workflows/`; agents and skills keep the root-relative path.
+    if (source === "rules" || source.startsWith("rules/")) {
+      const relative = source.slice("rules".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      return { state: "relative", relative: `rules/${flattenedFileName(relative)}` };
+    }
+    if (source === "commands") return { state: "relative", relative: "workflows" };
+    if (source.startsWith("commands/")) {
+      return { state: "relative", relative: `workflows/${source.slice("commands/".length)}` };
+    }
+    return { state: "identity" };
+  }
+  if (target === "zed") {
+    // zed-project.js: rules flatten under `rules/`; everything else scaffolds.
+    if (source === "rules" || source.startsWith("rules/")) {
+      const relative = source.slice("rules".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      return { state: "relative", relative: `rules/${flattenedFileName(relative)}` };
+    }
+    return { state: "identity" };
+  }
+  return { state: "identity" };
+}
+
 function isEccContentDestination(
   source: string,
   destination: string,
   roots?: GovernedEccDestinationRoots,
 ): boolean {
-  if (
-    roots?.targetRoot !== undefined &&
-    containedRelative(roots.targetRoot, destination) === source
-  ) {
-    return true;
+  if (roots?.targetRoot !== undefined) {
+    const adapter = eccAdapterDestinationV1(source, roots.target);
+    if (adapter.state === "unwritten") return false;
+    if (adapter.state === "relative") {
+      // The pinned adapter remaps this source, so the one destination it writes
+      // for it is this one, under the root its own `resolveRoot` returned.
+      // Core's project layout for the same source is a different install and
+      // must not answer here.
+      return containedRelative(roots.targetRoot, destination) === adapter.relative;
+    }
+    if (containedRelative(roots.targetRoot, destination) === source) return true;
   }
   const mapping = eccContentDestinationMapping(source, roots?.target);
   if (mapping === undefined) {
@@ -655,9 +761,17 @@ function isEccContentDestination(
  * it could remap a rule to a skill or overwrite a sibling's content.
  *
  * Exported because it is the single answer to "where does this component's
- * source file land for this target". A target adapter that needed the same
- * answer and restated it would be a second mapping able to drift from the one
- * the governed classifier below enforces.
+ * source file land for this target" IN CORE'S GOVERNED PROJECT INSTALL. A
+ * target adapter that needed the same answer and restated it would be a second
+ * mapping able to drift from the one the governed classifier below enforces.
+ *
+ * The install boundary asks a different question when it classifies an
+ * operation that came out of the PINNED framework adapter's own plan: where
+ * does that adapter write this source under the root its `resolveRoot`
+ * returned. `eccAdapterDestinationV1` is that answer, and the governed
+ * classifier consults it first whenever a verified `targetRoot` is supplied.
+ * The two answers differ for Claude rules, Cursor rules/agents, Antigravity
+ * rules/commands and Zed rules; neither may be substituted for the other.
  *
  * Three rows are target-independent and therefore SHARED by every target:
  * `AGENTS.md`, `.agents/plugins/` and `.agents/skills/` are the same
@@ -721,6 +835,25 @@ export function eccContentDestinationMapping(
 }
 
 /**
+ * #1016's host-runtime rule, shared by the governed consent boundary and the
+ * install preview route: hooks, host settings/plugins and the OpenCode runtime
+ * tree need explicit executable consent.
+ */
+function isHostRuntimeOperation(
+  operation: EccManifestOperation,
+  source: string,
+  destination: string,
+): boolean {
+  return (
+    operation.moduleId === "hooks-runtime" ||
+    isHostRuntimePath(source) ||
+    isHostRuntimePath(destination) ||
+    isOpenCodeRuntimeTree(source) ||
+    (!isEccContentPath(source) && isOpenCodeRuntimeTree(destination))
+  );
+}
+
+/**
  * Classify an operation from the upstream manifest rather than from an ECC
  * profile/module. Core and platform modules are intentionally mixed: their
  * module id is useful identity evidence, but it cannot decide ownership.
@@ -749,13 +882,7 @@ export function classifyGovernedEccOperation(
   }
 
   if (isMcpPath(source) || isMcpPath(destination)) return "mcp";
-  if (
-    operation.moduleId === "hooks-runtime" ||
-    isHostRuntimePath(source) ||
-    isHostRuntimePath(destination) ||
-    isOpenCodeRuntimeTree(source) ||
-    (!isEccContentPath(source) && isOpenCodeRuntimeTree(destination))
-  ) {
+  if (isHostRuntimeOperation(operation, source, destination)) {
     return "host-runtime";
   }
   if (operation.kind === "merge-json") {
@@ -829,4 +956,226 @@ export function filterGovernedEccManifestPlan<Operation extends EccManifestOpera
   roots?: GovernedEccDestinationRoots,
 ): void {
   filterEccManifestPlan(plan, selection, { governance: true, roots });
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * D82 PREVIEW ROUTE — describe the PINNED installer's own plan.
+ *
+ * The install preview answers "what does the pinned ECC installer do for this
+ * component and target", contingent on evidence authorization. Core's governed
+ * OWNERSHIP classification (`classifyGovernedEccOperation` above) answers a
+ * different question — what AIH itself materializes — and belongs to apply, so
+ * this route does not apply its ownership refusal.
+ *
+ * It keeps the selection filter, the root-escape check, the normalized
+ * destination-collision check, the MCP exclusion, #1016's executable-consent
+ * rule for host-runtime operations, and DESTINATION INTEGRITY: the destination
+ * must be the one the PINNED adapter writes for that source under the root its
+ * own `resolveRoot` returned.
+ * ---------------------------------------------------------------------------
+ */
+
+export type EccPreviewOperationClass = "ecc-content" | "mcp" | "host-runtime";
+
+/** Runtime roots the preview route verifies against; the pinned root is exact. */
+export interface EccPreviewDestinationRoots extends GovernedEccDestinationRoots {
+  targetRoot: string;
+}
+
+export interface EccPreviewConsentFilterOptions {
+  /** Verified project/home roots plus the PINNED adapter's own resolved root. */
+  roots: EccPreviewDestinationRoots;
+}
+
+/**
+ * The pinned adapters' `nativeRootRelativePath` (the config field the shared
+ * `resolveDestinationPath` consults, helpers.js:317-329): a source equal to it
+ * is written to the target root itself, and `plan.js:196-210` materializes a
+ * directory source one file at a time under that root. At 5064474d the verified
+ * targets declare claude-home.js:55 `.claude-plugin`, codex-home.js:9 `.codex`,
+ * cursor-project.js:62 `.cursor`, gemini-project.js:9 `.gemini`,
+ * opencode-home.js:90 `.opencode` and zed-project.js:15 `.zed`; the Antigravity
+ * adapter declares none.
+ */
+const ADAPTER_NATIVE_ROOT_RELATIVE_PATH: Readonly<Record<string, string>> = {
+  claude: ".claude-plugin",
+  codex: ".codex",
+  cursor: ".cursor",
+  gemini: ".gemini",
+  opencode: ".opencode",
+  zed: ".zed",
+};
+
+/**
+ * The destination relative to the verified target root that the PINNED adapter
+ * writes for one materialized plan source, or `unwritten` when it plans none.
+ *
+ * This is `eccAdapterDestinationV1` plus the two rows its transcription did not
+ * carry: the adapter's own `nativeRootRelativePath` (above) and, for Cursor, the
+ * `.cursor/rules/**` tree `cursor-project.js:180-186` runs through the same flat
+ * rule naming as the root `rules/` tree. Every other source keeps the shared
+ * `createScaffoldOperation` default: identity under the target root
+ * (helpers.js:342-350 with :317-329).
+ */
+export function eccPreviewAdapterDestinationV1(
+  source: string,
+  target: string | undefined,
+): EccAdapterDestinationV1 {
+  const adapter = eccAdapterDestinationV1(source, target);
+  if (adapter.state !== "identity" || target === undefined) return adapter;
+  if (target === "cursor" && (source === ".cursor/rules" || source.startsWith(".cursor/rules/"))) {
+    // `createFlatFileOperations` with `toCursorRuleFileName`
+    // (cursor-project.js:13-21,180-186): a README rule is dropped, not renamed.
+    const relative = source.slice(".cursor/rules".length).replace(/^\/+/, "");
+    if (relative.length === 0) return { state: "unwritten" };
+    const file = relative.slice(relative.lastIndexOf("/") + 1);
+    if (file.toLowerCase() === "readme.md") return { state: "unwritten" };
+    const flattened = flattenedFileName(relative);
+    return {
+      state: "relative",
+      relative: `rules/${flattened.endsWith(".md") ? `${flattened.slice(0, -3)}.mdc` : flattened}`,
+    };
+  }
+  const nativeRoot = ADAPTER_NATIVE_ROOT_RELATIVE_PATH[target];
+  if (nativeRoot === undefined) return adapter;
+  if (source === nativeRoot) return { state: "relative", relative: "" };
+  if (source.startsWith(`${nativeRoot}/`)) {
+    return { state: "relative", relative: source.slice(nativeRoot.length + 1) };
+  }
+  return adapter;
+}
+
+/** Whether `destination` is the one the pinned adapter writes for `source`. */
+function previewDestinationMatches(
+  source: string,
+  destination: string,
+  roots: EccPreviewDestinationRoots,
+): boolean {
+  const adapter = eccPreviewAdapterDestinationV1(source, roots.target);
+  if (adapter.state === "unwritten") return false;
+  const relative = adapter.state === "relative" ? adapter.relative : source;
+  if (relative.length === 0) return resolve(destination) === resolve(roots.targetRoot);
+  return containedRelative(roots.targetRoot, destination) === relative;
+}
+
+/**
+ * The pinned plan's `update-claude-settings` operation: `helpers.js:153-165`
+ * plans it for the claude target's `hooks-runtime` module from
+ * `CLAUDE_HOOKS_CONFIG_PATH` (`hooks/hooks.json`, claude-settings.js:10) into
+ * `getClaudeSettingsPath` (`<targetRoot>/settings.json`, claude-settings.js:50-52),
+ * and apply.js:315-343 merges managed hook entries into that host settings file.
+ * It edits host settings, so it is host-runtime under #1016's consent rule.
+ */
+function classifyPreviewClaudeSettingsOperation(
+  operation: EccManifestOperation,
+  source: string,
+  destination: string,
+  roots: EccPreviewDestinationRoots,
+): EccPreviewOperationClass {
+  if (
+    roots.target !== "claude" ||
+    operation.moduleId !== "hooks-runtime" ||
+    source !== "hooks/hooks.json" ||
+    containedRelative(roots.targetRoot, destination) !== "settings.json"
+  ) {
+    throw new Error(
+      `unclassifiable ECC install preview settings operation: ${operation.moduleId}:${source} -> ${destination}`,
+    );
+  }
+  return "host-runtime";
+}
+
+/** The kinds the pinned plan carries at 5064474d; see the classifier below. */
+const PREVIEW_MANIFEST_OPERATION_KINDS = [
+  "copy-file",
+  "merge-json",
+  "update-claude-settings",
+] as const;
+
+/**
+ * Classify one upstream operation for the preview route. The pinned plan at
+ * 5064474d carries exactly three kinds — `copy-file` and `merge-json`
+ * (plan.js:97-116,158-171) plus `update-claude-settings` (plan.js:154-156). A
+ * kind the pinned source cannot explain still refuses.
+ */
+export function classifyEccPreviewOperation(
+  operation: EccManifestOperation,
+  roots: EccPreviewDestinationRoots,
+): EccPreviewOperationClass {
+  if (typeof operation.moduleId !== "string" || operation.moduleId.trim().length === 0) {
+    throw new Error("invalid ECC manifest module identity");
+  }
+  const source = assertSourceRelativePath(operation.sourceRelativePath);
+  const destination = assertDestinationPath(operation.destinationPath);
+  if (
+    containedRelative(roots.projectRoot, destination) === undefined &&
+    containedRelative(roots.homeDir, destination) === undefined
+  ) {
+    throw new Error(`ECC destination escapes authorized project/home roots: ${destination}`);
+  }
+  if (operation.kind === "update-claude-settings") {
+    return classifyPreviewClaudeSettingsOperation(operation, source, destination, roots);
+  }
+  if (operation.kind !== "copy-file" && operation.kind !== "merge-json") {
+    throw new Error(`unsupported ECC manifest operation kind: ${operation.kind}`);
+  }
+  if (isMcpPath(source) || isMcpPath(destination)) return "mcp";
+  if (isHostRuntimeOperation(operation, source, destination)) return "host-runtime";
+  if (operation.kind === "merge-json") {
+    throw new Error(
+      `unclassifiable ECC install preview merge-json operation: ${operation.moduleId}:${destination}`,
+    );
+  }
+  if (!previewDestinationMatches(source, destination, roots)) {
+    throw new Error(
+      `unclassifiable ECC install preview destination: ${operation.moduleId}:${source} -> ${destination}`,
+    );
+  }
+  return "ecc-content";
+}
+
+/**
+ * The preview route's consent decision: it keeps what the pinned plan selected,
+ * drops MCP projection (AIH owns it), and keeps host-runtime operations only
+ * under #1016's explicit executable consent. No ownership refusal applies.
+ */
+export function eccPreviewManifestOperationAllowedByConsent(
+  operation: EccManifestOperation,
+  selection: EccComponentSelection,
+  options: EccPreviewConsentFilterOptions,
+): boolean {
+  const classification = classifyEccPreviewOperation(operation, options.roots);
+  if (!eccManifestOperationSelected(operation, selection)) return false;
+  if (classification === "ecc-content") return true;
+  if (classification === "mcp") return false;
+  return eccExecutableConsent(selection) === "enabled";
+}
+
+/**
+ * The install preview's operation boundary. It is the governed
+ * `filterEccManifestPlan` minus the ownership refusal, and with the preview
+ * route's extra kind (`update-claude-settings`) admitted by the plan shape
+ * check. Everything else — selection, root escape, destination collision —
+ * stays identical, so the described plan is still a filtered, unambiguous one.
+ */
+export function filterEccPreviewManifestPlan<Operation extends EccManifestOperation>(
+  plan: EccManifestPlan<Operation>,
+  selection: EccComponentSelection,
+  options: EccPreviewConsentFilterOptions,
+): void {
+  assertPlanShape(plan, PREVIEW_MANIFEST_OPERATION_KINDS);
+  const destinations = new Set<string>();
+  const operations = plan.operations.filter((operation) => {
+    if (!eccPreviewManifestOperationAllowedByConsent(operation, selection, options)) return false;
+    const destination = normalizedPath(operation.destinationPath);
+    const collisionKey = destination.normalize("NFC").toLowerCase();
+    if (destinations.has(collisionKey)) {
+      throw new Error(`normalized ECC install-preview destination collision: ${destination}`);
+    }
+    destinations.add(collisionKey);
+    return true;
+  });
+  plan.operations = operations;
+  plan.statePreview.operations = operations;
 }

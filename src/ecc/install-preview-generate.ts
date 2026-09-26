@@ -9,7 +9,7 @@ import {
 } from "./install-preview.js";
 import { ECC_INSTALL_TARGETS } from "./install-targets.js";
 import type { EccComponentId } from "./materialize.js";
-import { eccMaterializationSpec, filterEccManifestPlan } from "./materialize.js";
+import { eccMaterializationSpec, filterEccPreviewManifestPlan } from "./materialize.js";
 
 const HOME_FIXTURE = "/home/aih";
 const PROJECT_FIXTURE = "/workspace/project";
@@ -81,6 +81,28 @@ function operationKey(operation: ContingentEccInstallOperation): string {
   ].join("\0");
 }
 
+/**
+ * The pinned plan's operation kinds in the preview artifact's own vocabulary
+ * (`OperationSchema` in install-preview.ts). `update-claude-settings` is the
+ * pinned installer's name for its host settings hook merge (helpers.js:153-165
+ * plans it, claude-settings.js:50-52 pins the destination, apply.js:315-343
+ * merges managed hook entries into it); the artifact's existing `merge-json`
+ * kind is the same JSON merge, so no schema changes.
+ */
+const PREVIEW_ARTIFACT_OPERATION_KIND: Readonly<
+  Record<string, ContingentEccInstallOperation["kind"]>
+> = {
+  "copy-file": "copy-file",
+  "merge-json": "merge-json",
+  "update-claude-settings": "merge-json",
+};
+
+function previewArtifactKind(kind: string): ContingentEccInstallOperation["kind"] {
+  const mapped = PREVIEW_ARTIFACT_OPERATION_KIND[kind];
+  if (mapped === undefined) throw new Error(`unsupported ECC manifest operation kind: ${kind}`);
+  return mapped;
+}
+
 function componentOperations(
   installer: UpstreamInstaller,
   targetRegistry: UpstreamTargetRegistry,
@@ -131,7 +153,10 @@ function componentOperations(
     projectRoot: PROJECT_FIXTURE,
     homeDir: HOME_FIXTURE,
   });
-  filterEccManifestPlan(upstream, selection, {
+  // D82: the preview DESCRIBES the pinned plan. It keeps selection, root escape,
+  // collision, MCP exclusion, executable consent and destination integrity; the
+  // governed ownership refusal belongs to apply.
+  filterEccPreviewManifestPlan(upstream, selection, {
     roots: { projectRoot: PROJECT_FIXTURE, homeDir: HOME_FIXTURE, target, targetRoot },
   });
   return upstream.operations
@@ -142,7 +167,7 @@ function componentOperations(
     )
     .map((operation) => ({
       target,
-      kind: operation.kind,
+      kind: previewArtifactKind(operation.kind),
       source: operation.sourceRelativePath.replace(/\\/g, "/"),
       destination: destinationTemplate(operation.destinationPath),
       componentId,

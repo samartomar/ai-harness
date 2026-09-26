@@ -34,6 +34,7 @@ import {
 import { resolveEccClaudeMaterialization } from "../../src/ecc/materialization-target-claude.js";
 import {
   classifyGovernedEccOperation,
+  eccAdapterDestinationV1,
   eccComponentSourcePaths,
   eccContentDestinationMapping,
 } from "../../src/ecc/materialize.js";
@@ -1548,5 +1549,165 @@ describe("historical source paths through the closed target adapter", () => {
       reason: "unsupported-component",
       detail: expect.stringContaining("unowned-destination"),
     });
+  });
+});
+
+/**
+ * The destination question the PREVIEW generator asks is not the same one the
+ * project-scoped adapter above asks. `eccContentDestinationMapping` answers
+ * "where does Core's governed project install put this source"; the classifier
+ * at the install boundary must answer "where does the PINNED ECC adapter put it
+ * under the root its own `resolveRoot` returned". For Claude rules, Cursor
+ * rules/agents, Antigravity rules/commands and Zed rules those answers differ,
+ * which is what these pins describe. The rows come from the pinned adapters
+ * (`scripts/lib/install-targets/*.js` at 5064474d) and from K1's sealed install
+ * preview for the same sources.
+ */
+describe("the pinned adapter destination under the verified target root", () => {
+  const PROJECT_ROOT = "/workspace/project";
+  const HOME_DIR = "/home/aih";
+  const rootsFor = (target: string, targetRoot: string) => ({
+    projectRoot: PROJECT_ROOT,
+    homeDir: HOME_DIR,
+    target,
+    targetRoot,
+  });
+  const CLAUDE = rootsFor("claude", `${HOME_DIR}/.claude`);
+  const CURSOR = rootsFor("cursor", `${PROJECT_ROOT}/.cursor`);
+  const ANTIGRAVITY = rootsFor("antigravity", `${PROJECT_ROOT}/.agents`);
+  const ZED = rootsFor("zed", `${PROJECT_ROOT}/.zed`);
+  const operation = (source: string, destination: string, moduleId = "rules-core") => ({
+    kind: "copy-file" as const,
+    moduleId,
+    sourceRelativePath: source,
+    destinationPath: destination,
+  });
+
+  it("namespaces Claude rules under `rules/ecc/` and keeps the rest identical", () => {
+    expect(eccAdapterDestinationV1("rules", "claude")).toEqual({
+      state: "relative",
+      relative: "rules/ecc",
+    });
+    expect(eccAdapterDestinationV1("rules/README.md", "claude")).toEqual({
+      state: "relative",
+      relative: "rules/ecc/README.md",
+    });
+    expect(eccAdapterDestinationV1("skills/tdd-workflow/SKILL.md", "claude")).toEqual({
+      state: "identity",
+    });
+  });
+
+  it("classifies the exact Claude operation assemble refuses today", () => {
+    expect(
+      classifyGovernedEccOperation(
+        operation("rules/README.md", `${HOME_DIR}/.claude/rules/ecc/README.md`),
+        CLAUDE,
+      ),
+    ).toBe("ecc-content");
+  });
+
+  it("still refuses Claude rules destinations the pinned adapter does not write", () => {
+    for (const destination of [
+      `${HOME_DIR}/.claude/rules/README.md`,
+      `${HOME_DIR}/.claude/rules/ecc-other/README.md`,
+      `${HOME_DIR}/.claude/rules/ecc/common/other.md`,
+    ]) {
+      expect(() =>
+        classifyGovernedEccOperation(operation("rules/README.md", destination), CLAUDE),
+      ).toThrow(/unclassifiable governed ECC content operation/);
+    }
+  });
+
+  it("flattens Cursor rules to `.mdc`, prefixes agents, and drops README rules", () => {
+    expect(eccAdapterDestinationV1("rules/common/testing.md", "cursor")).toEqual({
+      state: "relative",
+      relative: "rules/common-testing.mdc",
+    });
+    expect(eccAdapterDestinationV1("agents/a11y-architect.md", "cursor")).toEqual({
+      state: "relative",
+      relative: "agents/ecc-a11y-architect.md",
+    });
+    expect(eccAdapterDestinationV1("rules/README.md", "cursor")).toEqual({ state: "unwritten" });
+    expect(
+      classifyGovernedEccOperation(
+        operation("rules/common/testing.md", `${PROJECT_ROOT}/.cursor/rules/common-testing.mdc`),
+        CURSOR,
+      ),
+    ).toBe("ecc-content");
+    for (const [source, destination] of [
+      ["rules/common/testing.md", `${PROJECT_ROOT}/.cursor/rules/common/testing.md`],
+      ["agents/a11y-architect.md", `${PROJECT_ROOT}/.cursor/agents/a11y-architect.md`],
+      ["rules/README.md", `${PROJECT_ROOT}/.cursor/rules/README.mdc`],
+    ] as const) {
+      expect(() => classifyGovernedEccOperation(operation(source, destination), CURSOR)).toThrow(
+        /unclassifiable governed ECC content operation/,
+      );
+    }
+  });
+
+  it("flattens Antigravity rules and routes commands to `workflows/`", () => {
+    expect(eccAdapterDestinationV1("rules/common/testing.md", "antigravity")).toEqual({
+      state: "relative",
+      relative: "rules/common-testing.md",
+    });
+    expect(eccAdapterDestinationV1("commands/aside.md", "antigravity")).toEqual({
+      state: "relative",
+      relative: "workflows/aside.md",
+    });
+    expect(
+      classifyGovernedEccOperation(
+        operation("commands/aside.md", `${PROJECT_ROOT}/.agents/workflows/aside.md`),
+        ANTIGRAVITY,
+      ),
+    ).toBe("ecc-content");
+    for (const [source, destination] of [
+      ["rules/common/testing.md", `${PROJECT_ROOT}/.agents/rules/common/testing.md`],
+      ["commands/aside.md", `${PROJECT_ROOT}/.agents/commands/aside.md`],
+    ] as const) {
+      expect(() =>
+        classifyGovernedEccOperation(operation(source, destination), ANTIGRAVITY),
+      ).toThrow(/unclassifiable governed ECC content operation/);
+    }
+  });
+
+  it("flattens Zed rules and refuses the unflattened destination", () => {
+    expect(eccAdapterDestinationV1("rules/common/testing.md", "zed")).toEqual({
+      state: "relative",
+      relative: "rules/common-testing.md",
+    });
+    expect(
+      classifyGovernedEccOperation(
+        operation("rules/common/testing.md", `${PROJECT_ROOT}/.zed/rules/common-testing.md`),
+        ZED,
+      ),
+    ).toBe("ecc-content");
+    expect(() =>
+      classifyGovernedEccOperation(
+        operation("rules/common/testing.md", `${PROJECT_ROOT}/.zed/rules/common/testing.md`),
+        ZED,
+      ),
+    ).toThrow(/unclassifiable governed ECC content operation/);
+  });
+
+  /**
+   * The plugin copy and Core's copy of this module share the classifier that
+   * refuses an unverified destination. Nothing can import both at once — they
+   * are the same module in two packages — so the pin is a source read: the
+   * adapter-layout answer must be byte-identical in the two copies. A row added
+   * to one copy only is a classifier that rejects at one boundary what the
+   * other boundary accepts.
+   */
+  it("keeps the two materialize.ts copies identical on the adapter layout", () => {
+    const adapterFunction = (path: string): string => {
+      const source = readFileSync(join(import.meta.dirname, path), "utf8");
+      const start = source.indexOf("export function eccAdapterDestinationV1(");
+      if (start === -1) throw new Error(`missing adapter destination function in ${path}`);
+      const end = source.indexOf("\n}\n", start);
+      if (end === -1) throw new Error(`unterminated adapter destination function in ${path}`);
+      return source.slice(start, end + 3);
+    };
+    expect(adapterFunction("../../src/ecc/materialize.ts")).toBe(
+      adapterFunction("../../../../src/ecc/materialize.ts"),
+    );
   });
 });

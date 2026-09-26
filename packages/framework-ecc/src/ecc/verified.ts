@@ -192,8 +192,55 @@ let operations = plan.operations.filter(selectOperation);
   const hostRuntimePath = (value) => /(?:^|\/)opencode\.json$/i.test(value) || /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\.json)?|plugins)(?:\/|$)/i.test(value) || /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:settings(?:\.local)?\.json|config\.(?:json|toml))$/i.test(value) || /^(?:hooks(?:\.json)?|plugins|scripts\/hooks)(?:\/|$)/i.test(value) || /^scaffolds\/(?:claude|codex|cursor|kiro|gemini|opencode|zed)\/(?:hooks(?:\.json)?|plugins|settings(?:\.local)?\.json|config\.(?:json|toml))(?:\/|$)/i.test(value);
   const openCodeRuntimeTree = (value) => /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(value);
   const eccContentPath = (value) => value === "AGENTS.md" || /^(?:\.agents\/(?:plugins|skills)\/|agents\/|skills\/|commands\/|rules\/|\.claude\/commands\/|\.codex\/AGENTS\.md$)/.test(value);
+  const flattenedFileName = (relative) => relative.replace(/\//g, "-");
+  const adapterDestination = (source) => {
+    if (payload.target === "claude") {
+      if (source === "rules") return { state: "relative", relative: "rules/ecc" };
+      if (source.startsWith("rules/")) return { state: "relative", relative: "rules/ecc/" + source.slice(6) };
+      return { state: "identity" };
+    }
+    if (payload.target === "cursor") {
+      if (source === "rules" || source.startsWith("rules/")) {
+        const relative = source.slice(5).replace(/^\/+/, "");
+        if (!relative) return { state: "unwritten" };
+        const file = relative.slice(relative.lastIndexOf("/") + 1);
+        if (file.toLowerCase() === "readme.md") return { state: "unwritten" };
+        const flattened = flattenedFileName(relative);
+        return { state: "relative", relative: "rules/" + (flattened.endsWith(".md") ? flattened.slice(0, -3) + ".mdc" : flattened) };
+      }
+      if (source === "agents" || source.startsWith("agents/")) {
+        const relative = source.slice(6).replace(/^\/+/, "");
+        if (!relative) return { state: "unwritten" };
+        const flattened = flattenedFileName(relative);
+        return { state: "relative", relative: "agents/" + (flattened.startsWith("ecc-") ? flattened : "ecc-" + flattened) };
+      }
+      return { state: "identity" };
+    }
+    if (payload.target === "antigravity") {
+      if (source === "rules" || source.startsWith("rules/")) {
+        const relative = source.slice(5).replace(/^\/+/, "");
+        if (!relative) return { state: "unwritten" };
+        return { state: "relative", relative: "rules/" + flattenedFileName(relative) };
+      }
+      if (source === "commands") return { state: "relative", relative: "workflows" };
+      if (source.startsWith("commands/")) return { state: "relative", relative: "workflows/" + source.slice(9) };
+      return { state: "identity" };
+    }
+    if (payload.target === "zed") {
+      if (source === "rules" || source.startsWith("rules/")) {
+        const relative = source.slice(5).replace(/^\/+/, "");
+        if (!relative) return { state: "unwritten" };
+        return { state: "relative", relative: "rules/" + flattenedFileName(relative) };
+      }
+      return { state: "identity" };
+    }
+    return { state: "identity" };
+  };
   const eccContentDestination = (source, destination) => {
-    if (containedRelative(expectedInstallTarget.root, destination) === source) return true;
+    const adapter = adapterDestination(source);
+    if (adapter.state === "unwritten") return false;
+    const adapterRelative = adapter.state === "relative" ? adapter.relative : source;
+    if (containedRelative(expectedInstallTarget.root, destination) === adapterRelative) return true;
     const mapping = (() => {
       if (source === "AGENTS.md") return { root: payload.projectRoot, relative: "AGENTS.md" };
       if (source === ".codex/AGENTS.md") return { root: payload.homeDir, relative: ".codex/AGENTS.md" };
