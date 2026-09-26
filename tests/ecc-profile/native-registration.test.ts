@@ -98,6 +98,32 @@ describe("native ECC registration", () => {
     expect(readFileSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toEqual(receiptBefore);
     await executePlan(planned, context(input.root));
     for (const [path, bytes] of final) expect(readFileSync(join(input.root, path))).toEqual(bytes);
+    expect(existsSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
+  });
+
+  it("keeps the receipt when only Windows hook dispatchers retain managed identity", async () => {
+    const input = fixture();
+    const registration = buildNativeEccRegistration(input);
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+    const target = join(input.root, ".codex/hooks.json");
+    const hooks = JSON.parse(readFileSync(target, "utf8"));
+    for (const entries of Object.values(hooks.hooks) as Array<
+      Array<{ hooks: Array<{ command: string }> }>
+    >) {
+      for (const entry of entries) for (const hook of entry.hooks) hook.command += " ";
+    }
+    writeFileSync(target, `${JSON.stringify(hooks, null, 2)}\n`);
+    const hookBytes = readFileSync(target);
+    const receiptPath = join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT);
+    const receiptBytes = readFileSync(receiptPath);
+    expect(() => planInstalledNativeEccRegistration(input.root, "uninstall")).toThrow(
+      /modified native registration managed hook/i,
+    );
+    expect(readFileSync(target)).toEqual(hookBytes);
+    expect(readFileSync(receiptPath)).toEqual(receiptBytes);
   });
 
   it("reports modified managed hooks and keeps their bytes and receipt", async () => {

@@ -312,11 +312,38 @@ export function legacyCleanupActions(
   dropped: readonly Cli[] = [],
   kept?: readonly Cli[],
 ): Action[] {
+  const native = nativeActions(ctx, mode, dropped, kept);
+  const controls = hookControlsActions(ctx, mode, dropped, kept);
+  const nativeSettings = native.find(
+    (action) => action.kind === "write" && action.path === ".claude/settings.json",
+  );
+  const controlSettings = controls.find(
+    (action) => action.kind === "write" && action.path === ".claude/settings.json",
+  );
+  if (
+    nativeSettings?.kind === "write" &&
+    controlSettings?.kind === "write" &&
+    typeof nativeSettings.contents === "string" &&
+    nativeSettings.expect !== undefined &&
+    JSON.stringify(nativeSettings.expect) === JSON.stringify(controlSettings.expect)
+  ) {
+    const settings = JSON.parse(nativeSettings.contents) as Record<string, unknown>;
+    const env = { ...((settings.env ?? {}) as Record<string, unknown>) };
+    for (const [key, value] of Object.entries(
+      ((controlSettings.json as Record<string, unknown>).env ?? {}) as Record<string, unknown>,
+    ))
+      env[key] = value;
+    for (const key of controlSettings.removeJsonKeys?.env ?? []) delete env[key];
+    if (Object.keys(env).length > 0) settings.env = env;
+    else delete settings.env;
+    nativeSettings.contents = `${JSON.stringify(settings, null, 2)}\n`;
+    controls.splice(controls.indexOf(controlSettings), 1);
+  }
   return [
     ...profileActions(ctx, mode, dropped, kept),
-    ...nativeActions(ctx, mode, dropped, kept),
+    ...native,
     ...explicitMcpActions(ctx, mode, dropped, kept),
-    ...hookControlsActions(ctx, mode, dropped, kept),
+    ...controls,
     ...codexRoleActions(ctx, mode, dropped, kept),
     ...(mode === "prune" ? materializationPruneActions(ctx.root, dropped, kept) : []),
     ...(mode === "uninstall" || retired("kiro", dropped, kept)

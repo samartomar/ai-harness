@@ -752,7 +752,11 @@ function nativeFragmentAbsent(
   const commands = (entry: unknown): string[] =>
     plainObject(entry) && Array.isArray(entry.hooks)
       ? entry.hooks.flatMap((hook: unknown) =>
-          plainObject(hook) && typeof hook.command === "string" ? [hook.command] : [],
+          plainObject(hook)
+            ? [hook.command, hook.commandWindows].filter(
+                (value): value is string => typeof value === "string",
+              )
+            : [],
         )
       : [];
   return Object.entries(managedChildren).every(([childKey, managedValue]) => {
@@ -1010,6 +1014,10 @@ export function planNativeEccRegistration(
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
+    const [parentKey, managedChildren] =
+      file.ownership === "json-object-children"
+        ? fragmentRoot(file)
+        : ["", {} as Record<string, unknown>];
     actions.push({
       ...writePinned(
         file.destination,
@@ -1019,7 +1027,14 @@ export function planNativeEccRegistration(
       ),
       ...(file.ownership === "toml-block"
         ? { removeManagedTextBlockScope: NATIVE_REGISTRATION_SCOPE }
-        : {}),
+        : file.ownership === "json-object-children"
+          ? {
+              contents: undefined,
+              json: {},
+              merge: true,
+              removeJsonKeys: { [parentKey]: Object.keys(managedChildren) },
+            }
+          : {}),
     });
   }
   actions.push(
@@ -1099,6 +1114,10 @@ function planInstalledRegistrationFromReceipt(
       file.ownership === "toml-block"
         ? removeManagedBlock(current.contents, NATIVE_REGISTRATION_SCOPE)
         : removeJsonFragment(current, file);
+    const [parentKey, managedChildren] =
+      file.ownership === "json-object-children"
+        ? fragmentRoot(file)
+        : ["", {} as Record<string, unknown>];
     actions.push({
       ...writePinned(
         file.destination,
@@ -1108,7 +1127,14 @@ function planInstalledRegistrationFromReceipt(
       ),
       ...(file.ownership === "toml-block"
         ? { removeManagedTextBlockScope: NATIVE_REGISTRATION_SCOPE }
-        : {}),
+        : file.ownership === "json-object-children"
+          ? {
+              contents: undefined,
+              json: {},
+              merge: true,
+              removeJsonKeys: { [parentKey]: Object.keys(managedChildren) },
+            }
+          : {}),
     });
   }
   actions.push(

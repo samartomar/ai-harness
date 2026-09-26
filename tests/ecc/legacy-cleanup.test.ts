@@ -91,6 +91,27 @@ function snapshotFiles(dir: string = root): Record<string, Buffer> {
   return files;
 }
 
+function optionalBytes(path: string): Buffer | undefined {
+  return existsSync(join(root, path)) ? readFileSync(join(root, path)) : undefined;
+}
+
+function finalManifestBytes(source: Buffer): Buffer {
+  const manifest = JSON.parse(source.toString("utf8"));
+  return Buffer.from(
+    `${JSON.stringify(
+      {
+        ...manifest,
+        installs: manifest.installs.map((install: { files: Array<{ path: string }> }) => ({
+          ...install,
+          files: install.files.filter((file) => file.path !== "skills/owned.md"),
+        })),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
 function context(apply: boolean, run: Runner = fakeRunner(() => undefined)): PlanContext {
   const env = { HOME: join(root, "home"), USERPROFILE: join(root, "home") };
   return {
@@ -673,6 +694,7 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
       writeFileSync(`${receiptPath}.aih.bak`, "stale backup\n");
     };
     prepare();
+    const initialReceipt = readFileSync(join(root, ".aih/ecc/install-manifest.json"));
     const completed = run(0);
     expect(completed.status, completed.stderr).toBe(0);
     const observed = JSON.parse(completed.stdout);
@@ -682,24 +704,19 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
       rmSync(root, { recursive: true, force: true });
       root = mkdtempSync(join(tmpdir(), "aih-ecc-legacy-"));
       prepare();
+      const expectedReceipt = finalManifestBytes(
+        readFileSync(join(root, ".aih/ecc/install-manifest.json")),
+      );
       const child = run(boundary);
       expect(child.status, `effect ${boundary}: ${child.stderr}`).toBe(77);
       const receiptPath = join(root, ".aih/ecc/install-manifest.json");
-      const interruptedReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
       if (existsSync(join(root, ".kiro/skills/owned.md"))) {
-        expect(
-          interruptedReceipt.installs[0].files.some(
-            (file: { path: string }) => file.path === "skills/owned.md",
-          ),
-        ).toBe(true);
+        expect(readFileSync(receiptPath)).toEqual(initialReceipt);
       }
       await executeUninstallCommand(context(true));
       expect(existsSync(join(root, ".kiro/skills/owned.md"))).toBe(false);
       expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe("operator edit\n");
-      const finalReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
-      expect(finalReceipt.installs[0].files.map((file: { path: string }) => file.path)).toEqual([
-        "skills/modified.md",
-      ]);
+      expect(readFileSync(receiptPath)).toEqual(expectedReceipt);
     }
   }, 90_000);
 
@@ -723,6 +740,18 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
         writeFileSync(`${receiptPath}.aih.bak`, "stale backup\n");
       };
       await prepare();
+      const comparedPaths = [
+        ECC_MATERIALIZATION_RECEIPT_PATH,
+        ...(family === "multi"
+          ? [
+              ".aih/ecc/install-manifest.json",
+              ".aih/ecc-profile/native-registration-v1.json",
+              ".aih/ecc-mcp-explicit-add-v1.json",
+              ".claude/settings.json",
+              ".codex/hooks.json",
+            ]
+          : []),
+      ];
       const completed = run(0);
       expect(completed.status, completed.stderr).toBe(0);
       const observed = JSON.parse(completed.stdout);
@@ -730,6 +759,7 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
       expect(boundaries).toBeGreaterThan(3);
       expect(observed.kinds).toEqual(["backup", "remove", "temp", "write"]);
       expect(observed.scratchRemovals).toBeGreaterThanOrEqual(2);
+      const expectedBytes = new Map(comparedPaths.map((path) => [path, optionalBytes(path)]));
       for (let boundary = 1; boundary <= boundaries; boundary += 1) {
         rmSync(root, { recursive: true, force: true });
         if (nativeStateRoot !== undefined)
@@ -737,28 +767,24 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
         nativeStateRoot = undefined;
         root = mkdtempSync(join(tmpdir(), "aih-ecc-legacy-"));
         await prepare();
+        const originalBytes = new Map(comparedPaths.map((path) => [path, optionalBytes(path)]));
+        if (family === "multi")
+          expectedBytes.set(
+            ".aih/ecc/install-manifest.json",
+            finalManifestBytes(originalBytes.get(".aih/ecc/install-manifest.json") as Buffer),
+          );
         const interrupted = run(boundary);
         expect(interrupted.status, `effect ${boundary}: ${interrupted.stderr}`).toBe(77);
         const materialized = join(root, ".claude/agents/owned.md");
         if (existsSync(materialized)) {
-          const receipt = JSON.parse(
-            readFileSync(join(root, ECC_MATERIALIZATION_RECEIPT_PATH), "utf8"),
+          expect(optionalBytes(ECC_MATERIALIZATION_RECEIPT_PATH), `effect ${boundary}`).toEqual(
+            originalBytes.get(ECC_MATERIALIZATION_RECEIPT_PATH),
           );
-          expect(
-            receipt.components.some((component: { id: string }) => component.id === "agent:owned"),
-            `effect ${boundary}`,
-          ).toBe(true);
         }
         if (family === "multi" && existsSync(join(root, ".kiro/skills/owned.md"))) {
-          const receipt = JSON.parse(
-            readFileSync(join(root, ".aih/ecc/install-manifest.json"), "utf8"),
+          expect(optionalBytes(".aih/ecc/install-manifest.json"), `effect ${boundary}`).toEqual(
+            originalBytes.get(".aih/ecc/install-manifest.json"),
           );
-          expect(
-            receipt.installs[0].files.some(
-              (file: { path: string }) => file.path === "skills/owned.md",
-            ),
-            `effect ${boundary}`,
-          ).toBe(true);
         }
         if (family === "multi") {
           const mcp = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
@@ -769,13 +795,19 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
             );
           });
           if (mcp.mcpServers?.memxus !== undefined) {
-            const receipt = JSON.parse(
-              readFileSync(join(root, ".aih/ecc-mcp-explicit-add-v1.json"), "utf8"),
-            );
             expect(
-              receipt.records.some((record: { id: string }) => record.id === "memxus"),
+              optionalBytes(".aih/ecc-mcp-explicit-add-v1.json"),
               `effect ${boundary}`,
-            ).toBe(true);
+            ).toEqual(originalBytes.get(".aih/ecc-mcp-explicit-add-v1.json"));
+          }
+          for (const path of [".claude/settings.json", ".codex/hooks.json"]) {
+            const current = optionalBytes(path) as Buffer;
+            const data = JSON.parse(current.toString("utf8"));
+            const hasManagedHook = Object.values(data.hooks ?? {}).some((entries) =>
+              JSON.stringify(entries).includes("Running AIH ECC profile policies"),
+            );
+            if (hasManagedHook)
+              expect(current, `effect ${boundary}: ${path}`).toEqual(originalBytes.get(path));
           }
           if (
             managedHooks ||
@@ -785,9 +817,9 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
             )
           ) {
             expect(
-              existsSync(join(root, ".aih/ecc-profile/native-registration-v1.json")),
+              optionalBytes(".aih/ecc-profile/native-registration-v1.json"),
               `effect ${boundary}`,
-            ).toBe(true);
+            ).toEqual(originalBytes.get(".aih/ecc-profile/native-registration-v1.json"));
           }
           expect(readFileSync(join(root, ".kiro/skills/modified.md"), "utf8")).toBe(
             "operator manifest edit\n",
@@ -822,9 +854,15 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
             "aih managed (ecc-native-registration)",
           );
           for (const path of [".claude/settings.json", ".codex/hooks.json"]) {
-            const data = JSON.parse(readFileSync(join(root, path), "utf8"));
-            expect(data.hooks, `effect ${boundary}: ${path}`).toBeUndefined();
+            expect(optionalBytes(path), `effect ${boundary}: ${path}`).toEqual(
+              expectedBytes.get(path),
+            );
           }
+        }
+        for (const path of comparedPaths) {
+          expect(optionalBytes(path), `effect ${boundary}: ${path}`).toEqual(
+            expectedBytes.get(path),
+          );
         }
       }
     },
@@ -854,6 +892,32 @@ describe("legacy ECC cleanup through public lifecycle commands", () => {
       );
     },
   );
+  it("reports Codex hooks whose POSIX commands changed but Windows dispatchers remain", async () => {
+    await multiFamilyFixture();
+    const path = ".codex/hooks.json";
+    const data = JSON.parse(readFileSync(join(root, path), "utf8"));
+    for (const entries of Object.values(data.hooks) as Array<
+      Array<{ hooks: Array<{ command: string; commandWindows: string }> }>
+    >) {
+      for (const entry of entries)
+        for (const hook of entry.hooks) {
+          expect(hook.commandWindows).toBeTruthy();
+          hook.command += " ";
+        }
+    }
+    writeFileSync(join(root, path), `${JSON.stringify(data, null, 2)}\n`);
+    const receiptPath = ".aih/ecc-profile/native-registration-v1.json";
+    const receiptBefore = optionalBytes(receiptPath);
+    const claudeBefore = optionalBytes(".claude/settings.json");
+    const codexBefore = optionalBytes(path);
+    const result = await executeUninstallCommand(context(true));
+    expect(optionalBytes(receiptPath)).toEqual(receiptBefore);
+    expect(optionalBytes(".claude/settings.json")).toEqual(claudeBefore);
+    expect(optionalBytes(path)).toEqual(codexBefore);
+    expect(result.digests.map((entry) => entry.text).join("\n")).toContain(
+      `modified native registration managed hook: ${path}`,
+    );
+  });
   it("aih ecc --lifecycle uninstall reaches the receipt cleanup bridge", async () => {
     manifestFixture();
     const ctx = { ...context(true), options: { lifecycle: "uninstall" } };
