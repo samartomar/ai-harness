@@ -7,6 +7,7 @@ import {
   loadScanPackageExportsV1,
   scanPackageExportsOrThrowV1,
 } from "../scan-package/load-scan-package.js";
+import { BASELINE_CATALOG_IDS } from "./catalogs.js";
 import { checkoutHeadV1 } from "./committed-checkout.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
@@ -108,6 +109,11 @@ function definitionOverlap(
   return overlap;
 }
 
+/** A framework subject: the ids whose catalog is a framework definition (D79's scope). */
+function isFrameworkCatalogIdV1(id: string): boolean {
+  return (BASELINE_CATALOG_IDS as readonly string[]).includes(id);
+}
+
 /**
  * `--definition` stands in for the installed Catalog only at a pin that Catalog does not
  * carry; a carried pin keeps the installed route, and a definition that differs from the
@@ -115,10 +121,11 @@ function definitionOverlap(
  * components must be disjoint unless `--definition-overlap compiler-catalog` names the
  * overlapping-views exception.
  *
- * D79: when a definition is supplied, the catalog it resolves to IS the definition authority
- * for this checkout — request authoring, publication consumption and the install preview all
- * use exactly it. The registered route (whose coverage compares the catalog against the
- * sealed evidence lock) applies only when no definition is supplied.
+ * D79: for a FRAMEWORK (one of `BASELINE_CATALOG_IDS`), the definition the resolver returns is
+ * the definition authority for this checkout — request authoring, publication consumption and
+ * the install preview all use exactly it. A carried COLLECTION keeps its registered route
+ * (snapshot bytes, coverage, coverage output), and so does any subject at a pin the installed
+ * Catalog does not carry; the registered route applies whenever no definition is supplied.
  */
 function assertCheckout(root: string, catalogId: string, args: readonly string[]) {
   const definitionPath = optionalFlag(args, "--definition");
@@ -131,7 +138,8 @@ function assertCheckout(root: string, catalogId: string, args: readonly string[]
       head: checkoutHeadV1(root),
       ...(overlap === undefined ? {} : { overlap }),
     });
-    return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
+    if (isFrameworkCatalogIdV1(catalogId) || resolved.route === "definition")
+      return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
   }
   const prepared = prepareRegisteredScannerCatalogV1(root, catalogId);
   const { catalog } = prepared;

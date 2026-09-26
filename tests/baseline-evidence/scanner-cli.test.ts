@@ -44,7 +44,8 @@ vi.mock("../../src/baseline-evidence/scanner-publication.js", () => ({
   consumeScannerBaselinePublicationV1: mocks.consumePublication,
   consumeScannerBaselinePublicationsV1: mocks.consumePublications,
 }));
-vi.mock("../../src/baseline-evidence/schema.js", () => ({
+vi.mock("../../src/baseline-evidence/schema.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/baseline-evidence/schema.js")>()),
   BaselineSourceEvidenceSchema: { parse: mocks.sourceParse },
   parseBaselineEvidenceLock: mocks.lockParse,
 }));
@@ -727,6 +728,82 @@ describe("baseline Scanner bridge CLI", () => {
       expect(mocks.consumePublications).toHaveBeenCalledWith(
         expect.objectContaining({ sourceRoot: source, catalog: definitionCatalog }),
       );
+    });
+
+    it("keeps the registered route for a carried collection definition", async () => {
+      const source = makeDirectory("carried-collection-source");
+      const definition = join(root, "carried-collection.definition.json");
+      writeFileSync(definition, "{}");
+      const registeredCatalog = {
+        id: "ponytail",
+        owner: "DietrichGebert",
+        repo: "ponytail",
+        pinnedSha: NEW_PIN,
+        components: [{ id: "skill:x", paths: ["skills/x/SKILL.md"] }],
+      };
+      mocks.resolveDefinition.mockReturnValue({ route: "installed", catalog: registeredCatalog });
+      mocks.prepareCatalog.mockImplementation(() => {
+        throw new Error("Scanner source differs from reviewed snapshot bytes: skills/x/SKILL.md");
+      });
+
+      await expect(
+        runScannerBridge([
+          "request",
+          "--catalog",
+          "ponytail",
+          "--source",
+          source,
+          "--definition",
+          definition,
+          "--output",
+          join(root, "carried-collection-requests"),
+        ]),
+      ).rejects.toThrow("Scanner source differs from reviewed snapshot bytes: skills/x/SKILL.md");
+      // D79's bypass belongs to framework definition resolution: a carried COLLECTION keeps
+      // its registered route, whose snapshot-byte check refuses even though HEAD is unchanged.
+      expect(mocks.prepareCatalog).toHaveBeenCalledWith(source, "ponytail");
+      expect(mocks.createRequests).not.toHaveBeenCalled();
+    });
+
+    it("writes the registered coverage for a carried collection definition", async () => {
+      const source = makeDirectory("carried-collection-coverage-source");
+      const definition = join(root, "carried-collection-coverage.definition.json");
+      writeFileSync(definition, "{}");
+      const output = join(root, "carried-collection-coverage-requests");
+      const registeredCatalog = {
+        id: "ponytail",
+        owner: "DietrichGebert",
+        repo: "ponytail",
+        pinnedSha: NEW_PIN,
+        components: [{ id: "skill:x", paths: ["skills/x/SKILL.md"] }],
+      };
+      mocks.resolveDefinition.mockReturnValue({ route: "installed", catalog: registeredCatalog });
+      mocks.prepareCatalog.mockReturnValue({
+        catalog: registeredCatalog,
+        coverage: { authority: "none", version: "workbench-scanner-coverage/v1" },
+        coverageDigest: `sha256:${"7".repeat(64)}`,
+      });
+      mocks.createRequests.mockReturnValue([{ requestSha256: "8".repeat(64) }]);
+
+      await runScannerBridge([
+        "request",
+        "--catalog",
+        "ponytail",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--output",
+        output,
+      ]);
+
+      expect(mocks.createRequests).toHaveBeenCalledWith(source, registeredCatalog);
+      expect(JSON.parse(readFileSync(join(output, "coverage-map.json"), "utf8"))).toEqual({
+        authority: "none",
+        version: "workbench-scanner-coverage/v1",
+        coverageDigest: `sha256:${"7".repeat(64)}`,
+        requestSha256: ["8".repeat(64)],
+      });
     });
   });
 });
