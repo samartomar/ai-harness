@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { currentEccRuntimeAdapterCompatibilityV1 } from "../../packages/framework-ecc/src/ecc/runtime-adapter-compatibility.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../src/ecc/runtime-adapter-compatibility.js";
 import {
   type EccRuntimeDescriptorV1,
   EccRuntimeDescriptorV1Schema,

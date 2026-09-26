@@ -32,13 +32,10 @@ const ECC_PROFILE_FRAMEWORK_MODULES = new Set([
 
 /**
  * Catalog producers and Workbench data modules W1 is moving to @aihq/catalog or
- * deleting (work order W1), including Catalog's install-preview tooling. Each
+ * deleting (work order W1). Each
  * entry must keep importing ECC framework code, so this list only shrinks as W1 lands.
  */
 const W1_CATALOG_PRODUCERS = new Set([
-  "src/baseline-evidence/ecc-preview-boundary.ts",
-  "src/ecc/install-preview-generate.ts",
-  "src/ecc/install-preview-validate.ts",
   "src/internals/check-baseline-installable.ts",
   "src/org-policy/workbench/core/source-data-scanner.ts",
 ]);
@@ -49,14 +46,12 @@ const W1_CATALOG_PRODUCERS = new Set([
  * registration ledger — with the receipt's filesystem guards and the install
  * manifest (uninstall, prune and receipts read them without the plugin, so Core
  * can refuse by name when ECC state exists), the runtime descriptor Core
- * evaluates, and Catalog producer tooling for the install preview. The
+ * evaluates, and Catalog producer tooling. The
  * framework-host library re-exports them to the plugin, so they are not ECC
  * framework code.
  */
 const KEEP_IN_CORE = new Set([
   "src/ecc/install-manifest.ts",
-  "src/ecc/install-preview-generate.ts",
-  "src/ecc/install-preview-validate.ts",
   "src/ecc/materialization-fs.ts",
   "src/ecc/materialization-receipt.ts",
   "src/ecc/mcp-explicit-add-receipt.ts",
@@ -145,12 +140,10 @@ describe("ECC framework boundary (phase 2)", () => {
     // Each remaining module is reached from Core's entry points or the W1
     // Catalog producer tooling; everything else lives only in @aihq/framework-ecc.
     expect(eccFrameworkModules()).toEqual([
-      "src/ecc/hook-consent.ts",
       "src/ecc/install-preview.ts",
-      "src/ecc/install-targets.ts",
       "src/ecc/materialization-target.ts",
-      "src/ecc/materialize.ts",
       "src/ecc/runtime-adapter-compatibility.ts",
+      "src/ecc/runtime-adapter-destination.ts",
     ]);
   });
 

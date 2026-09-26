@@ -4,8 +4,8 @@ import type {
   FrameworkDoctorHookV1,
   FrameworkOperationContextV1,
 } from "@aihq/core/framework-host";
-import { readExplicitEccMcpReceiptStates } from "./ecc/mcp-explicit-add.js";
 import { withEccInvocation } from "./invocation.js";
+import { readExplicitEccMcpReceiptStates } from "./legacy-cleanup/explicit-mcp.js";
 
 function safeProbeLabel(value: string): string {
   const safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-/ ";

@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { planExplicitEccMcpAdd } from "../../packages/framework-ecc/src/ecc/mcp-explicit-add.js";
 import { planGovernedCodexRoleRegistration } from "../../packages/framework-ecc/src/profile/governed-codex-roles.js";
 import {
   buildNativeEccRegistration,
@@ -21,6 +20,7 @@ import { ECC_MCP_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-mcp-catalog
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as prune } from "../../src/prune/index.js";
 import { executeUninstallCommand } from "../../src/uninstall/index.js";
+import { planLegacyEccMcpFixtureAdd as planExplicitEccMcpAdd } from "../fixtures/legacy-ecc-mcp-add.js";
 
 vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
   const actual =

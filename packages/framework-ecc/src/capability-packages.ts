@@ -3,12 +3,12 @@ import type {
   FrameworkCapabilityPackagesHookV1,
   FrameworkOperationContextV1,
 } from "@aihq/core/framework-host";
-import { planEccComponentSubtraction } from "./ecc/materialization-plan.js";
+import { withEccInvocation } from "./invocation.js";
 import {
   explicitEccMcpRenderPlan,
   readExplicitEccMcpReceiptStates,
-} from "./ecc/mcp-explicit-add.js";
-import { withEccInvocation } from "./invocation.js";
+} from "./legacy-cleanup/explicit-mcp.js";
+import { planEccComponentSubtraction } from "./legacy-cleanup/materialization-plan.js";
 import { legacyMcpRemoveRecord } from "./legacy-cleanup/mcp-command.js";
 
 /**

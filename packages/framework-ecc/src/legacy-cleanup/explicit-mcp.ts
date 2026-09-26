@@ -12,7 +12,6 @@ import {
   eccExternalMcpCatalogV1,
   emptyExplicitAddReceipt,
   cliRegistryEntry as entry,
-  existingMcpTomlNames,
   explicitAddDigest,
   type HttpServer,
   isExternalMcp,
@@ -311,23 +310,6 @@ function tomlServerSection(source: string, name: string): string | undefined {
   return lines.slice(start, end).join("\n").trim();
 }
 
-function hasTomlServerTree(source: string, name: string): boolean {
-  const tree =
-    /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))(?:\.[^\]]+)?\][ \t]*(?:#.*)?$/;
-  return source
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .some((line) => {
-      const match = tree.exec(line);
-      return (match?.[1] ?? match?.[2] ?? match?.[3]) === name;
-    });
-}
-
-function appendToml(source: string | undefined, body: string): string {
-  const prefix = source?.trimEnd() ?? "";
-  return prefix.length === 0 ? body : `${prefix}\n\n${body}`;
-}
-
 function receiptSource(root: string): string | undefined {
   return regularProjectSource(
     root,
@@ -471,111 +453,6 @@ export function readExplicitEccMcpReceiptStates(options: {
       };
     }
   });
-}
-
-/**
- * Plan a project-local JSON add. It does not contact an endpoint, scan, launch a
- * client, or apply files; callers pass its actions to the normal plan executor.
- */
-export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
-  const rendered = explicitEccMcpRenderPlan(options.policy, options.id, options.target);
-  const config = resolvedConfig(options.root, options.home, rendered);
-  const receiptState = parsedReceipt(options.root);
-  const record = receiptState.receipt.records.find(
-    (candidate) => candidate.id === rendered.id && candidate.target === rendered.target,
-  );
-  // A record made for other ECC content is replaced by this Add when its entry is
-  // still exactly what that record wrote (the re-add route, D74).
-  const stale = record !== undefined && isStaleRecord(record) ? record : undefined;
-  let configAction: WriteAction;
-  if (rendered.config.format === "json") {
-    if (typeof rendered.rendered === "string") throw new Error("JSON renderer returned TOML");
-    const servers = jsonServers(
-      jsonRoot(config.source, config.path),
-      rendered.config.key,
-      config.path,
-    );
-    const existing = servers[rendered.id];
-    if (existing !== undefined) {
-      if (
-        record !== undefined &&
-        sameRecord(record, rendered) &&
-        explicitAddDigest(existing) === rendered.renderedDigest
-      )
-        return plan("explicit ECC MCP add");
-      if (stale === undefined || explicitAddDigest(existing) !== stale.config.renderedSha256)
-        throw new Error(
-          `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
-        );
-    } else if (record !== undefined && stale === undefined)
-      throw new Error(
-        `explicit ECC MCP ${rendered.id} receipt no longer matches its config; Add is refused`,
-      );
-    configAction = withExpectedSource(
-      writeJson(
-        config.path,
-        { [rendered.config.key]: { [rendered.id]: rendered.rendered } },
-        `add approved ECC MCP ${rendered.id} to ${rendered.target}`,
-        {
-          merge: true,
-          replaceJsonChildKeys: { [rendered.config.key]: [rendered.id] },
-          ...writeOptions(config),
-        },
-      ),
-      config.source,
-    );
-  } else {
-    const body = rendered.rendered as string;
-    let base = config.source;
-    const existing = tomlServerSection(base ?? "", rendered.id);
-    if (existing !== undefined) {
-      if (
-        record !== undefined &&
-        sameRecord(record, rendered) &&
-        explicitAddDigest(existing) === rendered.renderedDigest
-      )
-        return plan("explicit ECC MCP add");
-      if (stale === undefined || explicitAddDigest(existing) !== stale.config.renderedSha256)
-        throw new Error(
-          `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
-        );
-      base = removeMcpTomlServers(base ?? "", [rendered.id]);
-    } else if (record !== undefined && stale === undefined)
-      throw new Error(
-        `explicit ECC MCP ${rendered.id} receipt no longer matches its config; Add is refused`,
-      );
-    if (hasTomlServerTree(base ?? "", rendered.id)) {
-      throw new Error(`explicit ECC MCP ${rendered.id} is operator-owned; Add is refused`);
-    }
-    if (existingMcpTomlNames(base ?? "", "__explicit_ecc__").has(rendered.id)) {
-      throw new Error(`explicit ECC MCP ${rendered.id} is operator-owned; Add is refused`);
-    }
-    configAction = withExpectedSource(
-      writeText(
-        config.path,
-        appendToml(base, body),
-        `add approved ECC MCP ${rendered.id} to ${rendered.target}`,
-        writeOptions(config),
-      ),
-      config.source,
-    );
-  }
-  const nextReceipt = {
-    ...receiptState.receipt,
-    records: [
-      ...receiptState.receipt.records.filter((candidate) => candidate !== stale),
-      explicitEccMcpReceiptRecord(rendered),
-    ],
-  };
-  const receiptAction = withExpectedSource(
-    writeText(
-      ".aih/ecc-mcp-explicit-add-v1.json",
-      receiptJson(nextReceipt),
-      `record ownership of ECC MCP ${rendered.id} for ${rendered.target}`,
-    ),
-    receiptState.source,
-  );
-  return plan("explicit ECC MCP add", configAction, receiptAction);
 }
 
 /**

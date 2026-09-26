@@ -10,7 +10,6 @@ import {
 import { assertAssembledInventoryV1 } from "./assembly-inventory.js";
 import { BASELINE_CATALOG_IDS, baselineCatalogById } from "./catalogs.js";
 import { checkoutHeadV1 } from "./committed-checkout.js";
-import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import {
@@ -341,13 +340,7 @@ function assemble(args: readonly string[]): void {
     if (sourceId === "ecc") return eccCatalog;
     return isFrameworkCatalogIdV1(sourceId) ? baselineCatalogById(sourceId) : undefined;
   });
-  const preview = generateAuthorizedEccInstallPreview({
-    eccRoot,
-    catalog: eccCatalog,
-    evidence: ecc,
-  });
   writeJson(flag(args, "--out"), lock);
-  writeJson(flag(args, "--preview-out"), preview);
   process.stdout.write(`assembled ${lock.sources.length} Scanner-vetted baseline sources\n`);
 }
 

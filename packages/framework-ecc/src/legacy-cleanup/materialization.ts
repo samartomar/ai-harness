@@ -6,7 +6,7 @@ import {
   readEccMaterializationReceipt,
   remove,
 } from "@aihq/core/framework-host";
-import { planEccComponentSubtraction } from "../ecc/materialization-plan.js";
+import { planEccComponentSubtraction } from "./materialization-plan.js";
 
 function targetOf(path: string): Cli | undefined {
   const first = path.split("/")[0];

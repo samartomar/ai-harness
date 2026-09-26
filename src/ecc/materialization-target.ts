@@ -1,5 +1,5 @@
 import { assertOwnedRelativePath, displaySafe } from "./materialization-receipt.js";
-import { eccContentDestinationMapping } from "./materialize.js";
+import { eccContentDestinationMapping } from "./runtime-adapter-destination.js";
 
 /**
  * Where a governed ECC target places one pinned source file. Core keeps only

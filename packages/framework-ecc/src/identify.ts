@@ -9,8 +9,6 @@ import {
 } from "@aihq/core/framework-host";
 import { selectEccComponents } from "./ecc/components.js";
 import { eccEvidenceComponentIdsForSelection } from "./ecc/evidence.js";
-import { isAihDirectEccInstallTarget } from "./ecc/install.js";
-import { declarations } from "./ecc/pipeline.js";
 import { eccLanguages } from "./ecc/select.js";
 import { UPSTREAM } from "./identity.js";
 import {
@@ -19,6 +17,7 @@ import {
   eccDescriptorSection,
   withEccInvocation,
 } from "./invocation.js";
+import { isAihDirectEccInstallTarget } from "./legacy-cleanup/direct-targets.js";
 
 const VendorLockComponentsSchema = z.object({
   components: z
@@ -30,6 +29,15 @@ const VendorLockComponentsSchema = z.object({
     )
     .min(1),
 });
+
+function declarations(options: Readonly<Record<string, unknown>>): string[] {
+  const raw = options.with;
+  if (Array.isArray(raw) && raw.every((entry): entry is string => typeof entry === "string"))
+    return raw;
+  if (typeof raw === "string") return [raw];
+  if (raw === undefined) return [];
+  throw new AihError("--with declarations must be strings", "AIH_CONFIG");
+}
 
 /** Source paths of every pinned ECC evidence component, from Catalog's vendor lock. */
 function componentPaths(): ReadonlyMap<string, readonly string[]> {

@@ -12,7 +12,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { capabilityPackages } from "../../packages/framework-ecc/src/capability-packages.js";
-import { planExplicitEccMcpAdd } from "../../packages/framework-ecc/src/ecc/mcp-explicit-add.js";
 import { operationContext } from "../../packages/framework-ecc/tests/context.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
@@ -27,6 +26,7 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-mcp-catalog.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { planLegacyEccMcpFixtureAdd as planExplicitEccMcpAdd } from "../fixtures/legacy-ecc-mcp-add.js";
 
 // ECC agent/rule and explicit MCP packages are planned by @aihq/framework-ecc, read from package source.
 const eccDomain = capabilityPackages.domain(operationContext());

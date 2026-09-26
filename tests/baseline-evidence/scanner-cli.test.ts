@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   consumePublications: vi.fn(),
   createRequests: vi.fn(),
   execFileSync: vi.fn(),
-  generatePreview: vi.fn(),
   lockParse: vi.fn(),
   sourceParse: vi.fn(),
 }));
@@ -26,9 +25,6 @@ vi.mock("../../src/baseline-evidence/scanner-catalog-consumer.js", () => ({
 }));
 vi.mock("../../src/baseline-evidence/scanner-definition.js", () => ({
   resolveScannerDefinitionV1: mocks.resolveDefinition,
-}));
-vi.mock("../../src/baseline-evidence/ecc-preview-boundary.js", () => ({
-  generateAuthorizedEccInstallPreview: mocks.generatePreview,
 }));
 vi.mock("../../src/baseline-evidence/scanner-consumer.js", () => ({
   createCoreBaselineVetRequests: mocks.createRequests,
@@ -120,7 +116,6 @@ beforeEach(() => {
   );
   mocks.sourceParse.mockImplementation((value: unknown) => value);
   mocks.lockParse.mockImplementation((value: unknown) => value);
-  mocks.generatePreview.mockReturnValue({ format: "aih-ecc-install-preview", version: 1 });
 });
 
 afterEach(() => {
@@ -434,12 +429,11 @@ describe("baseline Scanner bridge CLI", () => {
     expect(existsSync(output)).toBe(false);
   });
 
-  it("assembles exact source evidence and the authorized ECC preview without overwriting", async () => {
+  it("assembles exact source evidence without overwriting", async () => {
     const eccRoot = makeDirectory("ecc-source");
     const eccEvidence = join(root, "ecc-evidence.json");
     const superpowersEvidence = join(root, "superpowers-evidence.json");
     const output = join(root, "baseline-lock.json");
-    const previewOutput = join(root, "preview.json");
     const eccCatalog = {
       id: "ecc",
       owner: "samartomar",
@@ -463,24 +457,16 @@ describe("baseline Scanner bridge CLI", () => {
       superpowersEvidence,
       "--out",
       output,
-      "--preview-out",
-      previewOutput,
     ]);
 
     expect(mocks.lockParse).toHaveBeenCalledWith({
       schemaVersion: 2,
       sources: [ecc, superpowers],
     });
-    expect(mocks.generatePreview).toHaveBeenCalledWith(
-      expect.objectContaining({ eccRoot, evidence: ecc }),
-    );
     // The emitted lock carries exactly the resolved catalogs' inventories.
     expect(JSON.parse(readFileSync(output, "utf8"))).toEqual({
       schemaVersion: 2,
       sources: [ecc, superpowers],
-    });
-    expect(JSON.parse(readFileSync(previewOutput, "utf8"))).toMatchObject({
-      format: "aih-ecc-install-preview",
     });
     expect(stdout).toHaveBeenCalledWith("assembled 2 Scanner-vetted baseline sources\n");
 
@@ -495,8 +481,6 @@ describe("baseline Scanner bridge CLI", () => {
         superpowersEvidence,
         "--out",
         output,
-        "--preview-out",
-        previewOutput,
       ]),
     ).rejects.toThrow(/exist/i);
   });
@@ -543,7 +527,6 @@ describe("baseline Scanner bridge CLI", () => {
       const eccEvidence = join(root, `inventory-refused-${reason}-ecc.json`);
       const superpowersEvidence = join(root, `inventory-refused-${reason}-superpowers.json`);
       const output = join(root, `inventory-refused-${reason}-lock.json`);
-      const previewOutput = join(root, `inventory-refused-${reason}-preview.json`);
       const eccCatalog: EvidenceCatalog = {
         id: "ecc",
         owner: "samartomar",
@@ -567,16 +550,12 @@ describe("baseline Scanner bridge CLI", () => {
           superpowersEvidence,
           "--out",
           output,
-          "--preview-out",
-          previewOutput,
         ]);
       } catch (error) {
         refusal = error;
       }
       expect(refusal).toMatchObject({ code: "AIH_BASELINE_ASSEMBLY_INVENTORY", reason });
       expect(existsSync(output)).toBe(false);
-      expect(existsSync(previewOutput)).toBe(false);
-      expect(mocks.generatePreview).not.toHaveBeenCalled();
     },
   );
 
@@ -771,7 +750,7 @@ describe("baseline Scanner bridge CLI", () => {
       );
     });
 
-    it("assembles the ECC preview against the definition catalog", async () => {
+    it("assembles the definition catalog inventory", async () => {
       const eccRoot = makeDirectory("definition-ecc");
       const definition = join(root, "assemble.definition.json");
       writeFileSync(definition, "{}");
@@ -793,15 +772,10 @@ describe("baseline Scanner bridge CLI", () => {
         superpowersEvidence,
         "--out",
         join(root, "definition-lock.json"),
-        "--preview-out",
-        join(root, "definition-preview.json"),
       ]);
 
       expect(mocks.resolveDefinition).toHaveBeenCalledWith(
         expect.objectContaining({ sourceRoot: eccRoot, catalogId: "ecc" }),
-      );
-      expect(mocks.generatePreview).toHaveBeenCalledWith(
-        expect.objectContaining({ eccRoot, catalog: definitionCatalog }),
       );
     });
 
@@ -813,7 +787,6 @@ describe("baseline Scanner bridge CLI", () => {
       const evidenceOutput = join(root, "carried-evidence.json");
       const superpowersEvidence = join(root, "carried-superpowers-evidence.json");
       const lockOutput = join(root, "carried-lock.json");
-      const previewOutput = join(root, "carried-preview.json");
       const batch = join(publicationRoot, "batch-001");
       mkdirSync(batch);
       writeFileSync(
@@ -866,15 +839,7 @@ describe("baseline Scanner bridge CLI", () => {
         superpowersEvidence,
         "--out",
         lockOutput,
-        "--preview-out",
-        previewOutput,
       ]);
-      expect(mocks.generatePreview).toHaveBeenCalledWith(
-        expect.objectContaining({
-          catalog: definitionCatalog,
-          evidence: evidenceFor(definitionCatalog),
-        }),
-      );
       expect(JSON.parse(readFileSync(lockOutput, "utf8"))).toEqual({
         schemaVersion: 2,
         sources: [evidenceFor(definitionCatalog), evidenceFor(SUPERPOWERS_CATALOG)],

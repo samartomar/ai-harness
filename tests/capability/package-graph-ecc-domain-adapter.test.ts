@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   explicitEccMcpReceiptRecord,
   explicitEccMcpRenderPlan,
-} from "../../packages/framework-ecc/src/ecc/mcp-explicit-add.js";
+} from "../../packages/framework-ecc/src/legacy-cleanup/explicit-mcp.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
 import { projectBaselinePackageGraphAuthority } from "../../src/capability/package-graph/adapters/baseline.js";

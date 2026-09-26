@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assertGovernedMaterializationTargets } from "../../packages/framework-ecc/src/ecc/materialization-target.js";
 import {
   bareDefaultNarrowingNotice,
   confirmDetectedClis,
@@ -383,15 +382,6 @@ describe("resolveTargets — org supported-CLI allow-list", () => {
       );
     },
   );
-
-  it("reports materialization capability separately after organization sanction succeeds", async () => {
-    writeOrgPolicy({ minimumPosture: "enterprise", supportedClis: ["zed"] });
-    const resolved = await resolveTargets(makeCtx({ cli: "zed" }));
-    expect(resolved.clis).toEqual(["zed"]);
-    expect(() => assertGovernedMaterializationTargets(resolved.clis)).toThrow(
-      /materialization capability gate.*zed is not a governed materialization target/i,
-    );
-  });
 
   it("refuses --all-tools when any selected CLI is not sanctioned", async () => {
     writeOrgPolicy({ supportedClis: ["claude", "codex"] });

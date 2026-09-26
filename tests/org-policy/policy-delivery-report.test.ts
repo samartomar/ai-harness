@@ -3,8 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyEccMaterialization } from "../../packages/framework-ecc/src/ecc/materialization.js";
 import { planGovernedCodexRoleRegistration } from "../../packages/framework-ecc/src/profile/governed-codex-roles.js";
+import {
+  type EccMaterializedComponent,
+  eccMaterializationReceiptPath,
+  ownedFileSha256,
+  serializeEccMaterializationReceipt,
+} from "../../src/ecc/materialization-receipt.js";
 import { eccPolicyDeliveryInspectorV1 } from "../../src/framework-plugin/ecc-read.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -67,6 +72,45 @@ const policy = () =>
       ],
     },
   });
+function applyEccMaterialization(input: {
+  root: string;
+  components: readonly {
+    id: string;
+    authorization: EccMaterializedComponent["authorization"];
+    provenance: EccMaterializedComponent["provenance"];
+    targets?: EccMaterializedComponent["targets"];
+    files: readonly { path: string; kind: "copy-file"; contents: string }[];
+  }[];
+}): void {
+  const components = input.components.map((component) => {
+    for (const file of component.files) {
+      const destination = join(input.root, file.path);
+      mkdirSync(dirname(destination), { recursive: true });
+      writeFileSync(destination, file.contents);
+    }
+    return {
+      id: component.id,
+      authorization: component.authorization,
+      provenance: component.provenance,
+      ...(component.targets === undefined ? {} : { targets: component.targets }),
+      files: component.files.map((file) => ({
+        path: file.path,
+        operation: "copy-file" as const,
+        contentSha256: ownedFileSha256(file.contents),
+      })),
+    };
+  });
+  const receiptPath = eccMaterializationReceiptPath(input.root);
+  mkdirSync(dirname(receiptPath), { recursive: true });
+  writeFileSync(
+    receiptPath,
+    serializeEccMaterializationReceipt({
+      format: "aih-ecc-materialization-receipt",
+      schemaVersion: 1,
+      components,
+    }),
+  );
+}
 function install() {
   applyEccMaterialization({
     root,

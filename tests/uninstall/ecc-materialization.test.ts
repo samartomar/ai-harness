@@ -2,14 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  applyEccMaterialization,
-  eccMaterializationReceiptPath,
-} from "../../packages/framework-ecc/src/ecc/materialization.js";
-import { resolveEccClaudeMaterialization } from "../../packages/framework-ecc/src/ecc/materialization-target-claude.js";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
-import { ECC_MATERIALIZATION_RECEIPT_PATH } from "../../src/ecc/materialization-receipt.js";
+import {
+  ECC_MATERIALIZATION_RECEIPT_PATH,
+  eccMaterializationReceiptPath,
+  ownedFileSha256,
+  serializeEccMaterializationReceipt,
+} from "../../src/ecc/materialization-receipt.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -73,16 +73,11 @@ const MATERIALIZED = [
 ] as const;
 
 let root: string;
-let sourceRoot: string;
-
 beforeEach(() => {
-  sourceRoot = mkdtempSync(join(tmpdir(), "aih-uninstall-materialization-source-"));
-  writeTree(sourceRoot, SOURCE_TREE);
   root = mkdtempSync(join(tmpdir(), "aih-uninstall-materialization-root-"));
   writeTree(root, OPERATOR_TREE);
 });
 afterEach(() => {
-  rmSync(sourceRoot, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -122,22 +117,52 @@ function authorization(componentId: string): BaselineAuthorization {
   };
 }
 
-/** Materialize through the engine, exactly as the governed install does. */
+/** Seed the earlier aih receipt and owned bytes; cleanup reads this historical shape. */
 function materialize(): void {
-  const target = resolveEccClaudeMaterialization({
-    sourceRoot,
-    components: [
-      { id: "agent:code-reviewer", path: "agents/code-reviewer.md" },
-      { id: "baseline:rules", path: "rules" },
-    ].map((component) => ({
-      id: component.id as "agent:code-reviewer",
-      authorization: authorization(component.id),
-      provenance: { repository: REPOSITORY, commit: COMMIT, componentPath: component.path },
-    })),
+  const agentPath = MATERIALIZED[0];
+  const rulePaths = MATERIALIZED.slice(1);
+  writeTree(root, {
+    [agentPath]: SOURCE_TREE["agents/code-reviewer.md"]!,
+    [rulePaths[0]!]: SOURCE_TREE["rules/README.md"]!,
+    [rulePaths[1]!]: SOURCE_TREE["rules/common/coding-style.md"]!,
   });
-  expect(target.refused).toEqual([]);
-  const applied = applyEccMaterialization({ root, components: target.components });
-  expect(applied.written).toHaveLength(MATERIALIZED.length);
+  const receipt = {
+    format: "aih-ecc-materialization-receipt" as const,
+    schemaVersion: 1 as const,
+    components: [
+      {
+        id: "agent:code-reviewer",
+        authorization: authorization("agent:code-reviewer"),
+        provenance: {
+          repository: REPOSITORY,
+          commit: COMMIT,
+          componentPath: "agents/code-reviewer.md",
+        },
+        files: [
+          {
+            path: agentPath,
+            operation: "copy-file" as const,
+            contentSha256: ownedFileSha256(SOURCE_TREE["agents/code-reviewer.md"]!),
+          },
+        ],
+      },
+      {
+        id: "baseline:rules",
+        authorization: authorization("baseline:rules"),
+        provenance: { repository: REPOSITORY, commit: COMMIT, componentPath: "rules" },
+        files: rulePaths.map((path, index) => ({
+          path,
+          operation: "copy-file" as const,
+          contentSha256: ownedFileSha256(
+            SOURCE_TREE[index === 0 ? "rules/README.md" : "rules/common/coding-style.md"]!,
+          ),
+        })),
+      },
+    ],
+  };
+  const path = eccMaterializationReceiptPath(root);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, serializeEccMaterializationReceipt(receipt));
 }
 
 async function uninstall(apply: boolean): Promise<Awaited<ReturnType<typeof executePlan>>> {

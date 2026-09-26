@@ -8,7 +8,6 @@ import type {
 } from "@aihq/core/framework-host";
 import { AihError, doc, FRAMEWORK_PLUGIN_CLEANUP_VERSION, plan } from "@aihq/core/framework-host";
 import { capabilityPackages } from "./capability-packages.js";
-import { executePlan } from "./core-runtime.js";
 import { ECC_DESCRIPTOR_SECTIONS } from "./descriptor.js";
 import { doctor } from "./doctor.js";
 import { eccGuidance, eccStatus } from "./guidance.js";
@@ -25,8 +24,8 @@ import {
 } from "./identity.js";
 import { currentCoreRuntime, withEccInvocation } from "./invocation.js";
 import { legacyMcpRemovePlan } from "./legacy-cleanup/mcp-command.js";
+import { eccPolicyInspection } from "./legacy-cleanup/policy-inspection.js";
 import { prune, uninstall } from "./lifecycle-hooks.js";
-import { eccPolicyDelivery } from "./policy-delivery.js";
 
 function describe(): FrameworkPluginDescriptionV1 {
   return {
@@ -53,7 +52,7 @@ function commandOf(spec: CommandSpec): FrameworkCommandV1 {
     execute: (ctx: FrameworkOperationContextV1): Promise<PlanResult> =>
       withEccInvocation(ctx, async () => {
         const planContext = currentCoreRuntime().planContext;
-        return executePlan(await spec.plan(planContext), planContext);
+        return currentCoreRuntime().executePlan(await spec.plan(planContext), planContext);
       }),
   });
 }
@@ -143,7 +142,7 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
       plan: legacyMcpRemovePlan,
     }),
   }),
-  policyDelivery: eccPolicyDelivery(),
+  policyDelivery: eccPolicyInspection(),
   capabilityPackages,
   uninstall,
   prune,

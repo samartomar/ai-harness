@@ -13,8 +13,8 @@ import {
   readRegularFileWithStats,
   serializeRegistrationLedger,
 } from "@aihq/core/framework-host";
+import { isAihDirectEccInstallTarget } from "../legacy-cleanup/direct-targets.js";
 import type { EccComponentSelection } from "./components.js";
-import { isAihDirectEccInstallTarget } from "./install.js";
 import {
   defaultProjectStatus,
   eccInstallStateCandidates,

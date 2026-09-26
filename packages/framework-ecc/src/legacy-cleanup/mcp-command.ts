@@ -5,7 +5,7 @@ import {
   resolveClis,
   SettingsError,
 } from "@aihq/core/framework-host";
-import { planExplicitEccMcpRemove } from "../ecc/mcp-explicit-add.js";
+import { planExplicitEccMcpRemove } from "./explicit-mcp.js";
 
 export function legacyMcpRemoveRecord(input: {
   root: string;

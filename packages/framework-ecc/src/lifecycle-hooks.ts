@@ -10,15 +10,15 @@ import {
   lines,
   plan,
 } from "@aihq/core/framework-host";
-import { isAihDirectEccInstallTarget } from "./ecc/install.js";
-import { uninstallEccMaterialization } from "./ecc/materialization.js";
 import {
   eccPruneReconciliationActions,
   hasEccRegisteredTarget,
   hasEccRegistrationLedger,
 } from "./ecc/prune-reconcile.js";
 import { currentCoreRuntime, currentEccInvocation, withEccInvocation } from "./invocation.js";
+import { isAihDirectEccInstallTarget } from "./legacy-cleanup/direct-targets.js";
 import { legacyCleanupActions } from "./legacy-cleanup/index.js";
+import { uninstallEccMaterialization } from "./legacy-cleanup/materialization-uninstall.js";
 
 /**
  * `aih uninstall --apply`: subtract every byte the governed materialization

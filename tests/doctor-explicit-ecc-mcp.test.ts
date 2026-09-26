@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   explicitEccMcpReceiptRecord,
   explicitEccMcpRenderPlan,
-} from "../packages/framework-ecc/src/ecc/mcp-explicit-add.js";
+} from "../packages/framework-ecc/src/legacy-cleanup/explicit-mcp.js";
 import { command } from "../src/doctor.js";
 import { emptyExplicitAddReceipt, receiptJson } from "../src/ecc/mcp-explicit-add-receipt.js";
 import type { Action, PlanContext, ProbeAction } from "../src/internals/plan.js";
