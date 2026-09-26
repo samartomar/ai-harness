@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,6 +11,7 @@ import {
 import { loadFrameworkDescriptorV1 } from "../../src/catalog-package/framework-descriptors.js";
 import { AihError } from "../../src/errors.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 function registryPin(owner: string, repo: string): string {
   const source = BASELINE_SOURCES.flatMap((baseline) => [...baseline.sources]).find(
@@ -154,21 +156,70 @@ describe("production baseline catalogs", () => {
   });
 });
 
-/** A pinned checkout whose material only the file system can show. */
+/**
+ * A real git checkout at a pin. The declared definition decides `skillContent` from the
+ * PINNED COMMIT's tree in this checkout's object store — never from the working tree, so an
+ * untracked or modified file cannot change the carried definition.
+ */
 const declaredCheckout = mkdtempSync(join(tmpdir(), "aih-declared-catalog-"));
-function writeCheckoutFile(relative: string): void {
-  const path = join(declaredCheckout, relative);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, "---\nname: fixture\n---\n");
+
+function git(root: string, args: readonly string[]): string {
+  return execFileSync("git", [...args], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: hermeticGitEnv(),
+  });
 }
-writeCheckoutFile(".kiro/SKILL.md");
-writeCheckoutFile(".agents/skills/demo/SKILL.md");
-writeCheckoutFile(".claude-plugin/skills/demo/SKILL.md");
+
+function commitFixture(root: string, files: readonly string[]): string {
+  mkdirSync(root, { recursive: true });
+  git(root, ["init", "-b", "main"]);
+  git(root, ["config", "user.email", "test@example.com"]);
+  git(root, ["config", "user.name", "Declared Catalog Test"]);
+  git(root, ["config", "commit.gpgsign", "false"]);
+  for (const relative of files) {
+    const path = join(root, relative);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "---\nname: fixture\n---\n");
+  }
+  git(root, ["add", "-A"]);
+  git(root, ["commit", "-m", "pin"]);
+  return git(root, ["rev-parse", "HEAD"]).trim();
+}
+
+/** The pin the fixture checkout is at; every declared descriptor below is bound to it. */
+const DECLARED_PIN = commitFixture(declaredCheckout, [
+  "package.json",
+  "scripts/lib/install/plan.js",
+  ".kiro/SKILL.md",
+  ".agents/skills/demo/SKILL.md",
+  ".claude-plugin/skills/demo/SKILL.md",
+  ".cursor/skills/demo/SKILL.md",
+]);
+
 afterAll(() => {
   rmSync(declaredCheckout, { recursive: true, force: true });
 });
 
-const SYNTHETIC_PIN = "a".repeat(40);
+/**
+ * K1's real declared asset list, rebound to the fixture pin so the fixture checkout can
+ * carry its material. Paths, aliases and the MCP option set are K1's own.
+ */
+function k1DeclaredSectionsAtFixturePin(): Readonly<Record<string, unknown>> {
+  const sections = structuredClone(loadFrameworkDescriptorV1("ecc").sections) as Record<
+    string,
+    unknown
+  >;
+  const definitions = sections.componentDefinitions as {
+    framework: { commit: string; assets: { source?: { commit?: string } }[] };
+  };
+  definitions.framework.commit = DECLARED_PIN;
+  for (const asset of definitions.framework.assets)
+    if (asset.source !== undefined) asset.source.commit = DECLARED_PIN;
+  return sections;
+}
+
 const syntheticAsset = (
   id: string,
   kind: string,
@@ -177,7 +228,7 @@ const syntheticAsset = (
 ) => ({
   id,
   kind,
-  source: { repository: "affaan-m/ECC", commit: SYNTHETIC_PIN, path },
+  source: { repository: "affaan-m/ECC", commit: DECLARED_PIN, path },
   sourcePaths,
 });
 const syntheticSections = (
@@ -185,15 +236,15 @@ const syntheticSections = (
   extra: Readonly<Record<string, unknown>> = {},
 ) => ({
   componentDefinitions: {
-    version: 1,
-    framework: { id: "ecc", repository: "affaan-m/ECC", commit: SYNTHETIC_PIN, assets },
+    version: "pinned-baseline/v1",
+    framework: { id: "ecc", repository: "affaan-m/ECC", commit: DECLARED_PIN, assets },
   },
   ...extra,
 });
 
 describe("declared framework catalog (D79)", () => {
   it("reads the declared componentDefinitions, not an evidence lock's component list", () => {
-    const catalog = declaredFrameworkCatalogV1("ecc", loadFrameworkDescriptorV1("ecc").sections, {
+    const catalog = declaredFrameworkCatalogV1("ecc", k1DeclaredSectionsAtFixturePin(), {
       sourceRoot: declaredCheckout,
     });
     const installer = catalog.components.find(
@@ -212,14 +263,89 @@ describe("declared framework catalog (D79)", () => {
     ).toEqual(["rules/common", "rules/README.md"]);
   });
 
-  it("decides skillContent at the pinned checkout for material only the file system shows", () => {
-    const catalog = declaredFrameworkCatalogV1("ecc", loadFrameworkDescriptorV1("ecc").sections, {
-      sourceRoot: declaredCheckout,
-    });
-    for (const id of ["runtime:ecc-kiro", "module:agents-core", "module:platform-configs"]) {
-      expect(catalog.components.find((component) => component.id === id)).toMatchObject({
+  it("decides skillContent from the pinned commit's tree, never from the working tree", () => {
+    const sections = k1DeclaredSectionsAtFixturePin();
+    const before = declaredFrameworkCatalogV1("ecc", sections, { sourceRoot: declaredCheckout });
+    for (const id of [
+      "runtime:ecc-kiro",
+      "module:agents-core",
+      "module:platform-configs",
+      "baseline:platform",
+    ]) {
+      expect(before.components.find((component) => component.id === id)).toMatchObject({
         skillContent: true,
       });
+    }
+    expect(
+      before.components.find((component) => component.id === "runtime:ecc-installer"),
+    ).not.toHaveProperty("skillContent");
+
+    // An untracked SKILL.md below a declared path changes nothing: the commit is what counts.
+    const untracked = join(declaredCheckout, "scripts/lib/install/SKILL.md");
+    writeFileSync(untracked, "---\nname: untracked\n---\n");
+    try {
+      const after = declaredFrameworkCatalogV1("ecc", sections, { sourceRoot: declaredCheckout });
+      expect(after).toEqual(before);
+      expect(
+        after.components.find((component) => component.id === "runtime:ecc-installer"),
+      ).not.toHaveProperty("skillContent");
+    } finally {
+      rmSync(untracked, { force: true });
+    }
+
+    // A modified working-tree file cannot take committed skill material away either.
+    const committed = join(declaredCheckout, ".agents/skills/demo/SKILL.md");
+    writeFileSync(committed, "not the committed bytes\n");
+    try {
+      const after = declaredFrameworkCatalogV1("ecc", sections, { sourceRoot: declaredCheckout });
+      expect(after).toEqual(before);
+    } finally {
+      writeFileSync(committed, "---\nname: fixture\n---\n");
+    }
+  });
+
+  it("refuses a declared catalog without a source root, with a typed error and no fallback", () => {
+    let refusal: unknown;
+    try {
+      declaredFrameworkCatalogV1(
+        "ecc",
+        k1DeclaredSectionsAtFixturePin(),
+        {} as unknown as { sourceRoot: string },
+      );
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(DeclaredFrameworkCatalogRefusalError);
+    expect(refusal).toMatchObject({
+      code: "AIH_CATALOG_DECLARED_DEFINITION",
+      reason: "source-root-required",
+    });
+  });
+
+  it("refuses a checkout whose HEAD is not the declared pin", () => {
+    const other = mkdtempSync(join(tmpdir(), "aih-declared-catalog-other-"));
+    try {
+      const otherPin = commitFixture(other, ["package.json"]);
+      expect(otherPin).not.toBe(DECLARED_PIN);
+      let refusal: unknown;
+      try {
+        declaredFrameworkCatalogV1(
+          "ecc",
+          syntheticSections([syntheticAsset("x:y", "module", ["package.json"])]),
+          { sourceRoot: other },
+        );
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal).toBeInstanceOf(DeclaredFrameworkCatalogRefusalError);
+      expect(refusal).toMatchObject({
+        code: "AIH_CATALOG_DECLARED_DEFINITION",
+        reason: "checkout-not-at-pin",
+      });
+      expect((refusal as Error).message).toContain(DECLARED_PIN);
+      expect((refusal as Error).message).toContain(otherPin);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
     }
   });
 
@@ -244,7 +370,7 @@ describe("declared framework catalog (D79)", () => {
         vendorLock: {
           owner: "affaan-m",
           repo: "ECC",
-          pinnedSha: SYNTHETIC_PIN,
+          pinnedSha: DECLARED_PIN,
           components: [{ id: "runtime:installer", paths: ["package.json"] }],
         },
       },
@@ -254,7 +380,7 @@ describe("declared framework catalog (D79)", () => {
       id: "ecc",
       owner: "affaan-m",
       repo: "ECC",
-      pinnedSha: SYNTHETIC_PIN,
+      pinnedSha: DECLARED_PIN,
       components: [
         { id: "runtime:installer", paths: ["package.json", "scripts/install.js"] },
         { id: "skill:demo", paths: [".agents/skills/demo", "skills/demo"], skillContent: true },
@@ -268,18 +394,18 @@ describe("declared framework catalog (D79)", () => {
   it.each([
     [
       "a missing section",
-      { vendorLock: { owner: "affaan-m", repo: "ECC", pinnedSha: SYNTHETIC_PIN, components: [] } },
+      { vendorLock: { owner: "affaan-m", repo: "ECC", pinnedSha: DECLARED_PIN, components: [] } },
       "missing-definition",
     ],
     [
       "another framework id",
       syntheticSections([syntheticAsset("x:y", "module", ["a"])], {
         componentDefinitions: {
-          version: 1,
+          version: "pinned-baseline/v1",
           framework: {
             id: "superpowers",
             repository: "affaan-m/ECC",
-            commit: SYNTHETIC_PIN,
+            commit: DECLARED_PIN,
             assets: [],
           },
         },
@@ -298,11 +424,11 @@ describe("declared framework catalog (D79)", () => {
       "a repository that is not owner/repo",
       syntheticSections([syntheticAsset("x:y", "module", ["a"])], {
         componentDefinitions: {
-          version: 1,
+          version: "pinned-baseline/v1",
           framework: {
             id: "ecc",
             repository: "ECC",
-            commit: SYNTHETIC_PIN,
+            commit: DECLARED_PIN,
             assets: [syntheticAsset("x:y", "module", ["a"])],
           },
         },
@@ -319,7 +445,9 @@ describe("declared framework catalog (D79)", () => {
   ])("refuses %s with a typed error and no fallback", (_label, sections, reason) => {
     let refusal: unknown;
     try {
-      declaredFrameworkCatalogV1("ecc", sections as Readonly<Record<string, unknown>>);
+      declaredFrameworkCatalogV1("ecc", sections as Readonly<Record<string, unknown>>, {
+        sourceRoot: declaredCheckout,
+      });
     } catch (error) {
       refusal = error;
     }

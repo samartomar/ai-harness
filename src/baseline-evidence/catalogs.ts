@@ -2,7 +2,11 @@ import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-d
 import { AihError } from "../errors.js";
 import type { BaselineCatalog, BaselineCatalogComponent } from "./catalog.js";
 import { defineBaselineCatalog } from "./catalog.js";
-import { componentContainsSkillContentV1 } from "./skill-content.js";
+import { checkoutHeadV1, committedTreePathsV1 } from "./committed-checkout.js";
+import {
+  committedSkillDirectoriesV1,
+  componentContainsCommittedSkillContentV1,
+} from "./skill-content.js";
 
 export const BASELINE_CATALOG_IDS = ["ecc", "superpowers"] as const;
 export type BaselineCatalogId = (typeof BASELINE_CATALOG_IDS)[number];
@@ -21,13 +25,42 @@ interface FrameworkDefinitionsV1 {
   };
 }
 
-/** Why a framework descriptor cannot state an exact declared definition for a pin. */
-export type DeclaredFrameworkCatalogRefusalReasonV1 = "missing-definition" | "malformed-definition";
+/**
+ * Why a framework descriptor cannot state an exact declared definition for a pin, as a
+ * stable machine reason on {@link DeclaredFrameworkCatalogRefusalError}:
+ *
+ * - `source-root-required` — no checkout at the declared pin was supplied, and the declared
+ *   section alone cannot show what a directory contains;
+ * - `checkout-not-at-pin` — the checkout's HEAD is not the declared commit;
+ * - `committed-tree-unavailable` — the checkout does not carry the declared commit's tree;
+ * - `missing-definition` — no `componentDefinitions` section, or no declared framework/assets;
+ * - `unsupported-version` — a section version that is not `pinned-baseline/v1`;
+ * - `unknown-asset-kind` — an asset kind outside the Catalog's asset vocabulary;
+ * - `unknown-field` — a field the conversion does not read, at section, framework, asset or
+ *   asset-source level;
+ * - `missing-asset-source` — an asset without the `source` it is authored at;
+ * - `asset-source-mismatch` — an asset whose source repository or commit is not the
+ *   framework's own pin;
+ * - `malformed-definition` — a present field with the wrong shape or value (framework id,
+ *   repository, commit, asset id, paths).
+ */
+export type DeclaredFrameworkCatalogRefusalReasonV1 =
+  | "source-root-required"
+  | "checkout-not-at-pin"
+  | "committed-tree-unavailable"
+  | "missing-definition"
+  | "unsupported-version"
+  | "unknown-asset-kind"
+  | "unknown-field"
+  | "missing-asset-source"
+  | "asset-source-mismatch"
+  | "malformed-definition";
 
 /**
  * A framework descriptor whose `componentDefinitions` section does not state the pinned
- * definition exactly: a missing field, a different pin, or an entry that cannot be read as
- * a component. Core refuses instead of substituting another section's component list.
+ * definition exactly: a missing field, another pin, a field Core does not read, or an entry
+ * that cannot be read as a component. Core refuses instead of substituting another section's
+ * component list.
  */
 export class DeclaredFrameworkCatalogRefusalError extends AihError {
   readonly reason: DeclaredFrameworkCatalogRefusalReasonV1;
@@ -184,12 +217,47 @@ function declaredComponentPathsV1(asset: DeclaredAssetV1): string[] {
 
 export interface DeclaredFrameworkCatalogOptionsV1 {
   /**
-   * The checkout at the pin. It decides `skillContent` for components whose declared paths
-   * name a container or host directory rather than skill material (`componentContainsSkillContentV1`).
-   * Omitted by callers that need no checkout; those components then keep the flag unset,
-   * because the declared section alone cannot show what a directory contains.
+   * The checkout at the declared pin. `skillContent` is decided from the PINNED COMMIT's tree
+   * in this checkout's own object store, never from the working tree, so an untracked or
+   * modified file cannot change the carried definition. There is no checkout-free form of a
+   * declared catalog: the section alone cannot show what a directory contains.
    */
-  readonly sourceRoot?: string;
+  readonly sourceRoot: string;
+}
+
+/**
+ * The declared commit's own tree, read from the checkout's object store. The checkout's HEAD
+ * must already be that commit: the material that decides `skillContent` is committed material,
+ * and a checkout somewhere else cannot state it. Fails closed, never falls back to the
+ * working tree.
+ */
+function committedTreeAtPinV1(
+  id: BaselineCatalogId,
+  sourceRoot: string,
+  commit: string,
+): readonly string[] {
+  let head: string;
+  try {
+    head = checkoutHeadV1(sourceRoot);
+  } catch (error) {
+    return refuseDeclared(
+      "committed-tree-unavailable",
+      `Catalog ${id} cannot read the checkout at ${sourceRoot} (${error instanceof Error ? error.message : error})`,
+    );
+  }
+  if (head !== commit)
+    refuseDeclared(
+      "checkout-not-at-pin",
+      `Catalog ${id} declares pin ${commit}; the checkout at ${sourceRoot} is at ${head}`,
+    );
+  try {
+    return committedTreePathsV1(sourceRoot, commit);
+  } catch (error) {
+    return refuseDeclared(
+      "committed-tree-unavailable",
+      `Catalog ${id} cannot read commit ${commit} at ${sourceRoot} (${error instanceof Error ? error.message : error})`,
+    );
+  }
 }
 
 /**
@@ -209,19 +277,25 @@ export interface DeclaredFrameworkCatalogOptionsV1 {
  *   inventory options (`inventoryOptionNamesV1`);
  * - its `paths` are the declared `sourcePaths` without the selection aliases above
  *   (`declaredComponentPathsV1`), in declared order;
- * - `skillContent` is the decision Core's analyzer profile makes for that component at the
- *   pin (`componentContainsSkillContentV1`).
+ * - `skillContent` is decided from the DECLARED PIN's own tree in the checkout's object store
+ *   (`componentContainsCommittedSkillContentV1`), never from the working tree.
  *
  * Anything the section cannot state exactly — a missing section or field, another
- * framework id or repository shape, a malformed asset, or a pin other than the requested
- * one — refuses with `DeclaredFrameworkCatalogRefusalError`. There is no fallback to another
- * descriptor section.
+ * framework id or repository shape, a malformed asset, an unknown field or asset kind, or an
+ * asset authored at another repository or commit — refuses with
+ * `DeclaredFrameworkCatalogRefusalError`. There is no fallback to another descriptor section.
  */
 export function declaredFrameworkCatalogV1(
   id: BaselineCatalogId,
   sections: Readonly<Record<string, unknown>>,
-  options: DeclaredFrameworkCatalogOptionsV1 = {},
+  options: DeclaredFrameworkCatalogOptionsV1,
 ): BaselineCatalog {
+  const sourceRoot = options?.sourceRoot;
+  if (typeof sourceRoot !== "string" || sourceRoot.length === 0)
+    refuseDeclared(
+      "source-root-required",
+      `Catalog ${id} declared definition needs the checkout at its pin to decide skillContent`,
+    );
   const framework = declaredFrameworkAssetsV1(id, sections.componentDefinitions);
   const repository = DECLARED_REPOSITORY_V1.exec(framework.repository);
   const owner = repository?.[1];
@@ -231,12 +305,15 @@ export function declaredFrameworkCatalogV1(
       "malformed-definition",
       `Catalog ${id} componentDefinitions.framework.repository is ${JSON.stringify(framework.repository)}`,
     );
+  const committedSkillDirectories = committedSkillDirectoriesV1(
+    committedTreeAtPinV1(id, sourceRoot, framework.commit),
+  );
   const optionNames = inventoryOptionNamesV1(id, sections);
   const components: BaselineCatalogComponent[] = framework.assets.flatMap((asset) => {
     if (asset.kind === "mcp" && optionNames.has(asset.id.slice("mcp:".length))) return [];
     const paths = declaredComponentPathsV1(asset);
     const component: BaselineCatalogComponent = { id: asset.id, paths };
-    if (componentContainsSkillContentV1(component, options.sourceRoot))
+    if (componentContainsCommittedSkillContentV1(component, committedSkillDirectories))
       return [{ ...component, skillContent: true as const }];
     return [component];
   });

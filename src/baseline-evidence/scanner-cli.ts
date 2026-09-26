@@ -1,14 +1,13 @@
-import { execFileSync } from "node:child_process";
 import { type Dirent, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import { hermeticGitEnv } from "../internals/git-env.js";
 import {
   loadScanPackageExportsV1,
   scanPackageExportsOrThrowV1,
 } from "../scan-package/load-scan-package.js";
+import { checkoutHeadV1 } from "./committed-checkout.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
@@ -109,14 +108,6 @@ function definitionOverlap(
   return overlap;
 }
 
-function checkoutHead(root: string): string {
-  return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    env: hermeticGitEnv(),
-  }).trim();
-}
-
 /**
  * `--definition` stands in for the installed Catalog only at a pin that Catalog does not
  * carry; a carried pin keeps the installed route, and a definition that differs from the
@@ -137,14 +128,14 @@ function assertCheckout(root: string, catalogId: string, args: readonly string[]
       sourceRoot: root,
       catalogId,
       definitionPath: resolve(definitionPath),
-      head: checkoutHead(root),
+      head: checkoutHeadV1(root),
       ...(overlap === undefined ? {} : { overlap }),
     });
     return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
   }
   const prepared = prepareRegisteredScannerCatalogV1(root, catalogId);
   const { catalog } = prepared;
-  const head = checkoutHead(root);
+  const head = checkoutHeadV1(root);
   if (head !== catalog.pinnedSha) {
     fail(`${catalog.id} checkout is ${head}, expected ${catalog.pinnedSha}`);
   }

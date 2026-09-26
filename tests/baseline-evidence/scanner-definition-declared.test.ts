@@ -1,15 +1,17 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 /**
  * D79: the installed Catalog's authority for a carried pin is the DECLARED definition
  * (`componentDefinitions`), not the component list of the `vendorLock` evidence lock. The
  * descriptors here are synthetic so the two sections can disagree the way K1's do while
- * every declared path still exists in the fixture checkout.
+ * every declared path still exists in the fixture checkout — a real git checkout, because
+ * the declared `skillContent` decision reads the PINNED COMMIT's tree.
  */
-const PIN = "5064474d4d762dc9640234a41617cccb79185cec";
 const EARLIER_PIN = "5caf398a91599029a176ca6d806409b00d1052c4";
 const DECLARED_INSTALLER = [
   "package.json",
@@ -25,11 +27,14 @@ interface SyntheticAsset {
   readonly sourcePaths: readonly string[];
 }
 
+/** The fixture checkout's own commit; every synthetic declaration is bound to it. */
+let pin: string;
+
 function asset(id: string, kind: string, sourcePaths: readonly string[]): SyntheticAsset {
   return {
     id,
     kind,
-    source: { repository: "affaan-m/ECC", commit: PIN, path: sourcePaths[0] as string },
+    source: { repository: "affaan-m/ECC", commit: pin, path: sourcePaths[0] as string },
     sourcePaths,
   };
 }
@@ -48,7 +53,7 @@ function descriptor(componentDefinitions: unknown) {
         id: "ecc",
         owner: "affaan-m",
         repo: "ECC",
-        pinnedSha: PIN,
+        pinnedSha: pin,
         components: [
           { id: "runtime:ecc-installer", paths: EVIDENCE_INSTALLER },
           { id: "skill:tdd", paths: ["skills/tdd"] },
@@ -59,19 +64,19 @@ function descriptor(componentDefinitions: unknown) {
   };
 }
 
-const declaration = (assets: readonly SyntheticAsset[], commit = PIN) => ({
-  version: 1,
+const declaration = (assets: readonly SyntheticAsset[], commit = pin) => ({
+  version: "pinned-baseline/v1",
   framework: { id: "ecc", repository: "affaan-m/ECC", commit, assets },
 });
 
-const DECLARED_ASSETS = [
+const declaredAssets = () => [
   asset("runtime:ecc-installer", "runtime", DECLARED_INSTALLER),
   asset("skill:tdd", "skill", ["skills/tdd/SKILL.md", "skills/tdd"]),
   asset("mcp:github", "mcp", [".mcp.json", "mcp-configs/mcp-servers.json"]),
   asset("mcp:nexus", "mcp", ["mcp-configs/mcp-servers.json"]),
 ];
 
-let currentDescriptor = descriptor(declaration(DECLARED_ASSETS));
+let currentDescriptor: ReturnType<typeof descriptor>;
 
 vi.mock("../../src/catalog-package/framework-descriptors.js", async (importOriginal) => {
   const actual =
@@ -98,6 +103,22 @@ import { resolveScannerDefinitionV1 } from "../../src/baseline-evidence/scanner-
 let root: string;
 let source: string;
 
+function git(args: readonly string[]): string {
+  return execFileSync("git", [...args], {
+    cwd: source,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: hermeticGitEnv(),
+  });
+}
+
+/** Commit every file written so far and return the new pin. */
+function commitSource(message = "pin"): string {
+  git(["add", "-A"]);
+  git(["commit", "-m", message]);
+  return git(["rev-parse", "HEAD"]).trim();
+}
+
 function write(relative: string): void {
   const path = join(source, relative);
   mkdirSync(dirname(path), { recursive: true });
@@ -110,7 +131,7 @@ function definitionFile(value: unknown, name = "definition.json"): string {
   return path;
 }
 
-function resolve(value: unknown, head = PIN) {
+function resolve(value: unknown, head = pin) {
   return resolveScannerDefinitionV1({
     sourceRoot: source,
     catalogId: "ecc",
@@ -120,16 +141,21 @@ function resolve(value: unknown, head = PIN) {
 }
 
 beforeEach(() => {
-  currentDescriptor = descriptor(declaration(DECLARED_ASSETS));
   root = mkdtempSync(join(tmpdir(), "aih-scanner-declared-"));
   source = join(root, "source");
   mkdirSync(source);
+  git(["init", "-b", "main"]);
+  git(["config", "user.email", "test@example.com"]);
+  git(["config", "user.name", "Declared Definition Test"]);
+  git(["config", "commit.gpgsign", "false"]);
   write("package.json");
   write("scripts/lib/install/plan.js");
   write("scripts/lib/atomic-write.js");
   write("skills/tdd/SKILL.md");
   write(".mcp.json");
   write("mcp-configs/mcp-servers.json");
+  pin = commitSource();
+  currentDescriptor = descriptor(declaration(declaredAssets()));
 });
 
 afterEach(() => {
@@ -157,14 +183,15 @@ describe("definition resolution against the declared Catalog definition (D79)", 
     expect(resolved.catalog).toEqual(declared);
   });
 
-  it("reads the declared definition at the checkout, so a container's skill material counts", () => {
-    // Only the checkout can show that `.agents` holds skill files; the resolver must pass
-    // it, or the carried definition would silently disagree with the declared one.
+  it("reads the declared definition at the pinned commit's tree, so a container's skill material counts", () => {
+    // Only the committed tree can show that `.agents` holds skill files; the resolver must
+    // read it at the pin, or the carried definition would silently disagree with the
+    // declared one.
+    write(".agents/skills/extra/SKILL.md");
+    const nextPin = commitSource("container");
     currentDescriptor = descriptor(
-      declaration([...DECLARED_ASSETS, asset("module:container", "module", [".agents"])]),
+      declaration([...declaredAssets(), asset("module:container", "module", [".agents"])], nextPin),
     );
-    mkdirSync(join(source, ".agents/skills/extra"), { recursive: true });
-    writeFileSync(join(source, ".agents/skills/extra/SKILL.md"), "---\nname: extra\n---\n");
 
     const declared = declaredFrameworkCatalogV1(
       "ecc",
@@ -174,7 +201,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
     expect(
       declared.components.find((component) => component.id === "module:container"),
     ).toMatchObject({ skillContent: true });
-    expect(resolve(declared).route).toBe("installed");
+    expect(resolve(declared, nextPin).route).toBe("installed");
   });
 
   it("refuses the earlier evidence lock's definition while the declared one is carried", () => {
@@ -182,7 +209,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
       id: "ecc",
       owner: "affaan-m",
       repo: "ECC",
-      pinnedSha: PIN,
+      pinnedSha: pin,
       components: [
         { id: "runtime:ecc-installer", paths: EVIDENCE_INSTALLER },
         { id: "skill:tdd", paths: ["skills/tdd"], skillContent: true },
@@ -190,7 +217,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
       ],
     };
     expect(() => resolve(earlier)).toThrow(
-      /installed Catalog carries ecc@5064474d4d762dc9640234a41617cccb79185cec \(sha256:[0-9a-f]{64}\); the definition differs \(sha256:[0-9a-f]{64}\)/,
+      /installed Catalog carries ecc@[0-9a-f]{40} \(sha256:[0-9a-f]{64}\); the definition differs \(sha256:[0-9a-f]{64}\)/,
     );
   });
 
@@ -199,7 +226,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
       id: "ecc",
       owner: "affaan-m",
       repo: "ECC",
-      pinnedSha: PIN,
+      pinnedSha: pin,
       components: [
         { id: "runtime:ecc-installer", paths: ["package.json"] },
         { id: "skill:tdd", paths: ["skills/tdd"], skillContent: true },
@@ -220,7 +247,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
       id: "ecc",
       owner: "affaan-m",
       repo: "ECC",
-      pinnedSha: PIN,
+      pinnedSha: pin,
       components: [
         { id: "runtime:ecc-installer", paths: EVIDENCE_INSTALLER },
         { id: "skill:tdd", paths: ["skills/tdd"], skillContent: true },
@@ -228,14 +255,14 @@ describe("definition resolution against the declared Catalog definition (D79)", 
       ],
     });
     expect(agreed.route).toBe("installed");
-    expect(agreed.catalog.pinnedSha).toBe(PIN);
+    expect(agreed.catalog.pinnedSha).toBe(pin);
 
     expect(() =>
       resolve({
         id: "ecc",
         owner: "affaan-m",
         repo: "ECC",
-        pinnedSha: PIN,
+        pinnedSha: pin,
         components: [
           { id: "runtime:ecc-installer", paths: DECLARED_INSTALLER },
           { id: "skill:tdd", paths: ["skills/tdd"], skillContent: true },
@@ -257,7 +284,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
       currentDescriptor = descriptor(componentDefinitions);
       const definition = declaredFrameworkCatalogV1(
         "ecc",
-        descriptor(declaration(DECLARED_ASSETS)).sections as Readonly<Record<string, unknown>>,
+        descriptor(declaration(declaredAssets())).sections as Readonly<Record<string, unknown>>,
         { sourceRoot: source },
       );
       let refusal: unknown;
@@ -274,6 +301,9 @@ describe("definition resolution against the declared Catalog definition (D79)", 
   );
 
   it("refuses a pin the installed Catalog does not carry, by both identities", () => {
+    // `baselineCatalogById` is the evidence-lock facade, so this reads the installed
+    // descriptor (not the synthetic one this file mocks for the definition route).
+    const carried = baselineCatalogById("ecc").pinnedSha;
     let refusal: unknown;
     try {
       baselineCatalogById("ecc", EARLIER_PIN);
@@ -281,7 +311,7 @@ describe("definition resolution against the declared Catalog definition (D79)", 
       refusal = error;
     }
     expect(refusal).toMatchObject({ code: "AIH_TRUST" });
-    expect((refusal as Error).message).toContain(PIN);
+    expect((refusal as Error).message).toContain(carried);
     expect((refusal as Error).message).toContain(EARLIER_PIN);
   });
 });
