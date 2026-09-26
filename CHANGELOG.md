@@ -569,6 +569,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Require explicit ECC hook/runtime consent across direct and Codex materialization,
   preview and reconciliation; Core and Full content profiles do not supply that consent.
   Keep governed runtime exclusions and consult-only boundaries intact.
+- Describe the pinned ECC installer's own plan in the install preview again. The ownership
+  refusal stays at apply: the preview route keeps component selection, the root-escape check,
+  the normalized destination-collision check, the MCP exclusion, executable consent for
+  host-runtime operations and the pinned adapter's own destination (including the Claude
+  settings hook merge, described with the artifact's existing `merge-json` kind), so
+  `baseline:assemble` writes the lock and preview for a pin whose plan carries upstream
+  scaffold material.
 - Preserve validated scoped MCP environment values in deterministic Codex TOML projection.
 - Support the pinned Token Optimizer 5.13.14 Codex quiet and balanced hooks,
   keeping approved commands bound to the authenticated source and preserving
