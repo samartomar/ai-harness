@@ -21,7 +21,7 @@ function v3Policy(overrides: Record<string, unknown> = {}): Record<string, unkno
 }
 
 describe("developer tool policy selection", () => {
-  it("uses the seven defaults for no policy and preserves legacy V3 omission semantics", () => {
+  it("selects Headroom for no policy and preserves legacy V3 omission semantics", () => {
     expect(resolveDeveloperToolSelectionForOrgPolicyV1(undefined)).toMatchObject({
       accepted: true,
       source: "default",
@@ -33,6 +33,7 @@ describe("developer tool policy selection", () => {
         "context7",
         "markitdown",
         "playwright",
+        "headroom",
       ],
     });
     expect(resolveDeveloperToolSelectionForOrgPolicyV1(parseOrgPolicy(v3Policy()))).toMatchObject({
@@ -46,6 +47,7 @@ describe("developer tool policy selection", () => {
         "context7",
         "markitdown",
         "playwright",
+        "headroom",
       ],
     });
     expect(
@@ -67,6 +69,7 @@ describe("developer tool policy selection", () => {
         "context7",
         "markitdown",
         "playwright",
+        "headroom",
       ],
     });
   });
@@ -133,9 +136,22 @@ describe("developer tool policy selection", () => {
     const reopened = parseOrgPolicy(JSON.parse(JSON.stringify(excluded)));
     expect(resolveDeveloperToolSelectionForOrgPolicyV1(reopened)).toMatchObject({
       accepted: true,
-      selected: priorSelection,
+      selected: [...priorSelection, "headroom"],
       excluded: ["playwright"],
     });
+  });
+
+  it("requires the candidate 0.7.0 floor for an explicit Headroom decision", () => {
+    for (const developerTools of [{ selected: ["headroom"] }, { excluded: ["headroom"] }]) {
+      expect(() => parseOrgPolicy(v3Policy({ developerTools }))).toThrow(/0\.7\.0/);
+      const policy = parseOrgPolicy(v3Policy({ minimumCoreVersion: "0.7.0", developerTools }));
+      expect(resolveDeveloperToolSelectionForOrgPolicyV1(policy).accepted).toBe(true);
+    }
+    expect(
+      resolveDeveloperToolSelectionForOrgPolicyV1(
+        v3Policy({ developerTools: { selected: ["headroom"] } }),
+      ),
+    ).toMatchObject({ accepted: false, source: "fail-closed" });
   });
 
   it.each([
@@ -145,5 +161,59 @@ describe("developer tool policy selection", () => {
     { selected: ["context7"], excluded: ["context7"] },
   ])("rejects malformed explicit selections %#", (developerTools) => {
     expect(() => parseOrgPolicy(v3Policy({ developerTools }))).toThrow(/org-policy is invalid/);
+  });
+
+  it.each(["code-review-graph", "codebase-memory-mcp"])(
+    "records %s as the enterprise primary code graph behind the 0.7.0 floor",
+    (primary) => {
+      const developerTools = { primaryCodeGraph: primary };
+      expect(() => parseOrgPolicy(v3Policy({ developerTools }))).toThrow(/0\.7\.0/);
+      const policy = parseOrgPolicy(v3Policy({ minimumCoreVersion: "0.7.0", developerTools }));
+      expect(resolveDeveloperToolSelectionForOrgPolicyV1(policy)).toMatchObject({
+        accepted: true,
+        source: "legacy-unspecified",
+        primaryCodeGraph: primary,
+      });
+      expect(
+        resolveDeveloperToolSelectionForOrgPolicyV1(parseOrgPolicy(v3Policy())),
+      ).not.toHaveProperty("primaryCodeGraph");
+    },
+  );
+
+  it.each([
+    { primaryCodeGraph: "serena" },
+    { primaryCodeGraph: "headroom" },
+    { primaryCodeGraph: "" },
+    { primaryCodeGraph: "code-review-graph", excluded: ["code-review-graph"] },
+    {
+      primaryCodeGraph: "codebase-memory-mcp",
+      selected: ["code-review-graph", "serena"],
+    },
+  ])("rejects a primary code graph that is unsupported or not selected %#", (developerTools) => {
+    expect(() => parseOrgPolicy(v3Policy({ minimumCoreVersion: "0.7.0", developerTools }))).toThrow(
+      /org-policy is invalid/,
+    );
+    expect(
+      resolveDeveloperToolSelectionForOrgPolicyV1(
+        v3Policy({ minimumCoreVersion: "0.7.0", developerTools }),
+      ),
+    ).toMatchObject({ accepted: false, source: "fail-closed", selected: [] });
+  });
+
+  it("cannot activate Headroom or any tool on the user's behalf", () => {
+    for (const developerTools of [
+      { selected: ["headroom"], activateHeadroom: true },
+      { selected: ["headroom"], activated: ["headroom"] },
+      { selected: ["headroom"], acceptHeadroomEgress: true },
+    ]) {
+      expect(() =>
+        parseOrgPolicy(v3Policy({ minimumCoreVersion: "0.7.0", developerTools })),
+      ).toThrow(/org-policy is invalid/);
+      expect(
+        resolveDeveloperToolSelectionForOrgPolicyV1(
+          v3Policy({ minimumCoreVersion: "0.7.0", developerTools }),
+        ),
+      ).toMatchObject({ accepted: false, source: "fail-closed" });
+    }
   });
 });

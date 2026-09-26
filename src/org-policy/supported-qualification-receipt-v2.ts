@@ -241,6 +241,59 @@ export function parseAihSupportedQualificationReceiptV2Bytes(
   }
 }
 
+/** Why exact receipt bytes are not usable; never verifier output or a path. */
+export type AihSupportedQualificationReceiptBytesRefusalV2 =
+  | "receipt-malformed"
+  | "receipt-subject-mismatch"
+  | "receipt-not-current";
+
+export interface VerifyAihSupportedQualificationReceiptBytesV2Input {
+  /** Exactly the bytes whose outer attestation the caller verified separately. */
+  readonly bytes: Uint8Array;
+  readonly now: string;
+  /** The saved subject's digest. The receipt must describe that exact subject. */
+  readonly subjectDigest: string;
+}
+
+export type AihSupportedQualificationReceiptBytesVerificationV2 =
+  | {
+      readonly state: "verified";
+      readonly receipt: AihSupportedQualificationReceiptV2;
+      /** Bare lowercase hex sha-256 of exactly these bytes, as an outer attestation names them. */
+      readonly receiptSha256: string;
+    }
+  | {
+      readonly state: "unverified";
+      readonly reason: AihSupportedQualificationReceiptBytesRefusalV2;
+    };
+
+/**
+ * The pure, byte-taking half of the receipt route: canonical parse, exact
+ * subject, and the receipt's own validity window against one supplied clock.
+ *
+ * It reads no file, spawns no process and consults no environment variable, and
+ * it is NOT on its own a verification of the receipt's provenance. The outer
+ * attestation over these same bytes stays the caller's responsibility, and a
+ * caller that skips it has proven nothing about where the receipt came from.
+ */
+export function verifyAihSupportedQualificationReceiptBytesV2(
+  input: VerifyAihSupportedQualificationReceiptBytesV2Input,
+): AihSupportedQualificationReceiptBytesVerificationV2 {
+  const now = Date.parse(input.now);
+  if (!Number.isFinite(now)) return { state: "unverified", reason: "receipt-not-current" };
+  const receipt = parseAihSupportedQualificationReceiptV2Bytes(input.bytes);
+  if (receipt === undefined) return { state: "unverified", reason: "receipt-malformed" };
+  if (receipt.subject.subjectDigest !== input.subjectDigest)
+    return { state: "unverified", reason: "receipt-subject-mismatch" };
+  if (now < Date.parse(receipt.notBefore) || now >= Date.parse(receipt.expiresAt))
+    return { state: "unverified", reason: "receipt-not-current" };
+  return {
+    state: "verified",
+    receipt,
+    receiptSha256: createHash("sha256").update(input.bytes).digest("hex"),
+  };
+}
+
 type Custody = { bytes: Buffer; unchanged(): boolean };
 function hasSymlinkParent(root: string): boolean {
   let current = root;

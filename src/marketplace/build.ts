@@ -22,6 +22,7 @@ import { readTrustLock, type TrustLockSource } from "../trust/lock.js";
 import {
   AIH_MARKETPLACE_FILE,
   DEFAULT_MARKETPLACE_OUT,
+  MARKETPLACE_MANIFEST_SCHEMA_VERSION,
   type MarketplaceManifest,
   type MarketplaceSkill,
   marketplaceRelPathSchema,
@@ -412,7 +413,7 @@ function marketplaceBuildPlan(ctx: PlanContext): Plan {
   );
 
   const manifest: MarketplaceManifest = {
-    schemaVersion: 1,
+    schemaVersion: MARKETPLACE_MANIFEST_SCHEMA_VERSION,
     name,
     ...(stamp !== undefined ? { stamp } : {}),
     skills: built.map((skill) => skill.manifest),

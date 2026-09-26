@@ -33,8 +33,10 @@ import {
 } from "../org-policy/binding.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { openCodeSandboxPolicyBinding } from "../sandbox/opencode.js";
+import { bindScanSettlement, SCAN_SETTLEMENT_TIMEOUT_MS } from "../scan-package/settlement.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import { redactArgv, redactText } from "../support/redact.js";
+import { labelledReportExitCodeV1, parseFailOnV1 } from "../trust/report-exit.js";
 
 export interface RunDeps {
   run?: Runner;
@@ -56,6 +58,8 @@ export interface RunDeps {
   positionalRoot?: string | false;
   /** Capability-owned multi-phase executor; preserves shared output, support, and logging. */
   execute?: (ctx: PlanContext) => Promise<PlanResult>;
+  /** How long cleanup waits for a cancelled delegated Scan call to settle (tests shorten it). */
+  scanSettlementTimeoutMs?: number;
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -174,9 +178,21 @@ export async function runCapability(
   const writeError = deps.writeError ?? ((t: string) => process.stderr.write(t));
   const run = deps.run ?? defaultRunner;
   const deferredCleanups: Array<() => void | Promise<void>> = [];
+  // Settlements of delegated Scan calls, each registered before its call starts.
+  // They are awaited together, bounded, before any deferred cleanup: a cancelled
+  // Scan call removes its own temporary directories before it settles.
+  const scanSettlements: Array<() => Promise<void>> = [];
   let cleanupPromise: Promise<void> | undefined;
   const runDeferredCleanups = (): Promise<void> => {
     cleanupPromise ??= (async () => {
+      for (const settlement of await Promise.allSettled(scanSettlements.map((wait) => wait()))) {
+        if (settlement.status === "rejected") {
+          const error = settlement.reason;
+          writeError(
+            `cleanup warning: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
+      }
       for (const cleanup of [...deferredCleanups].reverse()) {
         try {
           await cleanup();
@@ -189,6 +205,15 @@ export async function runCapability(
     return cleanupPromise;
   };
   let terminating = false;
+  // A signal cancels in-flight delegated work first (Scan kills the analyzer's
+  // process tree), then the in-flight Scan calls settle, the deferred cleanups
+  // run and the signal is re-raised.
+  const cancellation = new AbortController();
+  bindScanSettlement(
+    cancellation.signal,
+    (settlement) => scanSettlements.push(settlement),
+    deps.scanSettlementTimeoutMs ?? SCAN_SETTLEMENT_TIMEOUT_MS,
+  );
   const removeSignalHandlers = (): void => {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
@@ -196,6 +221,7 @@ export async function runCapability(
   const terminateAfterCleanup = (signal: NodeJS.Signals): void => {
     if (terminating) return;
     terminating = true;
+    cancellation.abort();
     void runDeferredCleanups().finally(() => {
       removeSignalHandlers();
       process.kill(process.pid, signal);
@@ -256,6 +282,8 @@ export async function runCapability(
       }
       env = { ...baseEnv, AIH_ORG_POLICY: policy.trim() };
     }
+    // Findings and evidence problems are labels (D66); `--fail-on` opts back in.
+    const failOn = spec.labelledExit === true ? parseFailOnV1(opts.failOn) : undefined;
     const bindingDefaults =
       spec.name === "governance-doctor" && spec.readOnly === true && spec.zeroWrite === true
         ? applyPolicyBindingReadOnlyDiagnosticDefaults(resolvedRoot, env, opts)
@@ -377,6 +405,7 @@ export async function runCapability(
       prompter,
       progress: (message) => writeError(`${message}\n`),
       deferCleanup: (cleanup) => deferredCleanups.push(cleanup),
+      signal: cancellation.signal,
       options: {
         ...extractOptions(spec, opts),
         ...(deps.optionOverrides ?? {}),
@@ -419,7 +448,11 @@ export async function runCapability(
     // flips the verify exit code. The ledger status maps from these two signals.
     const execFailed = result.execs.some((e) => e.ran && e.ok === false);
     const verifyCode = result.report ? result.report.exitCode() : 0;
-    const exitCode = verifyCode || (execFailed ? 1 : 0);
+    const reportExit =
+      result.report && failOn !== undefined
+        ? labelledReportExitCodeV1(result.report.checks, failOn)
+        : verifyCode;
+    const exitCode = reportExit || (execFailed ? 1 : 0);
 
     // Support templates: cross-cutting, derived from the verification report so any
     // verifying command (doctor / heal / `bootstrap-ai --verify` / …) turns a coded

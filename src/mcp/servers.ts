@@ -161,7 +161,7 @@ export function validateMcpSecretReferences(servers: Record<string, McpServer>):
 export const N24Q02M_HOST = "n24q02m.com";
 
 /** Exact Playwright MCP package identity shared by projection and runtime verification. */
-export const PLAYWRIGHT_MCP_PACKAGE_SPEC = "@playwright/mcp@0.0.81";
+export const PLAYWRIGHT_MCP_PACKAGE_SPEC = "@playwright/mcp@0.0.82";
 
 /**
  * The canonical Playwright MCP recipe. Headless isolated sessions avoid the
@@ -183,7 +183,7 @@ export function playwrightMcpServer(): StdioServer {
 
 /** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
 const GITHUB_MCP_IMAGE =
-  "ghcr.io/github/github-mcp-server@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560";
+  "ghcr.io/github/github-mcp-server@sha256:508a0857ec762b1ab1cece29193345b501fab1dd9d1228a7b617062954cecac6";
 
 /** Hosted GitHub MCP endpoint used when no org-specific host is configured. */
 export const DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
@@ -217,7 +217,7 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
         "serve",
       ],
       description:
-        "Legacy repository-agnostic Code Review Graph fallback. Root-aware project setup replaces this with AIH's authenticated 2.3.8 launcher and isolated worktree state.",
+        "Legacy repository-agnostic Code Review Graph fallback. Root-aware project setup replaces this with AIH's authenticated 2.3.9 launcher and isolated worktree state.",
       classification: "local",
       egress: "none",
       credentials: "none",
@@ -226,9 +226,9 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
     "codebase-memory-mcp": {
       type: "stdio",
       command: "uvx",
-      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.10.5"],
+      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.11.0"],
       description:
-        "Legacy repository-agnostic Codebase Memory fallback. Root-aware project setup replaces this with AIH's authenticated 0.10.8 native payload and project-specific state. PROVISIONING EGRESS: this older wheel is a launcher shim and may fetch its payload; do not treat --offline as payload authentication.",
+        "Legacy repository-agnostic Codebase Memory fallback. Root-aware project setup replaces this with AIH's authenticated 0.11.0 native payload and project-specific state. PROVISIONING EGRESS: this wheel is a launcher shim and may fetch its payload; do not treat --offline as payload authentication.",
       classification: "local",
       // Not `none`: the server process itself dials github.com on first run (see the
       // description). `vendor-incumbent` names the actual destination — the ledger's

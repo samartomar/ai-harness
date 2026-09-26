@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../packages/framework-ecc/src/ecc/runtime-adapter-compatibility.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
-  currentEccRuntimeAdapterCompatibilityV1,
   type EccRuntimeDescriptorV1,
   EccRuntimeDescriptorV1Schema,
   packagedEccRuntimeDescriptorsV1,
@@ -34,9 +34,10 @@ function seal() {
         id: "runtime:raw",
         paths: ["runtime"],
         treeSha256: raw("b"),
-        verdict: "blocked" as const,
+        verdict: "has-findings" as const,
         analyzers: [{ name: "semgrep@uvx", version: "1" }],
         findings: [{ code: "unsafe", detail: "Original raw finding" }],
+        evidenceProblems: [],
       },
     ],
   };
@@ -100,13 +101,13 @@ function seal() {
 }
 
 describe("ECC runtime descriptor", () => {
-  it("retains raw blocked findings through the package-only containment mapping", () => {
+  it("retains raw has-findings labels through the package-only containment mapping", () => {
     const owner = {};
     registerPackagedEccRuntimeDescriptorsV1(owner, [seal()]);
     const [descriptor] = packagedEccRuntimeDescriptorsV1(owner);
     expect(descriptor?.evidence.rawReport.components[0]).toMatchObject({
       id: "runtime:raw",
-      verdict: "blocked",
+      verdict: "has-findings",
       findings: [{ code: "unsafe", detail: "Original raw finding" }],
     });
     expect(descriptor?.evidence.mappings).toEqual([

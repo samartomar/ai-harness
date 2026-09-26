@@ -7,8 +7,9 @@ import {
   sharedCanonicalBlockBody,
 } from "../bootstrap-ai/canon.js";
 import { verifyBundleChecksums } from "../bundle/index.js";
-import { eccLanguages } from "../ecc/select.js";
 import { DEFAULT_EVIDENCE_OUT, EVIDENCE_FILE, EvidenceBundleSchema } from "../evidence/manifest.js";
+import { eccLanguagePacksV1 } from "../framework-plugin/ecc-read.js";
+import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readContainedRegularFile } from "../internals/contained-path.js";
@@ -379,10 +380,14 @@ function machineEccSkillNames(mClaude: string): string[] {
  * version/commit come from ECC's install manifest (metadata only — its counts are a stale
  * snapshot). Repo `.claude/.kiro` content is reported as TEAM OVERRIDES (never relabelled "ECC");
  * a repo item whose name is an ECC one is a fork to retire; packs = ECC packs for this stack
- * (impact). Machine-aware by design → not portable across machines. Undefined only when neither
- * machine nor repo carries anything.
+ * (impact), identified by @aihq/framework-ecc; without it the panel states that the ECC checks
+ * were not run. Machine-aware by design → not portable across machines. Undefined only when
+ * neither machine nor repo carries anything.
  */
-export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
+export async function eccInventoryDigest(
+  ctx: PlanContext,
+  deps: Pick<FrameworkCommandDepsV1, "loadPlugin" | "loadDescriptor"> = {},
+): Promise<DigestAction | undefined> {
   const r = ctx.root;
   const mClaude = join(homeDir(ctx), ".claude");
   const meta = readEccMeta(homeDir(ctx));
@@ -432,8 +437,8 @@ export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
   const dup =
     repoAgents.filter((n) => eccAgents.has(n)).length +
     repoSkills.filter((n) => eccSkills.has(n)).length;
-  const stack = scanRepo(r, { maxDepth: 8, contextDir: ctx.contextDir });
-  const packs = [...eccLanguages(stack).packs];
+  const identified = await eccLanguagePacksV1(ctx, deps);
+  const packs = identified.state === "ran" ? [...identified.value] : [];
   const ver = meta?.version ? ` v${meta.version}` : "";
   const body = lines(
     `Machine ECC${ver} (~/.claude): ${machine.agents} agents · ${machine.skills} skills · ${machine.rules} rules`,
@@ -444,7 +449,9 @@ export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
     dup > 0
       ? `  ⚠ ${dup} repo item(s) duplicate ECC — retire to inherit the rolling install.`
       : "  No repo duplication of ECC.",
-    `  ECC packs for this stack: ${packs.join(", ") || "(none detected)"}`,
+    identified.state === "ran"
+      ? `  ECC packs for this stack: ${packs.join(", ") || "(none detected)"}`
+      : `  ECC packs for this stack: not identified — ECC checks were not run: ${identified.detail}`,
   );
   return digest(
     `ECC harness — machine ${machine.agents}a/${machine.skills}s, repo ${repo.agents}a/${repo.skills}s, ${dup} dup`,
@@ -454,6 +461,7 @@ export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
       repo,
       dup,
       packs,
+      ...(identified.state === "ran" ? {} : { eccChecks: "not-run" as const }),
       skillNames: [...eccSkillNames].sort(),
       ...(meta?.version ? { version: meta.version } : {}),
       ...(meta?.commit ? { commit: meta.commit } : {}),
@@ -1017,9 +1025,15 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     return undefined;
   }
   const { installed, approved, unapproved, stalePin, quarantined } = inv.counts;
-  const approvalVerdicts = {
-    GREEN: lock.skills.filter((entry) => entry.verdict === "GREEN").length,
-    YELLOW: lock.skills.filter((entry) => entry.verdict === "YELLOW").length,
+  const verdictCount = (verdict: string): number =>
+    lock.skills.filter((entry) => entry.verdict === verdict).length;
+  const approvalVerdicts: { GREEN: number; YELLOW: number; RED?: number; UNKNOWN?: number } = {
+    GREEN: verdictCount("GREEN"),
+    YELLOW: verdictCount("YELLOW"),
+    // Approvals record the consumer's decision on any vet verdict (D50).
+    ...(verdictCount("RED") + verdictCount("UNKNOWN") > 0
+      ? { RED: verdictCount("RED"), UNKNOWN: verdictCount("UNKNOWN") }
+      : {}),
   };
   const notable = inv.skills.filter((s) => s.status !== "approved");
   const rows = inv.skills.map((s) => ({
@@ -1119,7 +1133,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     "scanner & verdict evidence:",
     `  vet evidence reports: ${scanner.reports} · newest scan: ${scanner.newestAt ?? "missing"}`,
     `  scanner verdicts: GREEN ${scanner.verdicts.GREEN} · YELLOW ${scanner.verdicts.YELLOW} · RED ${scanner.verdicts.RED} · UNKNOWN ${scanner.verdicts.UNKNOWN}`,
-    `  approval verdicts: GREEN ${approvalVerdicts.GREEN} · YELLOW ${approvalVerdicts.YELLOW}`,
+    `  approval verdicts: GREEN ${approvalVerdicts.GREEN} · YELLOW ${approvalVerdicts.YELLOW}${approvalVerdicts.RED === undefined ? "" : ` · RED ${approvalVerdicts.RED} · UNKNOWN ${approvalVerdicts.UNKNOWN ?? 0}`}`,
     `  analyzers: ${scanner.analyzers.length > 0 ? scanner.analyzers.join(", ") : "missing"}`,
     ...scanner.gaps.map((gap) => `  gap: ${gap}`),
     ...(artifactLines.length > 0 ? ["", "distribution & audit:", ...artifactLines] : []),
@@ -1170,7 +1184,7 @@ export async function v9ExtraDigests(ctx: PlanContext): Promise<DigestAction[]> 
     readiness,
     driftDigest(ctx),
     mcpServersDigest(ctx),
-    eccInventoryDigest(ctx),
+    await eccInventoryDigest(ctx),
     coherenceDigest(ctx),
     await outcomeDeltasDigest(ctx),
     winsDigest(ctx),

@@ -12,9 +12,9 @@ Use this guide for enterprise admins, platform owners, security owners, fleet ro
 
 This guide owns admin-side material: policy authoring, approvals, source pins, signing choices, Docker/SkillSpector preparation, bundles, and evidence packaging. It should not become the place for developer-local OAuth, API token setup, or day-to-day client usage beyond handoff requirements.
 
-Use [Project policy delivery](portable-policy-delivery.md) for the complete
-Workbench → review → project binding → required-content delivery → native
-verification → update/revocation workflow. It also defines the downstream
+Use [Project policy delivery](portable-policy-delivery.md) for policy review,
+project binding, required-content delivery, native verification, and
+update/revocation. It also defines the downstream
 required/optional content and receipt-ownership contract.
 
 ## 1. Executive Summary / Mental Model
@@ -50,29 +50,16 @@ treats an unsigned `approved` field as authority.
 
 #### Default Enterprise authority: one protected policy file
 
-The adopter creates the document through the existing Policy Workbench rather than writing JSON:
+An administrator prepares and reviews a strict PolicyBundle V2 document outside the governed target.
+Core no longer supplies a Policy Workbench browser, the former policy generator, an artifact-intake form, or
+a replacement authoring command. The document binds exact Decision V2 subjects, source identities,
+targets, effects, validity, and digest-bound revocations in a V3 authority receipt. A new source version
+needs a new exact decision; a Catalog entry or scanner result is not organization approval. The
+`issuerRepository` field is attribution, not a required GitHub workflow or storage location.
+Run `aih policy validate` against the reviewed file before distribution, and independently retain
+attributable `aih trust scan` evidence where required. Validation and scanning do not create authority.
 
-```console
-aih policy generate --apply
-```
-
-Open `aih-policy-workbench.html`, select Enterprise, complete the **Protected Enterprise policy
-file** form, add each exact artifact approval, and download `aih-policy-bundle.json`. The form accepts
-ordinary fields for an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity,
-plus artifact kind, targets, effects, evidence, issuer, actor, policy, and control. It computes the canonical Decision V2 source,
-subject, and revocation digests in the browser. Repeat the form for organization-chosen tools,
-skills, MCP servers, or packages absent from the Catalog; use a new exact decision for a version
-change and the row's Revoke action for revocation. The `issuerRepository` value is attribution in the
-reused V3 contract—it does not require a GitHub workflow or dictate where the file is stored.
-
-For MCP, Skill, or Agent scanning, use the Workbench **Artifacts** tab to create one mixed intake of
-up to 100 items. Run the displayed `aih trust scan ... --evidence-out ...` command; Scanner returns one
-evidence bundle to merge into the same review. **Save team review workspace** then preserves the draft
-policy, intake, and evidence history in one file for another review session. That workspace explicitly is
-not authority and is not the deployable policy. Keep the scanner output as an attributable record and
-download the protected policy separately after approval.
-
-The adopter stores the generated PolicyBundle V2 document in an administrator-only directory outside
+The adopter stores the reviewed PolicyBundle V2 document in an administrator-only directory outside
 the governed repository and supplies its absolute path with `--policy <file>` for one invocation or
 `AIH_ORG_POLICY` for a managed process environment. The CLI flag takes precedence over the environment
 variable and the default repo-local `aih-org-policy.json` lookup. The document reuses the
@@ -137,8 +124,8 @@ closed route selected by the exact decision; do not treat a command's reachabili
 
 Add `--policy <team-policy-file>` to any command below when the target does not use the default
 repo-local filename. Keep scanner evidence as separate JSON records. Every `--evidence <file>` value
-is root-relative to the governed target and is revalidated by the consuming command; importing that
-record into the Workbench is preflight inspection, not organization authority or approval.
+is root-relative to the governed target and is revalidated by the consuming command; possessing that
+record is not organization authority or approval.
 
 | Journey step | Exact command |
 |---|---|
@@ -418,10 +405,9 @@ Scanner can produce attributable evidence for a catalog-absent exact detector th
 code-owned adapter. Its source repository and promoted `@aihq/scan` stable train are public.
 Observe npm package provenance and GitHub Release evidence independently; success at one boundary
 does not prove the other.
-The packed Core proof uses the packed CLI to generate the Workbench, drives its structured fields and
-download, and uses that protected PolicyBundle V2 with a disposable consumer root to
-exercise successful organization authority, exact observation, lifecycle update, and authenticated
-revocation without fabricated GitHub authority. It proves Core's file-custody contract, not the real
+The current packed Core policy check uses a disposable installed consumer to exercise retained policy
+validation and confirm retired browser routes and artifacts are absent. Historical browser-based
+Workbench proof does not establish the current package boundary. Neither check proves the real
 deployment's ACL or MDM controls. Scanner publication, Scanner signer roots, Catalog attestation,
 and organization authority remain separate trust and release boundaries.
 
@@ -541,13 +527,14 @@ aih verify-bundle --bundle <evidence-dir> --require-signature
 ### Admin Configuration Location
 
 An enterprise admin may use an otherwise empty repository, MDM directory, configuration-management
-root, or another read-only location. That location distributes the Workbench-generated file; it is
+root, or another read-only location. That location distributes the administrator-reviewed file; it is
 not another AIH runtime or approval workflow and must not become a secret store. Keep real tokens,
 PATs, OAuth state, AWS profiles, and Jira/Figma credentials in developer-local environment variables,
 browser OAuth, or the organization's secret manager.
 
-Generate the file with `aih policy generate --apply`, then use the Workbench rather than typing an
-`aih-org-policy.json` or PolicyBundle by hand. Set `AIH_ORG_POLICY` to the absolute generated bundle
+Prepare and review a strict PolicyBundle V2 outside the governed target; validate it with
+`aih policy validate` before distribution. Core has no browser or replacement authoring command.
+Set `AIH_ORG_POLICY` to the absolute protected bundle
 path outside each governed target. Vibe repositories may still use a repo-local
 `aih-org-policy.json`; that file is ordinary policy, not Enterprise authority.
 
@@ -555,16 +542,16 @@ path outside each governed target. Vibe repositories may still use a repo-local
 
 `aih trust scan` can evaluate sources without Docker for checks that do not require a containerized detector. Docker becomes part of the admin setup when policy requires a detector such as `skillspector`, or when the organization wants scanner images built and signed before use. If `aih-org-policy.json` lists `skillspector` in `trust.requiredDetectors`, do not treat scanner coverage as complete until the detector path is available and recorded.
 
-From the checked-out AI-Harness root, build the reviewed SkillSpector image from a fixed commit:
+The image recipe belongs to `@aihq/scan`, which runs SkillSpector. From a checkout of the aih-scan repository at the release matching your installed `@aihq/scan`, build the reviewed SkillSpector image from a fixed commit:
 
 ```powershell
-$AihRoot = (Resolve-Path .).Path
+$ScanRoot = (Resolve-Path .).Path
 $SkillSpectorRoot = Join-Path ([System.IO.Path]::GetTempPath()) "aih-skillspector-2d198ab910ad"
 git clone https://github.com/NVIDIA/SkillSpector.git $SkillSpectorRoot
 Set-Location $SkillSpectorRoot
-git checkout 2d198ab910add401cad658d1087e7c7ba24fd640
-docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=1785167267 -f (Join-Path $AihRoot "tools\skillspector.Dockerfile") -t skillspector:aih-2d198ab910ad --load .
-docker image inspect skillspector:aih-2d198ab910ad --format "{{.Id}}"
+git checkout c7958a3268d9498644b22edb75d0f051bbc8cbfc
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=1790202473 -f (Join-Path $ScanRoot "tools\skillspector\Dockerfile") -t skillspector:aih-c7958a3268d9 --load .
+docker image inspect skillspector:aih-c7958a3268d9 --format "{{.Id}}"
 ```
 
 Use AI-Harness to report the currently pinned analyzer image metadata before changing policy or detector requirements:
@@ -576,10 +563,10 @@ aih trust skillspector-pin
 If the local image ID differs from the controlled digest reported by `aih trust skillspector-pin`, record an explicit reviewed local digest before requiring `skillspector` in enterprise policy:
 
 ```powershell
-$SkillSpectorDigest = docker image inspect skillspector:aih-2d198ab910ad --format "{{.Id}}"
+$SkillSpectorDigest = docker image inspect skillspector:aih-c7958a3268d9 --format "{{.Id}}"
 aih trust skillspector-pin `
-  --candidate-revision 2d198ab910add401cad658d1087e7c7ba24fd640 `
-  --candidate-tag skillspector:aih-2d198ab910ad `
+  --candidate-revision c7958a3268d9498644b22edb75d0f051bbc8cbfc `
+  --candidate-tag skillspector:aih-c7958a3268d9 `
   --candidate-digest $SkillSpectorDigest `
   --approve-local-digest `
   --reason "Reviewed local Docker build from pinned SkillSpector source." `
@@ -597,8 +584,8 @@ aih trust skillspector-pin --candidate-revision <40-char-sha> --candidate-tag <i
 The source commit pin is the review anchor; the image ID verifies the local build output. If the image will be shared beyond the admin machine, tag it into the approved registry and sign the registry reference or immutable digest according to the organization's signing policy:
 
 ```powershell
-$ImageRef = "<registry>/<namespace>/skillspector:aih-2d198ab910ad"
-docker tag skillspector:aih-2d198ab910ad $ImageRef
+$ImageRef = "<registry>/<namespace>/skillspector:aih-c7958a3268d9"
+docker tag skillspector:aih-c7958a3268d9 $ImageRef
 docker push $ImageRef
 cosign sign --key <cosign-key-ref> $ImageRef
 cosign verify --key <cosign-public-key-ref> $ImageRef

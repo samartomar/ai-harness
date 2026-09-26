@@ -1,6 +1,6 @@
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import type { EffectiveOrgPolicy } from "../org-policy/effective.js";
+import { type EffectiveOrgPolicy, isFencedPrerequisite } from "../org-policy/effective.js";
 import {
   type OrgPolicyEffectiveDigestResolution,
   orgPolicyEffectiveDigest,
@@ -245,9 +245,14 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
       effective: candidate.effective,
       evidence: {
         state: candidate.evidence,
-        findings: [...candidate.dangerCodes],
-        blockers: [...candidate.blockingCodes],
+        findings: [...candidate.findings],
+        evidenceProblems: [...candidate.evidenceProblems],
+        blockers: [
+          ...candidate.dangerCodes.filter(isFencedPrerequisite),
+          ...candidate.blockingCodes,
+        ],
         decisionBlockers: candidate.decisionBlockers.map((blocker) => blocker.code),
+        decisionNotes: candidate.decisionNotes.map((note) => note.code),
       },
       ...decisionFacts(candidate),
       projector: {
@@ -314,7 +319,7 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
     "|---:|---|---:|---:|---|---|---|---|",
     ...subjects.map(
       (subject) =>
-        `| ${subject.ordinal} | ${subject.id} | ${subject.requested ? "yes" : "no"} | ${subject.effective ? "yes" : "no"} | ${subject.evidence.state}; findings=${subject.evidence.findings.length}; blockers=${subject.evidence.blockers.length + subject.evidence.decisionBlockers.length} | decision=${subject.decision.state}; approval=${subject.approval.state}; revocation=${subject.revocation.state} | ${subject.projector.name}; coverage=${subject.projector.coverage}; receipt=${materializationText(subject.materialization)} | ${subject.usage.signal}; count=${subject.usage.count}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
+        `| ${subject.ordinal} | ${subject.id} | ${subject.requested ? "yes" : "no"} | ${subject.effective ? "yes" : "no"} | ${subject.evidence.state}; findings=${subject.evidence.findings.length}; evidenceProblems=${subject.evidence.evidenceProblems.length}; blockers=${subject.evidence.blockers.length + subject.evidence.decisionBlockers.length} | decision=${subject.decision.state}; approval=${subject.approval.state}; revocation=${subject.revocation.state} | ${subject.projector.name}; coverage=${subject.projector.coverage}; receipt=${materializationText(subject.materialization)} | ${subject.usage.signal}; count=${subject.usage.count}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
     ),
   );
   return digest(

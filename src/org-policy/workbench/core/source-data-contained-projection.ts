@@ -2,13 +2,15 @@ import type { BaselineVetRequestV1 } from "@aihq/scan";
 import { type BaselineCatalog, BaselineCatalogSchema } from "../../../baseline-evidence/catalog.js";
 import { hashComponentTree, hashSourceTree } from "../../../baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../../baseline-evidence/license.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../../../baseline-evidence/scanner-definition.js";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../../../baseline-evidence/scanner-profile.js";
 import type { ConsumedScannerBaselinePublicationsV1 } from "../../../baseline-evidence/scanner-publication.js";
 import { BaselineSourceEvidenceSchema } from "../../../baseline-evidence/schema.js";
 import { canonicalStrictJsonSha256V1 } from "../../../contract/strict-json-v1.js";
 import { evidenceExpiryV1 } from "../../../evidence-freshness.js";
+import { scanCoverageV1, scanOutcomeV1 } from "../../../trust/evidence.js";
 import { ScannerPublicationProjectionV1Schema } from "../../packaged-collection-evidence-v1.js";
-import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "../contracts.js";
+import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "../contracts.js";
 import { verifyScannerComponentContainmentV1 } from "./source-data-containment.js";
 
 interface DeclaredClosure {
@@ -35,6 +37,7 @@ export function projectContainedScannerEvidenceV1(input: {
   requests: readonly BaselineVetRequestV1[];
   consumed: ConsumedScannerBaselinePublicationsV1;
   preparedAt: string;
+  overlap?: ScannerDefinitionOverlapModeV1;
 }): AuthoringCatalogBundleV1["evidence"] {
   const { bundle, sourceRoot, declared, requests, consumed, preparedAt } = input;
   const catalog = BaselineCatalogSchema.parse(input.catalog);
@@ -117,7 +120,12 @@ export function projectContainedScannerEvidenceV1(input: {
       publicationByComponent.set(component.id, publication);
     }
   }
-  const mappings = verifyScannerComponentContainmentV1(sourceRoot, declared, requested);
+  const mappings = verifyScannerComponentContainmentV1(
+    sourceRoot,
+    declared,
+    requested,
+    input.overlap,
+  );
   const sourceReportDigest = digest({
     catalog,
     report,
@@ -209,9 +217,12 @@ export function projectContainedScannerEvidenceV1(input: {
     if (Date.parse(expiry) <= Date.parse(preparedAt)) fail();
     const id = `evidence:${asset.id}`;
     if (evidence[id]) fail();
-    evidence[id] = EvidenceSummaryV1Schema.parse({
+    // Coverage is what the component reports' evidence problems leave; a no-findings label
+    // holds only on complete coverage, and observed findings show at any coverage.
+    const coverage = scanCoverageV1(facts.flatMap((item) => item.evidenceProblems));
+    evidence[id] = EvidenceSummaryV2Schema.parse({
       id,
-      projectionVersion: "evidence-summary/v1",
+      projectionVersion: "evidence-summary/v2",
       subjects: [closure.subject],
       evidenceDigest: digest({ sourceReportDigest, mapping, subject: closure.subject }),
       coveredPaths: [...closure.paths].sort(),
@@ -222,8 +233,11 @@ export function projectContainedScannerEvidenceV1(input: {
         contextDigest: sourceReportDigest,
       },
       scan: {
-        outcome: facts.some((item) => item.verdict === "blocked") ? "failed" : "pass",
-        coverage: "complete",
+        outcome: scanOutcomeV1(
+          facts.some((item) => item.verdict === "has-findings") ? "has-findings" : "no-findings",
+          coverage,
+        ),
+        coverage,
         analyzers: [
           ...new Map(
             facts
@@ -252,6 +266,13 @@ export function projectContainedScannerEvidenceV1(input: {
         .flatMap((item) =>
           item.findings.map((finding) =>
             `[${item.id}] ${finding.code}: ${finding.detail}`.slice(0, 1_000),
+          ),
+        )
+        .slice(0, 50),
+      evidenceProblems: facts
+        .flatMap((item) =>
+          item.evidenceProblems.map((problem) =>
+            `[${item.id}] ${problem.code}: ${problem.detail}`.slice(0, 1_000),
           ),
         )
         .slice(0, 50),

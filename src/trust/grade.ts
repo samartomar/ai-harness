@@ -14,7 +14,14 @@ export const TRUST_WARN_CODES = new Set<CheckCode>([
   "trust.cisco-finding",
   "trust.detector-finding",
   "trust.legal-text-detector-finding",
+  "trust.unreviewed-analyzer-rule",
   "trust.visible-unicode",
+]);
+
+/** Warning-only codes that stay attributable after grading. */
+const RETAINED_WARN_CODES = new Set<CheckCode>([
+  "trust.cisco-finding",
+  "trust.unreviewed-analyzer-rule",
 ]);
 
 /** @deprecated Use TRUST_REVIEW_CODES for exact-finding acceptance. */
@@ -33,7 +40,7 @@ function warningOnly(check: Check, posture: Posture): Check {
   return {
     ...check,
     verdict: "pass",
-    ...(check.code === "trust.cisco-finding" ? {} : { code: undefined }),
+    ...(check.code !== undefined && RETAINED_WARN_CODES.has(check.code) ? {} : { code: undefined }),
     detail: `warning-only (${posture} posture): ${check.detail ?? check.name}`,
   };
 }

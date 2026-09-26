@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import { eccContentMetadata } from "./ecc-content-metadata.js";
-import snapshot from "./ecc-skill-catalog.snapshot.json";
 
 /** Exact source tree whose top-level skills inventory is represented below. */
 export const ECC_SKILL_CATALOG_PROVENANCE = {
   repository: "affaan-m/ECC",
-  commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+  commit: "5064474d4d762dc9640234a41617cccb79185cec",
   pathPattern: "skills/*/SKILL.md",
   namesSha256: "b5529d1813454421b115753a05a42fc8592eb3338ad1b3394e4c46892c69c8f9",
 } as const;
@@ -56,5 +56,9 @@ function inventory(value: unknown): readonly EccSkillCatalogEntry[] {
   );
 }
 
+let loadedInventory: readonly EccSkillCatalogEntry[] | undefined;
 /** Complete source-locked ECC Skill inventory selectable as evidence-owed intent. */
-export const eccSkillCatalogInventory = inventory(snapshot);
+export function eccSkillCatalogInventoryV1(): readonly EccSkillCatalogEntry[] {
+  loadedInventory ??= inventory(loadFrameworkDescriptorSectionV1("ecc", "skillCatalog"));
+  return loadedInventory;
+}

@@ -4,3 +4,6 @@
 *.png binary
 *.ico binary
 src/baseline-evidence/pin-currency.ts text eol=lf diff
+# Deliberately truncated JSON: each file ends inside a value, after a blank, and the
+# trust-parity goldens were captured from these exact bytes.
+tests/fixtures/trust-parity/corpus/malformed/* whitespace=-blank-at-eol

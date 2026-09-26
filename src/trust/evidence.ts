@@ -8,6 +8,18 @@ const MAX_SOURCE_EVIDENCE_LINE = 10_000;
 
 export type TrustPolicyLevel = "BLOCK" | "REVIEW" | "WARN" | "INFORMATIONAL" | "SUPPRESSED";
 
+/**
+ * Whether a disposition level makes a finding a component carries (D62). BLOCK,
+ * REVIEW and WARN are things the analyzers observed that the consumer should see,
+ * so a component with any of them is `has-findings`. INFORMATIONAL (ordinary
+ * visible Unicode, skipped optional coverage) and SUPPRESSED (non-actionable
+ * heuristics whose raw occurrences are retained) are not findings about the
+ * component; counting them would make every component `has-findings`.
+ */
+export function isFindingLevelV1(level: TrustPolicyLevel): boolean {
+  return level === "BLOCK" || level === "REVIEW" || level === "WARN";
+}
+
 export interface RawScannerOccurrence {
   fingerprint: string;
   analyzer: string;
@@ -67,6 +79,135 @@ const SUPPRESSED_CODES = new Set<CheckCode>([
   "trust.detector-finding",
   "trust.legal-text-detector-finding",
 ]);
+
+/**
+ * What a trust code says (D50): a FINDING is information about the component;
+ * an EVIDENCE PROBLEM says the evidence is incomplete; an INTEGRITY failure says
+ * the evidence cannot be trusted. Findings and evidence problems are labels the
+ * consumer decides on; only integrity failures refuse evidence.
+ */
+export type TrustCodeClassV1 = "finding" | "evidence-problem" | "integrity";
+
+const TRUST_CODE_CLASSES_V1: Readonly<Record<string, TrustCodeClassV1>> = {
+  "trust.auto-exec-hook": "finding",
+  "trust.dependency-confusion": "finding",
+  "trust.hidden-unicode": "finding",
+  "trust.malicious-code": "finding",
+  "trust.prompt-injection": "finding",
+  "trust.typosquat": "finding",
+  "trust.unpinned-dependency": "finding",
+  "trust.external-egress": "finding",
+  "trust.license-missing": "finding",
+  "trust.permission-risk": "finding",
+  "trust.skill-metadata-license": "finding",
+  "trust.untrusted-publisher": "finding",
+  "trust.cisco-finding": "finding",
+  "trust.detector-finding": "finding",
+  "trust.legal-text-detector-finding": "finding",
+  "trust.visible-unicode": "finding",
+  "trust.unreviewed-analyzer-rule": "finding",
+  "trust.detector-unavailable": "evidence-problem",
+  "trust.sandbox-smoke-unavailable": "evidence-problem",
+  "trust.sandbox-smoke-failed": "evidence-problem",
+  "trust.fetch-blocked": "evidence-problem",
+  "trust.unsigned-source": "evidence-problem",
+  "trust.source-changed": "integrity",
+  "trust.source-drift": "integrity",
+  "trust.fetch-metadata-missing": "integrity",
+  "trust.fetch-metadata-unreadable": "integrity",
+  "trust.fetch-metadata-malformed": "integrity",
+  "trust.fetch-metadata-mismatched": "integrity",
+};
+
+/**
+ * Where an observation goes in component evidence (D62): a failed EVIDENCE-PROBLEM
+ * code is an evidence problem whatever its disposition level (a detector that did
+ * not run is not a finding about the component); any other code is a finding when
+ * its level is a finding level. Every reporter of component evidence uses this, so
+ * the lock, the qualification and the occurrence report agree.
+ */
+export function componentLabelSlotV1(
+  code: string,
+  checkVerdict: Check["verdict"] | undefined,
+  level: TrustPolicyLevel,
+): "finding" | "evidence-problem" | undefined {
+  if (trustCodeClassV1(code) === "evidence-problem") {
+    return checkVerdict === "fail" ? "evidence-problem" : undefined;
+  }
+  return isFindingLevelV1(level) ? "finding" : undefined;
+}
+
+/**
+ * The organization's own configured requirements (D67): a skill approval record
+ * its posture requires (`trust.unapproved-skill`), an MCP server its MCP policy
+ * denies (`mcp.policy-denied`), and its policy file drifting from the pinned copy
+ * (`org-policy.drift`). They say nothing about the scanned component, so they are
+ * outside TRUST_CODE_CLASSES_V1; the consumer's own policy keeps its stop. Every
+ * other trust code must be classified.
+ */
+export const CONSUMER_POLICY_CODES_V1: ReadonlySet<string> = new Set([
+  "trust.unapproved-skill",
+  "mcp.policy-denied",
+  "org-policy.drift",
+]);
+
+/** Whether a code is one of the organization's own configured requirements (D67). */
+export function isConsumerPolicyCodeV1(code: string | undefined): boolean {
+  return code !== undefined && CONSUMER_POLICY_CODES_V1.has(code);
+}
+
+/** The class of a trust code, or undefined for a code outside the trust lane. */
+export function trustCodeClassV1(code: string | undefined): TrustCodeClassV1 | undefined {
+  return code === undefined || !Object.hasOwn(TRUST_CODE_CLASSES_V1, code)
+    ? undefined
+    : TRUST_CODE_CLASSES_V1[code];
+}
+
+/** How much of a component the scan covered, as evidence-summary/v2 states it. */
+export type ScanCoverageV1 = "complete" | "partial" | "none";
+
+/**
+ * What each evidence problem says about the scan's coverage, as its code states it
+ * (src/support/findings.ts): a detector or sandbox smoke test that did not run leaves
+ * the scan partial; a source that could not be fetched leaves nothing scanned; a
+ * missing reviewed pin says nothing about what the analyzers covered. The same table
+ * as the Catalog's scanCoverageV1.
+ */
+const EVIDENCE_PROBLEM_COVERAGE_V1: Readonly<Record<string, ScanCoverageV1>> = {
+  "trust.detector-unavailable": "partial",
+  "trust.sandbox-smoke-unavailable": "partial",
+  "trust.sandbox-smoke-failed": "partial",
+  "trust.fetch-blocked": "none",
+  "trust.unsigned-source": "complete",
+};
+
+/**
+ * The scan coverage a component's evidence problems leave: the narrowest any of them
+ * states. A code outside the table never reads as complete coverage.
+ */
+export function scanCoverageV1(evidenceProblems: readonly { code: string }[]): ScanCoverageV1 {
+  let coverage: ScanCoverageV1 = "complete";
+  for (const { code } of evidenceProblems) {
+    const stated = Object.hasOwn(EVIDENCE_PROBLEM_COVERAGE_V1, code)
+      ? (EVIDENCE_PROBLEM_COVERAGE_V1[code] as ScanCoverageV1)
+      : "partial";
+    if (stated === "none") return "none";
+    if (stated === "partial") coverage = "partial";
+  }
+  return coverage;
+}
+
+/**
+ * The outcome label stated for a stored verdict at `coverage`: a no-findings label
+ * holds only on complete coverage; on less it is unknown, with the evidence problems
+ * stated beside it. Observed findings are stated at any coverage.
+ */
+export function scanOutcomeV1(
+  verdict: "no-findings" | "has-findings",
+  coverage: ScanCoverageV1,
+): "no-findings" | "has-findings" | "unknown" {
+  return verdict === "no-findings" && coverage !== "complete" ? "unknown" : verdict;
+}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -192,6 +333,27 @@ export function normalizeTrustFindings(
   return findings;
 }
 
+/** A generic detector finding's one evidence route out of SUPPRESSED: credible broad autonomy. */
+function isCredibleAutonomy(detail: string, sourceValue: string | undefined): boolean {
+  const autonomyValue = sourceValue ?? "";
+  return (
+    /autonomous decision making/i.test(`${detail}\n${autonomyValue}`) &&
+    (/\bautomatically\b.*\b(?:without (?:asking|confirmation|consent)|do not ask|never ask)\b/i.test(
+      autonomyValue,
+    ) ||
+      /^\s*(?:do not|never)\s+ask\b/i.test(autonomyValue))
+  );
+}
+
+/** Whether a `trust.detector-finding` with this detail at `location` takes the autonomy REVIEW. */
+export function isCredibleAutonomyFindingV1(
+  root: string,
+  location: Check["location"],
+  detail: string,
+): boolean {
+  return isCredibleAutonomy(detail, safeSourceValue(root, location));
+}
+
 export function dispositionForTrustFinding(
   finding: NormalizedTrustFinding,
 ): TrustPolicyDisposition {
@@ -220,6 +382,15 @@ export function dispositionForTrustFinding(
       policyVersion: TRUST_POLICY_VERSION,
     };
   }
+  if (finding.code === "trust.unreviewed-analyzer-rule") {
+    return {
+      findingFingerprint: finding.fingerprint,
+      level: "WARN",
+      reason:
+        "new analyzer rule, not yet reviewed; next: review it at the analyzer's pinned release, then map it in Core's detector rule map or confirm its generic route and remove it from src/trust/unreviewed-analyzer-rules.ts; it never blocks until then",
+      policyVersion: TRUST_POLICY_VERSION,
+    };
+  }
   if (finding.code !== undefined && WARN_CODES.has(finding.code)) {
     return {
       findingFingerprint: finding.fingerprint,
@@ -236,15 +407,9 @@ export function dispositionForTrustFinding(
       policyVersion: TRUST_POLICY_VERSION,
     };
   }
-  const autonomyText = `${finding.detail}\n${finding.sourceValue ?? ""}`;
-  const autonomyValue = finding.sourceValue ?? "";
   if (
     finding.code === "trust.detector-finding" &&
-    /autonomous decision making/i.test(autonomyText) &&
-    (/\bautomatically\b.*\b(?:without (?:asking|confirmation|consent)|do not ask|never ask)\b/i.test(
-      autonomyValue,
-    ) ||
-      /^\s*(?:do not|never)\s+ask\b/i.test(autonomyValue))
+    isCredibleAutonomy(finding.detail, finding.sourceValue)
   ) {
     return {
       findingFingerprint: finding.fingerprint,

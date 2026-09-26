@@ -2,12 +2,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { coreOwnedEccCodexMcpServers } from "../../packages/framework-ecc/src/ecc/codex.js";
 import {
   CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_VERSION,
   SEMGREP_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
-import { coreOwnedEccCodexMcpServers } from "../../src/ecc/codex.js";
 import {
   CODE_REVIEW_GRAPH_RUNTIME_PIN,
   CODEBASE_MEMORY_RUNTIME_PIN,
@@ -19,6 +19,12 @@ import { CHECKOUT_ACTION_PIN } from "../../src/guardrails/sca.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 import { mcpServers, type StdioServer } from "../../src/mcp/servers.js";
 import type { RepoStack } from "../../src/profile/scan.js";
+import {
+  HEADROOM_DEPENDENCY_LOCK_SHA256,
+  HEADROOM_RUNTIME_PIN,
+  HEADROOM_RUNTIME_PYPROJECT_SHA256,
+  HEADROOM_RUNTIME_UV_LOCK_SHA256,
+} from "../../src/tools/headroom.js";
 import { TOKEN_OPTIMIZER_PIN } from "../../src/tools/token-optimizer-runtime.js";
 import { SKILLSPECTOR_IMAGE_DIGEST, SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
 
@@ -34,7 +40,13 @@ interface LedgerEntry {
    * Absent is the normal case: the hash covers what runs.
    */
   integrityCovers?: "launcher-only";
-  disposition: "active" | "retained" | "blocked";
+  /**
+   * `not-adopted`: an observed version aih does not pin; its findings and consent
+   * facts are stated in `reason` as information. `blocked` remains only on
+   * immutable history entries and on pins whose own provenance or release state
+   * fails.
+   */
+  disposition: "active" | "retained" | "not-adopted" | "blocked";
   reason?: string;
 }
 
@@ -59,6 +71,7 @@ const ledger = JSON.parse(
   verifiedAtPolicy: string;
   historicalEvidencePolicy: string;
   integrityCoveragePolicy: string;
+  dispositionPolicy: string;
   entries: LedgerEntry[];
 };
 
@@ -146,43 +159,48 @@ describe("active external-pin ledger", () => {
     expect(ledger.verifiedAtPolicy).toMatch(/does not move this field/i);
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
-    // Canonical upstream retains the same exact v2.2.0 descendant.
+    // The annotated v2.2.1 release, consumed from the D49 publisher.
     expect(entry("ecc")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "v2.2.0-1-g5caf398a",
-      commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+      version: "v2.2.1",
+      commit: "5064474d4d762dc9640234a41617cccb79185cec",
       disposition: "active",
     });
-    expect(entry("ecc").reason).toMatch(/canonical upstream.*unchanged/i);
+    expect(entry("ecc").reason).toMatch(/tree 9d448bb479cc1af55c488357556ac24d8cd932d2/);
+    expect(entry("ecc").reason).toMatch(/42885cd87e65520da5e47494d344d4a600e79ff9/);
+    expect(entry("ecc").reason).toMatch(/as information/i);
+    expect(ledger.entries.some((e) => e.surface === "ecc-latest-stable-candidate")).toBe(false);
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
       version: "v2.2.0-147-ge04ea0b9",
       commit: "e04ea0b9cc8248686edf5ac751cadff550e162b8",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("ecc-candidate").reason).toMatch(/OpenCode.*hook-runtime consent/i);
     expect(entry("ecc-candidate").reason).toMatch(/accepts only samartomar\/ECC/i);
     expect(entry("ecc-candidate").reason).toMatch(/nothing was promoted/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
-      commit: "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      version: "v6.4.1",
+      commit: "5bf4e78011075bcfc0dc295f0724994cd123ee71",
       disposition: "active",
     });
-    // The previous reconciliation deliberately did NOT promote the refresh
-    // candidate; this one does, so the recorded reason has to say so.
-    expect(entry("superpowers").reason).toMatch(/rebound from v6\.2\.0 to v6\.3\.0/i);
+    expect(entry("superpowers").reason).toMatch(/rebound from v6\.3\.0 to v6\.4\.1/i);
+    expect(entry("superpowers").reason).toMatch(
+      /664cbb82d8fbb8cd4726f9d4ec09fd57bc600248a351528cf6211a869439450d/,
+    );
     const servers = mcpServers("standard", webStack, { selfHost: true });
     expect(entry("code-review-graph").version).toBe(
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
     );
     expect(entry("code-review-graph").reason).toMatch(
-      /raw repository-agnostic fallback only.*2\.3\.8 raw candidate.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
+      /raw repository-agnostic fallback only.*2\.3\.8 and 2\.3\.9 raw candidates.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
     );
     expect(entry("codebase-memory-mcp").version).toBe(
       versionFromSpec(stdioArg(servers, "codebase-memory-mcp", "codebase-memory-mcp@")),
     );
     expect(entry("codebase-memory-mcp").reason).toMatch(
-      /raw repository-agnostic fallback only.*0\.10\.5.*native.*0\.10\.8.*separate/i,
+      /raw repository-agnostic fallback only.*0\.11\.0 uv route.*native 0\.11\.0 default.*separately/i,
     );
     expect(entry("sequential-thinking").version).toBe(
       versionFromSpec(
@@ -200,20 +218,29 @@ describe("active external-pin ledger", () => {
       versionFromSpec(stdioArg(servers, "playwright", "@playwright/mcp@")),
     );
     expect(entry("playwright-mcp").reason).toMatch(
-      /Initialize.*isolated headless.*serverInfo reports Playwright 1\.64\.0-alpha-2026-09-14/i,
+      /Initialize.*isolated headless.*serverInfo reports Playwright 1\.64\.0-alpha-1789764292000/i,
     );
     expect(entry("ecc-codex-chrome-devtools-mcp")).toMatchObject({
       identity: "chrome-devtools-mcp",
-      version: "1.7.0",
+      version: "1.10.1",
+      commit: "e52c6b59b476c5e04d8dd9fd4bd017ba3b3d65df",
       integrity:
-        "sha512-6xFW7oiUxTxZuHcfyYBkKQtmttjCbfifKZMSEk5CV8H2FucvKweYiJr8CblddYHtYjA4C14K9VAs1r49906RBA==",
+        "sha512-Klw6HWDqHC/XS1JwZldd2r49aUhbUJN9m9Mvcx4SEueIPXtzuQX+QelxAViobv8YUkDZ7HWDrmViR6LeYK0wAw==",
       disposition: "active",
     });
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
+      /CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1.*CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1.*client name/i,
+    );
     const chromeDevtools = coreOwnedEccCodexMcpServers()["chrome-devtools"];
     if (chromeDevtools?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP");
     expect(entry("ecc-codex-chrome-devtools-mcp").version).toBe(
       versionFromSpec(chromeDevtools.args[1] ?? ""),
     );
+    expect(chromeDevtools.args).toContain("--no-performance-crux");
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
+      /emits --no-performance-crux.*performanceCrux.*CrUX/i,
+    );
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).not.toMatch(/does not add that flag/i);
     expect(entry("ecc-codex-chrome-devtools-mcp-candidate")).toMatchObject({
       version: "1.9.0",
       commit: "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
@@ -231,12 +258,12 @@ describe("active external-pin ledger", () => {
     expect(githubImage).toBeDefined();
     expect(entry("github-mcp-container").integrity).toBe(githubImage?.split("@")[1]);
     expect(entry("github-mcp-container")).toMatchObject({
-      version: "v1.12.1",
-      commit: "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+      version: "v1.12.2",
+      commit: "85598ba6e1256f7ebf4867b95d63b833c4549264",
       disposition: "active",
     });
     expect(entry("github-mcp-container").reason).toMatch(
-      /Optional self-host.*44 default tool names are identical.*Docker was unavailable/i,
+      /Optional self-host.*container wrapper.*linux\/amd64.*45 default tool names.*update_issue_comment/i,
     );
 
     const plan = toolingPlan();
@@ -265,7 +292,7 @@ describe("active external-pin ledger", () => {
       expect(graph.reason).toContain(`sha256:${lock}`);
     }
     expect(graph.reason).toMatch(
-      /guarded native default.*installed Linux Node 20.*five guarded operations.*per-host.*macOS.*unverified/i,
+      /guarded native default.*installed-package proof on Windows x64.*five guarded operations.*Linux Node 20.*not re-run.*per-host.*macOS.*unverified/i,
     );
 
     const memory = entry("codebase-memory-mcp-native-default");
@@ -289,8 +316,33 @@ describe("active external-pin ledger", () => {
       expect(memory.reason).toContain(`${archive.name} sha256:${archive.sha256}`);
     }
     expect(memory.reason).toMatch(
-      /guarded native default.*selected platform archive.*installed Linux Node 20.*A-B-A.*per-host.*macOS.*unverified/i,
+      /guarded native default.*selected platform archive.*format json.*installed-package proof on Windows x64.*A-B-A.*not re-run.*per-host.*macOS.*unverified/i,
     );
+    expect(memory.reason).toMatch(/admission barrier did not refuse.*distinct per-worktree/i);
+  });
+
+  it("binds the explicitly activated Headroom MCP runtime to its hash-locked closure", () => {
+    const headroom = entry("headroom-mcp");
+    expect(headroom).toMatchObject({
+      identity: "headroom-ai",
+      version: HEADROOM_RUNTIME_PIN.version,
+      commit: HEADROOM_RUNTIME_PIN.sourceCommit,
+      integrity: `sha256:${HEADROOM_RUNTIME_UV_LOCK_SHA256}`,
+      disposition: "active",
+    });
+    expect(headroom.integrityCovers).toBeUndefined();
+    for (const digest of [HEADROOM_RUNTIME_PYPROJECT_SHA256, HEADROOM_DEPENDENCY_LOCK_SHA256]) {
+      expect(headroom.reason).toContain(`sha256:${digest}`);
+    }
+    for (const wheel of Object.values(HEADROOM_RUNTIME_PIN.wheels)) {
+      expect(headroom.reason).toContain(`${wheel.name} sha256:${wheel.sha256}`);
+    }
+    expect(headroom.reason).toMatch(/explicit activation.*--accept-headroom-egress/i);
+    expect(headroom.reason).toMatch(
+      /HEADROOM_BEACON=off.*DO_NOT_TRACK=1.*HEADROOM_UPDATE_CHECK=off/,
+    );
+    expect(headroom.reason).toMatch(/proxy, wrap, deploy.*not used/i);
+    expect(headroom.reason).toMatch(/Intel macOS.*Windows arm64/i);
   });
 
   it("binds Core and its repository helper to one Token Optimizer source identity", () => {
@@ -303,7 +355,11 @@ describe("active external-pin ledger", () => {
     });
     expect(active.reason).toContain(`tree ${TOKEN_OPTIMIZER_PIN.tree}`);
     expect(active.reason).toContain(`manifest sha256:${TOKEN_OPTIMIZER_PIN.manifestSha256}`);
-    expect(active.reason).toMatch(/all 158.*canonical Git blobs/i);
+    expect(active.reason).toContain(`all ${TOKEN_OPTIMIZER_PIN.manifestRecords} manifest records`);
+    expect(active.reason).toMatch(/canonical Git blobs/i);
+    expect(active.reason).toMatch(
+      /PolyForm Noncommercial 1\.0\.0.*LICENSE-SMALL-BUSINESS\.md.*fewer than 5 people.*US\$20,000 per month.*internal/i,
+    );
     expect(active.reason).toMatch(/quiet and balanced.*receipt ownership.*policy exclusions/i);
     expect(toolingPlan().pins.tokenOptimizer).toMatchObject({
       tag: TOKEN_OPTIMIZER_PIN.tag,
@@ -369,26 +425,19 @@ describe("active external-pin ledger", () => {
       integrity: SKILLSPECTOR_IMAGE_DIGEST,
     });
 
-    const skillspectorDockerfile = readFileSync(
-      resolve(root, "tools/skillspector.Dockerfile"),
-      "utf8",
-    );
-    const pythonBase = skillspectorDockerfile.match(
-      /^ARG PYTHON_IMAGE=python:([^@\s]+)@(sha256:[0-9a-f]{64})$/m,
-    );
+    // The SkillSpector image is built by @aihq/scan now; its build inputs stay
+    // recorded here as provenance for the published image digest.
     expect(entry("skillspector-python-base")).toMatchObject({
-      version: pythonBase?.[1],
-      integrity: pythonBase?.[2],
+      identity: "docker.io/library/python",
+      version: "3.12-slim-bookworm",
     });
+    expect(entry("skillspector-python-base").integrity).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(entry("skillspector-build-uv")).toMatchObject({
       identity: "uv",
       version: "0.12.8",
       commit: "68209e5c61ce4b76c2e685bea7913876bc929dc9",
       disposition: "retained",
     });
-    expect(entry("skillspector-build-uv").version).toBe(
-      skillspectorDockerfile.match(/pip install --no-cache-dir uv==([^\s]+)/)?.[1],
-    );
     expect(entry("uv")).toMatchObject({
       version: "0.12.13",
       commit: "0ebbd9274a55a8a53a13970be3b97e4209598e17",
@@ -398,9 +447,6 @@ describe("active external-pin ledger", () => {
     expect(entry("uv").reason).not.toMatch(/SkillSpector build/i);
     expect(entry("uv").reason).toContain(
       "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2",
-    );
-    expect(skillspectorDockerfile).toContain(
-      `LABEL org.opencontainers.image.revision="${SKILLSPECTOR_SOURCE_REVISION}"`,
     );
 
     const checkout = CHECKOUT_ACTION_PIN.match(/^actions\/checkout@([0-9a-f]{40}) # (v\S+)$/);
@@ -419,13 +465,13 @@ describe("active external-pin ledger", () => {
     });
     expect(entry("claude-code-action").version).toBe("v1.0.223");
 
-    const snykQualificationWorkflow = readFileSync(
-      resolve(root, ".github/workflows/snyk-agent-qualification.yml"),
-      "utf8",
-    );
-    expect(entry("setup-python-action")).toMatchObject(
-      workflowActionPin(snykQualificationWorkflow, "actions/setup-python"),
-    );
+    // The Snyk agent qualification workflow left with the analyzer projects; the
+    // action pin stays recorded as provenance.
+    expect(entry("setup-python-action")).toMatchObject({
+      identity: "actions/setup-python",
+      version: "v7.0.0",
+    });
+    expect(entry("setup-python-action").commit).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it("binds the release provenance action to the governed external pin ledger", () => {
@@ -478,40 +524,42 @@ describe("active external-pin ledger", () => {
   });
 
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {
+    // The analyzer rows carry the uv.lock @aihq/scan installs (aih-scan
+    // tools/baseline-analyzers/<analyzer>/uv.lock): Core accepts exactly that lock.
     expect(entry("cisco-skill-scanner")).toMatchObject({
       version: CISCO_SKILL_SCANNER_VERSION,
-      commit: "a49c8d9f7555dd99a9f5e4430c3bb8d4fe4a9371",
-      integrity: "sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2",
+      commit: "a24df340ca6056a6446a239f4a7b114b11c6073a",
+      integrity: "sha256:1e98c5679994dc56f82c1d88a77528d4c4b076160aff85b4d97ce239360bc210",
       disposition: "active",
     });
-    expect(entry("cisco-mcp-scanner")).toMatchObject({
+    expect(entry("cisco-skill-scanner").reason).toMatch(/one lock serves both/i);
+    const mcp = entry("cisco-mcp-scanner");
+    expect(mcp).toMatchObject({
       version: CISCO_MCP_SCANNER_VERSION,
-      integrity: "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
+      commit: "654fbb2803384dac03a18955a358823d09ff451b",
+      integrity: "sha256:b679f3afa51977495cc378cbf7e42ebbe9ef68eda38056d72613e9970bd99c16",
       disposition: "active",
     });
+    // The previous row named the wrong revision for 4.8.2; the history states the right one.
+    expect(mcp.reason).toContain(
+      "4.8.2 (tag 4.8.2 = commit 51966cce214ae057e69c3a672307911f5026e255",
+    );
+    expect(mcp.reason).toContain("not 94e61145a5bd6ae39eabcc52a686830e1ec73be0");
+    expect(mcp.reason).toMatch(/prompt_defense.*readiness.*not been re-verified at 4\.8\.4/);
     const snyk = entry("snyk-agent-scan");
     expect(snyk).toMatchObject({
-      version: "0.5.17",
-      integrity: "sha256:ae928b023023fba12fdaaaa31e9da5dad4252c181545dfba72d46534d694b935",
+      version: "0.6.4",
+      commit: "af0d2c9cf37d70a29ee9ed725f2779a92c0409d5",
+      integrity: "sha256:c71ffe188e38e2730c3525e710d54a0ab81e0ed914d2d132692d0ef79911d85f",
       disposition: "active",
     });
-    expect(snyk.reason).toContain(
-      "https://github.com/samartomar/ai-harness/actions/runs/31828959167",
-    );
-    expect(snyk.reason).toContain("b4c76cbc88ff300c1f3e241e9b9c1f25ef921760");
-    expect(snyk.reason).toContain("snyk-agent-scan@uv:0.5.17");
-    expect(snyk.reason).toContain("status=qualified");
-    expect(snyk.reason).toContain(
-      "sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0",
-    );
-    expect(snyk.reason).toContain(
-      "sha256:22e5dc96b689af87589b32f96570a0da407a6562281d7c94021c57b849737daa",
-    );
-    expect(snyk.reason).toContain("synthetic fixture");
+    // Stated plainly: no real 0.6.4 run has qualified Snyk findings.
+    expect(snyk.reason).toMatch(/Findings at 0\.6\.4 are not qualified.*HTTP 429/);
+    expect(snyk.reason).toContain("does not carry over");
     expect(entry("semgrep")).toMatchObject({
       version: SEMGREP_VERSION,
-      commit: "abce3b5391706850837d4339f84bfaa3ec08604b",
-      integrity: "sha256:95e504f01bf9ae20c23359a76bf9ada3e10c88906de58964f489e6332753260a",
+      commit: "2f122b2feb38cc06272b1dde5b482e85eaf3adad",
+      integrity: "sha256:5fae6a8598f7d5cf4921c0cb5bd1790accd756a2073abfb5c5f104ae64c5b594",
       disposition: "active",
     });
     expect(entry("agentshield")).toMatchObject({
@@ -553,23 +601,24 @@ describe("active external-pin ledger", () => {
 
   it("documents explicit retained and qualified-runner decisions", () => {
     expect(entry("skillspector")).toMatchObject({
-      commit: "2d198ab910add401cad658d1087e7c7ba24fd640",
-      integrity: "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+      version: "2.12.0",
+      commit: "c7958a3268d9498644b22edb75d0f051bbc8cbfc",
+      integrity: "sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
       disposition: "active",
     });
-    // A rotation is only trustworthy if the method was validated against a known
-    // answer first, so the reason must carry that validation, the reproduction
-    // count, and the perturbation control that proves the cutoff is load-bearing.
+    // docs/security/skillspector.md "Rotating the Pin" step 1: two clean builds
+    // agree, and the perturbation control proves the cutoff is load-bearing. The
+    // reason states which reproduction evidence this rotation did not repeat.
     expect(entry("skillspector").reason).toMatch(
-      /method validated against a known answer first.*reproduced its committed\s+sha256:108b707c/i,
+      /Two clean cache-disabled OCI exports.*byte-identical/i,
     );
-    expect(entry("skillspector").reason).toMatch(/reproduced five times/i);
     expect(entry("skillspector").reason).toMatch(
-      /cutoff moved 2026-08-07 -> 2026-08-15T00:00:00Z.*perturbation control holds.*sha256:8b13ea26/i,
+      /cutoff moved 2026-08-15T00:00:00Z -> 2026-09-24T00:00:00Z.*perturbation control holds.*sha256:90e6770a/i,
     );
-    // The YR4 carve-out equivalence must be restated at every rotation.
+    expect(entry("skillspector").reason).toMatch(/did not repeat the known-answer validation/i);
+    // Step 2: the YR4 carve-out equivalence must be restated at every rotation.
     expect(entry("skillspector").reason).toMatch(
-      /all five yara_rules blobs and LICENSE carry identical git\s+SHAs at both tags/i,
+      /agent_skills\.yar \(the YR4 rule source, blob 6aa11e5a[0-9a-f]*\) and LICENSE carry identical git SHAs at both tags/i,
     );
     expect(entry("anthropic-skills-guide")).toMatchObject({
       commit: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
@@ -622,30 +671,64 @@ describe("active external-pin ledger", () => {
     );
     expect(entry("anthropic-skills")).toMatchObject({
       commit: "b29e7cf65e5cb78a5ac33d582270551bc74a14eb",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("ui-ux-pro-max-skill")).toMatchObject({
       version: "v2.11.3",
       commit: "4857a2c5ef989794751a0f66b8545a4a49566286",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("aws-mcp-guide-source").reason).toMatch(/Agent Toolkit for AWS/i);
 
-    // The ECC candidate is recorded blocked WITHOUT moving the active pin, so the
+    // The ECC candidate is recorded as not adopted WITHOUT moving the active pin, so the
     // two entries must keep disagreeing on commit: a candidate that silently
     // matched baseline-sources would mean the rotation happened.
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
       version: "v2.2.0-147-ge04ea0b9",
       commit: "e04ea0b9cc8248686edf5ac751cadff550e162b8",
-      disposition: "blocked",
+      disposition: "not-adopted",
     });
     expect(entry("ecc-candidate").commit).not.toBe(entry("ecc").commit);
+    // Consent is stated as information, never as a gate code.
     expect(entry("ecc-candidate").reason).toMatch(
-      /ECC_OPENCODE_HOOK_CONSENT_AND_FULL_VET_UNQUALIFIED/,
+      /^OpenCode hook-runtime consent: the upstream consent step does not cover the default OpenCode plugin, and the full vet was not run\./,
     );
-    // Live exact-SHA state, the local evidence boundary, and the consent defect
-    // are all load-bearing. Losing any one would make the HOLD unauditable.
+    expect(entry("ecc-candidate").reason).not.toMatch(
+      /UNQUALIFIED|recorded blocked|consent gate failed|prior blocked candidate/,
+    );
+    // The consumption summaries use the neutral v2 vocabulary; the OpenCode consent
+    // observation carries forward as information, never as a gate code.
+    expect(entry("ecc").reason).toContain(
+      "411 components, 345 with no findings and 66 with findings (103 findings, WARN included), 0 with evidence problems, recorded as information",
+    );
+    expect(entry("ecc").reason).toMatch(/OpenCode hook-runtime consent: .*stated as information/);
+    expect(entry("ecc").reason).toContain("The e04ea0b9 candidate stays recorded as not adopted");
+    expect(entry("superpowers").reason).toContain(
+      "16 components, 12 with no findings and 4 with findings, recorded as information",
+    );
+    for (const surface of ["ecc", "superpowers"]) {
+      expect(entry(surface).reason).not.toMatch(
+        /\bpass\b|\bblocked\b|passing components|UNQUALIFIED/,
+      );
+    }
+    // `blocked` stays only where the record is immutable history or the pin's own
+    // provenance or release state fails.
+    expect(
+      ledger.entries
+        .filter((candidate) => candidate.disposition === "blocked")
+        .map((candidate) => candidate.surface)
+        .sort(),
+    ).toEqual([
+      "agentshield",
+      "anthropic-skills-candidate-2026-09-14",
+      "aws-core-mcp-server",
+      "ecc-codex-chrome-devtools-mcp-candidate",
+      "ui-ux-pro-max-skill-candidate-2026-09-14",
+    ]);
+    expect(ledger.dispositionPolicy).toMatch(/not-adopted.*information/i);
+    // Live exact-SHA state, the local evidence boundary, and the consent facts
+    // are all load-bearing. Losing any one would make the record unauditable.
     expect(entry("ecc-candidate").reason).toMatch(
       /GitHub-verified signature.*46 of 46 check runs/i,
     );

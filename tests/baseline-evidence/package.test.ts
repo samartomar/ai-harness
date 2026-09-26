@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
-import { CISCO_SKILL_SCANNER_SPEC } from "../../src/baseline-evidence/analyzer-profile.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 
 const repo = process.cwd();
@@ -21,7 +20,7 @@ function packageJson(): {
 }
 
 describe("baseline evidence release payload", () => {
-  it("ships the auditable vendor lock in the actual npm pack file list", () => {
+  it("ships neither Catalog-owned vendor data nor Scan-owned analyzer projects in the actual npm pack file list", () => {
     const npmCli = process.env.npm_execpath;
     if (!npmCli) throw new Error("npm_execpath is required for the cross-platform pack test");
     const output = execFileSync(
@@ -31,21 +30,18 @@ describe("baseline evidence release payload", () => {
     );
     const packed = JSON.parse(output) as Array<{ files: Array<{ path: string }> }>;
     const files = packed[0]?.files.map((file) => file.path) ?? [];
-    expect(files).toContain("src/baseline-evidence/vendor-lock.json");
-    expect(files).toContain("tools/cisco-skill-scanner/pyproject.toml");
-    expect(files).toContain("tools/cisco-skill-scanner/uv.lock");
-    expect(files).toContain("tools/trust-scanners/cisco-mcp/pyproject.toml");
-    expect(files).toContain("tools/trust-scanners/cisco-mcp/uv.lock");
-    expect(files).toContain("tools/trust-scanners/semgrep/pyproject.toml");
-    expect(files).toContain("tools/trust-scanners/semgrep/uv.lock");
-    expect(files).toContain("tools/trust-scanners/snyk-agent-scan/pyproject.toml");
-    expect(files).toContain("tools/trust-scanners/snyk-agent-scan/uv.lock");
+    expect(files).not.toContain("src/baseline-evidence/vendor-lock.json");
+    expect(files).not.toContain("src/baseline-evidence/ecc-install-preview.json");
+    // The analyzer projects (uv locks, SkillSpector Dockerfile) ship with @aihq/scan, not Core.
+    expect(files.filter((file) => file.startsWith("tools/"))).toEqual([]);
   });
 
   it("delegates baseline execution to the exact public Scanner and keeps Core consumption explicit", () => {
     const manifest = packageJson();
     const scripts = manifest.scripts;
-    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.4.0");
+    expect(manifest.devDependencies["@aihq/scan"]).toBe(
+      "file:tests/fixtures/packages/aihq-scan-0.5.0-a1524d78.tgz",
+    );
     expect(scripts["baseline:request"]).toContain("scanner-cli.ts request");
     expect(scripts["baseline:vet"]).toBeUndefined();
     expect(scripts["baseline:consume"]).toBeUndefined();
@@ -56,6 +52,39 @@ describe("baseline evidence release payload", () => {
     expect(scripts["baseline:check"]).toContain("check:baseline-installable");
     expect(scripts["check:baseline-analyzers"]).toContain("check-baseline-analyzers.ts");
     expect(scripts.verify).toContain("check:baseline-analyzers");
+  });
+
+  it("declares @aihq/scan as an external optional peer, never a bundled runtime dependency", () => {
+    const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+    };
+    expect(manifest.dependencies["@aihq/scan"]).toBeUndefined();
+    expect(manifest.peerDependencies?.["@aihq/scan"]).toBe(">=0.5.0 <0.6.0");
+    expect(manifest.peerDependenciesMeta?.["@aihq/scan"]).toEqual({ optional: true });
+    const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
+    expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/scan"[^\]]*\]/u);
+    expect(tsup).not.toMatch(/noExternal:[^\]]*@aihq\/scan/u);
+  });
+
+  it("declares @aihq/catalog as an external optional peer, never a bundled runtime dependency", () => {
+    const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+    };
+    expect(manifest.dependencies["@aihq/catalog"]).toBeUndefined();
+    expect(manifest.peerDependencies?.["@aihq/catalog"]).toBe(">=0.3.0 <0.4.0");
+    expect(manifest.peerDependenciesMeta?.["@aihq/catalog"]).toEqual({ optional: true });
+    // Core's tests use the exact compatible Catalog tarball committed beside them.
+    expect(manifest.devDependencies["@aihq/catalog"]).toBe(
+      "file:tests/fixtures/packages/aihq-catalog-0.3.0-c8e2c03.tgz",
+    );
+    const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
+    expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/catalog"[^\]]*\]/u);
+    expect(tsup).not.toMatch(/noExternal:[^\]]*@aihq\/catalog/u);
   });
 
   it("does not retain a second baseline refresh executor inside Core", () => {
@@ -90,7 +119,7 @@ describe("baseline evidence release payload", () => {
     expect(parseDocument(consumeWorkflow).errors).toEqual([]);
     expect(consumeWorkflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(consumeWorkflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    expect(consumeWorkflow).toContain("f6189c0211fe27369fb15672f00da76c2072361c");
+    expect(consumeWorkflow).toContain("349fcadac4bdb20807c0f3451f91178a3b5911cd");
     expect(consumeWorkflow).toContain("npm run baseline:request");
     expect(consumeWorkflow).toContain("npm run baseline:consume-publications");
     expect(consumeWorkflow).toContain("npm run baseline:assemble");
@@ -109,14 +138,7 @@ describe("baseline evidence release payload", () => {
     expect(consumeWorkflow).not.toContain("docker");
   });
 
-  it("keeps legacy analyzer locks auditable while Scanner owns refresh execution", () => {
-    const runtimeRoot = join(repo, "tools", "cisco-skill-scanner");
-    const pyproject = join(runtimeRoot, "pyproject.toml");
-    const lock = join(runtimeRoot, "uv.lock");
-    expect(existsSync(pyproject)).toBe(true);
-    expect(existsSync(lock)).toBe(true);
-    expect(readFileSync(pyproject, "utf8")).toContain(CISCO_SKILL_SCANNER_SPEC);
-
+  it("leaves analyzer runtime setup to Scanner in the CI and consume workflows", () => {
     const ciWorkflow = readFileSync(join(repo, ".github", "workflows", "ci.yml"), "utf8");
     const consumeWorkflow = readFileSync(
       join(repo, ".github", "workflows", "baseline-publication-consume.yml"),
@@ -129,29 +151,6 @@ describe("baseline evidence release payload", () => {
       expect(workflow).not.toContain("/usr/bin/bwrap");
       expect(workflow).not.toContain("docker");
     }
-  });
-
-  it("builds SkillSpector from its committed lock on a digest-pinned base", () => {
-    const path = join(repo, "tools", "skillspector.Dockerfile");
-    expect(existsSync(path)).toBe(true);
-    const dockerfile = readFileSync(path, "utf8");
-    expect(dockerfile).toContain(
-      "python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
-    );
-    expect(dockerfile).toContain("uv==0.12.8");
-    expect(dockerfile).not.toContain("uv==0.12.9");
-    expect(dockerfile).toContain(
-      'org.opencontainers.image.revision="2d198ab910add401cad658d1087e7c7ba24fd640"',
-    );
-    expect(dockerfile).toContain("COPY pyproject.toml uv.lock README.md ./");
-    expect(dockerfile).toContain("uv sync --frozen --no-dev --no-editable");
-    // The build-backend cutoff is load-bearing: uv.lock does not pin the PEP 517
-    // backends, so without it setuptools/hatchling float and the image digest
-    // moves. Guard the exact value — silently losing it reintroduces the drift
-    // that made the controlled digest unrebuildable.
-    expect(dockerfile).toContain("UV_EXCLUDE_NEWER=2026-08-15T00:00:00Z");
-    expect(dockerfile).not.toContain("apt-get");
-    expect(dockerfile).not.toMatch(/pip\s+install\s+--no-cache-dir\s+\./);
   });
 
   it("checks analyzer-complete vendor receipts again before release packaging", () => {

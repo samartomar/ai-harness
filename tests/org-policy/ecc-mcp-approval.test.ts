@@ -63,7 +63,8 @@ describe("declarative ECC external MCP approvals", () => {
   it.each([
     ["AIH-owned id", { ...approval, id: "github" }],
     ["unknown id", { ...approval, id: "not-in-pinned-ecc" }],
-    ["source digest mismatch", { ...approval, sourceContentSha256: "0".repeat(64) }],
+    ["malformed source digest", { ...approval, sourceContentSha256: "0".repeat(63) }],
+    ["prefixed source digest", { ...approval, sourceContentSha256: `sha256:${"0".repeat(64)}` }],
     ["empty allowed data", { ...approval, allowedDataClasses: [] }],
     ["unverifiable approver identity", { ...approval, approvedBy: "Samar" }],
     ["extra field", { ...approval, extra: true }],
@@ -71,13 +72,35 @@ describe("declarative ECC external MCP approvals", () => {
     expect(OrgPolicySchema.safeParse(policy([invalid])).success).toBe(false);
   });
 
+  it("keeps an approval recorded for other ECC content as a stale label that authorizes nothing (D74)", () => {
+    // A 0.6.2 policy saved its approvals against the v2.2.0-1 ECC MCP content.
+    const previous = "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57";
+    const saved = { ...approval, sourceContentSha256: previous };
+    const current = { ...approval, id: "supabase" };
+    const parsed = parseOrgPolicy(policy([saved, current]));
+    const approvals = parsed.governance?.eccMcpApprovals ?? [];
+
+    expect(approvals).toEqual([saved, current]);
+    expect(resolveEccMcpApproval(approvals, "vercel")).toEqual({
+      state: "stale",
+      approval: saved,
+      label: `recorded for ECC content ${previous}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-approve`,
+    });
+    expect(resolveEccMcpApproval(approvals, "supabase")).toEqual({
+      state: "approved",
+      approval: current,
+    });
+    // A revocation stays a revocation whatever content it was recorded for.
+    expect(resolveEccMcpApproval([{ ...saved, state: "revoked" }], "vercel")).toEqual({
+      state: "revoked",
+      approval: { ...saved, state: "revoked" },
+    });
+  });
+
   it("rejects duplicate IDs and resolves malformed records fail-closed", () => {
     expect(
       OrgPolicySchema.safeParse(policy([approval, { ...approval, state: "revoked" }])).success,
     ).toBe(false);
-    expect(
-      resolveEccMcpApproval([{ ...approval, sourceContentSha256: "0".repeat(64) }], "vercel"),
-    ).toEqual({ state: "source-mismatch" });
     expect(resolveEccMcpApproval([{ ...approval }, { ...approval }], "vercel")).toEqual({
       state: "source-mismatch",
     });

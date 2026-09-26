@@ -99,7 +99,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "required language runtime missing or unsupported",
     affectedArea: "local developer tooling",
     evidence:
-      "The required language runtime (Node.js 20 or newer) is missing or below the supported version on this machine.",
+      "The required language runtime (Node.js 20.6 or newer) is missing or below the supported version on this machine.",
     action:
       "Please provision the supported language runtime on this machine via the approved software catalog or installer, then have the developer reopen their shell.",
     acceptance: [
@@ -335,6 +335,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Run `aih mcp --apply` to re-project the repo's MCP config onto the current catalog pins — after an aih upgrade this re-projection is the second half of a pin refresh. If the local pin was changed deliberately, keep it and record why.",
   },
+  "mcp.telemetry-opt-out-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "Chrome DevTools MCP launch lacks mandatory telemetry opt-outs",
+    action:
+      'Remove the named entry so aih manages chrome-devtools (aih always writes both opt-outs), or add CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1" and CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1" to its env table, then rerun the install. aih never rewrites a user-owned entry.',
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",
@@ -566,9 +573,9 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "org-policy.effective-blocked": {
     audience: "developer",
     failSeverity: "blocking",
-    title: "requested org policy cannot be made effective safely",
+    title: "requested org policy cannot take effect",
     action:
-      "Run `aih policy evaluate <root> --no-log --json` to inspect requested versus effective candidates. Correct the exact identity, evidence or externally verified approval, target, ownership, or projector finding shown there; unwaivable danger codes cannot be approved. Do not use `aih policy project --apply` until evaluation passes.",
+      "Run `aih policy evaluate <root> --no-log --json` to see requested versus effective candidates and the reason each one cannot take effect. Correct the exact identity, target, ownership, projector, or authority problem named there, then project. Findings and evidence problems are labels on the candidate and do not keep it from taking effect.",
   },
   "org-policy.observe-input-invalid": {
     audience: "developer",
@@ -943,47 +950,40 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Upgrade aih to a build that parses the evidence lock's declared schema version, then re-run. Do not install against older evidence to work around it, and do not hand-edit the lock's schemaVersion — the signature covers the bytes you would be changing.",
   },
-  "baseline.evidence-blocked": {
-    audience: "developer",
-    failSeverity: "blocking",
-    title: "signed baseline evidence records a blocking trust verdict",
-    action:
-      "Do not install this component. Fix the recorded trust-danger or required-coverage findings at the source and vet a new pin; org evidence cannot waive a blocked danger verdict.",
-  },
   "trust.hidden-unicode": {
     audience: "developer",
     failSeverity: "blocking",
     title: "hidden Unicode found in external skill content",
     action:
-      "Reject the external source until the hidden Unicode is removed or the source is replaced with a reviewed, clean commit.",
+      "Review the hidden Unicode at the reported path and line. If it is unwanted, ask upstream to remove it or choose a clean commit; the finding stays on the source as a label either way.",
   },
   "trust.visible-unicode": {
     audience: "developer",
     failSeverity: "degraded",
     title: "ordinary visible Unicode found in external content",
     action:
-      "Keep the text when it is legitimate language, typography, or emoji. Review it for readability; only hidden bidi, zero-width, control, or token-confusable characters are blocking.",
+      "Keep the text when it is legitimate language, typography, or emoji. Review it for readability; hidden bidi, zero-width, control, or token-confusable characters are reported separately as trust.hidden-unicode.",
   },
   "trust.external-egress": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external network request uses a credential",
     action:
-      "Review the exact destination, credential source, and side effect. Enterprise promotion requires an exact-finding acceptance tied to the reviewed source pin.",
+      "Review the exact destination, credential source, and side effect. To record your decision, acknowledge the exact finding at the reviewed source pin; the finding stays on the source as a label either way.",
   },
   "trust.permission-risk": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external component requests broad permissions",
     action:
-      "Review the exact permission, affected resource, and runtime boundary. Enterprise promotion requires an occurrence-bound acceptance or a narrower upstream permission.",
+      "Review the exact permission, affected resource, and runtime boundary. To record your decision, acknowledge the exact occurrence, or ask upstream for a narrower permission.",
   },
   "trust.fetch-blocked": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external trust source could not be fetched",
     action:
-      "Do not promote the external source. Re-run with a reachable repository and an exact reviewed commit SHA, then verify the quarantined scan passes before promotion.",
+      "The source could not be fetched, so there is nothing to scan yet. Re-run with a reachable repository and an exact reviewed commit SHA.",
   },
   "trust.fetch-metadata-missing": {
     audience: "developer",
@@ -1018,42 +1018,49 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "required trust detector unavailable",
     action:
-      "Install the required detector locally or remove it from the enterprise trust.requiredDetectors policy. Optional detector skips only reduce coverage and do not block lower postures.",
+      "The scan ran without this detector, so its coverage is incomplete. Install the detector locally for full coverage, or remove it from the enterprise trust.requiredDetectors policy. An optional detector skip only reduces coverage.",
   },
   "trust.detector-finding": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external trust detector finding",
     action:
-      "Review the exact scanner rule, source path, line, and value. Map known executable danger to a blocking trust code; otherwise enterprise promotion requires exact-pin acceptance.",
+      "Review the exact scanner rule, source path, line, and value. Map known executable danger to a specific trust code; to record your decision, acknowledge the exact finding at the source pin.",
   },
   "trust.legal-text-detector-finding": {
     audience: "developer",
     failSeverity: "degraded",
     title: "external detector finding in legal text",
     action:
-      "Review the complete LICENSE, COPYING, or NOTICE file. Documentation-only heuristic matches remain visible but do not block promotion.",
+      "Review the complete LICENSE, COPYING, or NOTICE file. Documentation-only heuristic matches remain visible as labels.",
   },
   "trust.sandbox-smoke-unavailable": {
     audience: "developer",
     failSeverity: "blocking",
     title: "sandbox smoke test unavailable",
     action:
-      "Install Docker and the pinned sandbox scanner image, or repeat the vetting on a host where the sandbox smoke test can run before promoting runtime-bearing skill sources.",
+      "The sandbox smoke test did not run, so runtime behavior is not covered. Install Docker and the pinned sandbox scanner image, or repeat the vetting on a host where the sandbox smoke test can run.",
   },
   "trust.sandbox-smoke-failed": {
     audience: "developer",
     failSeverity: "blocking",
     title: "sandbox smoke test failed",
     action:
-      "Do not promote the external source until the sandbox smoke test completes in a read-only, no-network container. Inspect the failure detail, fix the sandbox/tooling problem, and re-run the skill vet.",
+      "The sandbox smoke test did not complete in a read-only, no-network container, so runtime behavior is not covered. Inspect the failure detail, fix the sandbox/tooling problem, and re-run the skill vet.",
   },
   "trust.cisco-finding": {
     audience: "developer",
     failSeverity: "blocking",
     title: "Cisco AI Defense skill-scanner finding",
     action:
-      "Review the Cisco AI Defense finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
+      "Review the Cisco AI Defense finding and map the rule to a specific trust check if it is a known-dangerous pattern. If the flagged content is unwanted, ask upstream to remove it or choose another source.",
+  },
+  "trust.unreviewed-analyzer-rule": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "new analyzer rule, not yet reviewed",
+    action:
+      "Next: review the rule at the analyzer's pinned release, then map it to a trust code in Core's detector rule map or confirm its generic route, and remove it from src/trust/unreviewed-analyzer-rules.ts. Until then it is shown as a warning.",
   },
   "trust.skill-metadata-license": {
     audience: "developer",
@@ -1067,7 +1074,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "prompt-injection shape found in external skill content",
     action:
-      "Reject the external source until the hidden instruction/exfiltration text is removed or the source is replaced with a reviewed, clean commit.",
+      "Review the instruction or exfiltration text at the reported path and line. If it is unwanted, ask upstream to remove it or choose a clean commit; the finding stays on the source as a label either way.",
   },
   "trust.source-changed": {
     audience: "developer",
@@ -1081,28 +1088,28 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "auto-execution hook found in external skill source",
     action:
-      "Reject the external source until the auto-executing hook, install lifecycle script, permission bypass, or auto-run line is removed.",
+      "Review the auto-executing hook, install lifecycle script, permission bypass, or auto-run line, and decide whether it may run in your environment. The finding stays on the source as a label.",
   },
   "trust.dependency-confusion": {
     audience: "developer",
     failSeverity: "blocking",
     title: "external source declares an internal-scope dependency",
     action:
-      "Reject the external source until the dependency is removed or replaced with a reviewed, pinned package from an approved source.",
+      "Review the internal-scope dependency. If it is unwanted, ask upstream to remove it or replace it with a reviewed, pinned package from an approved source.",
   },
   "trust.typosquat": {
     audience: "developer",
     failSeverity: "blocking",
     title: "dependency name resembles a popular package",
     action:
-      "Reject the external source until the dependency name is corrected or the package is independently reviewed and pinned.",
+      "Check the dependency name against the package it resembles. If it is a typo, ask upstream to correct it; otherwise review and pin the package.",
   },
   "trust.malicious-code": {
     audience: "developer",
     failSeverity: "blocking",
     title: "malicious code shape found in external skill source",
     action:
-      "Reject the external source until the reverse shell, remote shell pipe, base64-to-shell payload, or equivalent malicious script shape is removed.",
+      "Review the reverse shell, remote shell pipe, base64-to-shell payload, or equivalent script shape at the reported path and line before running anything from this source. The finding stays on the source as a label.",
   },
   "trust.source-drift": {
     audience: "developer",
@@ -1116,7 +1123,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "external source declares an unpinned dependency",
     action:
-      "Reject the external source until direct dependencies are pinned to exact versions and a package lockfile is committed.",
+      "Direct dependencies are not pinned to exact versions or no package lockfile is committed, so installs may resolve different code. Ask upstream to pin them, or pin them in your copy.",
   },
   "trust.untrusted-publisher": {
     audience: "developer",
@@ -1137,7 +1144,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "external skill source declares no license",
     action:
-      "Do not install the external source until it declares a license (a LICENSE/COPYING file or a package.json license field), or replace it with a licensed alternative.",
+      "The source declares no license (no LICENSE/COPYING file and no package.json license field), so its terms are not determined. Ask upstream to add one, or choose a licensed alternative.",
   },
   "trust.unapproved-skill": {
     audience: "developer",
@@ -1219,9 +1226,9 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "marketplace.unapproved-verdict": {
     audience: "developer",
     failSeverity: "blocking",
-    title: "marketplace skill carries a non-distributable verdict",
+    title: "marketplace skill carries a value that is not a vet verdict",
     action:
-      "Only GREEN/YELLOW skills are distributable; a RED/UNKNOWN (or unrecognized) verdict in marketplace.json means the artifact was not built from the approval lock. Rebuild with `aih marketplace build --apply` from a repo whose approvals are current.",
+      "A verdict other than GREEN, YELLOW, RED or UNKNOWN in marketplace.json means the artifact was not built from the approval lock. Rebuild with `aih marketplace build --apply` from a repo whose approvals are current.",
   },
   "marketplace.signature": {
     audience: "developer",
@@ -1294,6 +1301,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "ECC installed content has drifted from its installed source",
     action:
       "Advisory: aih recorded which files each ECC install created, with a content hash per file. A file still matching its recorded hash but installed from an older ECC source is STALE; a file whose hash changed is yours and is never auto-replaced; a file with no record is not claimed at all. Kiro's installer copies only absent destinations, so a rerun cannot update stale files - replace them deliberately, or leave them.",
+  },
+  "framework-plugin.unavailable": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "a framework phase was refused because its framework plugin is missing from @aihq/core",
+    action:
+      "The framework plugin named in the detail ships inside @aihq/core but is missing from this install, so aih did not run that framework's phase. Reinstall @aihq/core with the command in the detail, or leave the framework out.",
+  },
+  "framework-plugin.incompatible": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "an installed framework plugin cannot be used by this @aihq/core",
+    action:
+      "The installed framework plugin failed its contract, version, install-location or Catalog identity check, so aih refused to run it. Reinstall the plugin version that matches this @aihq/core with the command in the detail; aih never falls back to an embedded copy.",
   },
   "binding.mcp-inventory": {
     audience: "developer",

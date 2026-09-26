@@ -100,11 +100,11 @@ specific historical shipped control declaration and validates all remaining
 source, asset and policy bindings. It does not accept arbitrary older or changed
 catalog content, rewrite pins, or expand an approval's scope.
 
-Reopen a saved policy by preparing a new Workbench with
-`aih policy generate --policy-input <saved-policy.json> --out <workbench.html> --apply`
-from an administrator directory. Preparation restores the recognized historical
-catalog before editing. Importing the same historical selection into an already
-open Workbench with a different catalog can still require source review.
+Review a saved policy's exact historical source and target bindings before changing
+it. Core no longer supplies a Workbench browser or `policy generate` authoring route.
+The retained policy reader accepts only recognized historical bindings and refuses
+changed catalog material; a new selection still requires source review and
+validation.
 
 To add a new host, author the expanded selection and obtain authority for its
 exact targets. Old approval or decision bytes cannot enable an additional host.

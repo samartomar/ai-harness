@@ -2,9 +2,13 @@ import type {
   BaselineVetBatchResultV1,
   BaselineVetRequestV1,
   BaselineVetTrustRootV1,
+  VerifiedBaselineVetAttestationV1,
 } from "@aihq/scan";
-import { createBaselineVetRequestV1, verifyBaselineVetAttestationV1 } from "@aihq/scan";
-import type { TrustDetectorName } from "../trust/detectors.js";
+import {
+  loadScanPackageExportsV1,
+  scanPackageExportsOrThrowV1,
+} from "../scan-package/load-scan-package.js";
+import type { ScannerBaselineVetAnnexV1, TrustDetectorName } from "../trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../trust/scan.js";
 import {
   requiredBaselineAnalyzersForComponent,
@@ -61,6 +65,20 @@ export interface VerifiedScannerBaselineBatchInput {
 
 export const SCANNER_BASELINE_COMPONENT_BATCH_LIMIT = 100;
 
+/**
+ * `@aihq/scan`'s request authoring and attestation verification, loaded once
+ * when this module is first imported. `createCoreBaselineVetRequests` is
+ * synchronous for its existing callers, so the load is awaited here rather than
+ * per call. Nothing on `@aihq/core`'s entry points imports this module
+ * statically: the Scan-consuming routes reach it by dynamic import, so the
+ * package loads only when one of them runs. A missing or incompatible Scan is
+ * not an import failure: each call below throws the typed refusal instead.
+ */
+const scanBaseline = await loadScanPackageExportsV1([
+  "createBaselineVetRequestV1",
+  "verifyBaselineVetAttestationV1",
+]);
+
 function requestAnalyzers(skillContent: boolean): readonly ScannerBaselineAnalyzer[] {
   return skillContent
     ? SCANNER_ANALYZER_ORDER
@@ -73,6 +91,7 @@ function createRequest(
   components: BaselineCatalog["components"],
   source: ReturnType<typeof hashSourceTree>,
 ): BaselineVetRequestV1 {
+  const { createBaselineVetRequestV1 } = scanPackageExportsOrThrowV1(scanBaseline);
   return createBaselineVetRequestV1({
     protocol: "BaselineVetRequestV1",
     profile: "aih-baseline-v1",
@@ -243,6 +262,35 @@ function scannerSarif(
 }
 
 /**
+ * The annexes this consumer issued after Scan verified their batches' signed
+ * attestations, each with the detector it was published for. Only these are
+ * checked under Scan's baseline rule (C2a §1.6 [Scan: S2j], decision D24); a
+ * caller cannot mint one.
+ */
+const ISSUED_BASELINE_VET_ANNEXES = new WeakMap<ScannerBaselineVetAnnexV1, TrustDetectorName>();
+
+/** The detector a verified Scanner-publication annex was issued for, or undefined for any other value. */
+export function scannerBaselineVetAnnexDetectorV1(annex: object): TrustDetectorName | undefined {
+  return ISSUED_BASELINE_VET_ANNEXES.get(annex as ScannerBaselineVetAnnexV1);
+}
+
+function issueBaselineVetAnnexes(
+  sarif: Readonly<Partial<Record<TrustDetectorName, string>>>,
+): Readonly<Partial<Record<TrustDetectorName, ScannerBaselineVetAnnexV1>>> {
+  const issued: Partial<Record<TrustDetectorName, ScannerBaselineVetAnnexV1>> = {};
+  for (const [name, bytes] of Object.entries(sarif)) {
+    const detector = name as TrustDetectorName;
+    const annex: ScannerBaselineVetAnnexV1 = Object.freeze({
+      kind: "scanner-baseline-vet-annex-v1",
+      sarif: bytes,
+    });
+    ISSUED_BASELINE_VET_ANNEXES.set(annex, detector);
+    issued[detector] = annex;
+  }
+  return Object.freeze(issued);
+}
+
+/**
  * Verify Scanner custody/signature/replay facts, then let Core interpret the
  * already-produced annexes into its repository-owned vendor evidence.
  * No analyzer command, Docker process, uv process, or network action is run.
@@ -273,8 +321,9 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
   input: VerifiedScannerBaselineBatchInput,
 ): Promise<{
   evidence: BaselineSourceEvidence;
-  claims: readonly ReturnType<typeof verifyBaselineVetAttestationV1>["facts"]["claims"][];
+  claims: readonly VerifiedBaselineVetAttestationV1["facts"]["claims"][];
 }> {
+  const { verifyBaselineVetAttestationV1 } = scanPackageExportsOrThrowV1(scanBaseline);
   const expectedRequests = createCoreBaselineVetRequests(input.sourceRoot, input.catalog);
   if (input.batches.length !== expectedRequests.length) {
     throw new Error(
@@ -283,7 +332,7 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
   }
   const versions: Record<string, string> = {};
   const precomputedDetectorSarif: Partial<Record<TrustDetectorName, string>> = {};
-  const claims: ReturnType<typeof verifyBaselineVetAttestationV1>["facts"]["claims"][] = [];
+  const claims: VerifiedBaselineVetAttestationV1["facts"]["claims"][] = [];
   for (const [index, batch] of input.batches.entries()) {
     assertExactRequest(expectedRequests[index], input.catalog, batch.request, index);
     const verified = verifyBaselineVetAttestationV1({
@@ -315,6 +364,7 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
   const detectors = EXTERNAL_SCANNER_ANALYZERS.filter(
     (name) => precomputedDetectorSarif[name] !== undefined,
   );
+  const annexes = issueBaselineVetAnnexes(precomputedDetectorSarif);
   const forbiddenRunner = async (): Promise<never> => {
     throw new Error("Core Scanner evidence consumer must not execute analyzer commands");
   };
@@ -326,7 +376,8 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
         platform: "linux",
         run: forbiddenRunner,
         detectors,
-        precomputedDetectorSarif,
+        // Every batch verified: the annexes carry the baseline rule (D24).
+        precomputedDetectorSarif: annexes,
         sandboxSmokeShape: {
           skillDirs: [],
           installScripts: false,

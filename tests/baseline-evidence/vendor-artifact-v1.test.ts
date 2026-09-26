@@ -41,7 +41,7 @@ function lockBytes(overrides: Record<string, unknown> = {}): Buffer {
   return Buffer.from(
     `${JSON.stringify(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         sources: [
           {
             id: "ecc",
@@ -53,9 +53,10 @@ function lockBytes(overrides: Record<string, unknown> = {}): Buffer {
                 id: "skill:review",
                 paths: ["skills/review"],
                 treeSha256: "a".repeat(64),
-                verdict: "pass",
+                verdict: "no-findings",
                 analyzers: [{ name: "aih-native", version: "1" }],
                 findings: [],
+                evidenceProblems: [],
               },
             ],
           },
@@ -244,9 +245,10 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
       id: "skill:review",
       paths: ["skills/review"],
       treeSha256: "a".repeat(64),
-      verdict: "pass",
+      verdict: "no-findings",
       analyzers: [{ name: "aih-native", version: "1" }],
       findings: [],
+      evidenceProblems: [],
     };
     const sources = Array.from({ length: 1600 }, (_, index) => ({
       id: `source-${index}`,

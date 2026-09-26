@@ -1,0 +1,110 @@
+import { type Action, type Cli, doc, lines } from "@aihq/core/framework-host";
+
+/**
+ * Per-CLI Superpowers guidance — the agent-behavior layer (brainstorm -> plan ->
+ * TDD -> subagent review skills). Commands are verified against Superpowers v6.
+ * Every target is guidance only: marketplace and TUI installers cannot prove
+ * they consumed the evidence-verified commit, so aih runs none of them.
+ */
+
+function evidenceNote(pin?: string): string[] {
+  if (pin === undefined) return [];
+  return [
+    "",
+    `aih verified obra/Superpowers@${pin}, but the marketplace/TUI selection below`,
+    "cannot prove it consumes those exact bytes and is therefore not evidence-covered.",
+    "No install is executed by aih; require an exact local/commit adapter before automation.",
+  ];
+}
+
+/** Claude Code: official-marketplace plugin (simplest) + the marketplace alt. */
+function claudeDoc(pin?: string): Action {
+  return doc(
+    "Install Superpowers for Claude Code (plugin)",
+    lines(
+      "Run inside Claude Code (slash commands, not shell):",
+      "",
+      "  /plugin install superpowers@claude-plugins-official",
+      "",
+      "Alternative via the Superpowers marketplace:",
+      "  /plugin marketplace add obra/superpowers-marketplace",
+      "  /plugin install superpowers@superpowers-marketplace",
+      ...evidenceNote(pin),
+    ),
+  );
+}
+
+/** Codex / Kimi: plugin picker TUI (`/plugins`). */
+function pluginsTuiDoc(label: string, pin?: string): Action {
+  return doc(
+    `Install Superpowers for ${label}`,
+    lines(
+      `Run \`/plugins\` inside ${label}, search "superpowers", then choose`,
+      "Install Plugin. (The plugin picker is a TUI, so this can't be shell-run.)",
+      ...evidenceNote(pin),
+    ),
+  );
+}
+
+function evidenceBoundManualDoc(cli: "Antigravity" | "Copilot CLI", pin?: string): Action {
+  const exact = pin ?? "the aih baseline pin";
+  return doc(
+    `Superpowers for ${cli} — exact-source adapter required`,
+    lines(
+      `aih's reviewed source is obra/Superpowers@${exact}.`,
+      "The available plugin command fetches mutable repository/marketplace content and cannot",
+      "bind the installed bytes to that commit, so aih deliberately does not run it.",
+      "That marketplace selection is not evidence-covered. Use an organization-approved local",
+      "checkout adapter pinned to the commit above, or keep this target uninstalled.",
+    ),
+  );
+}
+
+/** CLIs without a first-class Superpowers path yet: point at the INSTALL guide. */
+function genericDoc(cli: Cli, pin?: string): Action {
+  return doc(
+    `Install Superpowers for ${cli} (see INSTALL guide)`,
+    lines(
+      `${cli} is not a first-class Superpowers target yet. Follow the current`,
+      "per-tool steps in the Superpowers install guide:",
+      "",
+      "  https://github.com/obra/superpowers  (see INSTALL.md)",
+      ...evidenceNote(pin),
+    ),
+  );
+}
+
+/** The Superpowers guidance action(s) for one CLI. */
+export function superpowersActionsForCli(cli: Cli, pin?: string): Action[] {
+  switch (cli) {
+    case "claude":
+      return [claudeDoc(pin)];
+    case "codex":
+      return [pluginsTuiDoc("Codex CLI", pin)];
+    case "kimi":
+      return [pluginsTuiDoc("Kimi CLI", pin)];
+    case "antigravity":
+      return [evidenceBoundManualDoc("Antigravity", pin)];
+    case "copilot":
+      return [evidenceBoundManualDoc("Copilot CLI", pin)];
+    default:
+      // cursor, gemini, windsurf, opencode, zed, kiro
+      return [genericDoc(cli, pin)];
+  }
+}
+
+/** What Superpowers is + how it complements ECC, emitted once. */
+export function superpowersOverviewDoc(): Action {
+  return doc(
+    "Superpowers overview (obra/Superpowers)",
+    lines(
+      "Superpowers installs a disciplined SDLC as agent skills: brainstorm ->",
+      "plan -> test-driven implementation -> subagent review, plus a library of",
+      "reusable skills. It pairs with ECC (`aih ecc`): ECC supplies stack-aware",
+      "rules/agents/memory; Superpowers supplies the behavioral loop that uses them.",
+      "",
+      "All marketplace/TUI targets are guidance-only because those installers cannot prove",
+      "they consumed the evidence-verified commit. aih runs no mutable remote plugin install.",
+    ),
+  );
+}

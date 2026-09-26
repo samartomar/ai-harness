@@ -3,28 +3,36 @@ import { lstatSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { aihScannerCompilationFromCatalogV1 } from "../baseline-evidence/aih-scan-material.js";
 import {
   authorPackagedAihScannerEvidenceRecordV1,
   prepareAihScannerPublicationsV1,
 } from "../baseline-evidence/aih-scan-preparation.js";
+import type { BaselineCatalog } from "../baseline-evidence/catalog.js";
+import { prepareRegisteredScannerCatalogV1 } from "../baseline-evidence/scanner-catalog-consumer.js";
 import {
   authorPackagedScannerCollectionEvidenceRecordV1,
   prepareScannerCollectionPublicationsV1,
   SCANNER_COLLECTION_TOTAL_INPUT_MAX_BYTES_V1,
 } from "../baseline-evidence/scanner-collection-preparation.js";
 import { createCoreBaselineVetRequests } from "../baseline-evidence/scanner-consumer.js";
-import { prepareRegisteredScannerCatalogV1 } from "../baseline-evidence/scanner-provider-catalogs.js";
+import { prepareDefinitionScannerCoverageV1 } from "../baseline-evidence/scanner-definition.js";
 import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { policyAuthoringCatalog } from "../org-policy/catalog.js";
-import { assembleCompilerOutputsV1 } from "../org-policy/workbench/assembly.js";
-import { compileBuiltInCatalogV1 } from "../org-policy/workbench/compilers/built-in.js";
 import { prepareAihFirstPartyCompilerQualificationsV1 } from "../org-policy/workbench/core/catalog-qualification-v1.js";
-import { builtInAssemblyInputV1 } from "../org-policy/workbench/providers/aih.js";
+import { packagedPreparedWorkbenchCatalogV1 } from "../org-policy/workbench/prepared-catalog.js";
 import { readRegularFileWithStats } from "./fsxn.js";
 
 const usage =
-  "Usage: prepare-workbench-collection-evidence --catalog <aih|mattpocock|ponytail|ecc|superpowers> --source <pinned-checkout> --publication-root <batch-directories> --output <new-json-file> [--qualification-output <new-json-file>]";
+  "Usage: prepare-workbench-collection-evidence --catalog <aih|mattpocock|ponytail|ecc|superpowers> --source <pinned-checkout> --publication-root <batch-directories> --output <new-json-file> [--qualification-output <new-json-file>] [--definition <baseline-definition> --source-bundle <catalog-compiled-single-source-bundle> [--vendor-lock <assembled-lock>] [--definition-overlap <disjoint|compiler-catalog>]]";
+const optionalFlags = [
+  "--qualification-output",
+  "--definition",
+  "--source-bundle",
+  "--vendor-lock",
+  "--definition-overlap",
+];
 const releaseFiles = ["SHA256SUMS", "discovery.json", "inspection.json", "publication.json"];
 const MAX_QUALIFICATION_DRAFT_BYTES = 1024 * 1024;
 
@@ -98,6 +106,13 @@ function sameOutputPath(left: string, right: string): boolean {
   }
 }
 
+function gitHead(sourceRoot: string): string {
+  return execFileSync("git", ["-C", sourceRoot, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    env: hermeticGitEnv(),
+  }).trim();
+}
+
 function compareAssetIds(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -154,6 +169,7 @@ export function readWorkbenchCollectionPublicationMaterialV1(
   sourceRoot: string,
   catalogId: WorkbenchCollectionCatalogIdV1,
   publicationRoot: string,
+  catalog?: BaselineCatalog,
 ): WorkbenchCollectionPublicationMaterialV1 {
   const source = resolve(sourceRoot);
   const publications = resolve(publicationRoot);
@@ -171,7 +187,7 @@ export function readWorkbenchCollectionPublicationMaterialV1(
       ? undefined
       : createCoreBaselineVetRequests(
           source,
-          prepareRegisteredScannerCatalogV1(source, catalogId).catalog,
+          catalog ?? prepareRegisteredScannerCatalogV1(source, catalogId).catalog,
         ).map((_, index) => `batch-${String(index + 1).padStart(3, "0")}`);
   const directories = readdirSync(publications, { withFileTypes: true });
   const layout =
@@ -216,14 +232,35 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
   args: readonly string[],
 ): Promise<string> {
   const flags = ["--catalog", "--source", "--publication-root", "--output"];
-  const hasQualificationOutput = args.length === 10 && args[8] === "--qualification-output";
   if (
-    (args.length !== 8 && !hasQualificationOutput) ||
+    args.length < 8 ||
+    args.length % 2 !== 0 ||
     flags.some(
       (flag, index) =>
         args[index * 2] !== flag || !args[index * 2 + 1] || args[index * 2 + 1]?.startsWith("--"),
-    ) ||
-    (hasQualificationOutput && (!args[9] || args[9]?.startsWith("--")))
+    )
+  )
+    throw new TypeError(usage);
+  const optional = new Map<string, string>();
+  for (let index = 8; index < args.length; index += 2) {
+    const flag = args[index] as string;
+    const value = args[index + 1];
+    if (!optionalFlags.includes(flag) || optional.has(flag) || !value || value.startsWith("--"))
+      throw new TypeError(usage);
+    optional.set(flag, value);
+  }
+  const hasQualificationOutput = optional.has("--qualification-output");
+  const definitionPath = optional.get("--definition");
+  const sourceBundlePath = optional.get("--source-bundle");
+  const vendorLockPath = optional.get("--vendor-lock");
+  // Absent, the definition coverage keeps its default (`disjoint`); `compiler-catalog`
+  // must be named, and it still refuses overlap inside one component.
+  const overlap = optional.get("--definition-overlap");
+  if (
+    (definitionPath === undefined) !== (sourceBundlePath === undefined) ||
+    (vendorLockPath !== undefined && definitionPath === undefined) ||
+    (overlap !== undefined &&
+      (definitionPath === undefined || (overlap !== "disjoint" && overlap !== "compiler-catalog")))
   )
     throw new TypeError(usage);
   const catalogId = args[1];
@@ -236,17 +273,36 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
   )
     throw new TypeError(usage);
   const aih = catalogId === "aih";
-  if (hasQualificationOutput && !aih) throw new TypeError(usage);
+  // The first-party draft exists only for AIH; a definition exists only for an upstream.
+  if ((hasQualificationOutput && !aih) || (definitionPath !== undefined && aih))
+    throw new TypeError(usage);
   const output = resolve(args[7] as string);
-  const qualificationOutput = hasQualificationOutput ? resolve(args[9] as string) : undefined;
+  const qualificationOutput = hasQualificationOutput
+    ? resolve(optional.get("--qualification-output") as string)
+    : undefined;
   preflightNewOutput(output);
   if (qualificationOutput !== undefined) preflightNewOutput(qualificationOutput);
   if (qualificationOutput !== undefined && sameOutputPath(qualificationOutput, output))
     throw new TypeError(usage);
+  // Explicit candidate inputs prepare coverage against their bundle and lock, including
+  // carried pins with an identity-equal definition, before any publication byte is read.
+  const coverage =
+    aih || definitionPath === undefined || sourceBundlePath === undefined
+      ? undefined
+      : prepareDefinitionScannerCoverageV1({
+          sourceRoot: args[3] as string,
+          catalogId,
+          definitionPath: resolve(definitionPath),
+          head: gitHead(args[3] as string),
+          sourceBundlePath: resolve(sourceBundlePath),
+          ...(vendorLockPath === undefined ? {} : { vendorLockPath: resolve(vendorLockPath) }),
+          ...(overlap === undefined ? {} : { overlap }),
+        });
   const material = readWorkbenchCollectionPublicationMaterialV1(
     args[3] as string,
     catalogId,
     args[5] as string,
+    coverage?.catalog,
   );
   const { sourceRoot, batches } = material;
   const now = new Date().toISOString();
@@ -254,15 +310,10 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
   const sealed = aih
     ? await (async () => {
         const catalog = policyAuthoringCatalog();
-        const compiled = compileBuiltInCatalogV1(catalog);
+        const compiled = aihScannerCompilationFromCatalogV1();
         const prepared = await prepareAihScannerPublicationsV1({
           packageRoot: sourceRoot,
-          coreRevision: {
-            pinnedSha: execFileSync("git", ["-C", sourceRoot, "rev-parse", "HEAD"], {
-              encoding: "utf8",
-              env: hermeticGitEnv(),
-            }).trim(),
-          },
+          coreRevision: { pinnedSha: gitHead(sourceRoot) },
           catalog,
           compiled,
           batches,
@@ -270,10 +321,7 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
         });
         if (qualificationOutput !== undefined) {
           const firstParty = prepareAihFirstPartyCompilerQualificationsV1(
-            assembleCompilerOutputsV1(
-              [builtInAssemblyInputV1(compiled)],
-              compiled.coreCapabilities,
-            ),
+            packagedPreparedWorkbenchCatalogV1().bundle,
             prepared,
           );
           if (firstParty === undefined)
@@ -285,7 +333,13 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
         return authorPackagedAihScannerEvidenceRecordV1(prepared);
       })()
     : authorPackagedScannerCollectionEvidenceRecordV1(
-        await prepareScannerCollectionPublicationsV1({ sourceRoot, catalogId, batches, now }),
+        await prepareScannerCollectionPublicationsV1({
+          sourceRoot,
+          catalogId,
+          batches,
+          now,
+          ...(coverage === undefined ? {} : { coverage }),
+        }),
       );
   if (!sealed) throw new TypeError("Collection preparation did not establish operational custody.");
   writeFileSync(output, canonicalStrictJsonBytesV1(sealed), { flag: "wx", mode: 0o600 });

@@ -1,16 +1,38 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { BaselineCatalogSchema } from "../baseline-evidence/catalog.js";
+import { admittedSourceFromCandidateBundleV1 } from "../baseline-evidence/scanner-catalog-consumer.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../baseline-evidence/scanner-definition.js";
+import { scannerBaselinePublicationPublisherForLocatorV1 } from "../baseline-evidence/scanner-publication-policy.js";
+import {
+  activateCandidateCatalogV1,
+  candidateCatalogUsePathV1,
+  openCandidateCatalogV1,
+  writeCandidateCatalogUseV1,
+} from "../catalog-package/candidate-catalog.js";
 import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
+  parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
 import type { PreparedEccRuntimeDescriptorV1 } from "../ecc/runtime-descriptor.js";
-import type { AuthoringCatalogBundleV1 } from "../org-policy/workbench/contracts.js";
+import {
+  type AuthoringCatalogBundleV1,
+  AuthoringCatalogBundleV1Schema,
+} from "../org-policy/workbench/contracts.js";
 import { PackagedSourceDataRecordV1Schema } from "../org-policy/workbench/core/packaged-source-data-record.js";
 import { readSourceDataProofBlobV1 } from "../org-policy/workbench/core/source-data-proof-blobs.js";
 import {
+  prepareSourceDataScannerRuntimeFactsV1,
   SourceDataScannerProofV1Schema,
   sealPreparedEccRuntimeDescriptorV1,
 } from "../org-policy/workbench/core/source-data-scanner.js";
+import { readRegularFileWithStats } from "./fsxn.js";
+import { hermeticGitEnv } from "./git-env.js";
 import { sourceCompilerTemplateV1 } from "./workbench-source-data-material.js";
 
 /** Encode already verified preparation for the mandatory connected release replay. */
@@ -84,3 +106,243 @@ export function preparePackagedWorkbenchSourceDataV1(input: {
     sha256: canonicalStrictJsonSha256V1(record),
   };
 }
+
+/** The four Scanner-published sources whose Catalog record carries packaged source data. */
+const PROVIDERS = {
+  "anthropics-skills": "anthropics/skills",
+  ponytail: "DietrichGebert/ponytail",
+  ecc: "affaan-m/ECC",
+  superpowers: "obra/Superpowers",
+} as const;
+type ProviderV1 = keyof typeof PROVIDERS;
+
+const FLAGS = [
+  "--provider",
+  "--source-root",
+  "--publication-root",
+  "--source-bundle",
+  "--compiler-input",
+  "--published-catalog",
+  "--output",
+] as const;
+const USAGE =
+  "Usage: prepare-packaged-workbench-source-data --provider <anthropics-skills|ponytail|ecc|superpowers> --source-root <pinned-checkout> --publication-root <batch-NNN/{discovery.json,publication.json,attestation.jsonl}> --source-bundle <catalog-compiled-single-source-bundle> --compiler-input <compiler-input> --published-catalog <requested-baseline-catalog> --output <new-json-file> [--definition-overlap <disjoint|compiler-catalog>] [--update-kind evidence-only] [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
+const BATCH_FILES = ["attestation.jsonl", "discovery.json", "publication.json"];
+const LIMITS = { discovery: 8_192, publication: 12_000_000, attestation: 512_000 };
+
+function fail(message: string): never {
+  throw new TypeError(`Packaged source data: ${message}`);
+}
+
+const OPTIONAL_FLAGS = [
+  "--definition-overlap",
+  "--update-kind",
+  "--candidate-catalog",
+  "--candidate-catalog-sha256",
+];
+
+function parseArgs(args: readonly string[]) {
+  const optional = new Map<string, string>();
+  for (let index = FLAGS.length * 2; index < args.length; index += 2) {
+    const flag = args[index] as string;
+    const value = args[index + 1];
+    if (!OPTIONAL_FLAGS.includes(flag) || optional.has(flag) || !value || value.startsWith("--"))
+      throw new TypeError(USAGE);
+    optional.set(flag, value);
+  }
+  const candidate = optional.get("--candidate-catalog");
+  const candidateSha256 = optional.get("--candidate-catalog-sha256");
+  const overlap = optional.get("--definition-overlap");
+  if (
+    args.length < FLAGS.length * 2 ||
+    FLAGS.some(
+      (flag, index) =>
+        args[index * 2] !== flag || !args[index * 2 + 1] || args[index * 2 + 1]?.startsWith("--"),
+    ) ||
+    (optional.has("--update-kind") && optional.get("--update-kind") !== "evidence-only") ||
+    (overlap !== undefined && overlap !== "disjoint" && overlap !== "compiler-catalog") ||
+    (candidate === undefined) !== (candidateSha256 === undefined) ||
+    (candidateSha256 !== undefined && !/^[0-9a-f]{64}$/.test(candidateSha256)) ||
+    !Object.hasOwn(PROVIDERS, args[1] as string)
+  )
+    throw new TypeError(USAGE);
+  const value = (flag: (typeof FLAGS)[number]) => args[FLAGS.indexOf(flag) * 2 + 1] as string;
+  const definitionOverlap: ScannerDefinitionOverlapModeV1 =
+    overlap === "compiler-catalog" ? "compiler-catalog" : "disjoint";
+  return {
+    provider: value("--provider") as ProviderV1,
+    sourceRoot: resolve(value("--source-root")),
+    publicationRoot: resolve(value("--publication-root")),
+    sourceBundle: resolve(value("--source-bundle")),
+    compilerInput: resolve(value("--compiler-input")),
+    publishedCatalog: resolve(value("--published-catalog")),
+    output: resolve(value("--output")),
+    updateKind: optional.has("--update-kind") ? ("evidence-only" as const) : undefined,
+    overlap: definitionOverlap,
+    candidate:
+      candidate === undefined
+        ? undefined
+        : { path: resolve(candidate), sha256: candidateSha256 as string },
+  };
+}
+
+function readBounded(path: string, maxBytes: number, label: string): Buffer {
+  const opened = readRegularFileWithStats(path, { maxBytes });
+  if (!opened || opened.contents.length === 0 || opened.identity.nlink !== 1n)
+    fail(`${label} must be a bounded regular file`);
+  return opened.contents;
+}
+
+function readJson(path: string, maxBytes: number, label: string): unknown {
+  return parseStrictJsonObjectV1(readBounded(path, maxBytes, label).toString("utf8"), label);
+}
+
+/** batch-001 .. batch-NNN, each exactly the downloaded publication, discovery and attestation. */
+function readBatches(root: string) {
+  const entries = readdirSync(root, { withFileTypes: true });
+  const names = entries.map((entry) => entry.name).sort();
+  if (
+    names.length === 0 ||
+    names.length > 16 ||
+    entries.some((entry) => !entry.isDirectory() || entry.isSymbolicLink()) ||
+    names.some((name, index) => name !== `batch-${String(index + 1).padStart(3, "0")}`)
+  )
+    fail("the publication root must hold exactly batch-001 .. batch-NNN (at most 16)");
+  return names.map((name) => {
+    const directory = join(root, name);
+    const files = readdirSync(directory, { withFileTypes: true });
+    if (
+      files.length !== BATCH_FILES.length ||
+      files.some(
+        (file) => !file.isFile() || file.isSymbolicLink() || !BATCH_FILES.includes(file.name),
+      )
+    )
+      fail(`${name} must hold exactly discovery.json, publication.json and attestation.jsonl`);
+    const discovery = readBounded(join(directory, "discovery.json"), LIMITS.discovery, name);
+    const locator = (
+      parseStrictJsonObjectV1(discovery.toString("utf8"), `${name} discovery`) as {
+        locator?: unknown;
+      }
+    ).locator;
+    const publisher = scannerBaselinePublicationPublisherForLocatorV1(locator);
+    if (publisher === undefined) fail(`${name} is not an allowlisted Scanner publication`);
+    return {
+      publisherCommit: publisher.commit,
+      discovery,
+      publication: readBounded(join(directory, "publication.json"), LIMITS.publication, name),
+      attestation: readBounded(join(directory, "attestation.jsonl"), LIMITS.attestation, name),
+    };
+  });
+}
+
+function blob(proofRoot: string, bytes: Buffer) {
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const path = join(proofRoot, `${sha256}.blob`);
+  if (!existsSync(path)) writeFileSync(path, bytes, { flag: "wx", mode: 0o600 });
+  return { sha256, bytes: bytes.length };
+}
+
+/**
+ * Internal preparation only. Rebuilds the source-data Scanner proof from downloaded
+ * publications, replays it through Core's own verifier (gh attestation verify, source-byte
+ * binding, installed Catalog authority) and encodes one packaged record. It never scans,
+ * signs, or publishes, and never writes over an existing file. With a named candidate
+ * Catalog, the candidate replaces the installed Catalog for the whole run and
+ * `<output>.candidate-catalog.json` names its digest and every file read from it.
+ */
+export async function preparePackagedWorkbenchSourceDataCommandV1(
+  args: readonly string[],
+): Promise<string> {
+  const options = parseArgs(args);
+  if (existsSync(options.output))
+    throw new TypeError("EEXIST: packaged source data output must not already exist");
+  if (options.candidate !== undefined && existsSync(candidateCatalogUsePathV1(options.output)))
+    throw new TypeError("EEXIST: the candidate Catalog use record must not already exist");
+  const candidate =
+    options.candidate === undefined
+      ? undefined
+      : openCandidateCatalogV1(options.candidate.path, options.candidate.sha256);
+  if (candidate !== undefined) activateCandidateCatalogV1(candidate);
+  const sourceId = `source:${options.provider}`;
+  const repository = PROVIDERS[options.provider];
+  const bundleValue = readJson(options.sourceBundle, 64 * 1024 * 1024, "source bundle");
+  const admitted = admittedSourceFromCandidateBundleV1(bundleValue, sourceId);
+  const sourceBundle = AuthoringCatalogBundleV1Schema.parse(bundleValue);
+  const compilerInput = readJson(options.compilerInput, 64 * 1024 * 1024, "compiler input");
+  const publishedCatalog = BaselineCatalogSchema.parse(
+    readJson(options.publishedCatalog, 16 * 1024 * 1024, "published catalog"),
+  );
+  const [owner, repo] = repository.split("/");
+  const pin = admitted.source.revision.id;
+  if (
+    publishedCatalog.owner !== owner ||
+    publishedCatalog.repo !== repo ||
+    publishedCatalog.pinnedSha !== pin
+  )
+    fail(`the published catalog must be ${repository}@${pin}`);
+  const head = execFileSync("git", ["-C", options.sourceRoot, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    env: hermeticGitEnv(),
+  }).trim();
+  if (head !== pin)
+    fail(`${options.provider} checkout is ${head}, the source bundle admits ${pin}`);
+  const batches = readBatches(options.publicationRoot);
+  const publisherCommit = batches[0]?.publisherCommit as string;
+  if (batches.some((batch) => batch.publisherCommit !== publisherCommit))
+    fail("every batch must come from one publisher commit");
+
+  const proofRoot = mkdtempSync(join(tmpdir(), "aih-packaged-proof-"));
+  try {
+    const now = new Date().toISOString();
+    const proof = {
+      version: "source-data-scanner-proof/v1",
+      compilerInput: {
+        version: "source-compiler-input-blob/v1",
+        ...blob(proofRoot, canonicalStrictJsonBytesV1(compilerInput)),
+      },
+      publishedCatalog,
+      preparedAt: now,
+      publisherCommit,
+      batches: batches.map((batch) => ({
+        version: "scanner-proof-blobs/v1",
+        discovery: blob(proofRoot, batch.discovery),
+        publication: blob(proofRoot, batch.publication),
+        attestation: blob(proofRoot, batch.attestation),
+      })),
+    };
+    const facts = await prepareSourceDataScannerRuntimeFactsV1(
+      sourceBundle,
+      proof,
+      options.sourceRoot,
+      now,
+      undefined,
+      now,
+      proofRoot,
+      options.overlap,
+    );
+    if (options.provider === "ecc" && facts.descriptor === undefined)
+      fail("ecc verification produced no runtime descriptor");
+    if (options.provider !== "ecc" && facts.descriptor !== undefined)
+      fail("only ecc carries a runtime descriptor");
+    const record = preparePackagedWorkbenchSourceDataV1({
+      sourceBundle,
+      proof,
+      compilerInput,
+      proofRoot,
+      source: { repository, commit: head },
+      ...(options.updateKind === undefined ? {} : { updateKind: options.updateKind }),
+      ...(facts.descriptor === undefined ? {} : { runtimeDescriptor: facts.descriptor }),
+    });
+    writeFileSync(options.output, record.bytes, { flag: "wx", mode: 0o600 });
+    const used =
+      candidate === undefined
+        ? ""
+        : ` using candidate Catalog ${candidate.version} sha256:${candidate.sha256} (${candidate.digestOf}), recorded in ${writeCandidateCatalogUseV1("prepare-packaged-workbench-source-data", options.output)}`;
+    return `Prepared packaged source data ${options.provider}@${head} sha256:${record.sha256}${used}. No scan, signing, publication, or qualification was performed.`;
+  } finally {
+    rmSync(proofRoot, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
+  console.log(await preparePackagedWorkbenchSourceDataCommandV1(process.argv.slice(2)));

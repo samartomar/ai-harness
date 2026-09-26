@@ -1,12 +1,14 @@
+import { minimumCoreVersionForDeveloperToolSelectionV1 } from "../developer-tool-policy.js";
 import {
   inspectSavedWorkbenchSourcesV1,
   selectWorkbenchAuthoringSourcesV1,
 } from "./authoring-sources.js";
-import type { AuthoringCatalogBundleV1, WorkbenchStateV1 } from "./contracts.js";
 import {
+  type AuthoringCatalogBundleV1,
+  HEADROOM_MINIMUM_CORE_VERSION,
   WORKBENCH_MAX_POLICY_BYTES,
-  WORKBENCH_MINIMUM_CORE_VERSION,
   type WorkbenchSourceInputsV1,
+  type WorkbenchStateV1,
   WorkbenchStateV1Schema,
   workbenchAuthoringSourcesBudgetIssueV1,
   workbenchPolicyFitsByteLimitV1,
@@ -326,7 +328,12 @@ export function projectWorkbenchPolicy(
   if (nextPackages) policy.capabilityPackages = nextPackages;
   else delete policy.capabilityPackages;
   policy.schemaVersion = 3;
-  policy.minimumCoreVersion = WORKBENCH_MINIMUM_CORE_VERSION;
+  // Framework hook controls are a Core 0.7.0 grammar; a policy carrying them
+  // keeps that floor whatever its developer-tool selection needs.
+  policy.minimumCoreVersion =
+    (policy.governance as Record<string, unknown> | undefined)?.frameworkHookControls !== undefined
+      ? HEADROOM_MINIMUM_CORE_VERSION
+      : minimumCoreVersionForDeveloperToolSelectionV1(policy.developerTools);
   policy.authoringSelections = { selectionVersion: "workbench-selection/v1", ...state };
   if (sourceProjection.sources.length) policy.authoringSources = sourceProjection.sources;
   else delete policy.authoringSources;

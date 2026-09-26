@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem@2025.1.14",
+        "."
+      ]
+    }
+  }
+}

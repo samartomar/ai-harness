@@ -5,6 +5,8 @@ import {
   type McpProjectionDecisionBindings,
   McpProjectionDecisionBindingsSchema,
 } from "../config/marker.js";
+import { frameworkHookControlPlansV1 } from "../framework-plugin/hook-control-plans.js";
+import { readUserFrameworkHookControlsV1 } from "../framework-plugin/hook-controls.js";
 import { resolveTargets, type TargetResolution } from "../internals/cli-detect.js";
 import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
 import {
@@ -51,7 +53,6 @@ import {
   nativeMcpProjectionOnDisk,
   nativeMcpProjectionState,
 } from "../mcp/native-managed-projection.js";
-import { mcpApprovalSubject } from "../mcp/policy.js";
 import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
 import { type McpServer, mcpServers, type StdioServer } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
@@ -65,17 +66,25 @@ import {
 } from "./authority.js";
 import { projectCommandPermissions } from "./command-permissions.js";
 import { composeOrgPolicy } from "./compose.js";
-import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js";
 import {
   candidateIdentityDigest,
+  candidateNotEffectiveCodes,
   type EffectiveOrgPolicy,
   lifecycleStateBlocksProjection,
   resolveEffectiveOrgPolicy,
   stableJson,
 } from "./effective.js";
+import {
+  type FrameworkHookEnvironmentPlans,
+  planFrameworkHookControlsProjection,
+} from "./framework-hook-controls-projection.js";
 import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
 import { expectedHooksFromReceipt, readHookRegistrarReceipt } from "./hook-registrar-receipt.js";
-import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
+import {
+  type RuntimeOrgPolicyResolution,
+  resolveRuntimeOrgPolicy,
+  runtimeMcpIdentities,
+} from "./runtime.js";
 import {
   governanceOwnsAihSurfaces,
   type OrgPolicy,
@@ -114,28 +123,16 @@ function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record
 }
 
 /**
- * Blocking codes whose remediation actually reads the organization authority source —
- * evidence and approval verification. Everything else (target coverage, projector
- * availability, posture) resolves without it.
+ * Not-effective codes whose remediation actually reads the organization authority
+ * source — evidence identity and decision verification. Everything else (target
+ * coverage, projector availability, posture) resolves without it. Findings, evidence
+ * problems and approval matching are labels, never a reason, so they are not listed.
  */
 const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
-  "evidence-missing",
-  "evidence-failed",
   "evidence-identity-drift",
   "authority-receipt-unverified",
   "authority-receipt-mismatch",
   "authority-target-coverage-mismatch",
-  "approval-missing",
-  "approval-ambiguous",
-  "approval-expired",
-  "approval-not-yet-valid",
-  "approval-revoked",
-  "approval-signer-untrusted",
-  "approval-digest-mismatch",
-  "approval-scope-mismatch",
-  "approval-clarification-missing",
-  "approval-policy-version-mismatch",
-  "approval-duration-invalid",
   "decision-receipt-missing",
   "decision-receipt-version",
   "decision-receipt-expired",
@@ -146,20 +143,14 @@ const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
   "decision-subject-mismatch",
   "decision-control-mismatch",
   "decision-scope-mismatch",
-  "decision-coverage-mismatch",
   "decision-rejected",
   "decision-revoked",
   "decision-not-yet-valid",
   "decision-expired",
-  "decision-review-overdue",
 ]);
 
 function candidateBlockDetail(candidate: EffectiveOrgPolicy["candidates"][number]): string {
-  const decision = (candidate.decisionBlockers ?? []).map((blocker) => blocker.code);
-  return (
-    [...candidate.dangerCodes, ...candidate.blockingCodes, ...decision].join(", ") ||
-    "not-effective"
-  );
+  return candidateNotEffectiveCodes(candidate).join(", ") || "not-effective";
 }
 
 function policyDecisionBlockDetail(effective: EffectiveOrgPolicy): string {
@@ -215,11 +206,9 @@ export function authoritySuffix(runtime: RuntimeOrgPolicyResolution): string {
       (candidate) =>
         candidate.requested &&
         !candidate.effective &&
-        [
-          ...candidate.dangerCodes,
-          ...candidate.blockingCodes,
-          ...(candidate.decisionBlockers ?? []).map((blocker) => blocker.code),
-        ].some((code) => AUTHORITY_DEPENDENT_BLOCK_CODES.has(code)),
+        candidateNotEffectiveCodes(candidate).some((code) =>
+          AUTHORITY_DEPENDENT_BLOCK_CODES.has(code),
+        ),
     ) || (runtime.effective.decisionBlockers?.length ?? 0) > 0;
   return dependsOnAuthority ? `; authority: ${runtime.authorityProblem}` : "";
 }
@@ -235,7 +224,7 @@ function stdioAllowedServers(
   if (effective.projectionBlocking ?? effective.blocking) {
     const blocked = blockedProjectionDetail(effective);
     throw new OrgPolicyError(
-      `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
+      `policy project stopped: the requested policy cannot be projected: ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
   }
   // Governance is authoritative: legacy `mcp.allowedServers` / `disabledServers`
@@ -1791,6 +1780,7 @@ function projectionActionsFromRuntime(
   ctx: PlanContext,
   policy: OrgPolicy,
   runtime: RuntimeOrgPolicyResolution,
+  hookEnvironment: FrameworkHookEnvironmentPlans,
 ): Action[] {
   const posture = ctx.posture ?? policy.minimumPosture;
   const targets = ctx.targets ?? ["claude"];
@@ -1809,7 +1799,7 @@ function projectionActionsFromRuntime(
     }
     const blocked = blockedProjectionDetail(runtime.effective);
     throw new OrgPolicyError(
-      `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
+      `policy project stopped: the requested policy cannot be projected: ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
   }
   if (posture === "vibe") return [];
@@ -1976,7 +1966,7 @@ function projectionActionsFromRuntime(
       // G4: the hook registrar is reachable through the verified projector. A
       // policy declaring registrations gets the registrar's projection; one
       // declaring none gets its revocation (a no-op without a receipt).
-      const controls = planEccHookControlsProjection(ctx, policy.governance.eccHookControls);
+      const controls = planFrameworkHookControlsProjection(ctx, hookEnvironment);
       const registrar = hookRegistrarProjectionActions(ctx, policy.governance.hookRegistrations, {
         policyVersion: policy.governance.policyVersion,
         envPatch: controls.envPatch,
@@ -2003,8 +1993,8 @@ function projectionActionsFromRuntime(
       if ((usageOwnsDestination || touchesDestination(usage)) && controlsWriteStandalone) {
         throw new OrgPolicyError(
           `policy project refuses two hook writers into ${HOOK_REGISTRAR_DESTINATION}: the ` +
-            "usage-hook projector and ECC hook controls cannot both own it; deactivate the " +
-            "usage-hook selection or remove eccHookControls before projecting",
+            "usage-hook projector and framework hook controls cannot both own it; deactivate the " +
+            "usage-hook selection or remove the framework hook controls before projecting",
         );
       }
       if ((usageOwnsDestination || touchesDestination(usage)) && registrarTouchesDestination) {
@@ -2154,7 +2144,19 @@ export async function verifiedOrgPolicyProjection(
   const initialAuthority = initialVerification.authority;
   const verifiedPolicy = source.policy;
   const runtime = await resolveRuntimeOrgPolicy(ctx, verifiedPolicy, initialVerification);
-  const actions = projectionActionsFromRuntime(ctx, verifiedPolicy, runtime);
+  // Framework plugins plan (and validate) their hook controls for every
+  // targeted host before the synchronous projection, and their decisions are
+  // carried as labels; only a Claude target writes the settings environment.
+  const hookControls = await frameworkHookControlPlansV1(ctx, verifiedPolicy);
+  const hookEnvironment: FrameworkHookEnvironmentPlans = (ctx.targets ?? ["claude"]).includes(
+    "claude",
+  )
+    ? hookControls.environments
+    : new Map();
+  const actions = [
+    ...projectionActionsFromRuntime(ctx, verifiedPolicy, runtime, hookEnvironment),
+    ...hookControls.actions,
+  ];
   if (!runtime.effective.authority.verified) {
     return { policy: verifiedPolicy, actions };
   }
@@ -2222,19 +2224,17 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
   const catalog = rootAwareMcpCatalog(ctx);
   const effective = resolveEffectiveOrgPolicy(policy, {
     targets: ctx.targets ?? ["claude"],
-    mcpIdentities: Object.fromEntries(
-      Object.entries(catalog).map(([name, server]) => [
-        name,
-        {
-          subject: mcpApprovalSubject(server),
-          projectable: server.type === "stdio",
-          kiroProjectable: server.type === "stdio",
-        },
-      ]),
-    ),
+    mcpIdentities: runtimeMcpIdentities(catalog),
   });
-  return projectionActionsFromRuntime(ctx, policy, {
-    catalog: catalog as Record<string, McpServer>,
-    effective,
-  });
+  if (readUserFrameworkHookControlsV1(ctx.root) !== undefined) {
+    throw new OrgPolicyError(
+      "framework hook controls in .aih-config.json require the verified policy projector",
+    );
+  }
+  return projectionActionsFromRuntime(
+    ctx,
+    policy,
+    { catalog: catalog as Record<string, McpServer>, effective },
+    new Map(),
+  );
 }

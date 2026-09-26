@@ -68,7 +68,7 @@ describe("candidate request preparation tool", () => {
       ["ecc.inventory.json", ["ecc", 942]],
       ["mattpocock-skills.inventory.json", ["mattpocock-skills", 46]],
       ["ponytail.inventory.json", ["ponytail", 36]],
-      ["superpowers.inventory.json", ["superpowers", 30]],
+      ["superpowers.inventory.json", ["superpowers", 32]],
     ] as const);
 
     expect(readdirSync(directory).sort()).toEqual([...expected.keys()].sort());

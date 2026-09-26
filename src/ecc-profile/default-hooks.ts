@@ -7,7 +7,6 @@ import {
   HOOK_INPUT_LIMITS,
   type HookHandler,
   type HookHandlerDecision,
-  type LogicalHookEvent,
   type NormalizedHookEvent,
 } from "./hook-core.js";
 
@@ -829,19 +828,5 @@ export function createMcpHealthHandler(options: McpHealthHandlerOptions): HookHa
         ),
       };
     },
-  };
-}
-
-export const DEFAULT_ECC_HOOK_IDS = ["repository-protection", "mcp-health", "continuity"] as const;
-
-export type DefaultEccHookId = (typeof DEFAULT_ECC_HOOK_IDS)[number];
-
-export function defaultEccHookEvents(): Readonly<
-  Record<DefaultEccHookId, readonly LogicalHookEvent[]>
-> {
-  return {
-    "repository-protection": PROTECTION_EVENTS,
-    "mcp-health": MCP_HEALTH_EVENTS,
-    continuity: CONTINUITY_EVENTS,
   };
 }

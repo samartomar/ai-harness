@@ -4,7 +4,6 @@ import { z } from "zod";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import { AuthorizationSchema } from "./registration.js";
 
 /**
  * The per-component materialization receipt (F5).
@@ -64,8 +63,8 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 /**
- * The ledger's own authorization schema, referenced rather than restated. A
- * restatement cannot notice a field ADDED upstream, which is the likeliest
+ * The evidence authorization schema, shared with the ECC registration ledger
+ * rather than restated. A restatement cannot notice a field ADDED upstream, which is the likeliest
  * direction of drift; sharing the object makes the two contracts the same
  * contract.
  */
@@ -225,6 +224,32 @@ const normalizedDestinationPath = z
   }, "owned destination path is unsafe or not normalized");
 
 const ComponentIdSchema = z.string().min(3).max(160).regex(COMPONENT_ID);
+
+/**
+ * The evidence authorization tuple. Exported so a sibling ownership record can
+ * REFERENCE this schema instead of restating it — a restatement cannot detect a
+ * field added here, which is the likeliest direction of drift.
+ */
+export const AuthorizationSchema = z
+  .object({
+    componentId: ComponentIdSchema,
+    source: z.string().min(1).max(240),
+    pinnedSha: z.string().regex(SHA40),
+    treeSha256: z.string().regex(SHA256),
+    tier: z.enum(["vendor", "org"]),
+    issuer: z.string().min(1).max(240),
+    evidenceSha256: z.string().regex(SHA256),
+    effective: z.enum(["pass", "accepted-with-conditions"]).optional(),
+    acceptance: z
+      .object({
+        decisionId: z.string().min(1).max(240),
+        recordSha256: z.string().regex(SHA256),
+        acceptedFindingCodes: z.array(z.string().min(1).max(120)).max(64),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const ComponentSourcePathSchema = z
   .string()
@@ -406,7 +431,6 @@ function materializationEvidenceBindingIssue(binding: {
   if (
     selectedAgentMarkdown &&
     (contentAuthorization.treeSha256 !== authorization.treeSha256 ||
-      contentAuthorization.effective !== authorization.effective ||
       JSON.stringify(contentAuthorization.acceptance) !== JSON.stringify(authorization.acceptance))
   ) {
     return "selected Markdown content authorization differs from selected evidence";
@@ -811,6 +835,46 @@ export function ownedFileSha256(bytes: Buffer | string): string {
  */
 export function ownedFragmentSha256(fragment: Record<string, unknown>): string {
   return sha256(canonicalJsonText(fragment));
+}
+
+export function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * The owned keys of a document, on a null-prototype object: a `__proto__` key
+ * assigned onto a normal object routes to the prototype setter, which would
+ * both drop the key from the digest input and mutate the fragment's prototype.
+ */
+export function ownedFragment(
+  document: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const fragment = Object.create(null) as Record<string, unknown>;
+  for (const key of [...keys].sort(byText)) {
+    if (Object.hasOwn(document, key)) fragment[key] = document[key];
+  }
+  return fragment;
+}
+
+/** The owned-fragment digest, or undefined when the value cannot be hashed at all. */
+export function ownedFragmentDigest(
+  document: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  try {
+    return ownedFragmentSha256(ownedFragment(document, keys));
+  } catch {
+    return undefined;
+  }
 }
 
 /**

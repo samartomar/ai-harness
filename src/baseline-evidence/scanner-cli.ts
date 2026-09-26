@@ -1,14 +1,22 @@
-import { execFileSync } from "node:child_process";
 import { type Dirent, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { canonicalBaselineVetRequestV1Bytes } from "@aihq/scan";
 import { z } from "zod";
 import { parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import { hermeticGitEnv } from "../internals/git-env.js";
+import {
+  loadScanPackageExportsV1,
+  scanPackageExportsOrThrowV1,
+} from "../scan-package/load-scan-package.js";
+import { assertAssembledInventoryV1 } from "./assembly-inventory.js";
+import { BASELINE_CATALOG_IDS, baselineCatalogById } from "./catalogs.js";
+import { checkoutHeadV1 } from "./committed-checkout.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
+import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
-import { prepareRegisteredScannerCatalogV1 } from "./scanner-provider-catalogs.js";
+import {
+  resolveScannerDefinitionV1,
+  type ScannerDefinitionOverlapModeV1,
+} from "./scanner-definition.js";
 import {
   consumeScannerBaselinePublicationsV1,
   consumeScannerBaselinePublicationV1,
@@ -90,18 +98,53 @@ function discoveryPublisher(bytes: Buffer): ScannerBaselinePublicationPublisherV
   );
 }
 
-function checkoutHead(root: string): string {
-  return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    env: hermeticGitEnv(),
-  }).trim();
+function definitionOverlap(
+  args: readonly string[],
+  definitionPath: string | undefined,
+): ScannerDefinitionOverlapModeV1 | undefined {
+  const overlap = optionalFlag(args, "--definition-overlap");
+  if (overlap === undefined) return undefined;
+  if (definitionPath === undefined) fail("--definition-overlap requires --definition");
+  if (overlap !== "disjoint" && overlap !== "compiler-catalog")
+    fail("--definition-overlap must be disjoint|compiler-catalog");
+  return overlap;
 }
 
-function assertCheckout(root: string, catalogId: string) {
+/** A framework subject: the ids whose catalog is a framework definition (D79's scope). */
+function isFrameworkCatalogIdV1(id: string): boolean {
+  return (BASELINE_CATALOG_IDS as readonly string[]).includes(id);
+}
+
+/**
+ * `--definition` stands in for the installed Catalog only at a pin that Catalog does not
+ * carry; a carried pin keeps the installed route, and a definition that differs from the
+ * carried one is refused. Nothing falls back from one route to the other. A definition's
+ * components must be disjoint unless `--definition-overlap compiler-catalog` names the
+ * overlapping-views exception.
+ *
+ * D79: for a FRAMEWORK (one of `BASELINE_CATALOG_IDS`), the definition the resolver returns is
+ * the definition authority for this checkout — request authoring, publication consumption and
+ * the install preview all use exactly it. A carried COLLECTION keeps its registered route
+ * (snapshot bytes, coverage, coverage output), and so does any subject at a pin the installed
+ * Catalog does not carry; the registered route applies whenever no definition is supplied.
+ */
+function assertCheckout(root: string, catalogId: string, args: readonly string[]) {
+  const definitionPath = optionalFlag(args, "--definition");
+  const overlap = definitionOverlap(args, definitionPath);
+  if (definitionPath !== undefined) {
+    const resolved = resolveScannerDefinitionV1({
+      sourceRoot: root,
+      catalogId,
+      definitionPath: resolve(definitionPath),
+      head: checkoutHeadV1(root),
+      ...(overlap === undefined ? {} : { overlap }),
+    });
+    if (isFrameworkCatalogIdV1(catalogId) || resolved.route === "definition")
+      return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
+  }
   const prepared = prepareRegisteredScannerCatalogV1(root, catalogId);
   const { catalog } = prepared;
-  const head = checkoutHead(root);
+  const head = checkoutHeadV1(root);
   if (head !== catalog.pinnedSha) {
     fail(`${catalog.id} checkout is ${head}, expected ${catalog.pinnedSha}`);
   }
@@ -121,13 +164,16 @@ function newDirectory(path: string): string {
   return resolved;
 }
 
-function request(args: readonly string[]): void {
+async function request(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
+  const prepared = assertCheckout(sourceRoot, catalogId, args);
   const output = newDirectory(flag(args, "--output"));
-  const prepared = assertCheckout(sourceRoot, catalogId);
   const { catalog } = prepared;
   const authored = createCoreBaselineVetRequests(sourceRoot, catalog);
+  const { canonicalBaselineVetRequestV1Bytes } = scanPackageExportsOrThrowV1(
+    await loadScanPackageExportsV1(["canonicalBaselineVetRequestV1Bytes"]),
+  );
   for (const [index, batch] of authored.entries()) {
     const name = `batch-${String(index + 1).padStart(3, "0")}.request.json`;
     writeFileSync(join(output, name), canonicalBaselineVetRequestV1Bytes(batch), { flag: "wx" });
@@ -145,7 +191,7 @@ function request(args: readonly string[]): void {
 async function consumePublication(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
-  const { catalog } = assertCheckout(sourceRoot, catalogId);
+  const { catalog } = assertCheckout(sourceRoot, catalogId, []);
   const seenPath = optionalFlag(args, "--seen");
   const seen =
     seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
@@ -239,7 +285,7 @@ async function consumePublications(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
   const publicationRoot = resolve(flag(args, "--publication-root"));
-  const { catalog } = assertCheckout(sourceRoot, catalogId);
+  const { catalog } = assertCheckout(sourceRoot, catalogId, args);
   const requests = createCoreBaselineVetRequests(sourceRoot, catalog);
   const seenPath = optionalFlag(args, "--seen");
   const seen =
@@ -278,12 +324,23 @@ function sourceEvidence(path: string): BaselineSourceEvidence {
   return BaselineSourceEvidenceSchema.parse(readJson(path, 16 * 1024 * 1024));
 }
 
+/**
+ * `assemble` binds the WHOLE emitted inventory: every source's identity and every assembled
+ * component's id and paths must equal the catalog that source resolved to (the ECC source to
+ * the catalog the preview is authorized against, another framework source to the installed
+ * Catalog's own catalog for it). An omitted, extra or altered component refuses before the
+ * preview is generated and before anything is written.
+ */
 function assemble(args: readonly string[]): void {
   const eccRoot = resolve(flag(args, "--ecc-root"));
-  const { catalog: eccCatalog } = assertCheckout(eccRoot, "ecc");
+  const { catalog: eccCatalog } = assertCheckout(eccRoot, "ecc", args);
   const ecc = sourceEvidence(flag(args, "--ecc-evidence"));
   const superpowers = sourceEvidence(flag(args, "--superpowers-evidence"));
-  const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [ecc, superpowers] });
+  const lock = parseBaselineEvidenceLock({ schemaVersion: 2, sources: [ecc, superpowers] });
+  assertAssembledInventoryV1(lock, (sourceId) => {
+    if (sourceId === "ecc") return eccCatalog;
+    return isFrameworkCatalogIdV1(sourceId) ? baselineCatalogById(sourceId) : undefined;
+  });
   const preview = generateAuthorizedEccInstallPreview({
     eccRoot,
     catalog: eccCatalog,
@@ -296,7 +353,7 @@ function assemble(args: readonly string[]): void {
 
 export async function runScannerBridge(argv: readonly string[]): Promise<void> {
   const [command, ...args] = argv;
-  if (command === "request") request(args);
+  if (command === "request") await request(args);
   else if (command === "consume-publication") await consumePublication(args);
   else if (command === "consume-publications") await consumePublications(args);
   else if (command === "assemble") assemble(args);

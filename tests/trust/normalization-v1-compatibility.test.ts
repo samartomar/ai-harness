@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { baselineAnalyzerVersions } from "../../src/baseline-evidence/analyzer-profile.js";
-import { fakeRunner } from "../../src/internals/proc.js";
 import {
   CISCO_SKILL_SCANNER_ANALYZER,
   runTrustDetectors,
+  SCAN_DETECTOR_IDS,
   SEMGREP_ANALYZER,
   SNYK_AGENT_SCAN_ANALYZER,
 } from "../../src/trust/detectors.js";
@@ -18,6 +18,7 @@ import {
   TRUST_POLICY_VERSION,
 } from "../../src/trust/evidence.js";
 import { contentFindingFingerprint } from "../../src/trust/fingerprint.js";
+import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import {
   type CanonicalFindingIdentityV1,
   canonicalSha256V1,
@@ -33,6 +34,9 @@ import {
   CURRENT_NORMALIZATION_PROFILE_V1,
   CURRENT_SUPPRESSED_RULE_COMPATIBILITY_CORPUS_V1,
 } from "../../src/trust/normalization-v1-compatibility.js";
+import { trustLintChecksFromSarifV1 } from "../../src/trust/trust-lint-sarif.js";
+import { selfDerivedPrecomputedCompletionForTests } from "./fakes/fake-scan-adapter.js";
+import { trustLintSarifForTests } from "./fakes/fake-trust-lint.js";
 
 const EXPECTED_SUPPRESSED_SELECTORS = [
   ["cisco", "YARA_command_injection_generic"],
@@ -246,7 +250,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "semgrep",
-    analyzerLabel: "semgrep@uv:1.173.0",
+    analyzerLabel: "semgrep@uv:1.178.0",
     nativeRuleId: "semgrep.prompt-injection",
     path: "skills/semgrep-prompt/SKILL.md",
     message: "prompt injection shape in trust content",
@@ -263,7 +267,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "semgrep",
-    analyzerLabel: "semgrep@uv:1.173.0",
+    analyzerLabel: "semgrep@uv:1.178.0",
     nativeRuleId: "semgrep.malicious-code",
     path: "skills/semgrep-code/SKILL.md",
     message: "download-and-execute shell shape in trust content",
@@ -280,7 +284,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uv:0.5.17",
+    analyzerLabel: "snyk-agent-scan@uv:0.6.4",
     nativeRuleId: "E001",
     path: "skills/snyk-prompt/SKILL.md",
     message: "Prompt injection in tool description",
@@ -297,7 +301,7 @@ const EXPECTED_LEGACY_SEMANTICS = [
   },
   {
     detectorClass: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uv:0.5.17",
+    analyzerLabel: "snyk-agent-scan@uv:0.6.4",
     nativeRuleId: "W012",
     path: "skills/snyk-dependency/SKILL.md",
     message: "Unverifiable external dependency",
@@ -336,13 +340,13 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
     detectorClass: "skillspector",
     analyzerLabel: "skillspector@docker",
     analyzerIdentity:
-      "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+      "c7958a3268d9498644b22edb75d0f051bbc8cbfc@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "skillspector",
       analyzerLabel: "skillspector@docker",
       analyzerIdentity:
-        "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+        "c7958a3268d9498644b22edb75d0f051bbc8cbfc@sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
@@ -362,13 +366,13 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
   },
   {
     detectorClass: "semgrep",
-    analyzerLabel: "semgrep@uv:1.173.0",
-    analyzerIdentity: "1.173.0+uvlock.77f2bf3e7525",
+    analyzerLabel: "semgrep@uv:1.178.0",
+    analyzerIdentity: "1.178.0+uvlock.5fae6a8598f7",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "semgrep",
-      analyzerLabel: "semgrep@uv:1.173.0",
-      analyzerIdentity: "1.173.0+uvlock.77f2bf3e7525",
+      analyzerLabel: "semgrep@uv:1.178.0",
+      analyzerIdentity: "1.178.0+uvlock.5fae6a8598f7",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
@@ -380,13 +384,13 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
   },
   {
     detectorClass: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uv:0.5.17",
-    analyzerIdentity: "0.5.17+uvlock.49064889ec53",
+    analyzerLabel: "snyk-agent-scan@uv:0.6.4",
+    analyzerIdentity: "0.6.4+uvlock.c71ffe188e38",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "snyk-agent-scan",
-      analyzerLabel: "snyk-agent-scan@uv:0.5.17",
-      analyzerIdentity: "0.5.17+uvlock.49064889ec53",
+      analyzerLabel: "snyk-agent-scan@uv:0.6.4",
+      analyzerIdentity: "0.6.4+uvlock.c71ffe188e38",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
@@ -399,12 +403,12 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
   {
     detectorClass: "cisco",
     analyzerLabel: "cisco@uvx",
-    analyzerIdentity: "2.0.14+uvlock.aaba1f326049",
+    analyzerIdentity: "2.1.0+uvlock.1e98c5679994",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "cisco",
       analyzerLabel: "cisco@uvx",
-      analyzerIdentity: "2.0.14+uvlock.aaba1f326049",
+      analyzerIdentity: "2.1.0+uvlock.1e98c5679994",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
@@ -458,19 +462,43 @@ async function currentLegacySemantics(expected: (typeof EXPECTED_LEGACY_SEMANTIC
       },
     ],
   };
+  // The fact Scan's trust lint states for this file: the YR4 row's package.json
+  // carries only the pinned Corepack integrity blob as its poisoning co-signal.
+  const facts = trustLintChecksFromSarifV1(
+    trustLintSarifForTests([expected.path], {
+      artifacts: {
+        [expected.path]: expected.nativeRuleId === "YR4" ? { yr4CorepackIntegrityOnly: true } : {},
+      },
+    }),
+    "enterprise",
+    { selectedPaths: [expected.path] },
+  );
+  if ("refusal" in facts) throw new Error(facts.refusal);
   const scan = await runTrustDetectors(root, {
     env: {},
     platform: "linux",
     posture: "enterprise",
-    run: fakeRunner(() => undefined),
     detectors: [expected.detectorClass],
     precomputedSarif: {
-      [expected.detectorClass]: JSON.stringify({
-        version: "2.1.0",
-        runs: [{ results: [result, result] }],
-      }),
+      // Not a completion-boundary test: the evidence is self-derived for this tree.
+      [expected.detectorClass]: selfDerivedPrecomputedCompletionForTests(
+        JSON.stringify({
+          version: "2.1.0",
+          runs: [
+            {
+              tool: { driver: { name: "fixture" } },
+              invocations: [{ executionSuccessful: true }],
+              results: [result, result],
+            },
+          ],
+        }),
+        SCAN_DETECTOR_IDS[expected.detectorClass],
+        root,
+      ),
     },
     corroboratedChecks: [],
+    trustLintFacts: facts.facts,
+    inventory: buildTrustFileInventory(root),
   });
   const matchingRaw = scan.rawOccurrences.filter(
     (occurrence) =>

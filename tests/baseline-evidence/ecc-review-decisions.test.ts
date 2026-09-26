@@ -46,6 +46,11 @@ describe("ECC residual review decisions", () => {
     const decisions = groupEccResidualReviewDecisions(occurrences);
 
     expect(decisions).toHaveLength(10);
+    for (const decision of decisions) {
+      // Each note states the surface and that ECC Lean does not select it; it never gates.
+      expect(decision.decision).toMatch(/^Full profile: .+ ECC Lean does not select (it|them)\.$/);
+      expect(decision.decision).not.toMatch(/excluded|permit|must not|require|approve|REVIEW/i);
+    }
     expect(decisions.flatMap((decision) => decision.occurrenceFingerprints).sort()).toEqual(
       occurrences.map((entry) => entry.findingFingerprint).sort(),
     );
@@ -81,22 +86,39 @@ describe("ECC residual review decisions", () => {
   });
 
   it("does not group a lookalike browser-use hostname", () => {
-    expect(() =>
-      groupEccResidualReviewDecisions([
-        occurrence(
-          "lookalike",
-          "mcp-configs/mcp-servers.json",
-          '"url": "https://evil.example/?next=https://api.browser-use.com/mcp"',
-        ),
-      ]),
-    ).toThrow(/ungrouped/);
+    const decisions = groupEccResidualReviewDecisions([
+      occurrence(
+        "lookalike",
+        "mcp-configs/mcp-servers.json",
+        '"url": "https://evil.example/?next=https://api.browser-use.com/mcp"',
+      ),
+    ]);
+    expect(decisions.map((decision) => decision.id)).toEqual(["ungrouped"]);
   });
 
-  it("fails closed for duplicate or unclassified residual occurrences", () => {
+  it("labels an occurrence no recorded grouping matches as ungrouped instead of stopping (D64)", () => {
+    const decisions = groupEccResidualReviewDecisions([
+      occurrence("x:root", "skills/x-api/SKILL.md"),
+      occurrence("unknown", "skills/unclassified/SKILL.md"),
+    ]);
+    expect(decisions.map((decision) => decision.id)).toEqual([
+      "x-api-authenticated-access",
+      "ungrouped",
+    ]);
+    expect(decisions[1]).toEqual({
+      id: "ungrouped",
+      title: "REVIEW occurrences with no recorded grouping",
+      surfaceClass: "not-classified",
+      automaticActivation: "not-determined",
+      decision:
+        "No recorded grouping matches these REVIEW occurrences. They are shown as findings for the consumer to decide on; a maintainer can add a grouping.",
+      occurrenceFingerprints: ["unknown"],
+      occurrences: [occurrence("unknown", "skills/unclassified/SKILL.md")],
+    });
+  });
+
+  it("still refuses duplicate fingerprints and an occurrence matched by two groupings", () => {
     const duplicate = occurrence("same", "skills/x-api/SKILL.md");
     expect(() => groupEccResidualReviewDecisions([duplicate, duplicate])).toThrow(/duplicate/);
-    expect(() =>
-      groupEccResidualReviewDecisions([occurrence("unknown", "skills/unclassified/SKILL.md")]),
-    ).toThrow(/ungrouped/);
   });
 });

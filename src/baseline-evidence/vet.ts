@@ -1,6 +1,9 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { AihError } from "../errors.js";
 import type { Check } from "../internals/verify.js";
+import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
+import { runCiscoSourceShardThroughScanV1 } from "../trust/cisco-shard-delegation.js";
 import {
   type CiscoShardManifest,
   type CiscoShardResult,
@@ -9,9 +12,22 @@ import {
 } from "../trust/cisco-shards.js";
 import {
   buildCiscoSourceShardManifest,
+  DEFAULT_UV_EXECUTION_PROFILE,
   joinedCiscoShardSarif,
-  runCiscoSourceShard,
+  type ProjectionCleanupFailureV1,
+  rejectionWithCleanupFailureV1,
+  removeProjectionV1,
+  resolveCiscoScanConcurrency,
+  type VerifiedCiscoShardSarifV1,
+  withCiscoShardJoinProjectionV1,
 } from "../trust/detectors.js";
+import {
+  componentLabelSlotV1,
+  dispositionForTrustFinding,
+  type NormalizedTrustFinding,
+  type TrustPolicyLevel,
+  trustCodeClassV1,
+} from "../trust/evidence.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
 import type { BaselineCatalog, BaselineCatalogComponent } from "./catalog.js";
@@ -155,6 +171,8 @@ export interface VetBaselineCatalogOptions {
     profile?: string;
     workerConcurrency?: number;
     dispatch?: (manifest: CiscoShardManifest) => Promise<readonly CiscoShardResult[]>;
+    /** Test seam for the installed `@aihq/scan` that runs an undispatched shard. */
+    importer?: ScanPackageImporterV1;
   };
 }
 
@@ -239,17 +257,17 @@ export function defaultComponentScanner(
   sharedCiscoEvidence?: JoinedCiscoShardEvidence,
 ): BaselineComponentScanner {
   return async ({ sourceRoot, component }) => {
-    const projectionRoot = mkdtempSync(
-      join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
-    );
-    try {
+    // Copies the component into a projection root. Core's shard projection has
+    // already copied the Cisco jobs there from the verified root, so the copy
+    // keeps what exists instead of refusing it.
+    const project = (projectionRoot: string, keepExisting: boolean): void => {
       for (const rel of component.paths) {
         const source = resolve(sourceRoot, ...rel.split("/"));
         const target = resolve(projectionRoot, ...rel.split("/"));
         mkdirSync(dirname(target), { recursive: true });
         cpSync(source, target, {
           recursive: true,
-          errorOnExist: true,
+          errorOnExist: !keepExisting,
           force: false,
           dereference: false,
           preserveTimestamps: true,
@@ -260,48 +278,99 @@ export function defaultComponentScanner(
       // evidence for the selected skill. Project only that top-level legal file
       // so the scanner can resolve inheritance without exposing unrelated source.
       projectRepositoryLicense(sourceRoot, projectionRoot);
-      const timing = baselineDetectorTiming(component.id, scanOptions.progress);
-      try {
-        const requiredDetectors =
-          requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors;
-        const usesCisco = requiredDetectors?.includes("cisco") === true;
-        if (
-          sharedCiscoEvidence !== undefined &&
-          usesCisco &&
-          !componentContainsCiscoJob(component, sharedCiscoEvidence)
-        ) {
-          throw new Error(
-            `baseline component ${component.id} requires Cisco but has no exact source-wide Cisco job`,
-          );
-        }
-        const detectors =
-          sharedCiscoEvidence === undefined || usesCisco
-            ? scanOptions.detectors
-            : (["skillspector", "mcp-scanner", "semgrep", "snyk-agent-scan"] as const).filter(
-                (detector) => scanOptions.detectors?.includes(detector) ?? true,
-              );
-        const scan = await scanTree(projectionRoot, {
+    };
+    const timing = baselineDetectorTiming(component.id, scanOptions.progress);
+    try {
+      const requiredDetectors =
+        requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors;
+      const usesCisco = requiredDetectors?.includes("cisco") === true;
+      if (
+        sharedCiscoEvidence !== undefined &&
+        usesCisco &&
+        !componentContainsCiscoJob(component, sharedCiscoEvidence)
+      ) {
+        throw new Error(
+          `baseline component ${component.id} requires Cisco but has no exact source-wide Cisco job`,
+        );
+      }
+      const detectors =
+        sharedCiscoEvidence === undefined || usesCisco
+          ? scanOptions.detectors
+          : (["skillspector", "mcp-scanner", "semgrep", "snyk-agent-scan"] as const).filter(
+              (detector) => scanOptions.detectors?.includes(detector) ?? true,
+            );
+      const scanProjection = (projectionRoot: string, cisco?: VerifiedCiscoShardSarifV1) =>
+        scanTree(projectionRoot, {
           ...scanOptions,
           detectors,
           precomputedDetectorSarif:
-            sharedCiscoEvidence !== undefined && usesCisco
-              ? {
-                  ...scanOptions.precomputedDetectorSarif,
-                  cisco: joinedCiscoShardSarif(sharedCiscoEvidence, component.paths),
-                }
-              : scanOptions.precomputedDetectorSarif,
+            cisco === undefined
+              ? scanOptions.precomputedDetectorSarif
+              : { ...scanOptions.precomputedDetectorSarif, cisco },
           progress: timing.progress,
           posture: "enterprise",
           requiredDetectors,
         });
-        timing.complete(scan);
-        return scan;
-      } catch (error) {
-        timing.fail();
-        throw error;
+      let scan: TrustScanResult;
+      // A projection Core could not remove is kept on the scan it returns, or on
+      // the scan's own rejection: never only in progress, never in its place.
+      let cleanupFailure: ProjectionCleanupFailureV1 | undefined;
+      if (sharedCiscoEvidence !== undefined && usesCisco) {
+        // Only Core rebinds the verified join: to a projection it makes and fills.
+        // One it could not prepare is never scanned: its failed Cisco detector is
+        // the component's scan.
+        const projected = await withCiscoShardJoinProjectionV1(
+          sharedCiscoEvidence,
+          component.paths,
+          (projection) => {
+            project(projection.root, true);
+            return scanProjection(projection.root, projection.cisco);
+          },
+        );
+        cleanupFailure = projected.cleanupFailure;
+        scan =
+          projected.kind === "scanned"
+            ? projected.result
+            : {
+                checks: projected.detector.checks,
+                analyzersRun: projected.detector.analyzersRun,
+                rawOccurrences: projected.detector.rawOccurrences,
+                detectorExecutions: projected.detector.executions,
+              };
+      } else {
+        const projectionRoot = mkdtempSync(
+          join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
+        );
+        let settled: { readonly scan: TrustScanResult } | { readonly error: unknown };
+        try {
+          project(projectionRoot, false);
+          settled = { scan: await scanProjection(projectionRoot) };
+        } catch (error) {
+          settled = { error };
+        }
+        cleanupFailure = removeProjectionV1(
+          projectionRoot,
+          "baseline-component-projection-cleanup-failed-v1",
+          `baseline component ${component.id}'s projection`,
+        );
+        if ("error" in settled)
+          throw cleanupFailure === undefined
+            ? settled.error
+            : rejectionWithCleanupFailureV1(settled.error, cleanupFailure);
+        scan = settled.scan;
       }
-    } finally {
-      rmSync(projectionRoot, { recursive: true, force: true });
+      if (cleanupFailure !== undefined) {
+        scan = {
+          ...scan,
+          projectionCleanupFailures: [...(scan.projectionCleanupFailures ?? []), cleanupFailure],
+        };
+        scanOptions.progress?.(`baseline vet: component ${component.id}: ${cleanupFailure.detail}`);
+      }
+      timing.complete(scan);
+      return scan;
+    } catch (error) {
+      timing.fail();
+      throw error;
     }
   };
 }
@@ -342,23 +411,19 @@ async function prepareSourceWideCiscoEvidence(
         "source-wide Cisco scan with multiple shards requires an explicit shard dispatcher",
       );
     }
-    if (scanOptions.run === undefined || scanOptions.platform === undefined) {
-      throw new Error("source-wide Cisco scan requires run and platform runtime options");
-    }
     const shard = manifest.shards[0];
     if (shard === undefined) throw new Error("source-wide Cisco manifest has no shard");
     results = [
-      await runCiscoSourceShard(sourceRoot, manifest, shard.id, {
-        run: scanOptions.run,
-        platform: scanOptions.platform,
-        env: scanOptions.env ?? {},
-        ...(options.workerConcurrency === undefined
-          ? {}
-          : { concurrency: options.workerConcurrency }),
+      await runCiscoSourceShardThroughScanV1(sourceRoot, manifest, shard.id, {
+        executionProfileId: scanOptions.uvExecutionProfileId ?? DEFAULT_UV_EXECUTION_PROFILE,
+        concurrency:
+          options.workerConcurrency ?? resolveCiscoScanConcurrency(scanOptions.env ?? {}),
+        ...(scanOptions.signal === undefined ? {} : { signal: scanOptions.signal }),
+        ...(options.importer === undefined ? {} : { importer: options.importer }),
       }),
     ];
   }
-  const joined = joinCiscoShardResults(manifest, results);
+  const joined = joinCiscoShardResults(manifest, results, sourceRoot);
   scanOptions.progress?.(
     `baseline vet: Cisco source evidence joined ${joined.outputs.length} exact jobs`,
   );
@@ -368,10 +433,15 @@ async function prepareSourceWideCiscoEvidence(
 // A missing required analyzer is almost always a detector that failed to run
 // (e.g. an offline uv cache that no longer resolves the pinned Cisco scanner).
 // Surface those underlying reasons so the fail-closed abort is actionable instead
-// of opaque.
+// of opaque. A source-wide scan runs without enterprise posture, where an
+// unavailable detector is graded skip rather than fail; its reason counts too.
 function detectorDiagnostics(checks: readonly Check[]): string[] {
   return checks
-    .filter((check) => check.code === "trust.detector-unavailable" && check.verdict === "fail")
+    .filter(
+      (check) =>
+        check.code === "trust.detector-unavailable" &&
+        (check.verdict === "fail" || check.verdict === "skip"),
+    )
     .map((check) => check.detail?.trim())
     .filter((detail): detail is string => detail !== undefined && detail.length > 0);
 }
@@ -384,13 +454,15 @@ function analyzerReceipts(
   checks: readonly Check[],
 ): BaselineAnalyzerReceipt[] {
   const analyzers = [...new Set(analyzersRun)].sort((left, right) => left.localeCompare(right));
-  if (analyzers.length === 0) throw new Error("baseline vet produced no analyzer receipt");
+  const diagnostics = detectorDiagnostics(checks);
+  const because =
+    diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
+  // A component Core refused before any detector ran still names why.
+  if (analyzers.length === 0)
+    throw new Error(`baseline vet produced no analyzer receipt${because}`);
   const completed = new Set(analyzers);
   const missing = requiredAnalyzers.filter((name) => !completed.has(name));
   if (missing.length > 0) {
-    const diagnostics = detectorDiagnostics(checks);
-    const because =
-      diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
     throw new Error(
       `baseline component ${componentId} missing required baseline analyzers: ${missing.join(", ")}${because}`,
     );
@@ -409,21 +481,96 @@ function analyzerReceipts(
     });
 }
 
-function blockingFindings(checks: readonly Check[]): BaselineEvidenceFinding[] {
+interface ComponentLabels {
+  findings: BaselineEvidenceFinding[];
+  evidenceProblems: BaselineEvidenceFinding[];
+}
+
+/**
+ * The vet refuses evidence it cannot label truthfully: a scan that reports an
+ * integrity failure (the evidence cannot be trusted), or a trust code with no
+ * class, which could be an integrity failure nobody has classified yet.
+ */
+export class BaselineVetIntegrityError extends AihError {
+  readonly componentId: string;
+  readonly trustCode: string;
+
+  constructor(componentId: string, trustCode: string, message: string) {
+    super(`baseline component ${componentId}: ${message}`, "AIH_TRUST");
+    this.componentId = componentId;
+    this.trustCode = trustCode;
+  }
+}
+
+/** Refuse the evidence for an integrity code or an unclassified trust code, at any level. */
+function assertLabelable(componentId: string, code: string | undefined, detail: string): void {
+  if (code === undefined) return;
+  const kind = trustCodeClassV1(code);
+  if (kind === "integrity") {
+    throw new BaselineVetIntegrityError(
+      componentId,
+      code,
+      `evidence integrity failure ${code}: ${detail}`,
+    );
+  }
+  if (kind === undefined && code.startsWith("trust.")) {
+    throw new BaselineVetIntegrityError(
+      componentId,
+      code,
+      `unclassified trust code ${code} (add it to TRUST_CODE_CLASSES_V1): ${detail}`,
+    );
+  }
+}
+
+/**
+ * Split observed codes into the component's two labels (D50). Callers have
+ * already refused integrity and unclassified trust codes (assertLabelable).
+ */
+function labelFor(code: string): keyof ComponentLabels {
+  return trustCodeClassV1(code) === "evidence-problem" ? "evidenceProblems" : "findings";
+}
+
+/**
+ * Whether an observation belongs in the lock: a finding at a finding level (D62),
+ * or a failed evidence problem (evidence that did not run is recorded whatever
+ * its disposition level, so the lock never claims complete evidence).
+ */
+function belongsInLock(
+  code: string,
+  checkVerdict: Check["verdict"] | undefined,
+  level: TrustPolicyLevel,
+): boolean {
+  return componentLabelSlotV1(code, checkVerdict, level) !== undefined;
+}
+
+function checkLabels(componentId: string, checks: readonly Check[]): ComponentLabels {
+  const labels: ComponentLabels = { findings: [], evidenceProblems: [] };
   const groups = new Map<string, Check[]>();
   for (const check of checks) {
     if (check.verdict !== "fail") continue;
     const code = check.code ?? "trust.detector-finding";
+    const detail = check.detail?.trim() || check.name;
+    assertLabelable(componentId, check.code, detail);
+    // A check-only scan uses the same disposition rule as a normalized one.
+    const { level } = dispositionForTrustFinding({
+      fingerprint: check.fingerprint ?? `check:${code}`,
+      code,
+      checkVerdict: check.verdict,
+      detail,
+      ...(check.location === undefined ? {} : { location: check.location }),
+      rawOccurrenceFingerprints: [],
+    });
+    if (!belongsInLock(code, check.verdict, level)) continue;
     const group = groups.get(code) ?? [];
     group.push(check);
     groups.set(code, group);
   }
-  return [...groups.entries()].map(([code, group]) => {
+  for (const [code, group] of groups.entries()) {
     const first = group[0];
     const firstDetail = first?.detail?.trim() || first?.name || code;
     const detail =
       group.length === 1 ? firstDetail : `${group.length} findings; first: ${firstDetail}`;
-    return {
+    labels[labelFor(code)].push({
       code,
       ...(group.length > 1 ? { count: group.length } : {}),
       detail: detail.slice(0, 2_000),
@@ -433,13 +580,14 @@ function blockingFindings(checks: readonly Check[]): BaselineEvidenceFinding[] {
       ...(group.every((finding) => finding.fingerprint !== undefined)
         ? { fingerprints: group.map((finding) => finding.fingerprint as string) }
         : {}),
-    };
-  });
+    });
+  }
+  return labels;
 }
 
-function decisionFindings(scan: TrustScanResult): BaselineEvidenceFinding[] {
+function componentLabels(componentId: string, scan: TrustScanResult): ComponentLabels {
   if (scan.normalizedFindings === undefined || scan.policyDispositions === undefined) {
-    return blockingFindings(scan.checks);
+    return checkLabels(componentId, scan.checks);
   }
   const findingByFingerprint = new Map(
     scan.normalizedFindings.map((finding) => [finding.fingerprint, finding]),
@@ -451,15 +599,21 @@ function decisionFindings(scan: TrustScanResult): BaselineEvidenceFinding[] {
       fingerprints: string[];
     }>
   >();
+  for (const finding of scan.normalizedFindings) {
+    if (finding.checkVerdict === "pass" || finding.checkVerdict === "skip") continue;
+    assertLabelable(componentId, finding.code, finding.detail);
+  }
   for (const disposition of scan.policyDispositions) {
-    if (disposition.level !== "BLOCK" && disposition.level !== "REVIEW") continue;
-    const finding = findingByFingerprint.get(disposition.findingFingerprint);
+    const finding: NormalizedTrustFinding | undefined = findingByFingerprint.get(
+      disposition.findingFingerprint,
+    );
     if (finding === undefined) {
       throw new Error(
         `policy disposition has no normalized finding: ${disposition.findingFingerprint}`,
       );
     }
     const code = finding.code ?? "trust.detector-finding";
+    if (!belongsInLock(code, finding.checkVerdict, disposition.level)) continue;
     const location =
       finding.location === undefined
         ? ""
@@ -477,22 +631,21 @@ function decisionFindings(scan: TrustScanResult): BaselineEvidenceFinding[] {
     });
     groups.set(code, group);
   }
-  return [...groups.entries()].map(([code, group]) => {
+  const labels: ComponentLabels = { findings: [], evidenceProblems: [] };
+  for (const [code, group] of groups.entries()) {
     const fingerprints = [...new Set(group.flatMap((entry) => entry.fingerprints))];
-    return {
+    labels[labelFor(code)].push({
       code,
       ...(group.length > 1 ? { count: group.length } : {}),
       detail:
         group.length === 1
           ? (group[0]?.detail ?? code).slice(0, 2_000)
-          : `${group.length} policy-held findings; first: ${group[0]?.detail ?? code}`.slice(
-              0,
-              2_000,
-            ),
+          : `${group.length} findings; first: ${group[0]?.detail ?? code}`.slice(0, 2_000),
       ...(fingerprints.length === 1 ? { fingerprint: fingerprints[0] } : {}),
       fingerprints,
-    };
-  });
+    });
+  }
+  return labels;
 }
 
 export async function vetBaselineCatalog(
@@ -620,12 +773,12 @@ export async function vetBaselineCatalog(
       if (afterScan.treeSha256 !== tree.treeSha256) {
         throw new Error(`baseline component ${component.id} changed during vet scan`);
       }
-      const findings = decisionFindings(scan);
+      const { findings, evidenceProblems } = componentLabels(component.id, scan);
       components[index] = {
         id: component.id,
         paths: [...component.paths],
         treeSha256: tree.treeSha256,
-        verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
+        verdict: findings.length > 0 ? ("has-findings" as const) : ("no-findings" as const),
         analyzers: analyzerReceipts(
           scan.analyzersRun,
           versions,
@@ -634,6 +787,7 @@ export async function vetBaselineCatalog(
           scan.checks,
         ),
         findings,
+        evidenceProblems,
       };
     },
   );

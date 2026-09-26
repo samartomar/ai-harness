@@ -3,6 +3,7 @@ import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { generatedConfigSchemas } from "../../src/config/json-schema.js";
+import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 
 const root = process.cwd();
 
@@ -80,10 +81,37 @@ describe("committed JSON Schemas", () => {
       ...policy,
       developerTools: { selected: [] },
     });
+    for (const developerTools of [{ selected: ["headroom"] }, { excluded: ["headroom"] }]) {
+      const headroomPolicy = {
+        ...policy,
+        minimumCoreVersion: "0.7.0",
+        developerTools,
+      };
+      validateCommittedSchema("schemas/aih-org-policy.schema.json", headroomPolicy);
+      expect(parseOrgPolicy(headroomPolicy).schemaVersion).toBe(3);
+      // The editor schema is structural; the runtime parser enforces this cross-field floor.
+      expect(() => parseOrgPolicy({ ...headroomPolicy, minimumCoreVersion: "0.6.0" })).toThrow(
+        /0\.7\.0/,
+      );
+    }
+    for (const primaryCodeGraph of ["code-review-graph", "codebase-memory-mcp"]) {
+      const primaryPolicy = {
+        ...policy,
+        minimumCoreVersion: "0.7.0",
+        developerTools: { primaryCodeGraph },
+      };
+      validateCommittedSchema("schemas/aih-org-policy.schema.json", primaryPolicy);
+      expect(parseOrgPolicy(primaryPolicy).schemaVersion).toBe(3);
+      expect(() => parseOrgPolicy({ ...primaryPolicy, minimumCoreVersion: "0.6.0" })).toThrow(
+        /0\.7\.0/,
+      );
+    }
     for (const invalid of [
       { ...policy, developerTools: { selected: ["unknown"] } },
       { ...policy, developerTools: { selected: "serena" } },
       { ...policy, developerTools: { selected: [], unsupported: true } },
+      { ...policy, minimumCoreVersion: "0.7.0", developerTools: { primaryCodeGraph: "serena" } },
+      { ...policy, minimumCoreVersion: "0.7.0", developerTools: { activateHeadroom: true } },
     ])
       rejectCommittedSchema("schemas/aih-org-policy.schema.json", invalid);
   });
@@ -386,7 +414,7 @@ describe("committed JSON Schemas", () => {
                 sha256: "b".repeat(64),
                 subjectDigest: { algorithm: "git-sha1", value: "a".repeat(40) },
               },
-              verdict: "pass",
+              verdict: "no-findings",
               findings: [],
             },
           ],
@@ -556,7 +584,7 @@ describe("committed JSON Schemas", () => {
     });
     const approval = {
       id: "vercel",
-      sourceContentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
+      sourceContentSha256: "d93be2b609a60035c7fdfc0b2bbeb228feb0a5f619c9de5ecf6b6d2acca5bd1f",
       state: "approved",
       approvedBy: "approver@example.com",
       authenticationMode: "oauth",
@@ -568,9 +596,19 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-org-policy.schema.json",
       governance([{ ...approval, approvedBy: "security-admin" }]),
     );
+    // An approval recorded for other ECC content stays valid policy; it is labelled stale (D74).
+    validateCommittedSchema(
+      "schemas/aih-org-policy.schema.json",
+      governance([
+        {
+          ...approval,
+          sourceContentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
+        },
+      ]),
+    );
     for (const invalid of [
       { ...approval, id: "github" },
-      { ...approval, sourceContentSha256: "0".repeat(64) },
+      { ...approval, sourceContentSha256: "0".repeat(63) },
       { ...approval, allowedDataClasses: [] },
       { ...approval, approvedBy: "Samar" },
       { ...approval, unexpected: true },
@@ -607,7 +645,7 @@ describe("committed JSON Schemas", () => {
     }
   });
 
-  it("models source-locked ECC hook controls in the committed editor schema", () => {
+  it("models framework hook controls in the committed editor schema", () => {
     const base = {
       schemaVersion: 2,
       minimumPosture: "vibe",
@@ -620,23 +658,42 @@ describe("committed JSON Schemas", () => {
         authority: { approvals: [] },
       },
     };
-    const policy = (eccHookControls: unknown) => ({
+    const policy = (frameworkHookControls: unknown) => ({
       ...base,
-      governance: { ...base.governance, eccHookControls },
+      governance: { ...base.governance, frameworkHookControls },
     });
 
     validateCommittedSchema(
       "schemas/aih-org-policy.schema.json",
-      policy({ profile: "standard", disabledIds: ["pre:observe", "post:quality-gate"] }),
+      policy({
+        ecc: { profile: "standard", disabledHookIds: ["pre:observe", "post:quality-gate"] },
+        superpowers: { disabledHookIds: ["hook:session-start"] },
+      }),
     );
     for (const invalid of [
-      { profile: "standard", disabledIds: ["unknown:hook"] },
-      { profile: "standard", disabledIds: ["pre:bash:dispatcher"] },
-      { profile: "standard", extra: true },
-      { disabledIds: ["pre:observe"] },
+      { ecc: { disabledHookIds: ["Bad Id"] } },
+      { other: { disabledHookIds: [] } },
+      { ecc: { disabledHookIds: [], extra: true } },
+      { ecc: { profile: "standard" } },
     ]) {
       rejectCommittedSchema("schemas/aih-org-policy.schema.json", policy(invalid));
     }
+    // The removed ECC-only field is not part of the grammar.
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      governance: { ...base.governance, eccHookControls: { profile: "standard" } },
+    });
+    validateCommittedSchema("schemas/aih-config.schema.json", {
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      frameworkHookControls: { ecc: { disabledHookIds: ["pre:observe"] } },
+    });
+    // The user list may only add disables; the profile is enterprise-only.
+    rejectCommittedSchema("schemas/aih-config.schema.json", {
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      frameworkHookControls: { ecc: { profile: "minimal", disabledHookIds: [] } },
+    });
   });
 
   it("rejects unknown baseline ids in .aih-config.json", () => {

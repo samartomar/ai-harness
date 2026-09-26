@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import { sha256Hex } from "../../src/bundle/index.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
@@ -21,6 +21,17 @@ import {
 } from "../../src/report/v9-panels.js";
 import { escHtml, renderSkillGovernance, renderWins } from "../../src/report/v9-render.js";
 import type { SupportTemplate } from "../../src/support/render.js";
+import { loadEccFromSource } from "../framework-plugin/plugin-source.js";
+import { eccDescriptorLoad } from "../framework-plugin/source-plugin-mocks.js";
+
+// The real loader sees a Core install without its bundled plugins (D71): the
+// one route to framework-plugin-unavailable, whether or not packages/*/dist is built.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const { withBundledPluginsMissing } = await import(
+    "../framework-plugin/missing-bundled-plugins.js"
+  );
+  return withBundledPluginsMissing(await importOriginal());
+});
 
 describe("escHtml — attribute-safe HTML escaping", () => {
   it("escapes all five significant characters incl. quotes (attribute-safe)", () => {
@@ -349,11 +360,11 @@ interface EccData {
 }
 
 describe("eccInventoryDigest", () => {
-  it("returns undefined when neither machine nor repo has ECC content", () => {
-    expect(eccInventoryDigest(ctx())).toBeUndefined();
+  it("returns undefined when neither machine nor repo has ECC content", async () => {
+    await expect(eccInventoryDigest(ctx())).resolves.toBeUndefined();
   });
 
-  it("counts repo-local content as TEAM OVERRIDES, separate from (empty) machine ECC", () => {
+  it("counts repo-local content as TEAM OVERRIDES, separate from (empty) machine ECC", async () => {
     put(".claude/agents/architecture-drift.md", "# agent\n");
     put(".claude/agents/security-audit.md", "# agent\n");
     put(".claude/skills/aws-hardening/SKILL.md", "# skill\n");
@@ -366,7 +377,7 @@ describe("eccInventoryDigest", () => {
         },
       }),
     );
-    const data = eccInventoryDigest(ctx())?.data as EccData;
+    const data = (await eccInventoryDigest(ctx()))?.data as EccData;
     expect(data.repo.agents).toBe(2);
     expect(data.repo.skills).toBe(2); // one dir under each of .claude/skills and .kiro/skills
     expect(data.repo.hooks).toBe(2);
@@ -375,7 +386,7 @@ describe("eccInventoryDigest", () => {
     expect(Array.isArray(data.packs)).toBe(true);
   });
 
-  it("reads machine ECC from ~/.claude (incl. nested rules) and flags repo duplication", () => {
+  it("reads machine ECC from ~/.claude (incl. nested rules) and flags repo duplication", async () => {
     putHome(".claude/agents/architect.md", "# agent\n");
     putHome(".claude/agents/code-reviewer.md", "# agent\n");
     putHome(".claude/skills/tdd/SKILL.md", "# skill\n");
@@ -383,13 +394,13 @@ describe("eccInventoryDigest", () => {
     // repo forks one machine agent (code-reviewer) + adds its own
     put(".claude/agents/code-reviewer.md", "# forked\n");
     put(".claude/agents/architecture-drift.md", "# own\n");
-    const data = eccInventoryDigest(ctx())?.data as EccData;
+    const data = (await eccInventoryDigest(ctx()))?.data as EccData;
     expect(data.machine).toEqual({ agents: 2, skills: 1, rules: 1 });
     expect(data.repo.agents).toBe(2);
     expect(data.dup).toBe(1); // code-reviewer collides with a machine-ECC agent
   });
 
-  it("counts the LIVE ecc/ namespace (not flat plugin skills) + takes version from the manifest", () => {
+  it("counts the LIVE ecc/ namespace (not flat plugin skills) + takes version from the manifest", async () => {
     // manifest supplies version/commit only (its counts are a stale snapshot)
     putHome(
       ".claude/ecc/install-state.json",
@@ -410,7 +421,7 @@ describe("eccInventoryDigest", () => {
     // repo forks one ECC agent (code-reviewer) + adds its own
     put(".claude/agents/code-reviewer.md", "forked");
     put(".claude/agents/architecture-drift.md", "own");
-    const data = eccInventoryDigest(ctx())?.data as EccData;
+    const data = (await eccInventoryDigest(ctx()))?.data as EccData;
     expect(data.version).toBe("2.0.0");
     // skills counted from skills/ecc/ (3) — the flat cloudflare plugin skill is excluded
     expect(data.machine).toEqual({ agents: 2, skills: 3, rules: 1 });
@@ -418,7 +429,7 @@ describe("eccInventoryDigest", () => {
     expect(data.dup).toBe(1); // repo code-reviewer is an ECC agent (name match)
   });
 
-  it("counts the current ECC repo layout under ~/.claude/ecc/.agents/skills", () => {
+  it("counts the current ECC repo layout under ~/.claude/ecc/.agents/skills", async () => {
     putHome(
       ".claude/ecc/install-state.json",
       JSON.stringify({
@@ -431,10 +442,28 @@ describe("eccInventoryDigest", () => {
     putHome(".claude/ecc/.agents/skills/agent-sort/SKILL.md", "x");
     putHome(".claude/skills/cloudflare/SKILL.md", "x");
 
-    const data = eccInventoryDigest(ctx())?.data as EccData;
+    const data = (await eccInventoryDigest(ctx()))?.data as EccData;
 
     expect(data.machine.skills).toBe(3);
     expect(data.skillNames).toEqual(["agent-sort", "security-review", "tdd-workflow"]);
+  });
+
+  it("states that the ECC checks were not run when the ECC plugin is not installed", async () => {
+    put(".claude/agents/team.md", "# team\n");
+    const digest = await eccInventoryDigest(ctx());
+    expect(digest?.text).toContain("ECC checks were not run: framework-plugin-unavailable");
+    expect((digest?.data as { eccChecks?: string } | undefined)?.eccChecks).toBe("not-run");
+  });
+
+  it("takes the stack's ECC packs from the plugin's component identification", async () => {
+    put(".claude/agents/team.md", "# team\n");
+    const digest = await eccInventoryDigest(ctx(), {
+      loadPlugin: () => loadEccFromSource(),
+      loadDescriptor: async () => eccDescriptorLoad(),
+    });
+    expect(digest?.text).toContain("ECC packs for this stack:");
+    expect(digest?.text).not.toContain("were not run");
+    expect((digest?.data as { eccChecks?: string } | undefined)?.eccChecks).toBeUndefined();
   });
 });
 
@@ -639,7 +668,7 @@ interface SkillGovData {
     analyzers: string[];
     gaps: string[];
   };
-  approvalVerdicts?: { GREEN: number; YELLOW: number };
+  approvalVerdicts?: { GREEN: number; YELLOW: number; RED?: number; UNKNOWN?: number };
 }
 
 describe("skillGovernanceDigest", () => {
@@ -805,6 +834,37 @@ describe("skillGovernanceDigest", () => {
     expect(html).toContain("newest scan 2026-07-02");
     expect(html).toContain("RED 1 · UNKNOWN 1");
     expect(html).toContain("GREEN 1 · YELLOW 1");
+  });
+
+  it("counts RED and UNKNOWN approvals as labels instead of dropping them", () => {
+    put(`${DIR}/skills/src/alpha/SKILL.md`, "# alpha\n");
+    put(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 2,
+        skills: [
+          lockEntry("alpha", "docs"),
+          { ...lockEntry("risky", "docs"), verdict: "RED" },
+          { ...lockEntry("unscanned", "docs"), verdict: "UNKNOWN" },
+        ],
+      }),
+    );
+
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData;
+    expect(data.approvalVerdicts).toEqual({ GREEN: 1, YELLOW: 0, RED: 1, UNKNOWN: 1 });
+    expect(d?.text).toContain("approval verdicts: GREEN 1 · YELLOW 0 · RED 1 · UNKNOWN 1");
+    const html = renderSkillGovernance({
+      installed: data.installed,
+      approved: data.approved,
+      unapproved: data.unapproved,
+      stalePin: data.stalePin,
+      quarantined: 0,
+      rows: data.rows,
+      scanner: data.scanner,
+      approvalVerdicts: data.approvalVerdicts,
+    });
+    expect(html).toContain("GREEN 1 · YELLOW 0 · RED 1 · UNKNOWN 1");
   });
 
   it("counts a quarantined skill in the title breakdown and NEVER as clean (review high)", () => {

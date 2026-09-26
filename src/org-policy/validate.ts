@@ -1,13 +1,10 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { AIH_CONFIG_FILE, readPolicyBinding } from "../config/marker.js";
-import {
-  applyPreparedGovernedEccDelivery,
-  type PreparedGovernedEccDelivery,
-} from "../ecc/governed-lifecycle.js";
-import { type EccCommandDeps, executeEccCommand } from "../ecc/pipeline.js";
+import { readPolicyBinding } from "../config/marker.js";
 import { AihError } from "../errors.js";
+import { prepareEccPolicyDelivery } from "../framework-plugin/ecc-command.js";
+import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -459,83 +456,58 @@ function assertPreparedEccDelivery(result: PlanResult): void {
   }
 }
 
-/** Project policy-owned settings and automatically reconcile required ECC content. */
+/**
+ * Project policy-owned settings and automatically reconcile required ECC
+ * content. The ECC delivery is prepared through `@aihq/framework-ecc` before
+ * the projection and committed, exactly as prepared, after it succeeded.
+ */
 export async function executePolicyProjectCommand(
   ctx: PlanContext,
-  deps: EccCommandDeps = {},
+  deps: FrameworkCommandDepsV1 = {},
 ): Promise<PlanResult> {
   const bindingAtStart = readPolicyBinding(ctx.root);
   const policy = readOrgPolicy(ctx.root, ctx.env);
   const governsEcc = policy?.governance?.externalSelections?.some(
     (selection) => selection.framework === "ecc",
   );
-  let preparedDelivery: PreparedGovernedEccDelivery | undefined;
-  let preparedResult: PlanResult | undefined;
-  if (governsEcc === true) {
-    preparedResult = await executeEccCommand(
-      { ...ctx, options: { ...ctx.options, lifecycle: "install" } },
-      {
-        ...deps,
-        prepareOnly: true,
-        onGovernedPrepared: (prepared) => {
-          preparedDelivery = prepared;
-        },
-      },
-    );
+  if (governsEcc !== true) return executePlan(await policyProjectPlan(ctx), ctx);
+  const delivery = await prepareEccPolicyDelivery(ctx, deps);
+  try {
     if (ctx.apply) {
-      assertPreparedEccDelivery(preparedResult);
-      if (preparedDelivery === undefined) {
+      assertPreparedEccDelivery(delivery.result);
+      if (delivery.commit === undefined) {
         throw new AihError(
           "governed ECC preparation did not retain an exact delivery request",
           "AIH_TRUST",
         );
       }
     }
-  }
-  const projected = await executePlan(await policyProjectPlan(ctx), ctx);
-  const projectionFailed =
-    projected.execs.some((entry) => entry.ran && entry.ok === false) ||
-    (projected.report !== undefined && !projected.report.ok);
-  if (projectionFailed || governsEcc !== true) return projected;
-  if (!ctx.apply) {
-    if (preparedResult === undefined) {
-      throw new AihError("governed ECC preview did not retain its delivery result", "AIH_TRUST");
+    const projected = await executePlan(await policyProjectPlan(ctx), ctx);
+    const projectionFailed =
+      projected.execs.some((entry) => entry.ran && entry.ok === false) ||
+      (projected.report !== undefined && !projected.report.ok);
+    if (projectionFailed) return projected;
+    if (!ctx.apply || delivery.commit === undefined) {
+      return combineProjectResults(projected, delivery.result);
     }
-    return combineProjectResults(projected, preparedResult);
-  }
-  let delivery = preparedDelivery;
-  if (delivery !== undefined && bindingAtStart !== undefined) {
-    const bindingAfterProjection = readPolicyBinding(ctx.root);
-    if (bindingAfterProjection === undefined || !sameJson(bindingAfterProjection, bindingAtStart)) {
-      throw new AihError("project policy binding changed during policy projection", "AIH_TRUST");
+    let policyBinding: ReturnType<typeof policyBindingFileAssertion>;
+    if (bindingAtStart !== undefined) {
+      const bindingAfterProjection = readPolicyBinding(ctx.root);
+      if (
+        bindingAfterProjection === undefined ||
+        !sameJson(bindingAfterProjection, bindingAtStart)
+      ) {
+        throw new AihError("project policy binding changed during policy projection", "AIH_TRUST");
+      }
+      policyBinding = policyBindingFileAssertion(ctx.root);
+      if (policyBinding === undefined) {
+        throw new AihError("project policy binding disappeared after projection", "AIH_TRUST");
+      }
     }
-    const refreshed = policyBindingFileAssertion(ctx.root);
-    if (refreshed === undefined) {
-      throw new AihError("project policy binding disappeared after projection", "AIH_TRUST");
-    }
-    const transactionGuard = delivery.transactionGuard;
-    delivery = {
-      ...delivery,
-      transactionGuard: {
-        ...transactionGuard,
-        fileAssertions: [
-          ...(transactionGuard?.fileAssertions ?? []).filter(
-            (assertion) =>
-              assertion.path.replace(/\\/g, "/").replace(/^\.\//, "") !== AIH_CONFIG_FILE,
-          ),
-          refreshed,
-        ],
-      },
-    };
+    return combineProjectResults(projected, await delivery.commit(policyBinding));
+  } finally {
+    delivery.end();
   }
-  const delivered =
-    delivery !== undefined && preparedResult !== undefined
-      ? await applyPreparedGovernedEccDelivery(ctx, delivery, preparedResult, deps)
-      : await executeEccCommand(
-          { ...ctx, options: { ...ctx.options, lifecycle: "install" } },
-          deps,
-        );
-  return combineProjectResults(projected, delivered);
 }
 
 export const policyValidateCommand: CommandSpec = {

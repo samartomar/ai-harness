@@ -1,4 +1,5 @@
 import {
+  componentLabelSlotV1,
   dispositionForTrustFinding,
   type NormalizedTrustFinding,
   TRUST_POLICY_VERSION,
@@ -103,17 +104,27 @@ export interface ComponentInventoryStatus {
   id: string;
   discovery: "DISCOVERED";
   selection: "SELECTED" | "NOT SELECTED";
-  authorization: "AUTHORIZED" | "NOT AUTHORIZED";
   installation: "NOT INSTALLED";
+}
+
+/** A selected component's evidence problem: evidence that is incomplete, not a finding. */
+export interface QualificationEvidenceProblem {
+  componentId: string;
+  code: string;
+  detail: string;
+  fingerprint: string;
 }
 
 export interface ActiveProfileQualification {
   profile: string;
-  verdict: "PASS" | "REVIEW" | "BLOCK";
+  /** A label, never a gate: `has-findings` when a selected component carries any finding. */
+  verdict: "no-findings" | "has-findings";
   selectedComponents: string[];
-  componentCounts: { pass: number; review: number; block: number };
+  componentCounts: { noFindings: number; hasFindings: number };
   findingCounts: { warn: number; review: number; block: number };
   genuineReasons: QualificationReason[];
+  /** Reported separately from findings, with the same classification as the lock. */
+  evidenceProblems: QualificationEvidenceProblem[];
   inventory: ComponentInventoryStatus[];
   policyDecision: string;
   runtimeRestrictions: string[];
@@ -145,10 +156,11 @@ export function qualifyActiveProfile(
   }
 
   const genuineReasons: QualificationReason[] = [];
+  const evidenceProblems: QualificationEvidenceProblem[] = [];
   let warn = 0;
   let review = 0;
   let block = 0;
-  const componentCounts = { pass: 0, review: 0, block: 0 };
+  const componentCounts = { noFindings: 0, hasFindings: 0 };
   for (const componentId of profile.selectedComponentIds) {
     const component = evidenceById.get(componentId);
     if (component === undefined) continue;
@@ -188,18 +200,31 @@ export function qualifyActiveProfile(
         throw new Error(`policy disposition has no normalized finding: ${fingerprint}`);
       }
     }
-    let componentLevel: "PASS" | "REVIEW" | "BLOCK" = "PASS";
+    let componentHasFindings = false;
     for (const disposition of component.dispositions) {
-      if (disposition.level === "BLOCK") componentLevel = "BLOCK";
-      else if (disposition.level === "REVIEW" && componentLevel !== "BLOCK") {
-        componentLevel = "REVIEW";
+      const finding = findingByFingerprint(component, disposition.findingFingerprint);
+      if (finding === undefined) continue;
+      // Classify the code before counting (same rule as the lock): a failed
+      // evidence-problem code is incomplete evidence, not a finding.
+      const slot = componentLabelSlotV1(
+        finding.code ?? "trust.detector-finding",
+        finding.checkVerdict,
+        disposition.level,
+      );
+      if (slot === "evidence-problem") {
+        evidenceProblems.push({
+          componentId,
+          code: finding.code ?? "trust.detector-finding",
+          detail: finding.detail,
+          fingerprint: finding.fingerprint,
+        });
+        continue;
       }
+      if (slot !== "finding") continue;
       if (disposition.level === "WARN") warn++;
       if (disposition.level === "REVIEW") review++;
       if (disposition.level === "BLOCK") block++;
-      if (!["WARN", "REVIEW", "BLOCK"].includes(disposition.level)) continue;
-      const finding = findingByFingerprint(component, disposition.findingFingerprint);
-      if (finding === undefined) continue;
+      componentHasFindings = true;
       genuineReasons.push({
         componentId,
         level: disposition.level as "WARN" | "REVIEW" | "BLOCK",
@@ -211,10 +236,11 @@ export function qualifyActiveProfile(
         fingerprint: finding.fingerprint,
       });
     }
-    componentCounts[componentLevel.toLowerCase() as "pass" | "review" | "block"]++;
+    if (componentHasFindings) componentCounts.hasFindings++;
+    else componentCounts.noFindings++;
   }
 
-  const verdict = block > 0 ? "BLOCK" : review > 0 ? "REVIEW" : "PASS";
+  const verdict = genuineReasons.length > 0 ? "has-findings" : "no-findings";
   return {
     profile: profile.id,
     verdict,
@@ -222,22 +248,19 @@ export function qualifyActiveProfile(
     componentCounts,
     findingCounts: { warn, review, block },
     genuineReasons,
+    evidenceProblems,
     inventory: catalog.components.map((component) => {
-      const isSelected = selected.has(component.id);
       return {
         id: component.id,
         discovery: "DISCOVERED",
-        selection: isSelected ? "SELECTED" : "NOT SELECTED",
-        authorization: isSelected && verdict === "PASS" ? "AUTHORIZED" : "NOT AUTHORIZED",
+        selection: selected.has(component.id) ? "SELECTED" : "NOT SELECTED",
         installation: "NOT INSTALLED",
       };
     }),
     policyDecision:
-      verdict === "PASS"
-        ? "active profile may proceed to the bounded install journey; no framework acceptance was used"
-        : verdict === "REVIEW"
-          ? "active profile is not authorized until genuine residual review findings receive an exact-pin decision"
-          : "active profile is blocked by genuine executable, integrity, or mandatory-coverage danger",
+      verdict === "no-findings"
+        ? "the selected components carry no findings; no framework acceptance was used"
+        : `the selected components carry ${genuineReasons.length} finding(s), shown as labels; the consumer decides`,
     runtimeRestrictions: [
       "exact source pin and component-tree identity required",
       "only selected profile components may materialize or load",

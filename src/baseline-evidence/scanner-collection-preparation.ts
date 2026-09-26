@@ -1,23 +1,28 @@
-import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import {
-  canonicalStrictJsonBytesV1,
+  canonicalStrictJsonSha256V1,
+  cloneJsonValueStructureV1,
   deepFreezeStrictJsonV1,
+  jsonOwnEntriesV1,
   parseStrictJsonObjectV1,
+  STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
 import { assertAcquiredGithubSourceRootV1 } from "../internals/bounded-github-source-archive.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import {
   encodePackagedScannerCollectionEvidenceRecordV1,
-  PackagedScannerCollectionEvidenceRecordV1Schema,
   packagedCoverageProjectionDigestV1,
   packagedReportComponentDigestV1,
+  readPackagedScannerCollectionEvidenceRecordV1,
 } from "../org-policy/packaged-collection-evidence-v1.js";
+import {
+  type inventoryCollectionCoverageV1,
+  prepareRegisteredScannerCatalogV1,
+} from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
-import { prepareRegisteredScannerCatalogV1 } from "./scanner-provider-catalogs.js";
 import {
   consumeScannerBaselinePublicationsV1,
   type ScannerBaselinePublicationProvenanceV1,
@@ -40,7 +45,7 @@ const SLSA_PROVENANCE_V1 = "https://slsa.dev/provenance/v1";
 
 export type ScannerCollectionCatalogIdV1 = "mattpocock" | "ponytail" | "ecc" | "superpowers";
 export type ScannerCollectionCoverageV1 = NonNullable<
-  ReturnType<typeof prepareRegisteredScannerCatalogV1>["coverage"]
+  ScannerCollectionPreparedCoverageV1["coverage"]
 >;
 
 export interface ScannerCollectionPublicationBatchV1 {
@@ -57,7 +62,18 @@ export interface PrepareScannerCollectionPublicationsV1Input {
   readonly run?: Runner;
   /** Test seam for the owner-only attestation staging directory. */
   readonly tempRoot?: string;
+  /**
+   * Coverage Core prepared from a baseline definition and a Catalog-compiled candidate
+   * bundle, for a pin the installed Catalog does not carry. Absent, the installed
+   * Catalog's registration is used. Its digest must bind its content.
+   */
+  readonly coverage?: ScannerCollectionPreparedCoverageV1;
 }
+
+/** A registered or definition coverage; an inventory's components bind zero-to-many assets. */
+export type ScannerCollectionPreparedCoverageV1 =
+  | ReturnType<typeof prepareRegisteredScannerCatalogV1>
+  | ReturnType<typeof inventoryCollectionCoverageV1>;
 
 /** Opaque in-process result. JSON clones never carry the retained custody witness. */
 export interface PreparedScannerCollectionPublicationsV1 {
@@ -148,18 +164,24 @@ function cloneBytes(bytes: unknown, label: string, maximum: number): Buffer {
   return Buffer.from(bytes);
 }
 
+/**
+ * A snapshot of the caller's input, read only through descriptors before any element or field is
+ * used: the batches array, every batch and a supplied coverage are copied from what was validated,
+ * so no getter runs and later awaits cannot observe caller mutations. The test seams are kept only
+ * when the caller supplied them.
+ */
 function assertInput(
   input: PrepareScannerCollectionPublicationsV1Input,
-): asserts input is PrepareScannerCollectionPublicationsV1Input {
+): PrepareScannerCollectionPublicationsV1Input {
   assertDataRecord(
     input,
-    ["sourceRoot", "catalogId", "batches", "now", "run", "tempRoot"],
+    ["sourceRoot", "catalogId", "batches", "now", "run", "tempRoot", "coverage"],
     ["sourceRoot", "catalogId", "batches", "now"],
     "input",
   );
   const sourceRoot = ownValue(input, "sourceRoot", "input");
   const catalogId = ownValue(input, "catalogId", "input");
-  const batches = ownValue(input, "batches", "input");
+  const suppliedBatches = ownValue(input, "batches", "input");
   const now = ownValue(input, "now", "input");
   const run = Object.hasOwn(input, "run") ? ownValue(input, "run", "input") : undefined;
   const tempRoot = Object.hasOwn(input, "tempRoot")
@@ -172,16 +194,16 @@ function assertInput(
       catalogId !== "ponytail" &&
       catalogId !== "ecc" &&
       catalogId !== "superpowers") ||
-    !Array.isArray(batches) ||
-    batches.length === 0 ||
-    batches.length > 1_000 ||
+    !Array.isArray(suppliedBatches) ||
     typeof now !== "string" ||
     (run !== undefined && typeof run !== "function") ||
     (tempRoot !== undefined && (typeof tempRoot !== "string" || tempRoot.length === 0))
   )
     fail("input");
+  const entries = jsonOwnEntriesV1(suppliedBatches, "Scanner collection preparation: batches");
+  if (entries.length === 0 || entries.length > 1_000) fail("input");
   let totalBytes = 0;
-  for (const batch of batches) {
+  const batches = entries.map(([, batch]) => {
     assertDataRecord(
       batch,
       ["discoveryBytes", "publicationBytes"],
@@ -198,7 +220,40 @@ function assertInput(
       totalBytes > SCANNER_COLLECTION_TOTAL_INPUT_MAX_BYTES_V1
     )
       fail("total batch bytes");
+    return Object.freeze({
+      discoveryBytes: Buffer.from(discoveryBytes),
+      publicationBytes: Buffer.from(publicationBytes),
+    });
+  });
+  const suppliedCoverage = Object.hasOwn(input, "coverage")
+    ? ownValue(input, "coverage", "input")
+    : undefined;
+  let coverage: ScannerCollectionPreparedCoverageV1 | undefined;
+  if (suppliedCoverage !== undefined) {
+    const copy = cloneJsonValueStructureV1(
+      suppliedCoverage,
+      "Scanner collection preparation: coverage",
+      STRICT_JSON_MAX_DEPTH_V1,
+    );
+    assertDataRecord(
+      copy,
+      ["catalog", "coverage", "coverageDigest"],
+      ["catalog", "coverage", "coverageDigest"],
+      "collection coverage",
+    );
+    const catalog = ownValue(copy, "catalog", "collection coverage");
+    if (typeof catalog !== "object" || catalog === null) fail("collection coverage");
+    coverage = copy as ScannerCollectionPreparedCoverageV1;
   }
+  return {
+    sourceRoot,
+    catalogId,
+    batches,
+    now,
+    ...(run === undefined ? {} : { run: run as Runner }),
+    ...(tempRoot === undefined ? {} : { tempRoot: tempRoot as string }),
+    ...(coverage === undefined ? {} : { coverage }),
+  };
 }
 
 function containedStagingRoot(tempRoot: string): string {
@@ -327,13 +382,19 @@ function freezeOutput(
  * caller-supplied attestation output are deliberately not part of this boundary.
  */
 export async function prepareScannerCollectionPublicationsV1(
-  input: PrepareScannerCollectionPublicationsV1Input,
+  supplied: PrepareScannerCollectionPublicationsV1Input,
 ): Promise<PreparedScannerCollectionPublicationsV1> {
-  assertInput(input);
-  const prepared = prepareRegisteredScannerCatalogV1(input.sourceRoot, input.catalogId);
-  if (prepared.coverage === undefined || prepared.coverageDigest === undefined)
+  const input = assertInput(supplied);
+  const prepared =
+    input.coverage ?? prepareRegisteredScannerCatalogV1(input.sourceRoot, input.catalogId);
+  if (
+    prepared.coverage === undefined ||
+    prepared.coverageDigest === undefined ||
+    prepared.catalog.id !== input.catalogId ||
+    prepared.coverageDigest !== `sha256:${canonicalStrictJsonSha256V1(prepared.coverage)}`
+  )
     fail("collection coverage");
-  const operational = !Object.hasOwn(input, "run") && !Object.hasOwn(input, "tempRoot");
+  const operational = !Object.hasOwn(supplied, "run") && !Object.hasOwn(supplied, "tempRoot");
   const run = input.run ?? defaultRunner;
   await assertPinnedCheckout(
     run,
@@ -361,13 +422,8 @@ export async function prepareScannerCollectionPublicationsV1(
     publicationBytes: Buffer;
     attestationResultBytes: Buffer;
   }[];
-  for (const [index, batch] of input.batches.entries()) {
-    const discoveryBytes = cloneBytes(batch.discoveryBytes, "discovery", DISCOVERY_MAX_BYTES);
-    const publicationBytes = cloneBytes(
-      batch.publicationBytes,
-      "publication",
-      PUBLICATION_MAX_BYTES,
-    );
+  // The snapshot already holds bounded copies of the caller's bytes.
+  for (const [index, { discoveryBytes, publicationBytes }] of input.batches.entries()) {
     batches.push({
       expectedRequestSha256: requests[index]?.requestSha256 ?? fail("request batch"),
       discoveryBytes,
@@ -497,12 +553,14 @@ export function authorPackagedScannerCollectionEvidenceRecordV1(
       componentTreeSha256: component.componentTreeSha256,
       paths: component.paths,
       files: component.files,
-      subject: component.subject,
+      ...("subjects" in component
+        ? { subjects: component.subjects }
+        : { subject: component.subject }),
     })),
     unmappedDerivedAssets: output.coverage.unmappedDerivedAssets,
   };
   return encodePackagedScannerCollectionEvidenceRecordV1({
-    version: "packaged-scanner-collection-evidence/v1",
+    version: "packaged-scanner-collection-evidence/v2",
     authority: "display-only",
     catalog: {
       ...output.catalog,
@@ -552,7 +610,7 @@ export function authorPackagedScannerCollectionEvidenceRecordV1(
  * this result; modified bytes, source, report facts, or attestation all fail.
  */
 export async function reverifyPackagedScannerCollectionEvidenceRecordV1(
-  input: Readonly<{
+  supplied: Readonly<{
     sourceRoot: string;
     catalogId: ScannerCollectionCatalogIdV1;
     batches: readonly ScannerCollectionPublicationBatchV1[];
@@ -560,25 +618,31 @@ export async function reverifyPackagedScannerCollectionEvidenceRecordV1(
     sealed: Readonly<{ bytes: string; sha256: string }>;
   }>,
 ): Promise<PreparedScannerCollectionPublicationsV1> {
-  if (
-    typeof input.sealed.bytes !== "string" ||
-    typeof input.sealed.sha256 !== "string" ||
-    !Number.isFinite(Date.parse(input.now))
-  )
-    fail("sealed collection record");
-  const sealedBytes = Buffer.from(input.sealed.bytes, "utf8");
-  const sealedDigest = `sha256:${createHash("sha256").update(sealedBytes).digest("hex")}`;
-  if (
-    sealedBytes.length === 0 ||
-    sealedBytes.length > 4 * 1024 * 1024 ||
-    sealedDigest !== input.sealed.sha256
-  )
-    fail("sealed collection record");
-  const sealed = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(input.sealed.bytes, "Sealed collection record"),
+  // Read through descriptors before any field is used; preparation then checks the batches.
+  assertDataRecord(
+    supplied,
+    ["sourceRoot", "catalogId", "batches", "now", "sealed"],
+    ["sourceRoot", "catalogId", "batches", "now", "sealed"],
+    "reverify input",
   );
+  const input = {
+    sourceRoot: ownValue(supplied, "sourceRoot", "reverify input") as string,
+    catalogId: ownValue(supplied, "catalogId", "reverify input") as ScannerCollectionCatalogIdV1,
+    batches: ownValue(
+      supplied,
+      "batches",
+      "reverify input",
+    ) as readonly ScannerCollectionPublicationBatchV1[],
+    now: ownValue(supplied, "now", "reverify input") as string,
+    sealed: ownValue(supplied, "sealed", "reverify input") as Readonly<{
+      bytes: string;
+      sha256: string;
+    }>,
+  };
+  if (typeof input.now !== "string" || !Number.isFinite(Date.parse(input.now)))
+    fail("sealed collection record");
+  const sealed = readPackagedScannerCollectionEvidenceRecordV1(input.sealed);
   if (
-    !canonicalStrictJsonBytesV1(sealed).equals(sealedBytes) ||
     sealed.catalog.id !== input.catalogId ||
     Date.parse(sealed.verification.preparedAt) > Date.parse(input.now)
   )
@@ -591,14 +655,14 @@ export async function reverifyPackagedScannerCollectionEvidenceRecordV1(
   });
   const reverified = authorPackagedScannerCollectionEvidenceRecordV1(prepared);
   if (reverified === undefined) fail("reverified collection custody");
-  const current = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(reverified.bytes, "Reverified collection record"),
-  );
+  const current = readPackagedScannerCollectionEvidenceRecordV1(reverified);
   const encoded = encodePackagedScannerCollectionEvidenceRecordV1({
     ...current,
     verification: { ...current.verification, preparedAt: sealed.verification.preparedAt },
   });
-  if (encoded.sha256 !== input.sealed.sha256 || encoded.bytes !== input.sealed.bytes)
+  // The reader proved the sealed bytes canonical under their seal, so encoding reproduces both.
+  const expected = encodePackagedScannerCollectionEvidenceRecordV1(sealed);
+  if (encoded.sha256 !== expected.sha256 || encoded.bytes !== expected.bytes)
     fail("packaged collection record differs from reverified publication");
   return prepared;
 }

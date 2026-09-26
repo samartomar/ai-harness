@@ -22,7 +22,6 @@ export function buildProgram(extra: CommandSpec[] = [], warnings?: string[]): Co
       "AIH — AI Development Assurance governance for enterprise workstations and repositories",
     )
     .version(VERSION)
-    .option("--ui", "serve and open the portable AIH Policy Workbench on loopback")
     .showHelpAfterError("(add --help for usage)");
   registerCommands(program, extra, warnings);
   return program;
@@ -38,11 +37,6 @@ export function buildProgram(extra: CommandSpec[] = [], warnings?: string[]): Co
 export function isVersionFastPath(argv: readonly string[]): boolean {
   const first = argv[2];
   return first === "--version" || first === "-V";
-}
-
-/** Exact root invocation used by `npx @aihq/core --ui`. */
-export function isUiFastPath(argv: readonly string[]): boolean {
-  return argv.length === 3 && argv[2] === "--ui";
 }
 
 /**

@@ -40,7 +40,7 @@ import {
 } from "../../../../src/binding/lock.js";
 import {
   BindingScanError,
-  type DimensionInspector,
+  type DimensionReport,
   type ResolvedGitSource,
   runFastScanGate,
   type ScanDisposition,
@@ -48,6 +48,7 @@ import {
 } from "../../../../src/binding/scan-gate.js";
 import type { BindingDeclaration } from "../../../../src/binding/schema.js";
 import { fakeRunner, type Runner, type RunResult } from "../../../../src/internals/proc.js";
+import { fakeBindingGateScan } from "../../fake-binding-gate.js";
 import { applyActions, readJson } from "./support.js";
 
 const PLUGIN = "ecc";
@@ -68,19 +69,13 @@ afterEach(() => {
   for (const dir of [cacheHome, root, home]) rmSync(dir, { recursive: true, force: true });
 });
 
-const producedClean: DimensionInspector = {
-  dimension: "test-complete",
-  run: () => ({ dimension: "test-complete", status: "produced", findings: [] }),
-};
-const producedCritical: DimensionInspector = {
-  dimension: "test-critical",
-  run: () => ({
-    dimension: "test-critical",
-    status: "produced",
-    findings: [
-      { code: "trust.malicious-code", severity: "critical", detail: "boom", coverage: "complete" },
-    ],
-  }),
+const producedClean: DimensionReport = { dimension: "structure", status: "produced", findings: [] };
+const producedCritical: DimensionReport = {
+  dimension: "suspicious-execution",
+  status: "produced",
+  findings: [
+    { code: "trust.malicious-code", severity: "critical", detail: "boom", coverage: "complete" },
+  ],
 };
 
 describe("windows claude shim routing (cmd /c)", () => {
@@ -126,10 +121,10 @@ function tree(name: string, files: Record<string, string>): string {
  * ALREADY-BUILT on-disk tree (no git, no network): identityFiles are exactly
  * the digest's fileset so coverage is complete and the gate allows.
  */
-function mintFixture(
+async function mintFixture(
   dir: string,
-  inspectors: DimensionInspector[] = [producedClean],
-): { resolved: ResolvedGitSource; disposition: ScanDisposition } {
+  reports: DimensionReport[] = [producedClean],
+): Promise<{ resolved: ResolvedGitSource; disposition: ScanDisposition }> {
   const topLevel = readdirSync(dir)
     .filter((n) => n !== ".git")
     .sort();
@@ -139,7 +134,11 @@ function mintFixture(
     treePath: dir,
     identityFiles: hashed.files.map((f) => f.path),
   };
-  const disposition = runFastScanGate(source, { posture: "enterprise" }, { cacheHome, inspectors });
+  const disposition = await runFastScanGate(
+    source,
+    { posture: "enterprise" },
+    { cacheHome, scanExecution: fakeBindingGateScan(reports) },
+  );
   return {
     resolved: {
       kind: "git",
@@ -183,10 +182,10 @@ function pluginManifestFiles(
 function scannedFixture(
   name: string,
   files: Record<string, string>,
-  inspectors: DimensionInspector[] = [producedClean],
-): { resolved: ResolvedGitSource; disposition: ScanDisposition } {
+  reports: DimensionReport[] = [producedClean],
+): Promise<{ resolved: ResolvedGitSource; disposition: ScanDisposition }> {
   const dir = tree(name, { ...pluginManifestFiles(), ...files });
-  return mintFixture(dir, inspectors);
+  return mintFixture(dir, reports);
 }
 
 /** A recording runner over the fake seam; `script` overrides specific commands. */
@@ -225,7 +224,7 @@ function lockFrom(result: BindPluginResult): BindingLock {
 
 describe("bindPlugin — happy path (marketplace add -> install -> D7 match -> sealed ownership)", () => {
   it("registers the scanned checkout, installs, verifies identity, and seals every ownership slot", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const { runner, calls } = recordingRunner();
 
     const result = await bindPlugin(
@@ -292,7 +291,7 @@ describe("bindPlugin — happy path (marketplace add -> install -> D7 match -> s
   });
 
   it("writes local-scope settings and passes --scope local when requested", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const { runner, calls } = recordingRunner();
 
     const result = await bindPlugin(
@@ -314,7 +313,7 @@ describe("bindPlugin — happy path (marketplace add -> install -> D7 match -> s
 
 describe("bindPlugin — D7 digest mismatch fails closed", () => {
   it("disables + uninstalls, throws a typed identity error, and writes no lock/ownership", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     // The host would load a DIFFERENT tree than the one AIH scanned.
     const tamperedCache = tree("tampered", { "SKILL.md": "# tampered\n" });
     const { runner, calls } = recordingRunner();
@@ -341,7 +340,7 @@ describe("bindPlugin — D7 digest mismatch fails closed", () => {
   });
 
   it("carries both digests on the thrown identity error", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const tamperedCache = tree("tampered", { "SKILL.md": "# tampered\n" });
     const { runner } = recordingRunner();
 
@@ -363,7 +362,7 @@ describe("bindPlugin — D7 digest mismatch fails closed", () => {
 
 describe("bindPlugin — disposition authorization (D12) refused before any upstream code", () => {
   it("rejects a forged (unbranded) disposition and runs no CLI", async () => {
-    const { resolved } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const forged = {
       digest: resolved.treeDigest,
       verdict: "allow",
@@ -388,7 +387,7 @@ describe("bindPlugin — disposition authorization (D12) refused before any upst
   });
 
   it("rejects a disposition whose digest does not match the resolved source", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const { runner, calls } = recordingRunner();
 
     await expect(
@@ -410,24 +409,24 @@ describe("bindPlugin — disposition authorization (D12) refused before any upst
     expect(calls).toHaveLength(0);
   });
 
-  it("rejects a blocked-verdict disposition (danger floor) and runs no CLI", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" }, [
+  it("binds a disposition carrying a critical finding and keeps its block label", async () => {
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" }, [
       producedCritical,
     ]);
     const { runner, calls } = recordingRunner();
+    expect(disposition.verdict).toBe("block");
 
-    await expect(
-      bindPlugin(
-        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-        {
-          root,
-          runner,
-          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
-          locateCache: () => resolved.treePath,
-        },
-      ),
-    ).rejects.toBeInstanceOf(BindingScanError);
-    expect(calls).toHaveLength(0);
+    const result = await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
+    );
+    expect(calls[0]).toEqual(["claude", "plugin", "marketplace", "add", resolved.treePath]);
+    expect(result.identity.match).toBe(true);
   });
 });
 
@@ -504,7 +503,7 @@ describe("bindPlugin — D7 anchor is the plugin's SOURCE SUBTREE, not the whole
       "plugin/SKILL.md": "# skill\n",
       "unrelated-sibling.md": "# not part of the plugin subtree at all\n",
     });
-    const { resolved, disposition } = mintFixture(dir);
+    const { resolved, disposition } = await mintFixture(dir);
     // The host materializes ONLY the subtree bytes — a distinct, real tree.
     const subtreeCache = tree("subtree-anchor-cache", {
       "SKILL.md": "# skill\n",
@@ -528,7 +527,7 @@ describe("bindPlugin — D7 anchor is the plugin's SOURCE SUBTREE, not the whole
 
   it("fails closed with ZERO CLI calls when the checkout has no marketplace.json", async () => {
     const dir = tree("no-manifest-bind", { "SKILL.md": "# skill\n" });
-    const { resolved, disposition } = mintFixture(dir);
+    const { resolved, disposition } = await mintFixture(dir);
     const { runner, calls } = recordingRunner();
 
     await expect(
@@ -546,7 +545,7 @@ describe("bindPlugin — D7 anchor is the plugin's SOURCE SUBTREE, not the whole
         plugins: [{ name: "some-other-plugin", source: "./" }],
       }),
     });
-    const { resolved, disposition } = mintFixture(dir);
+    const { resolved, disposition } = await mintFixture(dir);
     const { runner, calls } = recordingRunner();
 
     await expect(
@@ -561,7 +560,7 @@ describe("bindPlugin — D7 anchor is the plugin's SOURCE SUBTREE, not the whole
 
 describe("bindPlugin — prefers listPlugins' authoritative installPath over the locator guess", () => {
   it("uses the installPath reported by `claude plugin list --json` when present", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     // The injected locator deliberately points at the WRONG tree — proves the
     // authoritative list path is preferred over the locator's guess.
     const wrongLocatorPath = tree("wrong-locator-guess", { "SKILL.md": "# WRONG\n" });
@@ -592,7 +591,7 @@ describe("bindPlugin — prefers listPlugins' authoritative installPath over the
   });
 
   it("falls back to the locator when listPlugins has no entry for the plugin key (parse succeeds, entry absent)", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const { runner } = recordingRunner((argv) =>
       argv.includes("list")
         ? { code: 0, stdout: JSON.stringify({ version: 2, plugins: {} }) }
@@ -614,7 +613,7 @@ describe("bindPlugin — prefers listPlugins' authoritative installPath over the
   });
 
   it("falls back to the locator when listPlugins itself fails (non-zero exit)", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const { runner } = recordingRunner((argv) =>
       argv.includes("list") ? { code: 1, stderr: "boom" } : undefined,
     );
@@ -636,7 +635,7 @@ describe("bindPlugin — prefers listPlugins' authoritative installPath over the
 
 describe("removePlugin — conservative machine-scope reconciliation", () => {
   async function bindForRemoval(): Promise<BindPluginResult> {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const { runner } = recordingRunner();
     return bindPlugin(
       { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
@@ -787,7 +786,9 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
 
 describe("bindPlugin — project custody", () => {
   it("refuses a relative project root before any runner or apply call", async () => {
-    const { resolved, disposition } = scannedFixture("relative-root", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("relative-root", {
+      "SKILL.md": "# skill\n",
+    });
     const { runner, calls } = recordingRunner();
     let applies = 0;
 
@@ -811,7 +812,9 @@ describe("bindPlugin — project custody", () => {
   });
 
   it("runs every bind lifecycle subprocess with the requested project root as cwd", async () => {
-    const { resolved, disposition } = scannedFixture("rooted-cli", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("rooted-cli", {
+      "SKILL.md": "# skill\n",
+    });
     const ambient = mkdtempSync(join(tmpdir(), "aih-neutral-ambient-"));
     const originalCwd = process.cwd();
     const cwd: Array<string | undefined> = [];
@@ -1155,7 +1158,9 @@ describe("removePlugin — post-uninstall project custody", () => {
 });
 
 async function bindForProjectRemoval(): Promise<BindPluginResult> {
-  const { resolved, disposition } = scannedFixture("project-removal", { "SKILL.md": "# skill\n" });
+  const { resolved, disposition } = await scannedFixture("project-removal", {
+    "SKILL.md": "# skill\n",
+  });
   const { runner } = recordingRunner();
   return bindPlugin(
     { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
@@ -1170,7 +1175,7 @@ async function bindForProjectRemoval(): Promise<BindPluginResult> {
 
 describe("bindPlugin — re-bind idempotency", () => {
   it("re-binds to identical settings bytes and preserves the original pre-existing state", async () => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
 
     const first = await bindPlugin(
       { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
@@ -1223,7 +1228,7 @@ describe("bindPlugin / wrappers — safe-key refusal of hostile plugin/marketpla
     ["", "empty"],
     ["constructor", "prototype-pollution key"],
   ])("refuses %j (%s) as a plugin name", async (bad) => {
-    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = await scannedFixture("src", { "SKILL.md": "# skill\n" });
     const { runner, calls } = recordingRunner();
     await expect(
       bindPlugin(
@@ -1263,7 +1268,7 @@ describe("marketplace manifest-name contract (W4 live-run correction)", () => {
   }
 
   it("refuses before any CLI call when the manifest declares a different marketplace name", async () => {
-    const { resolved, disposition } = scannedFixture("name-mismatch", {
+    const { resolved, disposition } = await scannedFixture("name-mismatch", {
       ".claude-plugin/marketplace.json": JSON.stringify({
         name: "other-mkt",
         plugins: [{ name: PLUGIN, source: "./" }],
@@ -1280,7 +1285,7 @@ describe("marketplace manifest-name contract (W4 live-run correction)", () => {
   });
 
   it("removes the just-registered marketplace when the install step fails", async () => {
-    const { resolved, disposition } = scannedFixture("install-fails", {});
+    const { resolved, disposition } = await scannedFixture("install-fails", {});
     const { runner, calls } = recordingRunner((argv) =>
       argv.includes("install") ? { code: 1, stderr: "install exploded" } : undefined,
     );
@@ -1294,7 +1299,7 @@ describe("marketplace manifest-name contract (W4 live-run correction)", () => {
   });
 
   it("removes the just-registered marketplace on a D7 identity mismatch", async () => {
-    const { resolved, disposition } = scannedFixture("d7-unwind", {});
+    const { resolved, disposition } = await scannedFixture("d7-unwind", {});
     const tamperedCache = tree("d7-unwind-tampered", { "SKILL.md": "tampered bytes\n" });
     const { runner, calls } = recordingRunner();
     await expect(
@@ -1309,7 +1314,7 @@ describe("marketplace manifest-name contract (W4 live-run correction)", () => {
   it("deletes the owned cache root on clean removal even when the host CLI leaves bytes behind", async () => {
     // 2.1.214 empirical: project-scope uninstall deregisters but leaves the
     // cache bytes — removal must tear down the owned root itself.
-    const { resolved, disposition } = scannedFixture("cli-leaves-bytes", {});
+    const { resolved, disposition } = await scannedFixture("cli-leaves-bytes", {});
     const { runner } = recordingRunner();
     const bound = await bindPlugin(
       { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
@@ -1340,7 +1345,7 @@ describe("marketplace manifest-name contract (W4 live-run correction)", () => {
   });
 
   it("never removes a marketplace that was registered before the bind", async () => {
-    const { resolved, disposition } = scannedFixture("pre-registered", {});
+    const { resolved, disposition } = await scannedFixture("pre-registered", {});
     mkdirSync(join(home, ".claude"), { recursive: true });
     writeFileSync(
       join(home, ".claude", "settings.json"),

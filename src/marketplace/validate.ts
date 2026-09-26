@@ -148,7 +148,7 @@ function rawManifestPaths(raw: string): string[] {
   return out;
 }
 
-/** Raw-JSON probe for a verdict outside GREEN|YELLOW (schema-independent). */
+/** Raw-JSON probe for a value that is not a vet verdict (schema-independent). */
 function rawVerdictFindings(raw: string): Check[] {
   let parsed: unknown;
   try {
@@ -162,13 +162,14 @@ function rawVerdictFindings(raw: string): Check[] {
   skills.forEach((skill, index) => {
     const s = skill as { name?: unknown; verdict?: unknown } | null;
     const verdict = s?.verdict;
-    if (verdict === "GREEN" || verdict === "YELLOW") return;
+    if (verdict === "GREEN" || verdict === "YELLOW" || verdict === "RED" || verdict === "UNKNOWN")
+      return;
     const label = typeof s?.name === "string" ? s.name : `skills[${index}]`;
     findings.push({
       name: "marketplace unapproved verdict",
       verdict: "fail",
       code: "marketplace.unapproved-verdict",
-      detail: `${label} carries verdict ${JSON.stringify(verdict ?? null)} — only GREEN/YELLOW skills are distributable`,
+      detail: `${label} carries verdict ${JSON.stringify(verdict ?? null)}, which is not a vet verdict (GREEN, YELLOW, RED or UNKNOWN); the manifest was not built from the approval lock`,
       location: { uri: AIH_MARKETPLACE_FILE },
       fingerprint: `marketplace-unapproved-verdict:${label}`,
     });

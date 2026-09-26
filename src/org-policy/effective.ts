@@ -7,6 +7,7 @@ import {
 } from "./authority.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
+  EVIDENCE_PROBLEM_POLICY_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
   UNWAIVABLE_POLICY_DANGER_CODES,
 } from "./finding-codes.js";
@@ -24,11 +25,13 @@ import type { PreparedWorkbenchCatalogV1 } from "./workbench/prepared-catalog.js
 
 export {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
+  EVIDENCE_PROBLEM_POLICY_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
   UNWAIVABLE_POLICY_DANGER_CODES,
 } from "./finding-codes.js";
 
 export type DispositionableFindingCode = (typeof DISPOSITIONABLE_POLICY_FINDING_CODES)[number];
+export type EvidenceProblemCode = (typeof EVIDENCE_PROBLEM_POLICY_CODES)[number];
 export type FencedPrerequisiteCode = (typeof FENCED_POLICY_PREREQUISITE_CODES)[number];
 export type PolicyDangerCode = (typeof UNWAIVABLE_POLICY_DANGER_CODES)[number];
 export { candidateIdentityDigest, stableJson } from "./policy-identity.js";
@@ -38,9 +41,23 @@ export function isDispositionableFinding(value: string): value is Dispositionabl
   return (DISPOSITIONABLE_POLICY_FINDING_CODES as readonly string[]).includes(value);
 }
 
+/** True for a danger code that labels incomplete evidence rather than a finding. */
+export function isEvidenceProblemCode(value: string): value is EvidenceProblemCode {
+  return (EVIDENCE_PROBLEM_POLICY_CODES as readonly string[]).includes(value);
+}
+
 /** True for a missing or untrustworthy prerequisite that no approval can waive. */
 export function isFencedPrerequisite(value: string): value is FencedPrerequisiteCode {
   return (FENCED_POLICY_PREREQUISITE_CODES as readonly string[]).includes(value);
+}
+
+/** The structural and integrity reasons a requested candidate did not take effect. */
+export function candidateNotEffectiveCodes(candidate: EffectivePolicyCandidate): string[] {
+  return [
+    ...candidate.dangerCodes.filter(isFencedPrerequisite),
+    ...candidate.blockingCodes,
+    ...candidate.decisionBlockers.map((blocker) => blocker.code),
+  ];
 }
 export type ResolutionBlockCode =
   | PolicyDangerCode
@@ -224,7 +241,13 @@ export interface EffectivePolicyCandidate {
   dangerCodes: PolicyDangerCode[];
   blockingCodes: ResolutionBlockCode[];
   decisionBlockers: CandidateDecisionBlocker[];
-  /** Actionable resolver diagnostics; danger codes remain the stable policy fence. */
+  /** Findings observed for this candidate: a label for the consumer, never a gate. */
+  findings: string[];
+  /** What kept the evidence from being complete, and why no org approval covers it: a label. */
+  evidenceProblems: string[];
+  /** How an attached decision relates to the observed findings and its review date: a label. */
+  decisionNotes: CandidateDecisionBlocker[];
+  /** Actionable resolver diagnostics; fenced danger codes remain the stable policy fence. */
   resolutionReasons: string[];
   clarification?: string;
   annotation?: string;
@@ -796,7 +819,8 @@ function currentDecisionState(
 function decisionSummary(
   decision: Decision,
   observedFindings: readonly string[],
-  effective: boolean,
+  /** Effective, and the decision covers exactly what was observed. */
+  covered: boolean,
 ): NonNullable<EffectivePolicyCandidate["decision"]> {
   return {
     id: decision.id,
@@ -812,7 +836,7 @@ function decisionSummary(
     acceptedGaps: sortedUnique(decision.acceptedGaps),
     observedFindings: sortedUnique(observedFindings),
     observedGaps: [],
-    ...(effective
+    ...(covered
       ? {
           riskState:
             decision.disposition === "approved" ? ("clean" as const) : ("accepted" as const),
@@ -1050,6 +1074,7 @@ function resolveCandidate(
   const requestedTargets = activation?.targets ?? candidate.targets;
   const dangerCodes: PolicyDangerCode[] = [];
   const blockingCodes: ResolutionBlockCode[] = [];
+  const evidenceProblems: string[] = [];
   const projection = projectorFor(candidate, requestedTargets, context);
   const resolutionReasons = candidateResolutionReasons(policy, candidate, projection, context);
   const sourceDigest = candidateIdentityDigest(candidate);
@@ -1105,7 +1130,7 @@ function resolveCandidate(
     blockingCodes.push(
       authority === undefined ? "authority-receipt-unverified" : "authority-receipt-mismatch",
     );
-    blockingCodes.push("evidence-missing");
+    evidenceProblems.push("evidence-missing");
   }
   if (
     origin === "custom" &&
@@ -1139,7 +1164,10 @@ function resolveCandidate(
       if (detector.required && detector.status === "missing") mandatoryEvidenceGap = true;
       if (!detector.required && detector.status !== "pass") waivableGap = true;
     }
-    if (mandatoryEvidenceGap) blockingCodes.push("evidence-missing");
+    // Evidence gaps and a failed scan are labels; an approval that matches is
+    // attached as the org's record of them, and never a condition for effect.
+    if (mandatoryEvidenceGap || externalEvidence.state === "missing" || waivableGap)
+      evidenceProblems.push("evidence-missing");
     const needsApproval =
       !mandatoryEvidenceGap &&
       externalEvidence.waivable &&
@@ -1156,7 +1184,7 @@ function resolveCandidate(
         now,
       );
       if (decision.approval === undefined) {
-        blockingCodes.push(decision.code ?? "approval-missing");
+        evidenceProblems.push(decision.code ?? "approval-missing");
         revocation = decision.revocation;
       } else {
         evidence = "approved";
@@ -1175,16 +1203,20 @@ function resolveCandidate(
           subjectDigest: decision.approval.github.subjectDigest,
         };
       }
-    } else if (externalEvidence.state === "failed") {
-      blockingCodes.push("evidence-failed");
-    } else if (externalEvidence.state === "missing" || waivableGap) {
-      blockingCodes.push("evidence-missing");
     }
   }
 
   const uniqueDangerCodes = sortedUnique(dangerCodes);
   const uniqueBlockingCodes = sortedUnique(blockingCodes);
   const observedFindings = uniqueDangerCodes.filter(isDispositionableFinding);
+  const findings = sortedUnique([
+    ...observedFindings,
+    ...(externalEvidence?.state === "failed" ? ["evidence-failed"] : []),
+  ]);
+  const uniqueEvidenceProblems = sortedUnique([
+    ...evidenceProblems,
+    ...uniqueDangerCodes.filter(isEvidenceProblemCode),
+  ]);
   const decisionResolution = resolveDecision(
     governance,
     candidate,
@@ -1234,24 +1266,18 @@ function resolveCandidate(
       }
     }
   }
-  if (coverageBlocker !== undefined) decisionBlockers.push(coverageBlocker);
-  const acceptedFindings =
-    decisionResolution.decision?.disposition === "accepted-with-conditions" &&
-    decisionBlockers.length === 0
-      ? decisionResolution.decision.acceptedFindings
-      : [];
-  const hasUnacceptedFinding = observedFindings.some(
-    (finding) => !acceptedFindings.includes(finding),
-  );
+  // How the decision relates to what was observed is shown, not enforced: the
+  // administrator's request stands whether or not a decision covers the findings.
+  const decisionNotes = coverageBlocker === undefined ? [] : [coverageBlocker];
+  // Only structural and integrity facts keep a requested candidate from effect;
+  // findings and evidence problems travel with it as labels.
   const hasFencedDanger = uniqueDangerCodes.some(isFencedPrerequisite);
   const effective =
     requested &&
     !hasFencedDanger &&
-    !hasUnacceptedFinding &&
     uniqueBlockingCodes.length === 0 &&
     decisionBlockers.length === 0 &&
-    !policyDecisionBlocked &&
-    (evidence === "verified" || evidence === "approved");
+    !policyDecisionBlocked;
   return {
     id: candidate.id,
     origin,
@@ -1266,10 +1292,19 @@ function resolveCandidate(
     ...(revocation === undefined ? {} : { revocation }),
     ...(decisionResolution.decision === undefined
       ? {}
-      : { decision: decisionSummary(decisionResolution.decision, observedFindings, effective) }),
+      : {
+          decision: decisionSummary(
+            decisionResolution.decision,
+            observedFindings,
+            effective && decisionNotes.length === 0,
+          ),
+        }),
     dangerCodes: uniqueDangerCodes,
     blockingCodes: uniqueBlockingCodes,
     decisionBlockers,
+    findings,
+    evidenceProblems: uniqueEvidenceProblems,
+    decisionNotes,
     resolutionReasons,
     ...((activation?.clarification ?? candidate.clarification)
       ? { clarification: activation?.clarification ?? candidate.clarification }
@@ -1432,12 +1467,12 @@ function resolveConsumedEffectiveOrgPolicy(
 const CANDIDATE_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   accountableOwner: "effective report: accountable candidate owner identity only",
   annotation: "effective report metadata consumer",
-  autoExecute: "effective resolver: uncontrolled hook danger gate",
+  autoExecute: "effective resolver: uncontrolled hook finding label",
   "capabilities.*": "effective report metadata consumer",
   clarification: "effective report metadata consumer",
   description: "effective report metadata consumer",
   "evidence.record": "effective resolver: verified receipt evidence lookup",
-  "findings.*": "effective resolver: local additive unwaivable danger gate",
+  "findings.*": "effective resolver: local additive finding labels",
   framework: "effective resolver: framework adapter availability gate",
   id: "effective resolver: candidate identity and activation lookup",
   kind: "effective resolver: identity, evidence, and projector binding",
@@ -1657,10 +1692,14 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.aihMcpRequests.*", AIH_MCP_REQUEST_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.eccMcpApprovals.*", ECC_MCP_APPROVAL_LEAF_CONSUMERS),
-  "governance.eccHookControls.profile":
-    "ECC hook-controls resolver and Claude settings receipt-backed projection; no launcher execution or enforcement claim",
-  "governance.eccHookControls.disabledIds.*":
-    "ECC hook-controls resolver canonicalizes source-gated IDs and the receipt-backed projection writes only ECC_DISABLED_HOOKS",
+  "governance.frameworkHookControls.ecc.profile":
+    "the ecc framework plugin validates the profile against its hook inventory; the receipt-backed projection writes only the Claude settings env keys its plan owns",
+  "governance.frameworkHookControls.ecc.disabledHookIds.*":
+    "the ecc framework plugin validates each id against its hook inventory and returns the hook-control plan; Core applies it through the receipt-backed hook registrar",
+  "governance.frameworkHookControls.superpowers.profile":
+    "the superpowers framework plugin validates the profile against its hook inventory; the receipt-backed projection writes only the Claude settings env keys its plan owns",
+  "governance.frameworkHookControls.superpowers.disabledHookIds.*":
+    "the superpowers framework plugin validates each id against its hook inventory and returns the hook-control plan; Core applies it through the receipt-backed hook registrar",
   ...prefixedConsumers("governance.hookRegistrations.*", HOOK_REGISTRATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),

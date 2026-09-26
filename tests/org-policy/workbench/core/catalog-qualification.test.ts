@@ -421,10 +421,7 @@ describe("Core Catalog qualification preparation", () => {
   });
   it("uses the merged Catalog publisher for preparation metadata and retains the historical publisher", () => {
     const current = "36f269266208661430fc37f167c86e534dabf893";
-    const priorCore061 = "98d95263aa0901504c9d480628f6c06c4a1fe453";
-    const priorCore = "0ce02656d5e281262af2177571033449f277dc46";
     const previous = "b019b4e9d6260915a49d177bcc22b58518305dd4";
-    const historical = "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a";
     expect(CATALOG_QUALIFICATION_RELEASE_POLICY_V1).toMatchObject({
       catalogCommit: current,
       publisher: { commit: current },
@@ -432,7 +429,7 @@ describe("Core Catalog qualification preparation", () => {
     });
     expect(catalogQualificationReleasePolicyMetadataV1.catalogCommit).toBe(current);
     expect(CATALOG_QUALIFICATION_RELEASE_POLICIES_V1.map((policy) => policy.catalogCommit)).toEqual(
-      [current, priorCore061, priorCore, previous, historical],
+      [current, previous],
     );
   });
 

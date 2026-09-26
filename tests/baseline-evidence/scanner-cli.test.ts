@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   baselineCatalogById: vi.fn(),
   prepareCatalog: vi.fn(),
+  resolveDefinition: vi.fn(),
   canonicalRequest: vi.fn(),
   consumePublication: vi.fn(),
   consumePublications: vi.fn(),
@@ -20,8 +21,11 @@ vi.mock("node:child_process", () => ({ execFileSync: mocks.execFileSync }));
 vi.mock("@aihq/scan", () => ({
   canonicalBaselineVetRequestV1Bytes: mocks.canonicalRequest,
 }));
-vi.mock("../../src/baseline-evidence/scanner-provider-catalogs.js", () => ({
+vi.mock("../../src/baseline-evidence/scanner-catalog-consumer.js", () => ({
   prepareRegisteredScannerCatalogV1: mocks.prepareCatalog,
+}));
+vi.mock("../../src/baseline-evidence/scanner-definition.js", () => ({
+  resolveScannerDefinitionV1: mocks.resolveDefinition,
 }));
 vi.mock("../../src/baseline-evidence/ecc-preview-boundary.js", () => ({
   generateAuthorizedEccInstallPreview: mocks.generatePreview,
@@ -40,16 +44,47 @@ vi.mock("../../src/baseline-evidence/scanner-publication.js", () => ({
   consumeScannerBaselinePublicationV1: mocks.consumePublication,
   consumeScannerBaselinePublicationsV1: mocks.consumePublications,
 }));
-vi.mock("../../src/baseline-evidence/schema.js", () => ({
+vi.mock("../../src/baseline-evidence/schema.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/baseline-evidence/schema.js")>()),
   BaselineSourceEvidenceSchema: { parse: mocks.sourceParse },
   parseBaselineEvidenceLock: mocks.lockParse,
 }));
 
+import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { runScannerBridge } from "../../src/baseline-evidence/scanner-cli.js";
 
 const PIN = "a".repeat(40);
 const RETAINED_PUBLISHER = "f6189c0211fe27369fb15672f00da76c2072361c";
-const WEEKLY_PUBLISHER = "981d50f19ec8923974597de28c4c7b7acf684ded";
+const WEEKLY_PUBLISHER = "349fcadac4bdb20807c0f3451f91178a3b5911cd";
+
+/**
+ * The installed Catalog's real Superpowers inventory, as an assembled evidence source: the
+ * bridge resolves a non-ECC source to the installed Catalog's own catalog for it.
+ */
+const SUPERPOWERS_CATALOG = baselineCatalogById("superpowers");
+
+interface EvidenceCatalog {
+  readonly id: string;
+  readonly owner: string;
+  readonly repo: string;
+  readonly pinnedSha: string;
+  readonly components: readonly { readonly id: string; readonly paths: readonly string[] }[];
+}
+
+/** Source evidence whose inventory is exactly one catalog's, as assembly binds it. */
+function evidenceFor(catalog: EvidenceCatalog) {
+  return {
+    id: catalog.id,
+    owner: catalog.owner,
+    repo: catalog.repo,
+    pinnedSha: catalog.pinnedSha,
+    components: catalog.components.map((component) => ({
+      id: component.id,
+      paths: [...component.paths],
+    })),
+  };
+}
+
 const discoveryBytes = (commit = RETAINED_PUBLISHER, request = "d".repeat(64), renewal = "") =>
   Buffer.from(
     JSON.stringify({
@@ -405,11 +440,18 @@ describe("baseline Scanner bridge CLI", () => {
     const superpowersEvidence = join(root, "superpowers-evidence.json");
     const output = join(root, "baseline-lock.json");
     const previewOutput = join(root, "preview.json");
-    writeFileSync(eccEvidence, JSON.stringify({ id: "ecc", pinnedSha: PIN }));
-    writeFileSync(
-      superpowersEvidence,
-      JSON.stringify({ id: "superpowers", pinnedSha: "b".repeat(40) }),
-    );
+    const eccCatalog = {
+      id: "ecc",
+      owner: "samartomar",
+      repo: "ECC",
+      pinnedSha: PIN,
+      components: [{ id: "runtime:ecc-installer", paths: ["package.json"] }],
+    };
+    mocks.prepareCatalog.mockReturnValue({ catalog: eccCatalog });
+    const ecc = evidenceFor(eccCatalog);
+    const superpowers = evidenceFor(SUPERPOWERS_CATALOG);
+    writeFileSync(eccEvidence, JSON.stringify(ecc));
+    writeFileSync(superpowersEvidence, JSON.stringify(superpowers));
 
     await runScannerBridge([
       "assemble",
@@ -426,16 +468,17 @@ describe("baseline Scanner bridge CLI", () => {
     ]);
 
     expect(mocks.lockParse).toHaveBeenCalledWith({
-      schemaVersion: 1,
-      sources: [
-        { id: "ecc", pinnedSha: PIN },
-        { id: "superpowers", pinnedSha: "b".repeat(40) },
-      ],
+      schemaVersion: 2,
+      sources: [ecc, superpowers],
     });
     expect(mocks.generatePreview).toHaveBeenCalledWith(
-      expect.objectContaining({ eccRoot, evidence: { id: "ecc", pinnedSha: PIN } }),
+      expect.objectContaining({ eccRoot, evidence: ecc }),
     );
-    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ schemaVersion: 1 });
+    // The emitted lock carries exactly the resolved catalogs' inventories.
+    expect(JSON.parse(readFileSync(output, "utf8"))).toEqual({
+      schemaVersion: 2,
+      sources: [ecc, superpowers],
+    });
     expect(JSON.parse(readFileSync(previewOutput, "utf8"))).toMatchObject({
       format: "aih-ecc-install-preview",
     });
@@ -456,5 +499,462 @@ describe("baseline Scanner bridge CLI", () => {
         previewOutput,
       ]),
     ).rejects.toThrow(/exist/i);
+  });
+
+  it.each([
+    [
+      "an omitted component",
+      (catalog: EvidenceCatalog) => ({ ...evidenceFor(catalog), components: [] }),
+      "component-missing",
+    ],
+    [
+      "an extra component",
+      (catalog: EvidenceCatalog) => ({
+        ...evidenceFor(catalog),
+        components: [
+          ...evidenceFor(catalog).components,
+          { id: "skill:extra", paths: ["skills/extra/SKILL.md"] },
+        ],
+      }),
+      "component-extra",
+    ],
+    [
+      "an altered component",
+      (catalog: EvidenceCatalog) => {
+        const evidence = evidenceFor(catalog);
+        return {
+          ...evidence,
+          components: [
+            { ...evidence.components[0], paths: ["package.json", "scripts/install.js"] },
+          ],
+        };
+      },
+      "component-paths-differ",
+    ],
+    [
+      "another pin",
+      (catalog: EvidenceCatalog) => ({ ...evidenceFor(catalog), pinnedSha: "b".repeat(40) }),
+      "source-identity-mismatch",
+    ],
+  ])(
+    "refuses an assembled inventory with %s and writes nothing",
+    async (_label, mutate, reason) => {
+      const eccRoot = makeDirectory(`inventory-refused-${reason}`);
+      const eccEvidence = join(root, `inventory-refused-${reason}-ecc.json`);
+      const superpowersEvidence = join(root, `inventory-refused-${reason}-superpowers.json`);
+      const output = join(root, `inventory-refused-${reason}-lock.json`);
+      const previewOutput = join(root, `inventory-refused-${reason}-preview.json`);
+      const eccCatalog: EvidenceCatalog = {
+        id: "ecc",
+        owner: "samartomar",
+        repo: "ECC",
+        pinnedSha: PIN,
+        components: [{ id: "runtime:ecc-installer", paths: ["package.json"] }],
+      };
+      mocks.prepareCatalog.mockReturnValue({ catalog: eccCatalog });
+      writeFileSync(eccEvidence, JSON.stringify(mutate(eccCatalog)));
+      writeFileSync(superpowersEvidence, JSON.stringify(evidenceFor(SUPERPOWERS_CATALOG)));
+
+      let refusal: unknown;
+      try {
+        await runScannerBridge([
+          "assemble",
+          "--ecc-root",
+          eccRoot,
+          "--ecc-evidence",
+          eccEvidence,
+          "--superpowers-evidence",
+          superpowersEvidence,
+          "--out",
+          output,
+          "--preview-out",
+          previewOutput,
+        ]);
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal).toMatchObject({ code: "AIH_BASELINE_ASSEMBLY_INVENTORY", reason });
+      expect(existsSync(output)).toBe(false);
+      expect(existsSync(previewOutput)).toBe(false);
+      expect(mocks.generatePreview).not.toHaveBeenCalled();
+    },
+  );
+
+  describe("--definition", () => {
+    const NEW_PIN = "5064474d4d762dc9640234a41617cccb79185cec";
+    const definitionCatalog = {
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: NEW_PIN,
+      components: [{ id: "runtime:ecc-installer", paths: ["package.json"] }],
+    };
+
+    beforeEach(() => {
+      mocks.execFileSync.mockReturnValue(`${NEW_PIN}
+`);
+      mocks.resolveDefinition.mockReturnValue({ route: "definition", catalog: definitionCatalog });
+    });
+
+    it("authors requests from a definition at a pin the installed Catalog does not carry", async () => {
+      const source = makeDirectory("definition-source");
+      const definition = join(root, "ecc.definition.json");
+      writeFileSync(definition, "{}");
+      const output = join(root, "definition-requests");
+      mocks.createRequests.mockReturnValue([{ requestSha256: "3".repeat(64) }]);
+
+      await runScannerBridge([
+        "request",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--output",
+        output,
+      ]);
+
+      expect(mocks.resolveDefinition).toHaveBeenCalledWith({
+        sourceRoot: source,
+        catalogId: "ecc",
+        definitionPath: definition,
+        head: NEW_PIN,
+      });
+      expect(mocks.prepareCatalog).not.toHaveBeenCalled();
+      expect(mocks.createRequests).toHaveBeenCalledWith(source, definitionCatalog);
+      expect(existsSync(join(output, "batch-001.request.json"))).toBe(true);
+      expect(existsSync(join(output, "coverage-map.json"))).toBe(false);
+    });
+
+    it("passes the named compiler-catalog overlap mode only when it is asked for", async () => {
+      const source = makeDirectory("compiler-source");
+      const definition = join(root, "compiler.definition.json");
+      writeFileSync(definition, "{}");
+      mocks.createRequests.mockReturnValue([{ requestSha256: "5".repeat(64) }]);
+      await runScannerBridge([
+        "request",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--definition-overlap",
+        "compiler-catalog",
+        "--output",
+        join(root, "compiler-requests"),
+      ]);
+      expect(mocks.resolveDefinition).toHaveBeenCalledWith({
+        sourceRoot: source,
+        catalogId: "ecc",
+        definitionPath: definition,
+        head: NEW_PIN,
+        overlap: "compiler-catalog",
+      });
+    });
+
+    it.each([
+      [["--definition-overlap", "compiler-catalog"], "--definition-overlap requires --definition"],
+      [
+        ["--definition", "d.json", "--definition-overlap", "any"],
+        "--definition-overlap must be disjoint|compiler-catalog",
+      ],
+    ])("refuses %j", async (extra, message) => {
+      const source = makeDirectory(`overlap-refused-${extra.length}`);
+      await expect(
+        runScannerBridge([
+          "request",
+          "--catalog",
+          "ecc",
+          "--source",
+          source,
+          ...extra,
+          "--output",
+          join(root, `overlap-refused-${extra.length}-requests`),
+        ]),
+      ).rejects.toThrow(message);
+      expect(mocks.resolveDefinition).not.toHaveBeenCalled();
+      expect(mocks.prepareCatalog).not.toHaveBeenCalled();
+    });
+
+    it("uses the resolved catalog when the installed Catalog carries the identical definition", async () => {
+      const source = makeDirectory("carried-source");
+      const definition = join(root, "carried.definition.json");
+      writeFileSync(definition, "{}");
+      const output = join(root, "carried-requests");
+      mocks.resolveDefinition.mockReturnValue({ route: "installed", catalog: definitionCatalog });
+      mocks.createRequests.mockReturnValue([{ requestSha256: "4".repeat(64) }]);
+
+      await runScannerBridge([
+        "request",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--output",
+        output,
+      ]);
+
+      // D79: the resolved catalog is the authority; the registered evidence-lock route is
+      // not consulted, so request authoring takes exactly the definition that resolved.
+      expect(mocks.prepareCatalog).not.toHaveBeenCalled();
+      expect(mocks.createRequests).toHaveBeenCalledWith(source, definitionCatalog);
+      expect(existsSync(join(output, "coverage-map.json"))).toBe(false);
+    });
+
+    it("propagates a definition refusal and never falls back to the installed Catalog", async () => {
+      const source = makeDirectory("refused-source");
+      mocks.resolveDefinition.mockImplementation(() => {
+        throw new Error(
+          "baseline definition: installed Catalog carries ecc@x; the definition differs",
+        );
+      });
+      await expect(
+        runScannerBridge([
+          "request",
+          "--catalog",
+          "ecc",
+          "--source",
+          source,
+          "--definition",
+          join(root, "refused.json"),
+          "--output",
+          join(root, "refused-requests"),
+        ]),
+      ).rejects.toThrow("the definition differs");
+      expect(mocks.prepareCatalog).not.toHaveBeenCalled();
+      expect(mocks.createRequests).not.toHaveBeenCalled();
+    });
+
+    it("consumes publications against the definition catalog", async () => {
+      const source = makeDirectory("definition-consume-source");
+      const publicationRoot = makeDirectory("definition-publications");
+      const definition = join(root, "consume.definition.json");
+      writeFileSync(definition, "{}");
+      const batch = join(publicationRoot, "batch-001");
+      mkdirSync(batch);
+      writeFileSync(
+        join(batch, "discovery.json"),
+        discoveryBytes(RETAINED_PUBLISHER, "5".repeat(64)),
+      );
+      writeFileSync(join(batch, "publication.json"), "{}");
+      writeFileSync(join(batch, "attestation.json"), "[]");
+      mocks.createRequests.mockReturnValue([{ requestSha256: "5".repeat(64) }]);
+      mocks.consumePublications.mockResolvedValue({
+        evidence: { id: "ecc", pinnedSha: NEW_PIN, components: [] },
+        provenance: [],
+      });
+
+      await runScannerBridge([
+        "consume-publications",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--publication-root",
+        publicationRoot,
+        "--output",
+        join(root, "definition-evidence.json"),
+        "--provenance-output",
+        join(root, "definition-provenance.json"),
+      ]);
+
+      expect(mocks.prepareCatalog).not.toHaveBeenCalled();
+      expect(mocks.createRequests).toHaveBeenCalledWith(source, definitionCatalog);
+      expect(mocks.consumePublications).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceRoot: source, catalog: definitionCatalog }),
+      );
+    });
+
+    it("assembles the ECC preview against the definition catalog", async () => {
+      const eccRoot = makeDirectory("definition-ecc");
+      const definition = join(root, "assemble.definition.json");
+      writeFileSync(definition, "{}");
+      const eccEvidence = join(root, "definition-ecc-evidence.json");
+      const superpowersEvidence = join(root, "definition-superpowers-evidence.json");
+      const ecc = evidenceFor(definitionCatalog);
+      writeFileSync(eccEvidence, JSON.stringify(ecc));
+      writeFileSync(superpowersEvidence, JSON.stringify(evidenceFor(SUPERPOWERS_CATALOG)));
+
+      await runScannerBridge([
+        "assemble",
+        "--ecc-root",
+        eccRoot,
+        "--definition",
+        definition,
+        "--ecc-evidence",
+        eccEvidence,
+        "--superpowers-evidence",
+        superpowersEvidence,
+        "--out",
+        join(root, "definition-lock.json"),
+        "--preview-out",
+        join(root, "definition-preview.json"),
+      ]);
+
+      expect(mocks.resolveDefinition).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceRoot: eccRoot, catalogId: "ecc" }),
+      );
+      expect(mocks.generatePreview).toHaveBeenCalledWith(
+        expect.objectContaining({ eccRoot, catalog: definitionCatalog }),
+      );
+    });
+
+    it("consumes and assembles against the resolved catalog for a carried definition", async () => {
+      const source = makeDirectory("carried-consume-source");
+      const publicationRoot = makeDirectory("carried-publications");
+      const definition = join(root, "carried-consume.definition.json");
+      writeFileSync(definition, "{}");
+      const evidenceOutput = join(root, "carried-evidence.json");
+      const superpowersEvidence = join(root, "carried-superpowers-evidence.json");
+      const lockOutput = join(root, "carried-lock.json");
+      const previewOutput = join(root, "carried-preview.json");
+      const batch = join(publicationRoot, "batch-001");
+      mkdirSync(batch);
+      writeFileSync(
+        join(batch, "discovery.json"),
+        discoveryBytes(RETAINED_PUBLISHER, "6".repeat(64)),
+      );
+      writeFileSync(join(batch, "publication.json"), "{}");
+      writeFileSync(join(batch, "attestation.json"), "[]");
+      mocks.resolveDefinition.mockReturnValue({ route: "installed", catalog: definitionCatalog });
+      mocks.createRequests.mockReturnValue([{ requestSha256: "6".repeat(64) }]);
+      mocks.consumePublications.mockResolvedValue({
+        evidence: evidenceFor(definitionCatalog),
+        provenance: [],
+      });
+      writeFileSync(superpowersEvidence, JSON.stringify(evidenceFor(SUPERPOWERS_CATALOG)));
+
+      await runScannerBridge([
+        "consume-publications",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--publication-root",
+        publicationRoot,
+        "--output",
+        evidenceOutput,
+        "--provenance-output",
+        join(root, "carried-provenance.json"),
+      ]);
+
+      expect(mocks.prepareCatalog).not.toHaveBeenCalled();
+      expect(mocks.createRequests).toHaveBeenCalledWith(source, definitionCatalog);
+      expect(mocks.consumePublications).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceRoot: source, catalog: definitionCatalog }),
+      );
+
+      // Assembly really runs on the consumed evidence: the emitted lock's ECC inventory is
+      // exactly the resolved catalog's, component by component.
+      await runScannerBridge([
+        "assemble",
+        "--ecc-root",
+        source,
+        "--definition",
+        definition,
+        "--ecc-evidence",
+        evidenceOutput,
+        "--superpowers-evidence",
+        superpowersEvidence,
+        "--out",
+        lockOutput,
+        "--preview-out",
+        previewOutput,
+      ]);
+      expect(mocks.generatePreview).toHaveBeenCalledWith(
+        expect.objectContaining({
+          catalog: definitionCatalog,
+          evidence: evidenceFor(definitionCatalog),
+        }),
+      );
+      expect(JSON.parse(readFileSync(lockOutput, "utf8"))).toEqual({
+        schemaVersion: 2,
+        sources: [evidenceFor(definitionCatalog), evidenceFor(SUPERPOWERS_CATALOG)],
+      });
+    });
+
+    it("keeps the registered route for a carried collection definition", async () => {
+      const source = makeDirectory("carried-collection-source");
+      const definition = join(root, "carried-collection.definition.json");
+      writeFileSync(definition, "{}");
+      const registeredCatalog = {
+        id: "ponytail",
+        owner: "DietrichGebert",
+        repo: "ponytail",
+        pinnedSha: NEW_PIN,
+        components: [{ id: "skill:x", paths: ["skills/x/SKILL.md"] }],
+      };
+      mocks.resolveDefinition.mockReturnValue({ route: "installed", catalog: registeredCatalog });
+      mocks.prepareCatalog.mockImplementation(() => {
+        throw new Error("Scanner source differs from reviewed snapshot bytes: skills/x/SKILL.md");
+      });
+
+      await expect(
+        runScannerBridge([
+          "request",
+          "--catalog",
+          "ponytail",
+          "--source",
+          source,
+          "--definition",
+          definition,
+          "--output",
+          join(root, "carried-collection-requests"),
+        ]),
+      ).rejects.toThrow("Scanner source differs from reviewed snapshot bytes: skills/x/SKILL.md");
+      // D79's bypass belongs to framework definition resolution: a carried COLLECTION keeps
+      // its registered route, whose snapshot-byte check refuses even though HEAD is unchanged.
+      expect(mocks.prepareCatalog).toHaveBeenCalledWith(source, "ponytail");
+      expect(mocks.createRequests).not.toHaveBeenCalled();
+    });
+
+    it("writes the registered coverage for a carried collection definition", async () => {
+      const source = makeDirectory("carried-collection-coverage-source");
+      const definition = join(root, "carried-collection-coverage.definition.json");
+      writeFileSync(definition, "{}");
+      const output = join(root, "carried-collection-coverage-requests");
+      const registeredCatalog = {
+        id: "ponytail",
+        owner: "DietrichGebert",
+        repo: "ponytail",
+        pinnedSha: NEW_PIN,
+        components: [{ id: "skill:x", paths: ["skills/x/SKILL.md"] }],
+      };
+      mocks.resolveDefinition.mockReturnValue({ route: "installed", catalog: registeredCatalog });
+      mocks.prepareCatalog.mockReturnValue({
+        catalog: registeredCatalog,
+        coverage: { authority: "none", version: "workbench-scanner-coverage/v1" },
+        coverageDigest: `sha256:${"7".repeat(64)}`,
+      });
+      mocks.createRequests.mockReturnValue([{ requestSha256: "8".repeat(64) }]);
+
+      await runScannerBridge([
+        "request",
+        "--catalog",
+        "ponytail",
+        "--source",
+        source,
+        "--definition",
+        definition,
+        "--output",
+        output,
+      ]);
+
+      expect(mocks.createRequests).toHaveBeenCalledWith(source, registeredCatalog);
+      expect(JSON.parse(readFileSync(join(output, "coverage-map.json"), "utf8"))).toEqual({
+        authority: "none",
+        version: "workbench-scanner-coverage/v1",
+        coverageDigest: `sha256:${"7".repeat(64)}`,
+        requestSha256: ["8".repeat(64)],
+      });
+    });
   });
 });

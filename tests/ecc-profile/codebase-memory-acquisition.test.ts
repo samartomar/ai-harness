@@ -41,7 +41,7 @@ function payloadIdentity(platform: NodeJS.Platform, runtimeHome: string) {
     path: codebaseMemoryNativeBinaryPath(platform, runtimeHome),
     sha256: "f".repeat(64),
     size: 21,
-    version: "0.10.8",
+    version: "0.11.0",
   };
 }
 
@@ -167,13 +167,13 @@ describe("Codebase Memory native acquisition", () => {
     );
 
     await downloadCodebaseMemoryReleaseFile(
-      "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/release.bin",
+      "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.11.0/release.bin",
       destination,
       16,
     );
 
     expect(requested).toEqual([
-      "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/release.bin",
+      "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.11.0/release.bin",
       "https://objects.githubusercontent.com/fixture/release.bin",
     ]);
     expect(readFileSync(destination, "utf8")).toBe("payload");
@@ -413,7 +413,7 @@ describe("Codebase Memory native acquisition", () => {
       path: codebaseMemoryNativeBinaryPath("win32", candidate),
       sha256: createHash("sha256").update("authenticated payload").digest("hex"),
       size: Buffer.byteLength("authenticated payload"),
-      version: "0.10.8",
+      version: "0.11.0",
     }));
 
     const result = await acquireCodebaseMemoryNativePayload(
@@ -428,12 +428,12 @@ describe("Codebase Memory native acquisition", () => {
     );
 
     expect(downloaded).toEqual([
-      "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/checksums.txt",
-      `https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/${archive.name}`,
+      "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.11.0/checksums.txt",
+      `https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.11.0/${archive.name}`,
     ]);
     expect(extractArchive).toHaveBeenCalledOnce();
     expect(authenticate).toHaveBeenCalledTimes(2);
-    expect(result).toMatchObject({ changed: true, reused: false, version: "0.10.8" });
+    expect(result).toMatchObject({ changed: true, reused: false, version: "0.11.0" });
     expect(basename(result.path)).toBe("codebase-memory-mcp.exe");
     expect(readFileSync(result.path, "utf8")).toBe("authenticated payload");
     expect(existsSync(`${result.path}.py`)).toBe(false);

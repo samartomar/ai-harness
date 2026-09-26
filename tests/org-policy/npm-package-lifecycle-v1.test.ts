@@ -1064,7 +1064,7 @@ describe("npm package lifecycle V1", () => {
     const policy = readOrgPolicy(root, context(false).env);
     if (policy === undefined) throw new Error("expected governed policy");
     await expect(verifiedOrgPolicyProjectionActions(context(false), policy)).rejects.toThrow(
-      "policy project refuses blocked candidate activation",
+      "policy project stopped: the requested policy cannot be projected",
     );
   });
 

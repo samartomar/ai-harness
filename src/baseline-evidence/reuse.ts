@@ -128,6 +128,13 @@ export function spliceReusedComponent(prior: BaselineComponentEvidence): Baselin
       ...(finding.fingerprint !== undefined ? { fingerprint: finding.fingerprint } : {}),
       ...(finding.fingerprints !== undefined ? { fingerprints: [...finding.fingerprints] } : {}),
     })),
+    evidenceProblems: prior.evidenceProblems.map((problem) => ({
+      code: problem.code,
+      ...(problem.count !== undefined ? { count: problem.count } : {}),
+      detail: problem.detail,
+      ...(problem.fingerprint !== undefined ? { fingerprint: problem.fingerprint } : {}),
+      ...(problem.fingerprints !== undefined ? { fingerprints: [...problem.fingerprints] } : {}),
+    })),
   };
 }
 

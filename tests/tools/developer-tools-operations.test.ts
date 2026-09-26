@@ -134,7 +134,7 @@ function memoryPayload(ctx: PlanContext, changed = false) {
     path,
     sha256: "a".repeat(64),
     size: 22,
-    version: "0.10.8",
+    version: "0.11.0",
     changed,
     reused: !changed,
     archiveName: "fixture.zip",
@@ -198,7 +198,7 @@ describe("concrete developer-tool operations", () => {
       "exec",
       "--yes",
       "--",
-      "@playwright/mcp@0.0.81",
+      "@playwright/mcp@0.0.82",
       "--headless",
       "--isolated",
     ]);
@@ -718,7 +718,7 @@ describe("concrete developer-tool operations", () => {
         path: payload,
         sha256: "a".repeat(64),
         size: 7,
-        version: "0.10.8",
+        version: "0.11.0",
         changed: true,
         reused: false,
         archiveName: "fixture.zip",
@@ -737,6 +737,17 @@ describe("concrete developer-tool operations", () => {
       "codebase-memory-mcp",
       "codebase-memory-mcp",
     ]);
+    // Memory 0.11.0 answers list_projects with a compact table unless JSON is requested.
+    const inventoryRequests = (calls[1]?.input ?? "")
+      .trim()
+      .split(/\r?\n/u)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(inventoryRequests).toContainEqual(
+      expect.objectContaining({
+        method: "tools/call",
+        params: { name: "list_projects", arguments: { format: "json" } },
+      }),
+    );
     const searchRequests = (calls[2]?.input ?? "")
       .trim()
       .split(/\r?\n/u)
@@ -763,7 +774,7 @@ describe("concrete developer-tool operations", () => {
         path: join(ctx.root, "forged-memory-runtime"),
         sha256: "not-a-sha256",
         size: 1,
-        version: "0.10.8",
+        version: "0.11.0",
         changed: false,
         reused: true,
         archiveName: "forged.zip",

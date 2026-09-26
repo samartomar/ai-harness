@@ -3,7 +3,13 @@ import { defineConfig } from "tsup";
 // cli.ts carries a leading `#!/usr/bin/env node` shebang which esbuild preserves
 // on the entry chunk, so we do not inject another shebang (including into index.js).
 export default defineConfig({
-  entry: { cli: "src/cli.ts", "ecc-runtime": "src/ecc-runtime.ts", index: "src/index.ts" },
+  entry: {
+    cli: "src/cli.ts",
+    "ecc-runtime": "src/ecc-runtime.ts",
+    index: "src/index.ts",
+    // `@aihq/core/framework-host`: the versioned host API framework plugins import.
+    "framework-host": "src/framework-host/index.ts",
+  },
   format: ["esm"],
   target: "node20",
   platform: "node",
@@ -30,7 +36,20 @@ export default defineConfig({
   // projected runtime is self-contained; the other runtime dependencies stay
   // external because nothing in that entry's graph reaches them, and
   // tests/ecc-profile/projected-runtime.test.ts fails if one ever does.
-  noExternal: ["zod", "yaml"],
+  noExternal: ["jsonc-parser", "zod", "yaml"],
+  // @aihq/scan is an optional peer resolved from the consumer's own install and
+  // loaded only through src/scan-package/load-scan-package.ts. Never bundle it:
+  // a bundled copy would freeze one Scan build inside Core and defeat updating
+  // Scan independently. It must never appear in `noExternal`.
+  // @aihq/catalog is the same arrangement, loaded only through
+  // src/catalog-package/load-catalog-package.ts; Core pins the descriptor bytes
+  // it accepts from it, so a bundled copy would add nothing but a stale Catalog.
+  // The framework plugins are not dependencies: each is built by its own
+  // packages/*/tsup.config.ts, shipped beside dist/ in Core's tarball and imported
+  // at run time from Core's own package root by
+  // src/framework-plugin/load-framework-plugin.ts, so Core's chunks never carry
+  // framework plugin code.
+  external: ["@aihq/scan", "@aihq/catalog"],
   // YAML's bundled CommonJS distribution requires Node's built-in process module.
   // Keep that built-in resolution available in each standalone ESM chunk.
   banner: {

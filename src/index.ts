@@ -16,6 +16,7 @@ export * from "./config/settings.js";
 export * from "./context/index.js";
 export * from "./errors.js";
 export * from "./init/v3.js";
+export { type Cli, SUPPORTED_CLIS } from "./internals/clis.js";
 export * from "./internals/envfile.js";
 export * from "./internals/execute.js";
 export * from "./internals/fsxn.js";
@@ -24,24 +25,83 @@ export * from "./internals/plan.js";
 export * from "./internals/proc.js";
 export * from "./internals/render.js";
 export * from "./internals/verify.js";
+export {
+  ASSESSMENT_MATERIAL_FORMAT_V1,
+  type AssessmentMaterialBindingBoundV1,
+  type AssessmentMaterialBindingRefusalV1,
+  type AssessmentMaterialBindingV1,
+  MAX_ASSESSMENT_BYTES_V1,
+  type VerifyAssessmentMaterialBindingV1Input,
+  verifyAssessmentMaterialBindingV1,
+} from "./org-policy/assessment-material-binding-v1.js";
+export {
+  type PolicyAuthorityReceiptV3,
+  PolicyAuthorityReceiptV3Schema,
+} from "./org-policy/authority-v3.js";
 export * from "./org-policy/bundle.js";
+export type { CatalogQualificationPublisherV1 } from "./org-policy/catalog-qualification-attestation-v1.js";
 export * from "./org-policy/governance-decision-v2.js";
+export {
+  type AssessmentMaterialResolverV1,
+  type ConsumeGovernanceInputV1Input,
+  type ConsumeGovernanceInputV1Result,
+  canonicalGovernanceInputV1,
+  claimsScanEvidenceV1,
+  consumeGovernanceInputV1,
+  DEFAULT_GOVERNANCE_EVIDENCE_PATH_V1,
+  GOVERNANCE_INPUT_V1_FORMAT,
+  type GovernanceInputArtifactV1,
+  type GovernanceInputDiagnosticV1,
+  type GovernanceInputRefusalV1,
+  type GovernanceInputStatusV1,
+  type GovernanceInputV1,
+  GovernanceInputV1Schema,
+  governanceInputDigestV1,
+  MAX_GOVERNANCE_INPUT_BYTES_V1,
+  type PrepareGovernanceInputV1Input,
+  type PrepareGovernanceInputV1Result,
+  parseGovernanceInputV1Bytes,
+  prepareGovernanceInputV1,
+  type QualificationAttestationVerifierV1,
+  type QualificationMaterialResolverV1,
+  SCAN_ATTESTATION_EVIDENCE_KIND_V1,
+  type ScanExecutionAdapterV1,
+  type ScanVerificationAdapterV1,
+  type ScanVerificationRequestV1,
+  type SubjectContentBindingRefusalV1,
+  type SubjectContentBindingV1,
+  verifySubjectContentBindingV1,
+} from "./org-policy/governance-input-v1.js";
+export {
+  canonicalOrganizationEvidenceEnvelopeV1,
+  MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1,
+  ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT,
+  type OrganizationEvidenceEnvelopeV1,
+  OrganizationEvidenceEnvelopeV1Schema,
+  organizationEvidenceEnvelopeDigestV1,
+  parseOrganizationEvidenceEnvelopeV1Bytes,
+} from "./org-policy/qualification-v1.js";
 export {
   AIH_SUPPORTED_QUALIFICATION_RECEIPT_PATH,
   type AihSupportedQualificationArtifactVerificationV2,
+  type AihSupportedQualificationReceiptBytesRefusalV2,
+  type AihSupportedQualificationReceiptBytesVerificationV2,
   type AihSupportedQualificationReceiptV2,
   AihSupportedQualificationReceiptV2Schema,
   canonicalAihSupportedQualificationReceiptV2,
   MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2,
   parseAihSupportedQualificationReceiptV2Bytes,
   type VerifyAihSupportedQualificationArtifactV2Input,
+  type VerifyAihSupportedQualificationReceiptBytesV2Input,
   verifyAihSupportedQualificationArtifactV2,
+  verifyAihSupportedQualificationReceiptBytesV2,
 } from "./org-policy/supported-qualification-receipt-v2.js";
 export {
   canonicalUpstreamArtifactManifestV1,
   MAX_UPSTREAM_ARTIFACT_FILES_V1,
   MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
   parseUpstreamArtifactManifestV1Bytes,
+  UPSTREAM_ARTIFACT_MANIFEST_V1_FORMAT,
   type UpstreamArtifactManifestV1,
   UpstreamArtifactManifestV1Schema,
   upstreamArtifactManifestDigestV1,
@@ -50,6 +110,7 @@ export {
   canonicalUpstreamObservationReceiptV1,
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   parseUpstreamObservationReceiptV1,
+  UPSTREAM_OBSERVATION_RECEIPT_V1_FORMAT,
   type UpstreamObservationReceiptV1,
   UpstreamObservationReceiptV1Schema,
   upstreamObservationReceiptDigestV1,

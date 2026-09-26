@@ -1,0 +1,1325 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { deflateRawSync } from "node:zlib";
+import {
+  type Action,
+  type Cli,
+  type CommandSpec,
+  detectFallbackNotice,
+  doc,
+  eccInstallDriftForRoot,
+  eccInstallManifestPath,
+  exec,
+  execArgv,
+  HERMETIC_GIT_ENV_SCRIPT_LINE,
+  homeDir,
+  lines,
+  type Plan,
+  type PlanContext,
+  plan,
+  probe,
+  type RepoStack,
+  resolveClis,
+  SettingsError,
+  scanRepo,
+} from "@aihq/core/framework-host";
+import { assertOrgPolicyMutationSource, verifiedOrgPolicyTargets } from "../core-runtime.js";
+import {
+  assertChromeDevtoolsOptOuts,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES,
+  ChromeDevtoolsOptOutRefusalRecord,
+  CODEX_AGENTS_BLOCK_MARKER,
+  type CodexScopedMcpServers,
+  chromeDevtoolsOptOutPredicatePath,
+  codexChromeDevtoolsOptOutActions,
+  codexHomeDir,
+  codexInstallStateContents,
+  codexInstallStatePath,
+  codexMcpCollisionActions,
+  codexProjectConfigPath,
+  codexTomlParserPath,
+  coreOwnedEccCodexMcpServers,
+} from "./codex.js";
+import { ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE } from "./hook-consent.js";
+import {
+  type EccInstallInputs,
+  eccActionsForCli,
+  eccInstallMechanism,
+  eccManagedRoot,
+  eccMechanismInstallLines,
+  eccMechanismRerunLines,
+  eccSupplyChainDoc,
+  eccToolsDoc,
+  isAihDirectEccInstallTarget,
+  normalizeEccInstallVersion,
+} from "./install.js";
+import type { EccMaterializationSpec } from "./materialize.js";
+import { planExplicitEccMcpAdd, planExplicitEccMcpRemove } from "./mcp-explicit-add.js";
+import { eccLanguages } from "./select.js";
+
+const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
+
+export interface EccRepoCheckout {
+  dir: string;
+  posix: string;
+  explicit: boolean;
+  hasCache: boolean;
+  ref?: string;
+}
+
+/** Cache dir for ECC's git checkout (Kiro isn't on npm, so it needs the repo). */
+function eccCacheDir(ctx: PlanContext): string {
+  const home = ctx.env.USERPROFILE || ctx.env.HOME || homedir();
+  return join(home, ".claude", "ecc");
+}
+
+function eccRepoCheckout(ctx: PlanContext): EccRepoCheckout {
+  const explicit = typeof ctx.options.eccPath === "string" ? ctx.options.eccPath.trim() : "";
+  const dir = explicit || eccCacheDir(ctx);
+  return {
+    dir,
+    posix: dir.replace(/\\/g, "/"),
+    explicit: explicit.length > 0,
+    hasCache: existsSync(join(dir, ".git")),
+    ref: (ctx.env.AIH_ECC_REF ?? "").trim() || undefined,
+  };
+}
+
+function eccRepoFetchActions(repo: EccRepoCheckout): Action[] {
+  if (repo.explicit) return [];
+  if (repo.ref) {
+    return repo.hasCache
+      ? [
+          exec(
+            `Fetch ECC ref ${repo.ref} — git -C ${repo.posix} fetch --depth 1 origin ${repo.ref} (under --apply)`,
+            ["git", "-C", repo.dir, "fetch", "--depth", "1", "origin", repo.ref],
+          ),
+          exec(
+            `Pin ECC to ${repo.ref} — git -C ${repo.posix} checkout --detach FETCH_HEAD (under --apply)`,
+            ["git", "-C", repo.dir, "checkout", "--detach", "FETCH_HEAD"],
+          ),
+        ]
+      : [
+          exec(`Clone ECC pinned to ${repo.ref} (shallow) into ${repo.posix} (under --apply)`, [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            repo.ref,
+            ECC_REPO_URL,
+            repo.dir,
+          ]),
+        ];
+  }
+  return [
+    repo.hasCache
+      ? exec(
+          `Update cached ECC to latest — git -C ${repo.posix} pull (under --apply)`,
+          ["git", "-C", repo.dir, "pull", "--ff-only"],
+          { allowFailure: true },
+        )
+      : exec(
+          `Clone ECC (latest, shallow) into ${repo.posix} — git clone --depth 1 (under --apply)`,
+          ["git", "clone", "--depth", "1", ECC_REPO_URL, repo.dir],
+        ),
+  ];
+}
+
+/**
+ * Resolve the Git Bash executable that runs ECC's `.kiro/install.sh`. POSIX has
+ * `bash` on PATH, so it's returned as-is. Windows is the trap: a DEFAULT Git for
+ * Windows install puts only `Git\cmd` (git.exe) on PATH — NOT `Git\bin` (bash.exe)
+ * — so a bare `bash` argv ENOENTs to exit 127. We probe the standard install
+ * locations on disk and return the ABSOLUTE `bash.exe` path (execFile runs an
+ * absolute .exe regardless of PATH). Returns undefined when no Git Bash is
+ * installed, so the caller escalates instead of spawning a doomed command.
+ * Plan-time existsSync is already precedented below (the ECC cache `.git` probe).
+ */
+function resolveBash(ctx: PlanContext): string | undefined {
+  if (ctx.host.platform !== "windows") return "bash";
+  const bases = [
+    ctx.env.ProgramFiles,
+    ctx.env["ProgramFiles(x86)"],
+    ctx.env.LocalAppData ? join(ctx.env.LocalAppData, "Programs") : undefined,
+  ];
+  for (const base of bases) {
+    if (!base) continue;
+    const candidate = join(base, "Git", "bin", "bash.exe");
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * The action(s) that run ECC's `.kiro/install.sh` under Git Bash. With Git Bash
+ * present we emit the exec with an ABSOLUTE bash path plus a `failureCheck`, so a
+ * non-zero install lands in the verification report as a routable ticket instead of
+ * a bare "(exit 127)" under a misleading "Applied ecc". When Windows has no Git Bash
+ * we DON'T spawn a doomed `bash` (a guaranteed 127) — we name the fix in a printed
+ * headline and emit a coded probe so `--verify` escalates it.
+ */
+function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Action[] {
+  const bash = resolveBash(ctx);
+  if (bash === undefined) {
+    return [
+      doc(
+        "ECC Kiro install needs Git Bash — install Git for Windows or add Git\\bin to PATH",
+        lines(
+          "ECC's `.kiro/install.sh` runs under Git Bash, but no `bash.exe` was found in a",
+          "standard Git for Windows location — so Git for Windows isn't installed here. (A",
+          "default install puts only `Git\\cmd` on PATH, not `Git\\bin`, but aih probes the",
+          "install dirs directly, so this means it's genuinely absent.)",
+          "",
+          "Fix: install Git for Windows (https://git-scm.com/download/win), which bundles Git",
+          "Bash, then re-run `aih ecc --cli kiro --apply`. Other ECC targets do not need",
+          "Git Bash — only the Kiro installer does.",
+        ),
+      ),
+      probe("Kiro ECC install: Git Bash present (Windows)", () => ({
+        name: "Kiro ECC install: Git Bash present (Windows)",
+        verdict: "fail",
+        code: "env.git-bash-missing",
+        detail:
+          "no Git Bash (bash.exe) found in a standard Git for Windows location; ECC's " +
+          ".kiro/install.sh cannot run — install Git for Windows, then re-run " +
+          "`aih ecc --cli kiro --apply`",
+      })),
+    ];
+  }
+  return [
+    exec(
+      `Install ECC for Kiro — run ${posix}/.kiro/install.sh into ${ctx.root}/.kiro/ (under --apply)`,
+      [bash, join(dir, ".kiro", "install.sh"), ctx.root],
+      {
+        // A failed install otherwise renders as a bare "(exit 127)" under a misleading
+        // "Applied ecc", with the exit code silently non-zero and the report showing
+        // "0 failed". Land it IN the report so --verify escalates it (peer:
+        // heal/cert-verify.ts's persist exec). Only a spawn failure / 127 is actually
+        // "Git Bash missing" — a bash we resolved can still fail install.sh for its own
+        // reason (interrupted clone, read-only root, an ECC installer bug); leave that
+        // uncoded so it surfaces + flips the exit WITHOUT misrouting the "install Git
+        // for Windows" self-fix guidance.
+        failureCheck: (result) => {
+          const bashMissing = result.spawnError === true || result.code === 127;
+          const exit = result.code ?? "on a signal";
+          return bashMissing
+            ? {
+                name: "Kiro ECC install (Git Bash)",
+                verdict: "fail",
+                code: "env.git-bash-missing",
+                detail: `Git Bash could not run ECC's .kiro/install.sh (exit ${exit}); ensure Git for Windows is installed, then re-run \`aih ecc --cli kiro --apply\``,
+              }
+            : {
+                name: "Kiro ECC install (Git Bash)",
+                verdict: "fail",
+                detail: `ECC's .kiro/install.sh exited ${exit}; re-run \`aih ecc --cli kiro --apply\` — if it persists, check the ECC installer output`,
+              };
+        },
+      },
+    ),
+  ];
+}
+
+/**
+ * Records which destination files an install CREATED, so a later run can prove ownership
+ * (#555). aih does not write the bytes for any mechanism — ECC's own installer does — so
+ * "the bytes AIH wrote" is operationalized as "created by this run": snapshot the managed
+ * root before the installer runs, re-walk it after, and hash only what appeared. That is
+ * the only derivation that stays correct under Kiro's absence guard, where a file the
+ * installer SKIPPED because it already existed must never be claimed.
+ *
+ * The writer is deliberately dumb — hash what appeared, record it. Every correctness
+ * decision lives in typed TS (`install-manifest.ts`), whose fail-closed reader rejects
+ * anything malformed this script could produce, so an untyped writer cannot corrupt the
+ * ownership record; it can only fail to add to it.
+ */
+const ECC_CAPTURE_SCRIPT = [
+  'const fs = require("fs");',
+  'const path = require("path");',
+  'const crypto = require("crypto");',
+  'const child = require("child_process");',
+  // This script runs in its own node process, frequently under a git hook, so it
+  // cannot import internals/git-env.ts and carries the same scrub inline: an
+  // inherited GIT_DIR outranks the `-C eccRepoDir` below and would stamp another
+  // repo's commit/ref into the ownership manifest as ECC's provenance.
+  HERMETIC_GIT_ENV_SCRIPT_LINE,
+  "const [mode, snapshotPath, managedRoot, manifestPath, target, mechanism, eccRepoDir] = process.argv.slice(1);",
+  'if (!mode || !snapshotPath || !managedRoot) { console.error("usage: ecc-capture <mode> <snapshot> <root> [manifest] [target] [mechanism] [ecc-repo]"); process.exit(1); }',
+  "function walk(dir, prefix, out) {",
+  "  let entries;",
+  "  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }",
+  "  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {",
+  '    const rel = prefix === "" ? entry.name : prefix + "/" + entry.name;',
+  "    if (entry.isSymbolicLink()) continue;",
+  "    if (entry.isDirectory()) walk(path.join(dir, entry.name), rel, out);",
+  "    else if (entry.isFile()) out.push(rel);",
+  "    if (out.length >= 20000) return out;",
+  "  }",
+  "  return out;",
+  "}",
+  "function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); }",
+  "function writeAtomic(target, contents) {",
+  "  ensureDir(path.dirname(target));",
+  '  const tmp = path.join(path.dirname(target), "." + path.basename(target) + "." + process.pid + ".tmp");',
+  '  fs.writeFileSync(tmp, contents, { encoding: "utf8", mode: 0o600 });',
+  "  fs.renameSync(tmp, target);",
+  "}",
+  'if (mode === "snapshot") {',
+  '  writeAtomic(snapshotPath, JSON.stringify({ paths: walk(managedRoot, "", []) }) + "\\n");',
+  "  process.exit(0);",
+  "}",
+  'if (mode !== "capture") { console.error("unknown ecc-capture mode: " + mode); process.exit(1); }',
+  "let before = [];",
+  'try { before = JSON.parse(fs.readFileSync(snapshotPath, "utf8")).paths || []; } catch { before = []; }',
+  "const known = new Set(before);",
+  'const created = walk(managedRoot, "", []).filter((rel) => !known.has(rel));',
+  // Hash on ONE descriptor. Checking the path and then reading it by name are two
+  // resolutions of the same name (CWE-367), and here the gap spans an external
+  // installer's whole run — a symlink swapped in would be hashed as AIH-owned content
+  // at a path inside the managed root, which the verify side then refuses to follow, so
+  // the entry could never match again. Mirrors readRegularFile in src/internals/fsxn.ts.
+  "const O_NOFOLLOW = fs.constants.O_NOFOLLOW || 0;",
+  "function hashRegular(full) {",
+  "  let fd;",
+  "  try { fd = fs.openSync(full, fs.constants.O_RDONLY | O_NOFOLLOW); } catch { return null; }",
+  "  try {",
+  "    const opened = fs.fstatSync(fd, { bigint: true });",
+  "    if (!opened.isFile()) return null;",
+  "    if (O_NOFOLLOW === 0) {",
+  "      let current;",
+  "      try { current = fs.lstatSync(full, { bigint: true }); } catch { return null; }",
+  "      if (current.isSymbolicLink() || !current.isFile()) return null;",
+  "      if (opened.dev !== current.dev) return null;",
+  "      if (opened.ino === 0n || current.ino === 0n || opened.ino !== current.ino) return null;",
+  "    }",
+  '    return crypto.createHash("sha256").update(fs.readFileSync(fd)).digest("hex");',
+  "  } catch { return null; } finally { try { fs.closeSync(fd); } catch {} }",
+  "}",
+  "const files = [];",
+  "for (const rel of created) {",
+  "  const sha256 = hashRegular(path.join(managedRoot, rel));",
+  "  if (sha256 !== null) files.push({ path: rel, sha256 });",
+  "}",
+  "let commit = null;",
+  'try { commit = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "HEAD"], { encoding: "utf8", env: gitEnv }).trim() || null; } catch { commit = null; }',
+  "let ref = null;",
+  'try { ref = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", env: gitEnv }).trim() || null; } catch { ref = null; }',
+  // A manifest that exists but will not parse is DAMAGED ownership evidence. Abort rather
+  // than overwrite it — losing the record silently is worse than failing this capture.
+  'let manifest = { schemaVersion: "aih.ecc.install-manifest.v1", installs: [] };',
+  "if (fs.existsSync(manifestPath)) {",
+  '  try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); } catch { console.error("refusing to overwrite an unparseable ECC install manifest: " + manifestPath); process.exit(1); }',
+  '  if (!manifest || !Array.isArray(manifest.installs)) { console.error("refusing to overwrite a malformed ECC install manifest: " + manifestPath); process.exit(1); }',
+  "}",
+  "const root = path.resolve(managedRoot);",
+  'const installs = manifest.installs.filter((entry) => !(entry && entry.target === target && path.resolve(String(entry.recordRoot || entry.root || "")) === root));',
+  'installs.push({ target, mechanism, root, installedAt: new Date().toISOString(), source: { kind: "git-checkout", ref, commit, package: null, version: null }, files });',
+  '  installs.sort((a, b) => (a.target + "\\u0000" + a.root).localeCompare(b.target + "\\u0000" + b.root));',
+  '  writeAtomic(manifestPath, JSON.stringify({ schemaVersion: "aih.ecc.install-manifest.v1", installs }, null, 2) + "\\n");',
+  "try { fs.rmSync(snapshotPath, { force: true }); } catch {}",
+].join("\n");
+
+/**
+ * Bracket an install with the ownership capture: snapshot before, record after. The
+ * capture only runs when the install itself succeeded (`requiresPriorExecSuccess`), so a
+ * failed install never writes an ownership claim for content it did not put there.
+ */
+function eccOwnershipCaptureActions(
+  ctx: PlanContext,
+  cli: Cli,
+  repo: EccRepoCheckout,
+  installActions: Action[],
+): Action[] {
+  const managed = eccManagedRoot(cli);
+  if (managed === undefined) return installActions;
+  const managedRoot = join(ctx.root, managed);
+  const snapshot = join(ctx.root, ".aih", "ecc", `.pre-install-${cli}.json`);
+  const manifestPath = eccInstallManifestPath(ctx.root);
+  return [
+    exec(
+      `Snapshot ${managed}/ before the ECC install so files this run CREATES can be attributed (under --apply)`,
+      ["node", "-e", ECC_CAPTURE_SCRIPT, "snapshot", snapshot, managedRoot],
+      { allowFailure: true },
+    ),
+    ...installActions,
+    exec(
+      `Record ECC ownership for ${cli} — hash files this run created into ${managed === ".kiro" ? ".aih/ecc/install-manifest.json" : manifestPath} (under --apply)`,
+      [
+        "node",
+        "-e",
+        ECC_CAPTURE_SCRIPT,
+        "capture",
+        snapshot,
+        managedRoot,
+        manifestPath,
+        cli,
+        eccInstallMechanism(cli),
+        repo.dir,
+      ],
+      { requiresPriorExecSuccess: true, allowFailure: true },
+    ),
+  ];
+}
+
+/**
+ * Report installed-source drift for one target: which AIH-owned files are now behind the
+ * fetched ECC source (STALE), which the operator has since edited (never auto-replaced),
+ * and how much of the tree has no ownership evidence at all.
+ *
+ * Advisory by design (a coded `skip`, the `binding.settings-drift` pattern): reporting
+ * drift is this issue's scope, and the repair path that could CLEAR a stale finding is
+ * explicitly out of it. Kiro's copy path can never update an existing file, so failing
+ * the run would wedge every Kiro repo red with no way out.
+ */
+function eccDriftProbe(ctx: PlanContext, cli: Cli, repo: EccRepoCheckout): Action[] {
+  const managed = eccManagedRoot(cli);
+  if (managed === undefined) return [];
+  const name = `ECC installed-source drift (${cli})`;
+  return [
+    probe(name, async () => {
+      const head = await ctx.run(["git", "-C", repo.dir, "rev-parse", "HEAD"]);
+      const commit = head.code === 0 ? head.stdout.trim() || null : null;
+      const drift = eccInstallDriftForRoot(ctx.root, cli, join(ctx.root, managed), {
+        kind: "git-checkout",
+        ref: repo.ref ?? null,
+        commit,
+        package: null,
+        version: null,
+      });
+      const total = Object.values(drift.counts).reduce((sum, count) => sum + count, 0);
+      if (total === 0) {
+        return { name, verdict: "pass", detail: `${managed}/ has no installed ECC content` };
+      }
+      if (!drift.provenanceKnown) {
+        return {
+          name,
+          verdict: "skip",
+          code: "ecc.install-drift",
+          detail:
+            `${drift.counts["unknown-provenance"]} file(s) under ${managed}/ have no ownership ` +
+            "record, so aih cannot tell ECC-installed content from your own — this install " +
+            "predates the manifest. Re-run `aih ecc --cli " +
+            `${cli} --apply` +
+            "` to establish ownership; until then nothing here is claimed or touched.",
+        };
+      }
+      const parts = [
+        `${drift.counts.stale} stale`,
+        `${drift.counts["user-modified"]} locally modified`,
+        `${drift.counts.removed} removed`,
+        `${drift.counts["unknown-provenance"]} unowned`,
+        `${drift.counts["aih-owned"]} current`,
+      ].join(", ");
+      if (!drift.stale && drift.counts["user-modified"] === 0 && drift.counts.removed === 0) {
+        return {
+          name,
+          verdict: "pass",
+          detail: `${managed}/ matches the installed source (${parts})`,
+        };
+      }
+      const samples = drift.samples
+        .filter((sample) => sample.state === "stale" || sample.state === "user-modified")
+        .map((sample) => `${sample.path} (${sample.state})`)
+        .join(", ");
+      return {
+        name,
+        verdict: "skip",
+        code: "ecc.install-drift",
+        detail:
+          `${managed}/ ${parts}. Installed from ECC ${drift.recordedSource?.commit?.slice(0, 12) ?? "unknown"}, ` +
+          `checkout is now ${drift.currentSource?.commit?.slice(0, 12) ?? "unknown"}. ` +
+          `${drift.counts.stale > 0 ? "Kiro's installer copies only absent destinations, so a rerun cannot update these. " : ""}` +
+          `Locally modified files are never replaced. ${samples === "" ? "" : `e.g. ${samples}`}`,
+      };
+    }),
+  ];
+}
+
+export function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[] {
+  const installActions = kiroInstallActions(ctx, repo.dir, repo.posix);
+  if (repo.explicit) {
+    return [
+      ...installActions,
+      doc(
+        "ECC Kiro install (local checkout via --ecc-path)",
+        lines(
+          `Using the ECC checkout at \`${repo.posix}\`. \`.kiro/install.sh\` copies ECC's curated`,
+          "Kiro agents/skills/steering/hooks/scripts/settings into this repo's `.kiro/`",
+          "— copying only destinations that do not already exist, so a rerun adds missing",
+          "content but does not update files already installed. On Windows it runs via Git Bash.",
+        ),
+      ),
+    ];
+  }
+  const checkoutStatus = repo.ref
+    ? `pinned to \`${repo.ref}\` via shallow fetch/clone`
+    : repo.hasCache
+      ? "existing cached checkout; `git pull --ff-only` is attempted under `--apply` and any failure is reported by that exec action"
+      : "cloned with `git clone --depth 1`";
+  return [
+    ...installActions,
+    doc(
+      "ECC Kiro install (cached git checkout)",
+      lines(
+        "Kiro content isn't on npm, so aih keeps a shallow git checkout of ECC at",
+        `\`${repo.posix}\` — ${checkoutStatus}`,
+        "on this run — and runs ECC's native `.kiro/install.sh` to copy its curated Kiro",
+        "agents, skills, steering, hooks, scripts, and settings into this repo's `.kiro/`",
+        "— copying only destinations that do not already exist, so pulling a newer ECC and",
+        "re-running adds missing content but leaves already-installed files untouched.",
+        "Requires git on PATH plus Git for Windows (Git Bash) installed; aih",
+        "resolves bash.exe from the standard install path. Point at an existing checkout",
+        "instead with `--ecc-path <dir>`.",
+      ),
+    ),
+  ];
+}
+
+const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
+  'const child = require("child_process");',
+  'const crypto = require("crypto");',
+  'const fs = require("fs");',
+  'const path = require("path");',
+  ...ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE.trim().split("\n"),
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, projectConfigPath, tomlParserPath, optOutPredicatePath, refusalRecordPath, refusalNonce, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !projectConfigPath || !tomlParserPath || !optOutPredicatePath || !refusalRecordPath || !/^[0-9a-f]{32}$/.test(refusalNonce || "") || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <project-config> <toml-parser> <opt-out-predicate> <refusal-record> <refusal-nonce> <state-b64>"); process.exit(1); }',
+  // The same TOML parser and opt-out predicate the plan used (see ./codex.ts).
+  "const parseToml = require(path.resolve(tomlParserPath)).parse;",
+  'if (typeof parseToml !== "function") throw new Error("Codex merge TOML parser is unavailable: " + tomlParserPath);',
+  "const { chromeDevtoolsOptOutMissing, chromeDevtoolsOptOutRefusals } = require(path.resolve(optOutPredicatePath));",
+  'if (typeof chromeDevtoolsOptOutMissing !== "function" || typeof chromeDevtoolsOptOutRefusals !== "function") throw new Error("Chrome DevTools MCP opt-out predicate is unavailable: " + optOutPredicatePath);',
+  'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
+  "const declaredHome = path.resolve(homeDir);",
+  "const trustedHome = fs.realpathSync(declaredHome);",
+  "function assertInsideHome(target) {",
+  "  const declaredTarget = path.resolve(target);",
+  "  const declaredRelative = path.relative(declaredHome, declaredTarget);",
+  "  const trustedRelative = path.relative(trustedHome, declaredTarget);",
+  '  const isInside = (value) => Boolean(value) && value !== ".." && !value.startsWith(".." + path.sep) && !path.isAbsolute(value);',
+  "  const relative = isInside(declaredRelative) ? declaredRelative : trustedRelative;",
+  '  if (!isInside(relative)) throw new Error("refusing Codex destination outside trusted home: " + declaredTarget);',
+  "  return { absolute: path.join(trustedHome, relative), parts: relative.split(path.sep) };",
+  "}",
+  "function ensureSafeDirectory(directory) {",
+  "  const { parts } = assertInsideHome(directory);",
+  "  let cursor = trustedHome;",
+  "  for (const part of parts) {",
+  "    cursor = path.join(cursor, part);",
+  "    if (!fs.existsSync(cursor)) fs.mkdirSync(cursor);",
+  "    const stats = fs.lstatSync(cursor);",
+  '    if (stats.isSymbolicLink() || !stats.isDirectory()) throw new Error("refusing unsafe Codex destination directory: " + cursor);',
+  "  }",
+  "}",
+  "function prepareDestination(target) {",
+  "  const { absolute } = assertInsideHome(target);",
+  "  ensureSafeDirectory(path.dirname(absolute));",
+  "  let stats;",
+  '  try { stats = fs.lstatSync(absolute); } catch (error) { if (!error || error.code !== "ENOENT") throw error; }',
+  "  if (stats) {",
+  '    if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink > 1) throw new Error("refusing unsafe existing Codex destination: " + absolute);',
+  "  }",
+  "  return absolute;",
+  "}",
+  "function readManagedDestinationOptional(target) {",
+  "  const { absolute, parts } = assertInsideHome(target);",
+  "  let cursor = trustedHome;",
+  "  for (const part of parts.slice(0, -1)) {",
+  "    cursor = path.join(cursor, part);",
+  "    let stats;",
+  '    try { stats = fs.lstatSync(cursor); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; }',
+  '    if (stats.isSymbolicLink() || !stats.isDirectory()) throw new Error("refusing unsafe Codex destination directory: " + cursor);',
+  "  }",
+  "  let stats;",
+  '  try { stats = fs.lstatSync(absolute); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; }',
+  '  if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink > 1) throw new Error("refusing unsafe existing Codex destination: " + absolute);',
+  '  return fs.readFileSync(absolute, "utf8");',
+  "}",
+  'const spec = specB64 ? JSON.parse(Buffer.from(specB64, "base64").toString("utf8")) : null;',
+  'const executableConsent = spec && spec.executableConsent === "enabled" ? "enabled" : "declined";',
+  'if (spec && spec.executableConsent !== "enabled" && spec.executableConsent !== "declined") throw new Error("invalid ECC executable consent");',
+  'const mcpSpec = mcpB64 ? JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8")) : null;',
+  'let state = JSON.parse(Buffer.from(stateB64, "base64").toString("utf8"));',
+  "let actualCurrentRunState = state;",
+  "let effectiveMcpNames;",
+  'const governed = governanceFlag === "1";',
+  'if (governed && (!spec || spec.excludeAihOwnedSurfaces !== true)) throw new Error("governed Codex ECC install requires the AIH-owned-surface exclusion spec");',
+  "const aihStateLocation = assertInsideHome(statePath);",
+  'if (aihStateLocation.parts.length !== 2 || aihStateLocation.parts[0] !== ".codex" || aihStateLocation.parts[1] !== "ecc-aih-install-state.json") throw new Error("Codex AIH install-state path is not the exact authorized state path");',
+  "const expectedAihStatePath = aihStateLocation.absolute;",
+  "function isSharedCodexOperation(operation) {",
+  "  const source = normalize(operation.sourceRelativePath);",
+  '  return source === "AGENTS.md" || source === ".codex/AGENTS.md" || source === ".codex/config.toml";',
+  "}",
+  "function isSelectedCodexOperation(operation) {",
+  '  if (!spec || spec.scope === "full") return true;',
+  "  if (new Set(spec.wholeModules).has(operation.moduleId)) return true;",
+  "  const source = normalize(operation.sourceRelativePath);",
+  "  for (const sourceRoot of new Set(spec.sourceRoots || [])) {",
+  "    const root = normalize(sourceRoot);",
+  '    if (source === root || source.startsWith(root + "/")) return true;',
+  "  }",
+  '  if (spec.agentScaffolding && (source === "AGENTS.md" || source === ".agents/plugins/marketplace.json")) return true;',
+  "  const agent = /^agents\\/([^/]+)\\.md$/.exec(source);",
+  "  if (agent && new Set(spec.agents).has(agent[1])) return true;",
+  "  const skill = /^(?:skills|\\.agents\\/skills)\\/([^/]+)\\//.exec(source);",
+  '  return Boolean(skill && source.startsWith("skills/") && new Set(spec.skills).has(skill[1]));',
+  "}",
+  "function classifyGovernedCodexOperation(operation) {",
+  '  if (!operation || typeof operation.moduleId !== "string" || operation.moduleId.trim().length === 0) throw new Error("invalid ECC manifest module identity");',
+  '  if (operation.kind !== "copy-file" && operation.kind !== "merge-json") throw new Error("unsupported ECC manifest operation kind: " + operation.kind);',
+  "  const source = normalize(operation.sourceRelativePath);",
+  "  const destination = normalize(operation.destinationPath);",
+  '  if (!source || source.includes(String.fromCharCode(0)) || source.startsWith("/") || source.startsWith("//") || /^[a-z]:\\//i.test(source) || source.startsWith("./") || source.split("/").some((part) => !part || part === "." || part === "..")) throw new Error("unsafe ECC source path: " + source);',
+  "  const windowsAbsolute = /^[a-z]:\\//i.test(destination);",
+  '  const posixAbsolute = destination.startsWith("/") && !destination.startsWith("//");',
+  '  const destinationBody = windowsAbsolute ? destination.slice(3) : posixAbsolute ? destination.slice(1) : "";',
+  '  if (!destination || destination.includes(String.fromCharCode(0)) || (!windowsAbsolute && !posixAbsolute) || !destinationBody || destinationBody.startsWith("./") || destinationBody.split("/").some((part) => !part || part === "." || part === "..")) throw new Error("unsafe ECC destination path: " + destination);',
+  "  const location = assertInsideHome(destination);",
+  '  if (location.parts[0] !== ".codex") throw new Error("governed Codex ECC destination escapes authorized .codex root: " + destination);',
+  "  const mcpPath = (value) => /(?:^|\\/)(?:\\.mcp\\.json|mcp\\.json|mcp-servers\\.json)$/i.test(value) || /^(?:mcp-configs|mcp)(?:\\/|$)/i.test(value);",
+  "  const hostRuntimePath = (value) => /(?:^|\\/)opencode\\.json$/i.test(value) || /(?:^|\\/)(?:\\.claude|\\.codex|\\.cursor|\\.kiro|\\.gemini|\\.opencode|\\.zed)\\/(?:hooks(?:\\.json)?|plugins)(?:\\/|$)/i.test(value) || /(?:^|\\/)(?:\\.claude|\\.codex|\\.cursor|\\.kiro|\\.gemini|\\.opencode|\\.zed)\\/(?:settings(?:\\.local)?\\.json|config\\.(?:json|toml))$/i.test(value) || /^(?:hooks(?:\\.json)?|plugins|scripts\\/hooks)(?:\\/|$)/i.test(value) || /^scaffolds\\/(?:claude|codex|cursor|kiro|gemini|opencode|zed)\\/(?:hooks(?:\\.json)?|plugins|settings(?:\\.local)?\\.json|config\\.(?:json|toml))(?:\\/|$)/i.test(value);",
+  "  const openCodeRuntimeTree = (value) => /(?:^|\\/)(?:\\.opencode|\\.config\\/opencode)(?:\\/|$)/i.test(value);",
+  '  const eccContentPath = (value) => value === "AGENTS.md" || /^(?:\\.agents\\/(?:plugins|skills)\\/|agents\\/|skills\\/|commands\\/|rules\\/|\\.claude\\/commands\\/|\\.codex\\/AGENTS\\.md$)/.test(value);',
+  "  const eccContentDestination = (source, destination) => {",
+  '    const mappings = [[".agents/plugins/", ".agents/plugins/"], [".agents/skills/", ".agents/skills/"], ["agents/", "agents/"], ["skills/", "skills/"], ["commands/", "commands/"], ["rules/", "rules/"]];',
+  "    for (const [sourcePrefix, targetPrefix] of mappings) {",
+  "      if (!source.startsWith(sourcePrefix)) continue;",
+  "      const suffix = source.slice(sourcePrefix.length);",
+  '      return Boolean(suffix) && destination === normalize(path.join(trustedHome, ".codex", targetPrefix, suffix));',
+  "    }",
+  "    return false;",
+  "  };",
+  '  if (mcpPath(source) || mcpPath(destination)) return "mcp";',
+  '  if (operation.moduleId === "hooks-runtime" || hostRuntimePath(source) || hostRuntimePath(destination) || openCodeRuntimeTree(source) || (!eccContentPath(source) && openCodeRuntimeTree(destination))) return "host-runtime";',
+  '  if (operation.kind === "merge-json") throw new Error("unclassifiable governed ECC merge-json operation: " + operation.moduleId + ":" + destination);',
+  '  if (!eccContentPath(source) || !eccContentDestination(source, destination)) throw new Error("unclassifiable governed ECC content operation: " + operation.moduleId + ":" + source + " -> " + destination);',
+  '  return "ecc-content";',
+  "}",
+  "function materializeSelectedCodexSkills(existingDestinations) {",
+  "  if (!spec) return [];",
+  '  const skillsRoot = path.join(repoRoot, "skills");',
+  "  const rootStats = fs.lstatSync(skillsRoot);",
+  '  if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) throw new Error("invalid verified ECC skills root");',
+  '  const names = spec.scope === "full" ? fs.readdirSync(skillsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort() : [...new Set(spec.skills)].sort();',
+  "  const operations = [];",
+  "  const copyTree = (skill, relative) => {",
+  "    const sourcePath = path.join(skillsRoot, skill, relative);",
+  "    const sourceStats = fs.lstatSync(sourcePath);",
+  '    if (sourceStats.isSymbolicLink()) throw new Error("refusing symlink in verified ECC skill: " + path.join(skill, relative));',
+  '    const destinationPath = path.join(homeDir, ".codex", "skills", skill, relative);',
+  "    if (sourceStats.isDirectory()) {",
+  "      ensureSafeDirectory(destinationPath);",
+  "      for (const child of fs.readdirSync(sourcePath).sort()) copyTree(skill, path.join(relative, child));",
+  "      return;",
+  "    }",
+  '    if (!sourceStats.isFile()) throw new Error("refusing non-regular file in verified ECC skill: " + path.join(skill, relative));',
+  "    if (existingDestinations.has(destinationPath)) return;",
+  "    prepareDestination(destinationPath);",
+  "    fs.copyFileSync(sourcePath, destinationPath);",
+  "    existingDestinations.add(destinationPath);",
+  "    operations.push({",
+  '      kind: "copy-file", moduleId: "aih-scoped-skills", sourcePath,',
+  '      sourceRelativePath: normalize(path.join("skills", skill, relative)), destinationPath,',
+  '      strategy: "preserve-relative-path", ownership: "managed", scaffoldOnly: false,',
+  "    });",
+  "  };",
+  "  for (const skill of names) {",
+  '    if (!/^[a-z0-9][a-z0-9-]*$/.test(skill)) throw new Error("invalid verified ECC skill name: " + skill);',
+  "    const source = path.join(skillsRoot, skill);",
+  '    if (!fs.existsSync(source)) throw new Error("selected verified ECC skill is missing: " + skill);',
+  '    copyTree(skill, "");',
+  "  }",
+  "  return operations;",
+  "}",
+  "function installCodexManagedFiles() {",
+  '  const { createManifestInstallPlan } = require(path.join(repoRoot, "scripts", "lib", "install-executor.js"));',
+  '  const { writeInstallState } = require(path.join(repoRoot, "scripts", "lib", "install-state.js"));',
+  '  let plan = createManifestInstallPlan({ sourceRoot: repoRoot, target: "codex", profileId: spec ? (spec.scope === "full" ? "full" : null) : profileId, moduleIds: spec && spec.scope !== "full" ? spec.moduleIds : [], homeDir });',
+  '  plan = applyEccUpstreamHookConsent(plan, repoRoot, governed ? "declined" : executableConsent);',
+  '  if (typeof plan.installStatePath !== "string") throw new Error("Codex ECC install-state path is not the exact authorized upstream state path");',
+  "  const upstreamStateLocation = assertInsideHome(plan.installStatePath);",
+  '  if (upstreamStateLocation.parts.length !== 2 || upstreamStateLocation.parts[0] !== ".codex" || upstreamStateLocation.parts[1] !== "ecc-install-state.json") throw new Error("Codex ECC install-state path is not the exact authorized upstream state path");',
+  "  const expectedUpstreamStatePath = upstreamStateLocation.absolute;",
+  "  plan.installStatePath = expectedUpstreamStatePath;",
+  "  const selectedOperations = plan.operations.filter((operation) => !isSharedCodexOperation(operation) && isSelectedCodexOperation(operation));",
+  '  const operations = selectedOperations.filter((operation) => { const operationClass = classifyGovernedCodexOperation(operation); if (operationClass === "mcp") return false; if (operationClass === "host-runtime") return executableConsent === "enabled" && !governed; return true; });',
+  '  { const destinations = new Set(); for (const operation of operations) { const destination = normalize(operation.destinationPath); const collisionKey = destination.normalize("NFC").toLowerCase(); if (destinations.has(collisionKey)) throw new Error("normalized Codex ECC consent destination collision: " + destination); destinations.add(collisionKey); } }',
+  "  let priorState;",
+  "  const priorStateRaw = readManagedDestinationOptional(plan.installStatePath);",
+  "  if (priorStateRaw !== undefined) priorState = JSON.parse(priorStateRaw);",
+  "  if (priorState !== undefined) {",
+  '    if (!priorState || typeof priorState !== "object" || Array.isArray(priorState) || !priorState.target || !Array.isArray(priorState.operations) || path.resolve(priorState.target.root || "") !== path.resolve(path.join(homeDir, ".codex")) || path.resolve(priorState.target.installStatePath || "") !== path.resolve(plan.installStatePath)) throw new Error("invalid prior Codex ECC install state at the consent boundary");',
+  '    const destinationKey = (value) => { const resolved = path.resolve(value); return process.platform === "win32" ? resolved.toLowerCase() : resolved; };',
+  "    const activeDestinations = new Set(operations.map((operation) => destinationKey(operation.destinationPath)));",
+  '    const withdrawn = priorState.operations.filter((operation) => classifyGovernedCodexOperation(operation) !== "ecc-content" && !activeDestinations.has(destinationKey(operation.destinationPath)));',
+  '    if (withdrawn.length > 0) throw new Error("refusing Codex ECC consent withdrawal without an atomic receipt-bound transition; the prior receipt and runtime remain unchanged for receipt-bound prune or manual cleanup: " + withdrawn.map((operation) => operation.destinationPath).join(", "));',
+  "  }",
+  "  plan.operations = operations;",
+  "  plan.statePreview.operations = operations;",
+  "  for (const operation of operations) {",
+  '    if (operation.kind !== "copy-file") { console.error("unsupported Codex managed operation: " + operation.kind); process.exit(1); }',
+  "    prepareDestination(operation.destinationPath);",
+  "    fs.copyFileSync(operation.sourcePath, operation.destinationPath);",
+  "  }",
+  "  const skillOperations = materializeSelectedCodexSkills(",
+  "    new Set(operations.map((operation) => operation.destinationPath)),",
+  "  );",
+  "  plan.operations = [...operations, ...skillOperations].map((operation) => ({",
+  "    ...operation,",
+  '    contentSha256: crypto.createHash("sha256").update(fs.readFileSync(prepareDestination(operation.destinationPath))).digest("hex"),',
+  "  }));",
+  "  plan.statePreview.operations = plan.operations;",
+  "  prepareDestination(plan.installStatePath);",
+  "  if (fs.existsSync(plan.installStatePath)) {",
+  '    const prior = JSON.parse(fs.readFileSync(plan.installStatePath, "utf8"));',
+  '    if (typeof prior.installedAt === "string" && prior.installedAt.length > 0) plan.statePreview.installedAt = prior.installedAt;',
+  "  }",
+  "  writeInstallState(plan.installStatePath, plan.statePreview);",
+  "}",
+  "function normalizeCodexAgentsSource(text) {",
+  '  const normalized = text.replace(/\\r\\n/g, "\\n");',
+  '  let next = normalized.replace(/## Skills Discovery[\\s\\S]*?\\n\\nAvailable skills:/, "## Skills Discovery\\n\\nECC installs selected Codex skills under `~/.codex/skills/`. Invoke them on demand as `$<skill-name>`; for example `$tdd-workflow` reads `~/.codex/skills/tdd-workflow/SKILL.md`. They are not auto-loaded from `.agents/skills/`.\\n\\nAvailable skills:");',
+  '  if (next === normalized) { throw new Error("ECC Codex AGENTS.md Skills Discovery section not recognized"); }',
+  '  next = next.replace("| Skills | Skills loaded via plugin | `.agents/skills/` directory |", "| Skills | On-demand `$<skill-name>` invocation | `~/.codex/skills/<name>/SKILL.md` |");',
+  '  if (spec && spec.scope !== "full") {',
+  '    const skills = [...new Set(spec.skills)].sort().map((name) => "- " + name).join("\\n");',
+  '    next = next.replace(/Available skills:\\n(?:- .*\\n)*/, "Available skills:\\n" + skills + "\\n");',
+  "  }",
+  "  if (mcpSpec) {",
+  "    const names = (effectiveMcpNames || Object.keys(mcpSpec.servers || {})).slice().sort();",
+  '    const body = "## MCP Servers\\n\\naih registers only this validated scoped set: " + (names.length > 0 ? names.map((name) => "`" + name + "`").join(", ") : "none") + ". Existing user-defined same-name servers win; each server\'s declared risk profile remains subject to the configured policy.\\n\\n";',
+  "    next = next.replace(/## MCP Servers[\\s\\S]*?(?=## External Action Boundaries)/, body);",
+  "  }",
+  "  return next;",
+  "}",
+  "const liveConfigRaw = governed ? undefined : readSafeOptional(configPath);",
+  "const liveProjectConfigRaw = readProjectConfig();",
+  // A governed install emits no MCP entries, yet every launch it can read must still carry both opt-outs.
+  "const governedUserConfigRaw = governed ? readConfigForCheck(configPath) : undefined;",
+  'if (governed) refuseChromeOptOuts([{ scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }, { scope: "user", configPath, raw: governedUserConfigRaw }]);',
+  'function stableGovernedConfigs() { if (readConfigForCheck(configPath) !== governedUserConfigRaw || readProjectConfig() !== liveProjectConfigRaw) throw new Error("Codex MCP config changed during apply"); }',
+  "const initialScopedPlan = governed ? undefined : planScopedMcps(undefined, false, undefined, false);",
+  'const candidateConfig = governed ? undefined : mergeCodexConfigCandidate(liveConfigRaw || "");',
+  'if (!governed) actualCurrentRunState = actualBaselineEffects(liveConfigRaw || "", candidateConfig, state);',
+  "function installCodexAgents() {",
+  'const source = normalizeCodexAgentsSource(fs.readFileSync(sourceAgents, "utf8")).replace(/\\s+$/, "");',
+  `const marker = ${JSON.stringify(CODEX_AGENTS_BLOCK_MARKER)};`,
+  'const begin = "<!-- BEGIN " + marker + " (generated from affaan-m/ECC .codex/AGENTS.md) -->";',
+  'const end = "<!-- END " + marker + " -->";',
+  'const rendered = begin + "\\n\\n" + source + "\\n\\n" + end;',
+  "prepareDestination(targetAgents);",
+  "const existed = fs.existsSync(targetAgents);",
+  'const existing = existed ? fs.readFileSync(targetAgents, "utf8") : "";',
+  "const usesCrlf = /\\r\\n/.test(existing);",
+  'const normalized = existing.replace(/\\r\\n/g, "\\n");',
+  'const start = normalized.indexOf("<!-- BEGIN " + marker);',
+  "const stop = start >= 0 ? normalized.indexOf(end, start) : -1;",
+  "let next;",
+  "if (start >= 0 && stop >= 0) {",
+  "  next = normalized.slice(0, start) + rendered + normalized.slice(stop + end.length);",
+  "} else {",
+  '  const trimmed = normalized.replace(/\\n+$/, "");',
+  '  next = trimmed.length > 0 ? trimmed + "\\n\\n" + rendered + "\\n" : rendered + "\\n";',
+  "}",
+  'if (!next.endsWith("\\n")) next += "\\n";',
+  'if (usesCrlf) next = next.replace(/\\n/g, "\\r\\n");',
+  'fs.writeFileSync(targetAgents, next, "utf8");',
+  "return { existed, existing, next };",
+  "}",
+  'function restoreCodexAgents(change) { if (readSafeOptional(targetAgents) !== change.next) throw new Error("Codex AGENTS changed during apply"); if (change.existed) fs.writeFileSync(prepareDestination(targetAgents), change.existing, "utf8"); else fs.rmSync(prepareDestination(targetAgents), { force: true }); }',
+  // Configs that are only validated, never written, are read as plan time reads them.
+  'function readConfigForCheck(target) { try { return fs.readFileSync(path.resolve(target), "utf8"); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; } }',
+  "function readProjectConfig() { return readConfigForCheck(projectConfigPath); }",
+  "function readSafeOptional(target) {",
+  "  const location = assertInsideHome(target);",
+  '  let stats; try { stats = fs.lstatSync(location.absolute); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; }',
+  '  if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink > 1) throw new Error("refusing unsafe live Codex file: " + location.absolute);',
+  '  return fs.readFileSync(location.absolute, "utf8");',
+  "}",
+  'function mergeCodexConfigCandidate(raw) { const parent = path.dirname(prepareDestination(configPath)); const temporaryRoot = fs.mkdtempSync(path.join(parent, ".aih-codex-")); const temporaryConfig = path.join(temporaryRoot, "config.toml"); const safeTempFile = (missing) => { let stats; try { stats = fs.lstatSync(temporaryConfig); } catch (error) { if (missing && error && error.code === "ENOENT") return false; throw error; } if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink > 1) throw new Error("unsafe Codex merge temporary output"); return true; }; const cleanup = () => { if (safeTempFile(true)) fs.unlinkSync(temporaryConfig); const rootStats = fs.lstatSync(temporaryRoot); if (rootStats.isSymbolicLink() || !rootStats.isDirectory() || path.dirname(temporaryConfig) !== temporaryRoot) throw new Error("unsafe Codex merge temporary directory"); fs.rmdirSync(temporaryRoot); }; try { fs.chmodSync(temporaryRoot, 0o700); const rootStats = fs.lstatSync(temporaryRoot); if (rootStats.isSymbolicLink() || !rootStats.isDirectory() || path.dirname(temporaryConfig) !== temporaryRoot) throw new Error("unsafe Codex merge temporary directory"); const descriptor = fs.openSync(temporaryConfig, "wx", 0o600); try { fs.writeFileSync(descriptor, raw, "utf8"); } finally { fs.closeSync(descriptor); } const result = child.spawnSync(process.execPath, [mergeCodexConfig, temporaryConfig], { stdio: "inherit" }); if (result.error) throw result.error; if (result.status !== 0) throw new Error("Codex merge helper failed"); safeTempFile(false); return fs.readFileSync(temporaryConfig, "utf8"); } finally { cleanup(); } }',
+  "function exactAihState(raw) {",
+  '  let candidate; try { candidate = JSON.parse(raw); } catch { throw new Error("malformed live Codex AIH state"); }',
+  '  const array = (value) => Array.isArray(value) && value.every((entry) => typeof entry === "string"); const exactKeys = (value, keys) => Object.keys(value).sort().join("\\n") === keys.slice().sort().join("\\n");',
+  '  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate) || !exactKeys(candidate, ["schemaVersion", "managedBy", "codexToml", "agentsBlock"]) || candidate.schemaVersion !== 1 || candidate.managedBy !== "aih" || candidate.agentsBlock !== true || !candidate.codexToml || typeof candidate.codexToml !== "object" || Array.isArray(candidate.codexToml) || !exactKeys(candidate.codexToml, ["rootKeys", "tables", "tableKeys", "mcpServers"]) || !array(candidate.codexToml.rootKeys) || !array(candidate.codexToml.tables) || !array(candidate.codexToml.mcpServers) || new Set(candidate.codexToml.mcpServers).size !== candidate.codexToml.mcpServers.length || !candidate.codexToml.mcpServers.every((name) => /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) || !candidate.codexToml.tableKeys || typeof candidate.codexToml.tableKeys !== "object" || Array.isArray(candidate.codexToml.tableKeys) || !Object.values(candidate.codexToml.tableKeys).every(array)) throw new Error("malformed live Codex AIH state");',
+  "  return candidate;",
+  "}",
+  'function actualBaselineEffects(before, after, candidate) { const delta = exactAihState(JSON.stringify(candidate)); const normalized = (raw) => raw.replace(/\\r\\n/g, "\\n"); const escape = (value) => value.replace(/[\\\\^$*+?.()|[\\]{}]/g, "\\\\$&"); const rootExists = (raw, key) => { for (const line of normalized(raw).split("\\n")) { if (/^[ \\t]*\\[/.test(line)) return false; if (new RegExp("^[ \\t]*" + escape(key) + "\\\\s*=").test(line)) return true; } return false; }; const tableExists = (raw, table) => new RegExp("^[ \\t]*\\\\[" + escape(table) + "\\\\][ \\t]*(?:#.*)?$", "m").test(normalized(raw)); const tableKeyExists = (raw, table, key) => { let active = false; for (const line of normalized(raw).split("\\n")) { if (new RegExp("^[ \\t]*\\\\[" + escape(table) + "\\\\][ \\t]*(?:#.*)?$").test(line)) { active = true; continue; } if (active && /^[ \\t]*\\[/.test(line)) active = false; if (active && new RegExp("^[ \\t]*" + escape(key) + "\\\\s*=").test(line)) return true; } return false; }; const tableKeys = {}; for (const [table, keys] of Object.entries(delta.codexToml.tableKeys)) { const added = keys.filter((key) => !tableKeyExists(before, table, key) && tableKeyExists(after, table, key)); if (added.length > 0) tableKeys[table] = added; } return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.filter((key) => !rootExists(before, key) && rootExists(after, key)), tables: delta.codexToml.tables.filter((table) => !tableExists(before, table) && tableExists(after, table)), tableKeys, mcpServers: [] }, agentsBlock: true }; }',
+  "function parseManagedFence(raw) {",
+  '  const begin = "# >>> aih managed (mcp) >>>"; const end = "# <<< aih managed (mcp) <<<";',
+  '  const lines = raw.replace(/\\r\\n/g, "\\n").split("\\n");',
+  "  const begins = lines.map((line, index) => line === begin ? index : -1).filter((index) => index >= 0);",
+  "  const ends = lines.map((line, index) => line === end ? index : -1).filter((index) => index >= 0);",
+  "  if (begins.length === 0 && ends.length === 0) return { lines, fence: undefined };",
+  '  if (begins.length !== 1 || ends.length !== 1 || begins[0] >= ends[0]) throw new Error("ambiguous managed Codex MCP fence");',
+  "  const sections = []; let current; const names = new Set();",
+  "  for (const line of lines.slice(begins[0] + 1, ends[0])) {",
+  "    const header = tomlMcpTableHeader(line);",
+  '    if (header && !header.array && header.keys.length === 2) { const name = header.keys[1]; if (names.has(name)) throw new Error("duplicate managed Codex MCP table: " + name); names.add(name); if (current) sections.push(current); current = { name, lines: [line] }; continue; }',
+  '    if (header && !header.array && header.keys.length > 2) { const name = header.keys[1]; if (!current || current.name !== name) throw new Error("ambiguous managed Codex MCP descendant table"); current.lines.push(line); continue; }',
+  '    if (/^[ \\t]*\\[/.test(line)) throw new Error("unrecognized managed Codex MCP table");',
+  '    if (!current && line.trim().length > 0) throw new Error("unrecognized managed Codex MCP content");',
+  "    if (current) current.lines.push(line);",
+  "  }",
+  "  if (current) sections.push(current);",
+  "  return { lines, fence: { begin: begins[0], end: ends[0], sections } };",
+  "}",
+  "function rootServerName(line) { return tomlMcpRootName(line); }",
+  "function serverTables(lines, name) {",
+  "  const anyHeader = /^[ \\t]*\\[/;",
+  '  const found = []; for (let index = 0; index < lines.length; index += 1) { if (rootServerName(lines[index]) !== name) continue; let end = index + 1; while (end < lines.length && !anyHeader.test(lines[end]) && lines[end] !== "# >>> aih managed (mcp) >>>" && lines[end] !== "# <<< aih managed (mcp) <<<") end += 1; found.push({ begin: index, end, lines: lines.slice(index, end) }); } return found;',
+  "}",
+  "function exactLegacyChrome(table) {",
+  "  const body = table.lines.filter((line) => line.trim().length > 0);",
+  '  const launch = [["npx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["bunx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["pnpm", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"], ["yarn", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"]];',
+  '  return body.length === 4 && /^(?:\\[mcp_servers\\.chrome-devtools\\]|\\[mcp_servers\\."chrome-devtools"\\])$/.test(body[0]) && launch.some(([command, args]) => body[1] === "command = \\"" + command + "\\"" && body[2] === args) && body[3] === "startup_timeout_sec = 30";',
+  "}",
+  String.raw`function tomlMcpTableHeader(line) {
+  let quote;
+  let clean = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote === '"') {
+      clean += character;
+      if (character === "\\") {
+        const escaped = line[index + 1];
+        if (escaped === undefined) return undefined;
+        clean += escaped;
+        index += 1;
+      } else if (character === '"') quote = undefined;
+      continue;
+    }
+    if (quote === "'") {
+      clean += character;
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") { quote = character; clean += character; continue; }
+    if (character === "#") break;
+    clean += character;
+  }
+  clean = clean.trim();
+  const array = clean.startsWith("[[");
+  const open = array ? "[[" : "[";
+  const close = array ? "]]" : "]";
+  if (!clean.startsWith(open) || !clean.endsWith(close)) return undefined;
+  const body = clean.slice(open.length, -close.length);
+  const keys = [];
+  let index = 0;
+  const spaces = () => { while (index < body.length && /[ \t]/.test(body[index])) index += 1; };
+  const basic = () => {
+    let value = "";
+    index += 1;
+    while (index < body.length) {
+      const character = body[index];
+      if (character === '"') { index += 1; return value; }
+      if (character === "\r" || character === "\n") return undefined;
+      if (character !== "\\") { value += character; index += 1; continue; }
+      const escape = body[index + 1];
+      if (escape === "u" || escape === "U") {
+        const width = escape === "u" ? 4 : 8;
+        const hex = body.slice(index + 2, index + 2 + width);
+        if (!new RegExp("^[0-9A-Fa-f]{" + width + "}$").test(hex)) return undefined;
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined;
+        value += String.fromCodePoint(codePoint);
+        index += width + 2;
+        continue;
+      }
+      const simple = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "\\": "\\" };
+      if (escape === undefined || !Object.prototype.hasOwnProperty.call(simple, escape)) return undefined;
+      value += simple[escape];
+      index += 2;
+    }
+    return undefined;
+  };
+  spaces();
+  while (index < body.length) {
+    let key;
+    if (body[index] === '"') key = basic();
+    else if (body[index] === "'") {
+      const end = body.indexOf("'", index + 1);
+      if (end < 0) return undefined;
+      key = body.slice(index + 1, end);
+      index = end + 1;
+    } else {
+      const match = /^[A-Za-z0-9_-]+/.exec(body.slice(index));
+      if (!match) return undefined;
+      key = match[0];
+      index += key.length;
+    }
+    if (key === undefined) return undefined;
+    keys.push(key);
+    spaces();
+    if (index === body.length) break;
+    if (body[index] !== ".") return undefined;
+    index += 1;
+    spaces();
+    if (index === body.length) return undefined;
+  }
+  return keys.length >= 1 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
+}
+function tomlMcpRootName(line) { const header = tomlMcpTableHeader(line); return header && header.keys.length === 2 ? header.keys[1] : undefined; }
+function assignmentLhs(line) { let quote; for (let index = 0; index < line.length; index += 1) { const character = line[index]; if (quote === '"') { if (character === "\\") index += 1; else if (character === '"') quote = undefined; continue; } if (quote === "'") { if (character === "'") quote = undefined; continue; } if (character === '"' || character === "'") quote = character; else if (character === "#") return undefined; else if (character === "=") return line.slice(0, index).trim(); } return undefined; }
+function nonRootMcpAmbiguity(lines, names) {
+  const roots = new Set(); for (const line of lines) { const header = tomlMcpTableHeader(line); if (header && !header.array && header.keys.length === 2) roots.add(header.keys[1]); }
+  let inMcpServers = false; let atDocumentRoot = true;
+  for (const line of lines) {
+    const header = tomlMcpTableHeader(line);
+    if (header) { inMcpServers = !header.array && header.keys.length === 1; atDocumentRoot = false; if (header.keys.length > 2 && names.has(header.keys[1]) && !roots.has(header.keys[1])) return "non-root Codex MCP representation"; continue; }
+    if (/^[ \t]*\[/.test(line)) { inMcpServers = false; atDocumentRoot = false; continue; }
+    const lhs = assignmentLhs(line); if (lhs === undefined) continue;
+    const direct = tomlMcpTableHeader("[" + lhs + "]");
+    if (atDocumentRoot && direct && direct.keys.length >= 2 && names.has(direct.keys[1])) return "non-root Codex MCP representation";
+    if (inMcpServers) { const scoped = tomlMcpTableHeader("[mcp_servers." + lhs + "]"); if (scoped && scoped.keys.length >= 2 && names.has(scoped.keys[1])) return "non-root Codex MCP representation"; }
+    if (atDocumentRoot && direct && direct.keys.length === 1) return "opaque Codex MCP representation";
+  }
+  return undefined;
+}
+function mcpRootAmbiguity(lines, names) {
+  const nonRoot = nonRootMcpAmbiguity(lines, names); if (nonRoot) return nonRoot;
+  const seen = new Set();
+  for (const line of lines) {
+    const header = tomlMcpTableHeader(line);
+    if (!header || header.keys.length !== 2 || !names.has(header.keys[1])) continue;
+    if (header.array) return "array-of-tables Codex MCP root";
+    if (seen.has(header.keys[1])) return "duplicate semantic Codex MCP root";
+    seen.add(header.keys[1]);
+  }
+  return undefined;
+}
+function legacyDescendantHeader(line) {
+  const withoutComment = (raw) => {
+    let quote;
+    for (let index = 0; index < raw.length; index += 1) {
+      const character = raw[index];
+      if (quote === '"') {
+        if (character === "\\") { index += 1; continue; }
+        if (character === '"') quote = undefined;
+        continue;
+      }
+      if (quote === "'") {
+        if (character === "'") quote = undefined;
+        continue;
+      }
+      if (character === '"' || character === "'") { quote = character; continue; }
+      if (character === "#") return raw.slice(0, index).trim();
+    }
+    return raw.trim();
+  };
+  const bodyOf = (raw, strict) => {
+    const clean = withoutComment(raw);
+    const open = clean.startsWith("[[") ? "[[" : clean.startsWith("[") ? "[" : undefined;
+    if (!open) return undefined;
+    const close = open === "[[" ? "]]" : "]";
+    if (strict && !clean.endsWith(close)) return undefined;
+    return clean.slice(open.length, strict ? -close.length : undefined);
+  };
+  const header = tomlMcpTableHeader(line);
+  if (header) return header.keys.length > 2 && header.keys[1] === "chrome-devtools";
+  const body = bodyOf(line, false);
+  return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
+}`,
+  String.raw`// Refuses with the typed refusal plan time emits: one readable line per entry,
+// one bounded refusal record (with the nonce aih gave this step) in the empty, singly
+// linked regular file aih created for it (checked on the opened descriptor against the
+// file the path named, so a swapped or hard-linked path gets no record), then the refusal
+// exit status. aih types the failure only from that record, read through its own descriptor.
+function refuseChromeOptOuts(configs) {
+  const refusals = chromeDevtoolsOptOutRefusals(configs, parseToml, () => false);
+  if (refusals.length === 0) return;
+  for (const refusal of refusals) process.stderr.write("refusing " + refusal.scope + " Codex MCP entry \"" + refusal.entry + "\" (" + refusal.configPath + "): it launches chrome-devtools-mcp without " + refusal.missing.map((name) => name + "=\"1\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table\n");
+  const record = JSON.stringify({ format: ${JSON.stringify(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT)}, version: 1, nonce: refusalNonce, code: "mcp.telemetry-opt-out-missing", refusals });
+  try {
+    if (Buffer.byteLength(record, "utf8") > ${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES}) throw new Error("it exceeds its byte limit");
+    const named = fs.lstatSync(refusalRecordPath, { bigint: true });
+    if (named.isSymbolicLink() || !named.isFile()) throw new Error("it is not the empty file aih created");
+    const descriptor = fs.openSync(refusalRecordPath, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0));
+    try {
+      const opened = fs.fstatSync(descriptor, { bigint: true });
+      if (!opened.isFile() || opened.dev !== named.dev || opened.ino !== named.ino || opened.nlink !== 1n || opened.size !== 0n) throw new Error("it is not the empty file aih created");
+      fs.writeSync(descriptor, record, 0, "utf8");
+    } finally {
+      fs.closeSync(descriptor);
+    }
+  } catch (error) {
+    process.stderr.write("could not write the refusal record: " + (error && error.message) + "\n");
+  }
+  process.exit(${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT});
+}`,
+  "function renderScopedSection(name, server) {",
+  '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
+  '  const quote = (value) => { const text = String(value); for (let index = 0; index < text.length; index += 1) { const code = text.charCodeAt(index); if (code >= 0xD800 && code <= 0xDBFF) { const next = text.charCodeAt(index + 1); if (!(next >= 0xDC00 && next <= 0xDFFF)) throw new Error("invalid scoped Codex MCP string: " + name); index += 1; continue; } if (code >= 0xDC00 && code <= 0xDFFF) throw new Error("invalid scoped Codex MCP string: " + name); } return JSON.stringify(text).replace(/\\u007f/g, "\\\\u007f"); }; const section = ["[mcp_servers." + quote(name) + "]"];',
+  '  if (server.type === "stdio" && typeof server.command === "string" && Array.isArray(server.args) && server.args.every((arg) => typeof arg === "string")) { section.push("command = " + quote(server.command)); if (server.args.length > 0) section.push("args = [" + server.args.map(quote).join(", ") + "]"); }',
+  '  else if (server.type === "http" && typeof server.url === "string") section.push("url = " + quote(server.url)); else throw new Error("unsupported scoped Codex MCP server shape: " + name);',
+  '  if (server.startupTimeoutSec !== undefined && (!Number.isSafeInteger(server.startupTimeoutSec) || server.startupTimeoutSec < 1 || server.startupTimeoutSec > 3600)) throw new Error("invalid scoped Codex MCP startup timeout: " + name);',
+  '  if (server.startupTimeoutSec !== undefined) section.push("startup_timeout_sec = " + String(server.startupTimeoutSec));',
+  '  if (server.env !== undefined) { if (server.type !== "stdio" || server.env === null || typeof server.env !== "object" || Array.isArray(server.env)) throw new Error("invalid scoped Codex MCP environment: " + name); const entries = Object.entries(server.env); if (entries.some(([key, value]) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== "string")) throw new Error("invalid scoped Codex MCP environment: " + name); entries.sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0); if (entries.length > 0) { section.push(""); section.push("[mcp_servers." + quote(name) + ".env]"); for (const [key, value] of entries) section.push(quote(key) + " = " + quote(value)); } }',
+  '  return section.join("\\n");',
+  "}",
+  "function planScopedMcps(candidateConfig, hasExpectedLiveConfig, expectedLiveConfigRaw, hasExpectedLiveState, expectedLiveStateRaw) {",
+  "  if (!mcpSpec) return undefined;",
+  '  if (!mcpSpec.servers || typeof mcpSpec.servers !== "object" || Array.isArray(mcpSpec.servers)) throw new Error("invalid scoped Codex MCP payload");',
+  "  const requested = new Map(Object.entries(mcpSpec.servers));",
+  '  const liveConfigRaw = hasExpectedLiveConfig ? expectedLiveConfigRaw : readSafeOptional(configPath); const existingConfig = candidateConfig === undefined ? (liveConfigRaw || "") : candidateConfig; const liveStateRaw = hasExpectedLiveState ? expectedLiveStateRaw : readSafeOptional(expectedAihStatePath); const liveState = liveStateRaw === undefined ? undefined : exactAihState(liveStateRaw);',
+  "  const parsed = parseManagedFence(existingConfig); const claimed = new Set(liveState ? liveState.codexToml.mcpServers : []);",
+  '  if (parsed.fence && !liveState) throw new Error("managed Codex MCP fence has no live AIH state");',
+  '  if (parsed.fence && parsed.fence.sections.some((section) => !claimed.has(section.name))) throw new Error("managed Codex MCP fence contains an unclaimed server");',
+  "  const beforeFence = parsed.fence ? parsed.lines.slice(0, parsed.fence.begin) : parsed.lines.slice(); const afterFence = parsed.fence ? parsed.lines.slice(parsed.fence.end + 1) : [];",
+  '  const rootProblem = mcpRootAmbiguity([...beforeFence, ...afterFence], new Set([...requested.keys(), ...claimed])); if (rootProblem) throw new Error("live Codex MCP configuration is ambiguous: " + rootProblem);',
+  '  const legacyBefore = serverTables(beforeFence, "chrome-devtools"); const legacyAfter = serverTables(afterFence, "chrome-devtools"); const chrome = [...legacyBefore, ...legacyAfter]; const claimsChrome = claimed.has("chrome-devtools");',
+  "  const legacyDescendant = [...beforeFence, ...afterFence].some(legacyDescendantHeader);",
+  '  if (claimsChrome && legacyDescendant) throw new Error("live claimed Chrome DevTools table has an unsupported legacy descendant");',
+  '  if (claimsChrome && chrome.length > 0 && (chrome.length !== 1 || !exactLegacyChrome(chrome[0]))) throw new Error("live claimed Chrome DevTools table is not the exact legacy AIH rendering");',
+  '  const retained = parsed.fence ? parsed.fence.sections : []; const expectedClaims = new Set([...retained.map((section) => section.name), ...(claimsChrome && chrome.length === 1 ? ["chrome-devtools"] : [])]);',
+  '  if (liveState && (expectedClaims.size !== claimed.size || [...expectedClaims].some((name) => !claimed.has(name)))) throw new Error("live AIH MCP state does not exactly match its managed MCP footprint");',
+  "  const present = new Set(); for (const line of [...beforeFence, ...afterFence]) { const name = tomlMcpRootName(line); if (name !== undefined) present.add(name); }",
+  '  if (claimsChrome && chrome.length === 1) present.delete("chrome-devtools");',
+  "  const installed = []; const additions = []; for (const [name, server] of requested) { if (retained.some((section) => section.name === name)) continue; if (present.has(name)) continue; additions.push({ name, text: renderScopedSection(name, server) }); installed.push(name); }",
+  '  const sections = [...retained.map((section) => ({ name: section.name, text: requested.has(section.name) ? renderScopedSection(section.name, requested.get(section.name)) : section.lines.join("\\n").replace(/\\n+$/, "") })), ...additions];',
+  '  const block = "# >>> aih managed (mcp) >>>\\n" + sections.map((section) => section.text).join("\\n\\n") + "\\n# <<< aih managed (mcp) <<<";',
+  '  let mergedLines; if (parsed.fence) { const before = beforeFence.slice(); const after = afterFence.slice(); if (claimsChrome && chrome.length === 1) { if (legacyBefore.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); else after.splice(legacyAfter[0].begin, legacyAfter[0].end - legacyAfter[0].begin); } mergedLines = [...before, block, ...after]; } else { const before = beforeFence.slice(); if (claimsChrome && chrome.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); mergedLines = before.join("\\n").replace(/\\n+$/, "").split("\\n"); if (mergedLines.length === 1 && mergedLines[0] === "") mergedLines = []; mergedLines.push(...(mergedLines.length > 0 ? ["", block] : [block])); }',
+  '  let merged = mergedLines.join("\\n").replace(/^\\n+/, "").replace(/\\n+$/, "") + "\\n"; if (/\\r\\n/.test(existingConfig)) merged = merged.replace(/\\n/g, "\\r\\n");',
+  '  refuseChromeOptOuts([{ scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }, { scope: "user", configPath, raw: merged }]);',
+  "  return { liveConfigRaw, liveStateRaw, liveState, liveProjectConfigRaw, merged, installed, retained: retained.map((section) => section.name) };",
+  "}",
+  "function unionStrings(...lists) { return [...new Set(lists.flat())].sort(); }",
+  'function mergeLiveAihState(live, delta) { const tableKeys = {}; for (const key of unionStrings(Object.keys(live.codexToml.tableKeys), Object.keys(delta.codexToml.tableKeys))) tableKeys[key] = unionStrings(live.codexToml.tableKeys[key] || [], delta.codexToml.tableKeys[key] || []); return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: unionStrings(live.codexToml.rootKeys, delta.codexToml.rootKeys), tables: unionStrings(live.codexToml.tables, delta.codexToml.tables), tableKeys, mcpServers: live.codexToml.mcpServers.slice() }, agentsBlock: true }; }',
+  'function scopedState(plan) { const delta = exactAihState(JSON.stringify(actualCurrentRunState)); const next = plan.liveState ? mergeLiveAihState(plan.liveState, delta) : { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.slice(), tables: delta.codexToml.tables.slice(), tableKeys: Object.fromEntries(Object.entries(delta.codexToml.tableKeys).map(([key, values]) => [key, values.slice()])), mcpServers: [] }, agentsBlock: true }; next.codexToml.mcpServers = unionStrings(next.codexToml.mcpServers || [], plan.retained, plan.installed); return next; }',
+  "function stableScopedPlan(plan) { return readSafeOptional(configPath) === plan.liveConfigRaw && readSafeOptional(expectedAihStatePath) === plan.liveStateRaw && readProjectConfig() === plan.liveProjectConfigRaw; }",
+  'function restoreLiveConfig(plan) { if (readSafeOptional(configPath) !== plan.merged) throw new Error("Codex config changed during rollback"); if (plan.liveConfigRaw === undefined) fs.rmSync(prepareDestination(configPath), { force: true }); else fs.writeFileSync(prepareDestination(configPath), plan.liveConfigRaw, "utf8"); }',
+  'function installScopedMcps(plan, nextState) { if (!stableScopedPlan(plan)) throw new Error("Codex MCP config or state changed during apply"); fs.writeFileSync(prepareDestination(configPath), plan.merged, "utf8"); try { fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(nextState, null, 2) + "\\n", "utf8"); } catch (error) { restoreLiveConfig(plan); throw error; } state = nextState; return plan.installed; }',
+  "installCodexManagedFiles();",
+  "const scopedPlan = governed ? undefined : planScopedMcps(candidateConfig, true, liveConfigRaw, true, initialScopedPlan.liveStateRaw);",
+  "const scopedStateNext = scopedPlan ? scopedState(scopedPlan) : state;",
+  "effectiveMcpNames = governed ? [] : (scopedStateNext.codexToml.mcpServers || []);",
+  "const agentsChange = installCodexAgents();",
+  'try { if (scopedPlan) installScopedMcps(scopedPlan, scopedStateNext); else { stableGovernedConfigs(); fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(state, null, 2) + "\\n", "utf8"); } } catch (error) { restoreCodexAgents(agentsChange); throw error; }',
+].join("\n");
+
+// Windows includes `node -e` source in its command-length limit. Keep the
+// reviewable source above, but transport only compressed static program text;
+// all live paths and state remain separate argv values below.
+const CODEX_INSTALL_MERGE_SCRIPT = `eval(require("node:zlib").inflateRawSync(Buffer.from(${JSON.stringify(
+  deflateRawSync(Buffer.from(CODEX_INSTALL_MERGE_SCRIPT_SOURCE)).toString("base64"),
+)}, "base64")).toString("utf8"))`;
+
+export function codexEccActions(
+  ctx: PlanContext,
+  repo: EccRepoCheckout,
+  profile: string,
+  materialization?: EccMaterializationSpec,
+  scopedMcps?: CodexScopedMcpServers,
+  governed = false,
+): Action[] {
+  const effectiveScopedMcps = governed ? {} : (scopedMcps ?? coreOwnedEccCodexMcpServers());
+  assertChromeDevtoolsOptOuts(effectiveScopedMcps);
+  const codexDir = codexHomeDir(ctx);
+  const codexConfig = join(codexDir, "config.toml");
+  const codexAgents = join(codexDir, "AGENTS.md");
+  const mergeCodexConfig = join(repo.dir, "scripts", "codex", "merge-codex-config.js");
+  const sourceAgents = join(repo.dir, ".codex", "AGENTS.md");
+  const statePath = codexInstallStatePath(ctx);
+  const refusalRecord = new ChromeDevtoolsOptOutRefusalRecord({
+    user: codexConfig,
+    project: codexProjectConfigPath(ctx),
+  });
+  const plannedMcpServers = materialization ? [] : Object.keys(effectiveScopedMcps);
+  const stateB64 = Buffer.from(
+    codexInstallStateContents(ctx, plannedMcpServers, governed),
+    "utf8",
+  ).toString("base64");
+  const materializationB64 = materialization
+    ? Buffer.from(JSON.stringify(materialization), "utf8").toString("base64")
+    : undefined;
+  const mcpB64 = Buffer.from(JSON.stringify({ servers: effectiveScopedMcps }), "utf8").toString(
+    "base64",
+  );
+  return [
+    exec(
+      `Install ECC Node dependencies for Codex merge helpers — npm ci --omit=dev --ignore-scripts in ${repo.posix} (lockfile-based, under --apply)`,
+      execArgv(ctx.host.platform, [
+        "npm",
+        "ci",
+        "--omit=dev",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+      ]),
+      { cwd: repo.dir, timeoutMs: 120000 },
+    ),
+    exec(
+      `Install ECC for Codex — run safe merges and record prune state into ${statePath} (under --apply)`,
+      [
+        "node",
+        "-e",
+        CODEX_INSTALL_MERGE_SCRIPT,
+        repo.dir,
+        profile,
+        dirname(codexDir),
+        mergeCodexConfig,
+        codexConfig,
+        sourceAgents,
+        codexAgents,
+        statePath,
+        codexProjectConfigPath(ctx),
+        codexTomlParserPath(),
+        chromeDevtoolsOptOutPredicatePath(),
+        refusalRecord.path,
+        refusalRecord.nonce,
+        governed ? "1" : "0",
+        materializationB64 ?? "",
+        mcpB64 ?? "",
+        stateB64,
+      ],
+      {
+        cwd: repo.dir,
+        sidecar: refusalRecord,
+        failureCheck: (result) =>
+          refusalRecord.check(result) ?? {
+            name: "ECC Codex install",
+            verdict: "fail",
+            detail: `ECC Codex install failed (exit ${result.code ?? "signal"})`,
+          },
+      },
+    ),
+    doc(
+      "ECC Codex install (safe merge path)",
+      lines(
+        "Codex uses ECC's git checkout instead of `ecc-install --target codex` because",
+        "that upstream target copies shared `~/.codex/config.toml` and `AGENTS.md` files.",
+        "aih runs ECC's add-only Codex TOML merge helpers, merges ECC's Codex AGENTS",
+        "guidance into a fenced block, and installs the selected ECC Codex files while",
+        "leaving shared config and AGENTS content co-owned.",
+      ),
+    ),
+  ];
+}
+
+/** A short, human-readable stack summary for the advisor + summary docs. */
+function stackSummary(stack: RepoStack): string {
+  const parts: string[] = [];
+  if (stack.languages.length > 0) parts.push(stack.languages.join(" + "));
+  if (stack.frameworks.length > 0) parts.push(`using ${stack.frameworks.join(", ")}`);
+  if (stack.cloud.length > 0) parts.push(`on ${stack.cloud.join("/")}`);
+  return parts.length > 0 ? parts.join(" ") : "a new repository with no detected stack yet";
+}
+
+function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack): Action {
+  const { packs, installEverything } = eccLanguages(stack);
+  const scope = installEverything
+    ? "no stack detected yet (empty/new repo)"
+    : packs.length > 0
+      ? `stack packs: ${packs.join(", ")}`
+      : "baseline stack (no language pack matched)";
+  // Both claim blocks derive from the per-CLI mechanism registry, so a target only ever
+  // receives the claim true for ITS mechanism, and a newly registered tool cannot
+  // inherit one by default (#555 acceptance: registry-driven coverage).
+  const targets = clis as Cli[];
+  return doc(
+    "ECC install summary (affaan-m/ECC — latest, via ECC's own installer)",
+    lines(
+      `Target CLIs: ${clis.join(", ")}.  Profile: ${inputs.profile}.  Detected ${scope}.`,
+      "",
+      "aih runs ECC's OWN installer at the LATEST version — it assembles nothing itself:",
+      ...eccMechanismInstallLines(targets, inputs.profile),
+      "",
+      ...eccMechanismRerunLines(targets),
+      "",
+      "For finer component control (specific skills/agents/capabilities) ask the advisor:",
+      `  npx ecc consult "${inputs.stackSummary}" --target <cli>`,
+    ),
+  );
+}
+
+/**
+ * Install affaan-m/ECC — the agent-harness optimization system — for the user's
+ * selected CLIs (`--cli claude,codex` / `--all-tools`, default `claude`), at the
+ * LATEST published version, scoped by `--profile`.
+ *
+ * aih never assembles ECC content: it runs ECC's own installer. npm-target CLIs
+ * use `npx --package ecc-universal ecc-install --target <cli>` (latest from npm,
+ * no checkout needed); Codex uses ECC's add-only merge helpers from a cached git
+ * checkout; Kiro uses the same checkout + ECC's native `.kiro/install.sh`;
+ * CLIs ECC has no direct installer for are routed through the `consult` advisor.
+ * Every network/install step is an `exec` that runs only under `--apply`.
+ */
+async function eccPlan(ctx: PlanContext): Promise<Plan> {
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const { clis, detectFellBack } = policyTargets.resolution;
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+  const profile = String(ctx.options.profile ?? "minimal");
+  const languageSelection = eccLanguages(stack);
+  const installVersion = normalizeEccInstallVersion(ctx.env.AIH_ECC_INSTALL_VERSION);
+  const eccRef = (ctx.env.AIH_ECC_REF ?? "").trim() || undefined;
+  const inputs: EccInstallInputs = {
+    profile,
+    stackSummary: stackSummary(stack),
+    platform: ctx.host.platform,
+    installVersion,
+    packs: languageSelection.packs,
+  };
+
+  const actions: Action[] = [];
+  const hasKiro = clis.includes("kiro");
+  const codexBlockers = clis.includes("codex")
+    ? [
+        ...codexMcpCollisionActions(ctx),
+        ...codexChromeDevtoolsOptOutActions(ctx, Object.keys(coreOwnedEccCodexMcpServers())),
+      ]
+    : [];
+  const codexInstallPlanned = clis.includes("codex") && codexBlockers.length === 0;
+  const needsEccRepo = hasKiro || codexInstallPlanned;
+  const repo = needsEccRepo ? eccRepoCheckout(ctx) : undefined;
+  if (repo) actions.push(...eccRepoFetchActions(repo));
+
+  let npmInstallerPlanned = false;
+  for (const cli of clis) {
+    if (cli === "kiro") {
+      if (repo) {
+        actions.push(...eccOwnershipCaptureActions(ctx, cli, repo, kiroEccActions(ctx, repo)));
+        actions.push(...eccDriftProbe(ctx, cli, repo));
+      }
+    } else if (cli === "codex") {
+      if (codexBlockers.length > 0) actions.push(...codexBlockers);
+      else if (repo)
+        actions.push(
+          ...codexEccActions(ctx, repo, profile, undefined, coreOwnedEccCodexMcpServers()),
+        );
+    } else {
+      if (isAihDirectEccInstallTarget(cli)) npmInstallerPlanned = true;
+      actions.push(...eccActionsForCli(cli, inputs));
+    }
+  }
+  // Surface the supply-chain advisory whenever an upstream surface runs unpinned:
+  // the npm installer (no install-version), the Codex/Kiro git checkout (no ref),
+  // or the Codex merge-helper dependency install (npm ci still consumes upstream
+  // registry bytes unless the operator mirrors the registry).
+  const npmUnpinned = npmInstallerPlanned && installVersion === undefined;
+  if (npmUnpinned || (hasKiro && eccRef === undefined) || codexInstallPlanned) {
+    actions.push(eccSupplyChainDoc());
+  }
+  actions.push(eccToolsDoc());
+  if (detectFellBack) {
+    actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
+  actions.push(summaryDoc(clis, inputs, stack));
+  return {
+    ...plan("ecc", ...actions),
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
+}
+
+const EXPLICIT_ECC_MCP_TARGET_ERROR =
+  "ecc mcp add/remove requires exactly one explicit --cli target (for example, --cli claude)";
+
+async function explicitEccMcpTarget(ctx: PlanContext): Promise<Cli> {
+  if (
+    typeof ctx.options.cli !== "string" ||
+    ctx.options.cli.trim().length === 0 ||
+    ctx.options.allTools === true ||
+    ctx.options.detect === true
+  ) {
+    throw new SettingsError(EXPLICIT_ECC_MCP_TARGET_ERROR);
+  }
+  const selected = resolveClis(ctx.options, { strict: true });
+  const [target] = selected;
+  if (selected.length !== 1 || target === undefined) {
+    throw new SettingsError(EXPLICIT_ECC_MCP_TARGET_ERROR);
+  }
+  return target;
+}
+
+function explicitEccMcpId(ctx: PlanContext): string {
+  if (typeof ctx.options.id !== "string" || ctx.options.id.trim().length === 0) {
+    throw new SettingsError("ecc mcp add/remove requires an ECC MCP id");
+  }
+  return ctx.options.id.trim();
+}
+
+async function eccMcpAddPlan(ctx: PlanContext): Promise<Plan> {
+  const target = await explicitEccMcpTarget(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  assertOrgPolicyMutationSource(ctx, policyTargets.source?.verification.authority);
+  const policy = policyTargets.policy;
+  if (policy === undefined) {
+    throw new SettingsError("ecc mcp add requires a valid aih-org-policy.json in the target root");
+  }
+  const planned = planExplicitEccMcpAdd({
+    root: ctx.root,
+    home: homeDir(ctx),
+    policy,
+    id: explicitEccMcpId(ctx),
+    target,
+  });
+  return {
+    ...planned,
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
+}
+
+async function eccMcpRemovePlan(ctx: PlanContext): Promise<Plan> {
+  return planExplicitEccMcpRemove({
+    root: ctx.root,
+    home: homeDir(ctx),
+    id: explicitEccMcpId(ctx),
+    target: await explicitEccMcpTarget(ctx),
+  });
+}
+
+export const eccMcpAddCommand: CommandSpec = {
+  name: "add",
+  summary: "Add one policy-approved ECC HTTPS MCP to one selected CLI configuration",
+  positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
+  plan: eccMcpAddPlan,
+};
+
+export const eccMcpRemoveCommand: CommandSpec = {
+  name: "remove",
+  summary: "Remove one receipt-owned ECC HTTPS MCP from one selected CLI configuration",
+  positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
+  plan: eccMcpRemovePlan,
+};
+
+export const command: CommandSpec = {
+  name: "ecc",
+  summary: "Install affaan-m/ECC from an evidence-verified exact source pin for the selected CLIs",
+  options: [
+    {
+      flags: "--profile <profile>",
+      description: "ECC install profile: minimal|core|full",
+      default: "minimal",
+    },
+    {
+      flags: "--with <component>",
+      description: "add an ECC component declaration (repeatable)",
+      repeatable: true,
+    },
+    {
+      flags: "--ecc-path <dir>",
+      description: "use an existing exact local ECC checkout as the evidence-gated source",
+    },
+    {
+      flags: "--lifecycle <operation>",
+      description:
+        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall. In a governed repository `install` instead materializes the policy's evidence-passed component selection (removal lives in `aih uninstall`), and update|repair|rollback are refused. The governed install materializes for the targets `--cli` selects (default claude); all six governed targets are wired — claude, codex, kimi, cursor, opencode, kiro — and any other CLI is refused by name. Kiro materializes only evidence-passed agent:* selections with an exact pinned Kiro mapping, baseline:rules, and skill:* selections; every unsupported or unmapped component refuses by name. OpenCode materializes only the tool-shared project surfaces (AGENTS.md, .agents/), because no evidenced per-tool .opencode/ content layout exists; every other component refuses by name for it",
+    },
+  ],
+  plan: eccPlan,
+  alwaysVerify: true,
+};

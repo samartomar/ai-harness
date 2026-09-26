@@ -434,7 +434,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       expect.arrayContaining([
         "code-review-graph",
         "--package",
-        "code-review-graph==2.3.8",
+        "code-review-graph==2.3.9",
         "--dependency-lock-sha256",
         "--project",
       ]),
@@ -455,7 +455,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       expect.arrayContaining([
         "codebase-memory-mcp",
         "--package",
-        "codebase-memory-mcp==0.10.8",
+        "codebase-memory-mcp==0.11.0",
         "--dependency-lock-sha256",
         "--project",
         "--runtime-home",
@@ -518,7 +518,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
     const pw = pick(servers, "playwright");
     if (pw.type !== "stdio") throw new Error("expected stdio server");
-    expect(pw.args).toEqual(["-y", "@playwright/mcp@0.0.81", "--headless", "--isolated"]);
+    expect(pw.args).toEqual(["-y", "@playwright/mcp@0.0.82", "--headless", "--isolated"]);
     expect(pw.args.join(" ")).not.toContain("@latest");
   });
 
@@ -700,7 +700,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     if (gh.type !== "stdio") throw new Error("expected stdio server");
     expect(gh.command).toBe("docker");
     expect(gh.args).toContain(
-      "ghcr.io/github/github-mcp-server@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560",
+      "ghcr.io/github/github-mcp-server@sha256:508a0857ec762b1ab1cece29193345b501fab1dd9d1228a7b617062954cecac6",
     );
     expect(gh.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toMatch(/^\$\{GITHUB_PERSONAL_ACCESS_TOKEN\}$/);
     expect(gh.credentials).toBe("token");
@@ -1644,8 +1644,8 @@ describe("aih mcp — MCP write hygiene", () => {
     const run = fakeRunner((argv) => {
       calls.push(argv);
       if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
-      if (argv.join(" ") === "cmd /c npm view @playwright/mcp@0.0.81 version") {
-        return { code: 0, stdout: "0.0.81\n" };
+      if (argv.join(" ") === "cmd /c npm view @playwright/mcp@0.0.82 version") {
+        return { code: 0, stdout: "0.0.82\n" };
       }
       if (
         argv.join(" ") ===
@@ -2568,7 +2568,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(managed).toBeDefined();
     expect(managed?.merge).toBe(true);
     expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
-    expect(JSON.stringify(managed?.json)).toContain("code-review-graph==2.3.8");
+    expect(JSON.stringify(managed?.json)).toContain("code-review-graph==2.3.9");
   });
 
   it("emits a ready-to-merge allowedServers snippet for generated servers the policy leaves undeclared", async () => {
@@ -2842,7 +2842,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     if (dotMcp === undefined) throw new Error("expected .mcp.json write");
     expect(Object.keys(serversOf(dotMcp))).not.toContain("sequential-thinking");
     const managedJson = JSON.stringify(managed?.json);
-    expect(managedJson).toContain("code-review-graph==2.3.8");
+    expect(managedJson).toContain("code-review-graph==2.3.9");
     expect(managedJson).not.toContain("server-sequential-thinking");
   });
 

@@ -32,7 +32,7 @@ import {
   hasAcknowledgementRequest,
 } from "../trust/acknowledge.js";
 import { policyWithApprovedSourceReason } from "../trust/commands.js";
-import { resolveInternalScopes } from "../trust/depnames.js";
+import { isConsumerPolicyCodeV1, trustCodeClassV1 } from "../trust/evidence.js";
 import {
   cleanupQuarantine,
   readTrustFetchMetadata,
@@ -41,6 +41,7 @@ import {
   type TrustFetchMetadata,
   type TrustSource,
 } from "../trust/fetch.js";
+import { resolveInternalScopes } from "../trust/internal-scopes.js";
 import { readTrustLock, readTrustLockExact } from "../trust/lock.js";
 import {
   scanOptionsFromContext,
@@ -124,7 +125,8 @@ const SKIP_DIRS = new Set([".git", ".hg", ".svn", ".aih", "coverage", "dist", "n
 
 export const workspaceAddCommand: CommandSpec = {
   name: "add",
-  summary: "Fetch or scan an external skill source, then promote only after trust verification",
+  summary:
+    "Fetch and scan an external skill source, then promote it with the scan's findings recorded as labels",
   options: [
     {
       flags: "--pin <sha>",
@@ -133,11 +135,13 @@ export const workspaceAddCommand: CommandSpec = {
     { flags: "--ref <ref>", description: "GitHub ref to resolve before downloading the tarball" },
     {
       flags: "--acknowledge <fingerprints>",
-      description: "skip exact trust-origin fingerprint(s), comma-separated",
+      description:
+        "record an acknowledgement of exact trust-origin fingerprint(s), comma-separated",
     },
     {
       flags: "--acknowledge-all",
-      description: "skip every current trust-origin finding (requires --reason)",
+      description:
+        "record an acknowledgement of every current trust-origin finding (requires --reason)",
     },
     { flags: "--reason <text>", description: "reason for a trust-origin acknowledgement" },
   ],
@@ -292,10 +296,30 @@ function acceptedAcknowledgementFingerprints(report: VerificationReport | undefi
   );
 }
 
-function promotionBlockingChecks(checks: readonly Check[]): Check[] {
+/**
+ * The organization's own configured source requirements (org-policy
+ * `trust.approvedSources` / `trust.requireSignedSource`): the consumer's decision,
+ * recorded in its policy, so promotion keeps honouring it.
+ */
+const ORG_CONFIGURED_SOURCE_REQUIREMENTS = new Set([
+  "trust.untrusted-publisher",
+  "trust.unsigned-source",
+]);
+
+/**
+ * The failures that stop promotion: integrity failures, the organization's own
+ * configured source requirements and consumer-policy codes (D67), and any failure
+ * outside the trust classification (fail closed). Findings and evidence problems are recorded in the trust lock as
+ * labels and never stop promotion (D50).
+ */
+export function promotionBlockingChecks(checks: readonly Check[]): Check[] {
   return checks.flatMap((check) => {
-    if (check.verdict === "fail") return [check];
-    return [];
+    if (check.verdict !== "fail") return [];
+    const code = check.code ?? (check.name.startsWith("trust.") ? check.name : undefined);
+    if (code !== undefined && ORG_CONFIGURED_SOURCE_REQUIREMENTS.has(code)) return [check];
+    if (isConsumerPolicyCodeV1(code)) return [check];
+    const trustClass = trustCodeClassV1(code);
+    return trustClass === "finding" || trustClass === "evidence-problem" ? [] : [check];
   });
 }
 
@@ -541,12 +565,17 @@ export async function captureWorkspaceAddTrustGate(
   selectSkills?: ReadonlySet<string>,
 ): Promise<WorkspaceAddTrustGate> {
   if (!report) throw new AihError("workspace add phase 2 requires a phase 1 report", "AIH_TRUST");
-  if (!report.ok) {
-    throw new AihError("workspace add failed trust scan; source was not promoted", "AIH_TRUST");
+  const phase1BlockingChecks = promotionBlockingChecks(report.checks);
+  if (phase1BlockingChecks.length > 0) {
+    throw new AihError(
+      `workspace add phase 1 recorded a failure that is not a finding or an evidence problem; source was not promoted: ${[
+        ...new Set(phase1BlockingChecks.map((check) => check.code ?? check.name)),
+      ].join(", ")}`,
+      "AIH_TRUST",
+    );
   }
   const source = resolvedSource ?? sourceFromContext(ctx);
   const internalScopes = resolveInternalScopes(ctx);
-  const phase1BlockingChecks = promotionBlockingChecks(report.checks);
   const currentScan = await currentTrustScan(ctx, source, internalScopes);
   const currentBlockingChecks = promotionBlockingChecks(currentScan.checks);
   const binding = sourceBinding(source);
@@ -812,6 +841,19 @@ export async function workspaceAddPhase2Plan(
   if (currentBlockingChecks.length > 0) {
     return plan("workspace add: promote", ...probesForChecks(currentBlockingChecks));
   }
+  // A label only the re-scan observed (e.g. a smoke run that failed on recheck) is
+  // recorded beside phase 1's, never dropped.
+  const recheckLabels = currentScan.checks.filter(
+    (check) =>
+      check.verdict === "fail" &&
+      !gate.report.checks.some(
+        (recorded) =>
+          recorded.code === check.code &&
+          recorded.detail === check.detail &&
+          recorded.fingerprint === check.fingerprint,
+      ),
+  );
+  const recordedFindings = [...gate.report.checks, ...recheckLabels];
   const promotion = snapshotSkillPromotion({
     contextDir: ctx.contextDir,
     source,
@@ -820,8 +862,15 @@ export async function workspaceAddPhase2Plan(
     workingTrustLock: readTrustLock(ctx.root),
     promotedAt: new Date().toISOString(),
     analyzersRun: currentScan.analyzersRun,
-    findings: gate.report.checks,
+    findings: recordedFindings,
   });
+  const labelCodes = [
+    ...new Set(
+      recordedFindings
+        .filter((check) => check.verdict === "fail")
+        .map((check) => check.code ?? check.name),
+    ),
+  ];
   const approvalChecks = unapprovedSkillChecks(ctx, source, promotion.promotedSkills);
   if (approvalChecks.some((check) => check.verdict === "fail")) {
     return plan("workspace add: promote", ...probesForChecks(approvalChecks));
@@ -852,7 +901,7 @@ export async function workspaceAddPhase2Plan(
       {
         name: "trust promotion guard",
         verdict: "pass",
-        detail: "phase 1 trust scan passed before promotion writes were planned",
+        detail: `phase 1 trust scan recorded no integrity failure before promotion writes were planned; findings and evidence problems recorded in the trust lock: ${labelCodes.join(", ") || "none"}`,
       },
     ]),
   ];
@@ -974,8 +1023,10 @@ export async function runWorkspaceAdd(
 
     const phase1 = await workspaceAddPhase1Plan(ctx, source);
     const phase1Result = await executePlan(phase1, ctx);
-    const phase1Code = phase1Result.report?.exitCode() ?? 0;
-    if (phase1Code !== 0 || hasFailedExec(phase1Result)) {
+    // Findings and evidence problems in phase 1 are labels: promotion proceeds and
+    // records them. Only an integrity or unclassified failure stops it here.
+    const phase1Stops = promotionBlockingChecks(phase1Result.report?.checks ?? []).length > 0;
+    if (phase1Stops || hasFailedExec(phase1Result)) {
       if (json) write(`${JSON.stringify({ phase1: phase1Result }, null, 2)}\n`);
       else {
         write(`${summarizeResult(phase1Result)}\n`);

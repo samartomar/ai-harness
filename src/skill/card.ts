@@ -14,11 +14,11 @@ import { skillNameSchema, sourceScopePathSchema } from "./lockfile.js";
  * COMMITTED (unlike the gitignored `.aih/skill-reports/` evidence they cite).
  */
 
-/** Approvable risk classes — RED/UNKNOWN sources never get a card. */
-const RiskClassSchema = z.enum(["green", "yellow"]);
+/** The vet verdict as the card's risk label; every vetted source can get a card (D50). */
+const RiskClassSchema = z.enum(["green", "yellow", "red", "unknown"]);
 
 const SkillCardApprovalSchema = z.object({
-  verdict: z.enum(["GREEN", "YELLOW"]),
+  verdict: z.enum(["GREEN", "YELLOW", "RED", "UNKNOWN"]),
   approvedBy: z.string().min(1),
   approvedAt: z.string().min(1),
 });
@@ -31,8 +31,16 @@ const SkillSourceScopeSchema = z.object({
 
 export type SkillSourceScope = z.infer<typeof SkillSourceScopeSchema>;
 
-export const SkillCardSchema = z.object({
-  schemaVersion: z.literal(1),
+/**
+ * The card version aih writes. Version 2 (D50) carries every vet verdict as the
+ * risk label; version 1 (0.6.2 and earlier) could only carry green/yellow and
+ * GREEN/YELLOW. Readers accept both, each with its own value set, and aih rewrites
+ * a card as version 2 only when it writes it.
+ */
+export const SKILL_CARD_SCHEMA_VERSION = 2;
+
+const SkillCardV2Schema = z.object({
+  schemaVersion: z.literal(2),
   name: z.string().min(1),
   source: z.string().min(1),
   commit: z.string().min(1),
@@ -52,6 +60,23 @@ export const SkillCardSchema = z.object({
   sourceScope: SkillSourceScopeSchema.optional(),
   approval: SkillCardApprovalSchema.optional(),
 });
+
+const SkillCardV1Schema = SkillCardV2Schema.extend({
+  schemaVersion: z.literal(1),
+  riskClass: z.enum(["green", "yellow"]),
+  approval: SkillCardApprovalSchema.extend({ verdict: z.enum(["GREEN", "YELLOW"]) }).optional(),
+});
+
+export const SkillCardSchema = z.discriminatedUnion("schemaVersion", [
+  SkillCardV1Schema,
+  SkillCardV2Schema,
+]);
+
+/** The same versions with no unknown top-level keys, for exact committed-byte readers. */
+export const StrictSkillCardSchema = z.discriminatedUnion("schemaVersion", [
+  SkillCardV1Schema.strict(),
+  SkillCardV2Schema.strict(),
+]);
 
 export type SkillCard = z.infer<typeof SkillCardSchema>;
 export type SkillCardApproval = z.infer<typeof SkillCardApprovalSchema>;
@@ -81,7 +106,7 @@ export interface BuildCardInput {
 /** Assemble a card body; JSON rendering drops the unset optional fields. */
 export function buildCard(input: BuildCardInput): SkillCard {
   return {
-    schemaVersion: 1,
+    schemaVersion: SKILL_CARD_SCHEMA_VERSION,
     name: input.name,
     source: input.source,
     commit: input.commit,

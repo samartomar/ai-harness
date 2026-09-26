@@ -16,6 +16,8 @@ const WINDOWS_DEVICE_SEGMENT = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
 
+/** The cross-boundary format name; see CONTRACTS.md. */
+export const UPSTREAM_ARTIFACT_MANIFEST_V1_FORMAT = "aih-upstream-artifact-manifest";
 export const MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1 = 512 * 1024;
 export const MAX_UPSTREAM_ARTIFACT_FILES_V1 = 256;
 
@@ -43,7 +45,7 @@ function ordinalCompare(left: string, right: string): number {
 
 export const UpstreamArtifactManifestV1Schema = z
   .object({
-    format: z.literal("aih-upstream-artifact-manifest"),
+    format: z.literal(UPSTREAM_ARTIFACT_MANIFEST_V1_FORMAT),
     version: z.literal(1),
     // The decision binds the evidence digest and the evidence binds this manifest.
     // Binding a decision digest here would create an impossible digest cycle.

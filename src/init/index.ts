@@ -1,8 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson, readAihConfigBaseline, readPolicyBinding } from "../config/marker.js";
-import type { EccCommandDeps } from "../ecc/pipeline.js";
 import { AihError } from "../errors.js";
+import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
+import { executeSuperpowersInitPhase } from "../framework-plugin/superpowers-command.js";
 import {
   BASELINE_OPTION,
   DEFAULT_BASELINE_SOURCE_ID,
@@ -33,6 +34,7 @@ import {
   KIRO_HOOK_RUNTIME_OPTION,
   kiroHookRuntime,
 } from "../kiro/runtime.js";
+import { command as mcpCommand } from "../mcp/index.js";
 import {
   assertPolicyBindingCurrent,
   policyBindingFileAssertion,
@@ -45,6 +47,7 @@ import { combineProjectResults, executePolicyProjectCommand } from "../org-polic
 import {
   type DeveloperToolsCommandDeps,
   executeDeveloperToolsCommand,
+  prepareDeveloperToolRequest,
 } from "../tools/developer-tools-command.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
@@ -220,15 +223,44 @@ function retainInitCommitLock(
  * produce, so the harness's "no faked provisioning" guarantee is preserved.
  */
 async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  return (await composeInit(ctx)).plan;
+}
+
+/** A framework phase init runs through its plugin after the local bootstrap commits. */
+interface InitFrameworkPhase {
+  readonly framework: "superpowers";
+  /** Init's phase context: the resolved targets and baseline every phase shares. */
+  readonly ctx: PlanContext;
+}
+
+interface InitComposition {
+  readonly plan: Plan;
+  readonly frameworkPhases: readonly InitFrameworkPhase[];
+}
+
+async function composeInit(ctx: PlanContext): Promise<InitComposition> {
   const bindingAssertion = policyBindingFileAssertion(ctx.root);
   assertPolicyBindingCurrent(ctx.root, ctx.env, ctx.targets);
+  // Refuse contradictory developer-tool flags (Headroom consent, primary code
+  // graph) before any phase is planned or written.
+  const developerToolRequest = prepareDeveloperToolRequest(ctx);
+  if (
+    developerToolRequest.headroom.activate &&
+    String(ctx.options.mcpMode ?? "standard") === "none"
+  ) {
+    throw new AihError(
+      "--activate-headroom registers an MCP server, but --mcp-mode none projects no MCP servers",
+      "AIH_CONFIG",
+    );
+  }
   explicitKiroHookRuntime(ctx);
   // Brownfield guard FIRST: never bulldoze an existing hand-built canon — redirect
   // to `aih adopt` and emit nothing else, so a dry-run or `--apply` both stop here.
   const redirect = brownfieldRedirect(ctx);
-  if (redirect) return plan("init", redirect);
+  if (redirect) return { plan: plan("init", redirect), frameworkPhases: [] };
 
   const actions: Action[] = [];
+  const frameworkPhases: InitFrameworkPhase[] = [];
   let authorityAssertions: readonly FileAssertion[] | undefined;
   let authorityCommitNotAfter: string | undefined;
   let authorityCommitLock: Plan["commitLock"];
@@ -321,6 +353,13 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
           `governance owns AIH ${phase.command.name === "mcp" ? "MCP" : "usage-hook"} projection; the generic ${phase.command.name} phase is suppressed`,
         ),
       );
+      continue;
+    }
+    if (phase.framework !== undefined) {
+      // The header keeps the phase's place in the dry-run; the plugin's
+      // evidence-gated command runs once the local bootstrap has committed.
+      actions.push(doc(`init: ${phase.command.name}`, phase.headline));
+      frameworkPhases.push({ framework: phase.framework, ctx: baseCtx });
       continue;
     }
     const phaseCtx =
@@ -441,15 +480,20 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
   }
 
-  return withPolicyBindingFileAssertion(
-    {
-      ...plan("init", ...deduped),
-      ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
-      ...(authorityCommitNotAfter === undefined ? {} : { commitNotAfter: authorityCommitNotAfter }),
-      ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
-    },
-    bindingAssertion,
-  );
+  return {
+    plan: withPolicyBindingFileAssertion(
+      {
+        ...plan("init", ...deduped),
+        ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
+        ...(authorityCommitNotAfter === undefined
+          ? {}
+          : { commitNotAfter: authorityCommitNotAfter }),
+        ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
+      },
+      bindingAssertion,
+    ),
+    frameworkPhases,
+  };
 }
 
 function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>): Action {
@@ -479,9 +523,11 @@ function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>):
 }
 
 /** Bound setup uses the same public delivery pipeline before refreshing bootloaders. */
-export interface InitCommandDeps extends EccCommandDeps {
+export interface InitCommandDeps {
   /** Public setup runtime seam. Ordinary init already owns the MCP projection phase. */
   readonly developerTools?: DeveloperToolsCommandDeps;
+  /** Framework plugin seams for the framework phases (tests). */
+  readonly frameworks?: FrameworkCommandDepsV1;
 }
 
 function resultFailed(result: PlanResult): boolean {
@@ -497,9 +543,21 @@ async function finishDeveloperToolSetup(
   deps: InitCommandDeps,
 ): Promise<PlanResult> {
   if (resultFailed(initialized)) return { ...initialized, capability: "init" };
+  // Init's own MCP phase ran before Headroom's activation receipt existed, so an
+  // activation needs one more projection pass with the same MCP mode.
+  const mcpMode = String(ctx.options.mcpMode ?? "standard");
   const developerTools = await executeDeveloperToolsCommand(ctx, {
     ...deps.developerTools,
-    projectMcp: false,
+    projectMcp:
+      ctx.options.activateHeadroom === true
+        ? async (projectionCtx) => {
+            const modeCtx = {
+              ...projectionCtx,
+              options: { ...projectionCtx.options, mode: mcpMode },
+            };
+            return executePlan(await mcpCommand.plan(modeCtx), modeCtx);
+          }
+        : false,
   });
   return {
     ...combineProjectResults(initialized, developerTools),
@@ -507,24 +565,54 @@ async function finishDeveloperToolSetup(
   };
 }
 
+/**
+ * Framework phases run last, each only after everything before it succeeded, so
+ * a framework's evidence gate (source acquisition included) never blocks the
+ * local bootstrap or developer-tool setup. A phase whose plugin is missing is
+ * reported as refused with its reason, never silently skipped.
+ */
+async function finishFrameworkPhases(
+  phases: readonly InitFrameworkPhase[],
+  previous: PlanResult,
+  deps: InitCommandDeps,
+): Promise<PlanResult> {
+  let result = previous;
+  for (const phase of phases) {
+    if (resultFailed(result)) break;
+    const delivered = await executeSuperpowersInitPhase(phase.ctx, deps.frameworks);
+    result = { ...combineProjectResults(result, delivered), capability: "init" };
+  }
+  return result;
+}
+
 export async function executeInitCommand(
   ctx: PlanContext,
   deps: InitCommandDeps = {},
 ): Promise<PlanResult> {
-  const initialPlan = await initPlan(ctx);
+  const initial = await composeInit(ctx);
   if (!readPolicyBinding(ctx.root)) {
-    return finishDeveloperToolSetup(ctx, await executePlan(initialPlan, ctx), deps);
+    const initialized = await executePlan(initial.plan, ctx);
+    return finishFrameworkPhases(
+      initial.frameworkPhases,
+      await finishDeveloperToolSetup(ctx, initialized, deps),
+      deps,
+    );
   }
-  const delivered = await executePolicyProjectCommand(ctx, deps);
+  const delivered = await executePolicyProjectCommand(ctx, deps.frameworks);
   if (resultFailed(delivered)) {
     return { ...delivered, capability: "init" };
   }
   // Delivery may change shared client files. Replan against those exact bytes
   // rather than applying stale pre-delivery assertions or restoring old entries.
-  const initialized = await executePlan(ctx.apply ? await initPlan(ctx) : initialPlan, ctx);
-  return finishDeveloperToolSetup(
-    ctx,
-    { ...combineProjectResults(delivered, initialized), capability: "init" },
+  const composed = ctx.apply ? await composeInit(ctx) : initial;
+  const initialized = await executePlan(composed.plan, ctx);
+  return finishFrameworkPhases(
+    composed.frameworkPhases,
+    await finishDeveloperToolSetup(
+      ctx,
+      { ...combineProjectResults(delivered, initialized), capability: "init" },
+      deps,
+    ),
     deps,
   );
 }
@@ -570,6 +658,26 @@ export const command: CommandSpec = {
       flags: "--token-optimizer-profile <profile>",
       description: "Token Optimizer setup profile: quiet | balanced",
       default: "quiet",
+    },
+    {
+      flags: "--activate-headroom",
+      description:
+        "install, register and verify the selected Headroom MCP server (requires --accept-headroom-egress)",
+    },
+    {
+      flags: "--accept-headroom-egress",
+      description:
+        "consent to Headroom activation egress: PyPI wheels and two tokenizer vocabularies (see docs/commands.md)",
+    },
+    {
+      flags: "--deactivate-headroom",
+      description:
+        "remove AIH-owned Headroom MCP entries, runtime state and its activation receipt",
+    },
+    {
+      flags: "--primary-code-graph <id>",
+      description:
+        "primary code graph: code-review-graph | codebase-memory-mcp (a policy value binds)",
     },
     CANON_OPTION,
     BASELINE_OPTION,

@@ -58,14 +58,13 @@ describe("governed project coverage", () => {
     const copilot = model.rows.find((row) => row.cli === "copilot");
     expect(copilot?.capabilities).toMatchObject({
       governedMcp: true,
-      governedEcc: false,
       governedUsage: false,
       contextVerification: "manual",
     });
-    expect(model.rows.find((row) => row.cli === "kimi")?.capabilities).toMatchObject({
-      eccInstall: false,
-      governedEcc: true,
-    });
+    // ECC host support is reported by the ECC plugin surfaces, not claimed by Core.
+    expect(model.rows.find((row) => row.cli === "kimi")?.capabilities).not.toHaveProperty(
+      "governedEcc",
+    );
     const rendered = renderCliCoverage(model);
     expect(rendered).toContain("Feature support");
     expect(rendered).toContain("runtime version is unverified");

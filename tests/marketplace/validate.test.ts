@@ -75,7 +75,7 @@ function validCard(name: string): Record<string, unknown> {
 }
 
 /** Approve + install one promoted skill (files + card + evidence + lock entry). */
-function seedApproved(names: string[]): void {
+function seedApproved(names: string[], verdict = "GREEN"): void {
   for (const name of names) {
     write(join(CONTEXT_DIR, "skills", "owner-repo", name, "SKILL.md"), `# ${name}\n`);
     write(`${CONTEXT_DIR}/skill-cards/${name}.json`, `${JSON.stringify(validCard(name))}\n`);
@@ -84,12 +84,12 @@ function seedApproved(names: string[]): void {
   write(
     "aih-skills.lock.json",
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       skills: names.map((name) => ({
         name,
         source: `owner/repo@${PIN}`,
         commit: PIN,
-        verdict: "GREEN",
+        verdict,
         scope: "repo",
         card: `${CONTEXT_DIR}/skill-cards/${name}.json`,
         evidenceSha256: sha(evidenceBody(name)),
@@ -287,7 +287,19 @@ describe("marketplace validate — coded findings", () => {
     expect(report.exitCode()).toBe(1);
   });
 
-  it("fails with marketplace.unapproved-verdict on a RED skill (raw-JSON probe)", async () => {
+  it("distributes a RED skill with its verdict as the label", async () => {
+    seedApproved(["alpha"], "RED");
+    await buildArtifact();
+    const manifest = JSON.parse(readFileSync(artifact("marketplace.json"), "utf8")) as {
+      skills: Array<{ verdict: string }>;
+    };
+    expect(manifest.skills[0]?.verdict).toBe("RED");
+    const report = await validate();
+    expect(report.checks.map((c) => c.code)).not.toContain("marketplace.unapproved-verdict");
+    expect(report.exitCode()).toBe(0);
+  });
+
+  it("fails with marketplace.unapproved-verdict on a value that is not a vet verdict (raw-JSON probe)", async () => {
     seedApproved(["alpha"]);
     await buildArtifact();
     const manifest = JSON.parse(readFileSync(artifact("marketplace.json"), "utf8")) as {
@@ -295,11 +307,11 @@ describe("marketplace validate — coded findings", () => {
     };
     const first = manifest.skills[0];
     if (first === undefined) throw new Error("expected a manifest skill entry");
-    first.verdict = "RED";
+    first.verdict = "BLOCKED";
     writeFileSync(artifact("marketplace.json"), JSON.stringify(manifest), "utf8");
     const report = await validate();
     const codes = report.checks.map((c) => c.code);
-    // The precise signal fires even though the schema (rightly) also refuses RED.
+    // The precise signal fires even though the schema also refuses the value.
     expect(codes).toContain("marketplace.unapproved-verdict");
     expect(codes).toContain("marketplace.manifest-parse");
     expect(report.exitCode()).toBe(1);

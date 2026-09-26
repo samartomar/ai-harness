@@ -1,0 +1,339 @@
+{
+  "components": [
+    {
+      "id": "runtime:agents-2b6873defee3",
+      "paths": [
+        ".agents"
+      ]
+    },
+    {
+      "id": "runtime:changeset-6c3fa2db460a",
+      "paths": [
+        ".changeset"
+      ]
+    },
+    {
+      "id": "runtime:claude-plugin-216ddf49c509",
+      "paths": [
+        ".claude-plugin"
+      ]
+    },
+    {
+      "id": "runtime:docs-46b42b4229cd",
+      "paths": [
+        "docs"
+      ]
+    },
+    {
+      "id": "runtime:github-bdcc6a2a85f6",
+      "paths": [
+        ".github"
+      ]
+    },
+    {
+      "id": "runtime:out-of-scope-274399538fcf",
+      "paths": [
+        ".out-of-scope"
+      ]
+    },
+    {
+      "id": "runtime:root-4813494d137e",
+      "paths": [
+        ".gitignore",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CONTEXT.md",
+        "LICENSE",
+        "README.md",
+        "package-lock.json",
+        "package.json"
+      ]
+    },
+    {
+      "id": "runtime:scripts-8c5967fd8486",
+      "paths": [
+        "scripts"
+      ]
+    },
+    {
+      "id": "runtime:skills-32c1cf49a2fe",
+      "paths": [
+        "skills/deprecated/README.md",
+        "skills/engineering/README.md",
+        "skills/in-progress/README.md",
+        "skills/misc/README.md",
+        "skills/productivity/README.md"
+      ]
+    },
+    {
+      "id": "skill:skills-engineering-ask-matt-2f72cd9acb86",
+      "paths": [
+        "skills/engineering/ask-matt"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-code-review-2c6c127a3c17",
+      "paths": [
+        "skills/engineering/code-review"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-codebase-design-d04bed3220e0",
+      "paths": [
+        "skills/engineering/codebase-design"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-diagnosing-bugs-24d298aec1c4",
+      "paths": [
+        "skills/engineering/diagnosing-bugs"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-domain-modeling-217ce20720f2",
+      "paths": [
+        "skills/engineering/domain-modeling"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-grill-with-docs-430624180a55",
+      "paths": [
+        "skills/engineering/grill-with-docs"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-implement-0843511a757f",
+      "paths": [
+        "skills/engineering/implement"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-improve-codebase-architecture-e7226b032c93",
+      "paths": [
+        "skills/engineering/improve-codebase-architecture"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-prototype-5a1959be90e0",
+      "paths": [
+        "skills/engineering/prototype"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-research-ae85723b9168",
+      "paths": [
+        "skills/engineering/research"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-resolving-merge-conflicts-2fd7c24ab425",
+      "paths": [
+        "skills/engineering/resolving-merge-conflicts"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-setup-matt-pocock-skills-cb3de6521644",
+      "paths": [
+        "skills/engineering/setup-matt-pocock-skills"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-tdd-0e9de3ac540d",
+      "paths": [
+        "skills/engineering/tdd"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-to-spec-fe27f9349465",
+      "paths": [
+        "skills/engineering/to-spec"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-to-tickets-72b16542dbb4",
+      "paths": [
+        "skills/engineering/to-tickets"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-triage-b7f3e36b87ea",
+      "paths": [
+        "skills/engineering/triage"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-wayfinder-f2ae929153cc",
+      "paths": [
+        "skills/engineering/wayfinder"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-engineering-wizard-a0e8cc3d2cd9",
+      "paths": [
+        "skills/engineering/wizard"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-claude-handoff-046b307a193b",
+      "paths": [
+        "skills/in-progress/claude-handoff"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-implement-spec-f88069dd5b49",
+      "paths": [
+        "skills/in-progress/implement-spec"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-loop-me-8bb07f6a058d",
+      "paths": [
+        "skills/in-progress/loop-me"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-pr-479a670393f0",
+      "paths": [
+        "skills/in-progress/pr"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-retro-0c5696c66538",
+      "paths": [
+        "skills/in-progress/retro"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-setup-ts-deep-modules-d65b5b448f3f",
+      "paths": [
+        "skills/in-progress/setup-ts-deep-modules"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-writing-beats-1e823095cbd5",
+      "paths": [
+        "skills/in-progress/writing-beats"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-writing-fragments-2b39acca7b20",
+      "paths": [
+        "skills/in-progress/writing-fragments"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-in-progress-writing-shape-951c6b8a1a7b",
+      "paths": [
+        "skills/in-progress/writing-shape"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-misc-git-guardrails-claude-code-712cdc030c39",
+      "paths": [
+        "skills/misc/git-guardrails-claude-code"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-misc-migrate-to-shoehorn-f9e11e28314c",
+      "paths": [
+        "skills/misc/migrate-to-shoehorn"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-misc-scaffold-exercises-82593959e90e",
+      "paths": [
+        "skills/misc/scaffold-exercises"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-misc-setup-pre-commit-6c67b54e7a07",
+      "paths": [
+        "skills/misc/setup-pre-commit"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-productivity-grill-me-705b48473e2d",
+      "paths": [
+        "skills/productivity/grill-me"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-productivity-grilling-876f6564135f",
+      "paths": [
+        "skills/productivity/grilling"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-productivity-handoff-493a33d9456b",
+      "paths": [
+        "skills/productivity/handoff"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-productivity-teach-8ab59cd00a14",
+      "paths": [
+        "skills/productivity/teach"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-productivity-to-questionnaire-761e90087449",
+      "paths": [
+        "skills/productivity/to-questionnaire"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-productivity-wait-what-235dec3b784f",
+      "paths": [
+        "skills/productivity/wait-what"
+      ],
+      "skillContent": true
+    },
+    {
+      "id": "skill:skills-productivity-writing-for-agents-6a85011b09f2",
+      "paths": [
+        "skills/productivity/writing-for-agents"
+      ],
+      "skillContent": true
+    }
+  ],
+  "id": "mattpocock",
+  "owner": "mattpocock",
+  "pinnedSha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+  "repo": "skills"
+}

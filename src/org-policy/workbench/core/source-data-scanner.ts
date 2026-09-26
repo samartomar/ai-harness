@@ -6,8 +6,12 @@ import { z } from "zod";
 import { BaselineCatalogSchema } from "../../../baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../../baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../../baseline-evidence/license.js";
+import {
+  type CollectionInput,
+  prepareCollectionScannerCoverageV1,
+} from "../../../baseline-evidence/scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "../../../baseline-evidence/scanner-consumer.js";
-import { prepareCollectionScannerCoverageV1 } from "../../../baseline-evidence/scanner-provider-catalogs.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../../../baseline-evidence/scanner-definition.js";
 import { consumeScannerBaselinePublicationsV1 } from "../../../baseline-evidence/scanner-publication.js";
 import {
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
@@ -25,9 +29,9 @@ import {
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../../ecc/runtime-adapter-compatibility.js";
 import {
   assertEccRuntimeDescriptorCustodyV1,
-  currentEccRuntimeAdapterCompatibilityV1,
   type EccRuntimeDescriptorV1,
   EccRuntimeDescriptorV1Schema,
   type PreparedEccRuntimeDescriptorV1,
@@ -41,8 +45,6 @@ import {
   type ScannerEvidenceProjectionRecordV1,
   ScannerEvidenceProjectionRecordV1Schema,
 } from "../../packaged-collection-evidence-v1.js";
-import type { PinnedComponentCollectionInputV1 } from "../compilers/pinned-component-collection.js";
-import type { PinnedSkillCollectionInputV1 } from "../compilers/pinned-skill-collection.js";
 import type { AuthoringCatalogBundleV1 } from "../contracts.js";
 import { projectContainedScannerEvidenceV1 } from "./source-data-contained-projection.js";
 import { verifyScannerComponentContainmentV1 } from "./source-data-containment.js";
@@ -119,6 +121,7 @@ function preparedEccRuntimeDescriptorV1(
   }[],
   consumed: Awaited<ReturnType<typeof consumeScannerBaselinePublicationsV1>>,
   now: string,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): PreparedEccRuntimeDescriptorV1 | undefined {
   if (compilerInput.framework.id !== "ecc") return undefined;
   for (const asset of compilerInput.framework.assets) {
@@ -138,6 +141,7 @@ function preparedEccRuntimeDescriptorV1(
     sourceRoot,
     prepared.coverage.components,
     requestedComponents,
+    overlap,
   );
   const signedAt = Math.min(
     ...consumed.provenance.map((publication) => Date.parse(publication.reportSignedAt)),
@@ -289,6 +293,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
   now = new Date().toISOString(),
   proofRoot?: string,
   runtimeCollector?: RuntimeDescriptorCollectorV1,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): Promise<AuthoringCatalogBundleV1["evidence"]> {
   assertStrictJsonValueV1(input, "Scanner source proof");
   const proof = SourceDataScannerProofV1Schema.parse(input);
@@ -329,10 +334,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
           "Scanner compiler input blob",
         )
       : proof.compilerInput
-  ) as
-    | PinnedSkillCollectionInputV1
-    | PinnedComponentCollectionInputV1
-    | z.infer<typeof SourceDataBaselineInputV1Schema>;
+  ) as CollectionInput | z.infer<typeof SourceDataBaselineInputV1Schema>;
   if (
     compilerInput?.version !== "pinned-skill-collection/v1" &&
     compilerInput?.version !== "pinned-component-collection/v1" &&
@@ -442,6 +444,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
         requests,
         consumed,
         preparedAt: proof.preparedAt,
+        overlap,
       });
       if (compilerInput.version === "pinned-baseline/v1") {
         const runtime = preparedEccRuntimeDescriptorV1(
@@ -451,6 +454,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
           requests.flatMap((request) => request.components),
           consumed,
           now,
+          overlap,
         );
         if (runtime !== undefined && runtimeCollector !== undefined)
           runtimeCollector.value = runtime;
@@ -467,7 +471,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
       unmappedDerivedAssets: prepared.coverage.unmappedDerivedAssets,
     };
     const record: ScannerEvidenceProjectionRecordV1 = {
-      version: "packaged-scanner-collection-evidence/v1",
+      version: "packaged-scanner-collection-evidence/v2",
       authority: "display-only",
       catalog: {
         id: prepared.catalog.id,
@@ -565,6 +569,7 @@ export async function prepareSourceDataScannerRuntimeFactsV1(
   ),
   now = new Date().toISOString(),
   proofRoot?: string,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): Promise<
   Readonly<{
     evidence: AuthoringCatalogBundleV1["evidence"];
@@ -581,6 +586,7 @@ export async function prepareSourceDataScannerRuntimeFactsV1(
     now,
     proofRoot,
     collector,
+    overlap,
   );
   return Object.freeze({
     evidence,

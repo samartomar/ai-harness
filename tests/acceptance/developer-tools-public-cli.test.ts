@@ -20,10 +20,16 @@ import {
   type DefaultNativeRuntimeLayout,
   defaultNativeRuntimeLayout,
 } from "../../src/mcp/default-native-runtime.js";
+import { mcpEntries } from "../../src/mcp/render.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { DeveloperToolId } from "../../src/tools/default-tool-selection.js";
 import { executeDeveloperToolsCommand } from "../../src/tools/developer-tools-command.js";
 import type { DeveloperToolRuntimeOperation } from "../../src/tools/developer-tools-runtime.js";
+import {
+  HEADROOM_MCP_TOOL_NAMES,
+  headroomLayout,
+  headroomMcpServer,
+} from "../../src/tools/headroom.js";
 
 const roots: string[] = [];
 const developerTools = [
@@ -34,7 +40,9 @@ const developerTools = [
   "context7",
   "markitdown",
   "playwright",
+  "headroom",
 ] as const;
+const reconciledTools = developerTools.filter((id) => id !== "headroom");
 
 function consumerRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "aih-developer-tools-consumer-"));
@@ -66,11 +74,15 @@ function invoke(root: string, args: readonly string[] = [], env: NodeJS.ProcessE
 }
 
 function writePolicy(root: string, developerTools?: Record<string, unknown>): void {
+  const requiresHeadroomFloor =
+    [developerTools?.selected, developerTools?.excluded].some(
+      (value) => Array.isArray(value) && value.includes("headroom"),
+    ) || developerTools?.primaryCodeGraph !== undefined;
   writeFileSync(
     join(root, "aih-org-policy.json"),
     `${JSON.stringify({
       schemaVersion: 3,
-      minimumCoreVersion: "0.6.0",
+      minimumCoreVersion: requiresHeadroomFloor ? "0.7.0" : "0.6.0",
       minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       authoringSelections: {
@@ -218,13 +230,20 @@ function fixtureOperations(
   blocked?: DeveloperToolId,
 ): Partial<Record<DeveloperToolId, DeveloperToolRuntimeOperation>> {
   return Object.fromEntries(
-    developerTools.map((id) => [id, fixtureOperation(id, generation, calls, blocked)]),
+    reconciledTools.map((id) => [id, fixtureOperation(id, generation, calls, blocked)]),
   ) as Partial<Record<DeveloperToolId, DeveloperToolRuntimeOperation>>;
 }
 
 function expectedStates(selected: readonly string[]): Record<string, string> {
   return Object.fromEntries(
-    developerTools.map((id) => [id, selected.includes(id) ? "verified" : "policy-excluded"]),
+    developerTools.map((id) => [
+      id,
+      selected.includes(id)
+        ? id === "headroom"
+          ? "selected-pending"
+          : "verified"
+        : "policy-excluded",
+    ]),
   );
 }
 
@@ -233,6 +252,52 @@ afterEach(() => {
 });
 
 describe("public developer-tools setup", () => {
+  it("keeps an explicit Headroom-only choice inert through production reconciliation and MCP projection", async () => {
+    const root = consumerRoot();
+    const stateRoot = consumerRoot();
+    writePolicy(root, { selected: ["headroom"] });
+    const calls: FixtureCall[] = [];
+    let headroomOperationCalled = false;
+    const context = consumerContext(root, stateRoot);
+    const result = await executeDeveloperToolsCommand(context, {
+      runtime: {
+        operations: {
+          ...fixtureOperations("pin-1", calls),
+          headroom: async () => {
+            headroomOperationCalled = true;
+            throw new Error("Headroom must not enter the runtime reconciler");
+          },
+        },
+      },
+    });
+
+    expect(result.selection).toMatchObject({
+      source: "explicit",
+      selected: ["headroom"],
+    });
+    expect(headroomOperationCalled).toBe(false);
+    expect(calls).toEqual([{ id: "token-optimizer", selected: false }]);
+    expect(result.tools.find((tool) => tool.id === "headroom")).toMatchObject({
+      state: "selected-pending",
+      changed: false,
+      detail: expect.stringMatching(/not activated/u),
+    });
+    expect(
+      result.report?.checks.find((check) => check.name === "headroom developer tool"),
+    ).toMatchObject({
+      verdict: "skip",
+    });
+    expect(result.report?.ok).toBe(true);
+    const layout = defaultNativeRuntimeLayout(context);
+    if (existsSync(layout.runtimeReceiptPath))
+      expect(JSON.parse(readFileSync(layout.runtimeReceiptPath, "utf8")).tools).not.toHaveProperty(
+        "headroom",
+      );
+    const mcpPath = join(root, ".mcp.json");
+    if (existsSync(mcpPath))
+      expect(JSON.parse(readFileSync(mcpPath, "utf8")).mcpServers).not.toHaveProperty("headroom");
+  });
+
   it("keeps MarkItDown CLI excluded through repeat setup, restart and a copied worktree policy", async () => {
     const rootA = consumerRoot();
     const rootB = consumerRoot();
@@ -271,7 +336,7 @@ describe("public developer-tools setup", () => {
     });
   });
 
-  it("includes the same seven-tool selection in the ordinary public init preview", () => {
+  it("includes the same eight-tool selection in the ordinary public init preview", () => {
     const root = consumerRoot();
     const before = snapshot(root);
 
@@ -500,7 +565,7 @@ describe("public developer-tools setup", () => {
     });
 
     expect(result.capability).toBe("init");
-    expect(calls).toEqual(developerTools.map((id) => ({ id, selected: true })));
+    expect(calls).toEqual(reconciledTools.map((id) => ({ id, selected: true })));
     const layout = defaultNativeRuntimeLayout(context);
     expect(JSON.parse(readFileSync(layout.runtimeReceiptPath, "utf8"))).toMatchObject({
       canonicalRoot: realpathSync(root),
@@ -606,7 +671,9 @@ describe("public developer-tools setup", () => {
 
     expect(result.selection).toMatchObject({ source, selected });
     expect(toolStates(result)).toEqual(expectedStates(selected));
-    expect(calls.filter((call) => call.selected).map((call) => call.id)).toEqual(selected);
+    expect(calls.filter((call) => call.selected).map((call) => call.id)).toEqual(
+      selected.filter((id) => id !== "headroom"),
+    );
   });
 
   it("reports one blocked prerequisite while continuing the other selected tool setups", async () => {
@@ -623,7 +690,7 @@ describe("public developer-tools setup", () => {
       },
     );
 
-    expect(calls.map((call) => call.id)).toEqual(developerTools);
+    expect(calls.map((call) => call.id)).toEqual(reconciledTools);
     expect(toolStates(result)).toEqual({
       "code-review-graph": "verified",
       "codebase-memory-mcp": "blocked",
@@ -632,7 +699,238 @@ describe("public developer-tools setup", () => {
       context7: "verified",
       markitdown: "verified",
       playwright: "verified",
+      headroom: "selected-pending",
     });
     expect(result.report?.ok).toBe(false);
+  });
+});
+
+function headroomHost(context: PlanContext): void {
+  const tools = join(context.env.HOME as string, "host-tools");
+  mkdirSync(tools, { recursive: true });
+  writeFileSync(join(tools, process.platform === "win32" ? "uv.exe" : "uv"), "fixture uv\n", {
+    mode: 0o700,
+  });
+  context.env.PATH = tools;
+}
+
+function headroomDeps(context: PlanContext) {
+  const layout = headroomLayout(context);
+  return {
+    run: fakeRunner((argv) => {
+      if (argv.includes("sync")) {
+        mkdirSync(layout.environment, { recursive: true });
+        return { code: 0 };
+      }
+      if (argv.includes("-c")) return { code: 0, stdout: "aih-headroom-vocabularies-ready\n" };
+      if (argv[2] === "headroom")
+        return {
+          code: 0,
+          stdout: [
+            { jsonrpc: "2.0", id: 1, result: { serverInfo: { name: "headroom" } } },
+            {
+              jsonrpc: "2.0",
+              id: 2,
+              result: { tools: HEADROOM_MCP_TOOL_NAMES.map((name) => ({ name })) },
+            },
+            {
+              jsonrpc: "2.0",
+              id: 3,
+              result: { content: [{ type: "text", text: JSON.stringify({ compressions: 0 }) }] },
+            },
+          ]
+            .map((line) => JSON.stringify(line))
+            .join("\n"),
+        };
+      return { code: 127, stderr: `unexpected ${argv.join(" ")}` };
+    }),
+    platform: "linux" as const,
+    arch: "x64",
+    now: () => new Date("2026-09-23T12:00:00.000Z"),
+    verifyVocabularies: () => undefined,
+  };
+}
+
+function projectedServers(root: string): Record<string, unknown> {
+  return (
+    JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8")) as {
+      mcpServers: Record<string, unknown>;
+    }
+  ).mcpServers;
+}
+
+describe("public Headroom activation", () => {
+  it("refuses activation without egress consent before touching the consumer", () => {
+    const root = consumerRoot();
+    const before = snapshot(root);
+    for (const args of [["--activate-headroom"], ["--activate-headroom", "--apply"]]) {
+      const result = invoke(root, args);
+      expect(result.status, result.stderr || result.stdout).not.toBe(0);
+      expect(JSON.parse(result.stdout).error.message).toMatch(/--accept-headroom-egress/u);
+    }
+    expect(snapshot(root)).toEqual(before);
+  });
+
+  it("previews a consented activation without installing, registering or recording anything", () => {
+    const root = consumerRoot();
+    const before = snapshot(root);
+    const result = invoke(root, ["--activate-headroom", "--accept-headroom-egress"]);
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      tools: Array<{ id: string; state: string; detail: string }>;
+    };
+    expect(payload.tools.find((tool) => tool.id === "headroom")).toMatchObject({
+      state: "selected-pending",
+      detail: expect.stringMatching(/activation requested/u),
+    });
+    expect(snapshot(root)).toEqual(before);
+  });
+
+  it("rejects an unsupported or policy-conflicting primary code graph through the public CLI", () => {
+    const root = consumerRoot();
+    const unsupported = invoke(root, ["--primary-code-graph", "serena"]);
+    expect(unsupported.status).not.toBe(0);
+    expect(JSON.parse(unsupported.stdout).error.message).toMatch(/--primary-code-graph must be/u);
+    writePolicy(root, { primaryCodeGraph: "codebase-memory-mcp" });
+    const conflicting = invoke(root, ["--primary-code-graph", "code-review-graph"]);
+    expect(conflicting.status).not.toBe(0);
+    expect(JSON.parse(conflicting.stdout).error.message).toMatch(/policy sets/u);
+    const matching = invoke(root, ["--primary-code-graph", "codebase-memory-mcp"]);
+    expect(matching.status, matching.stderr || matching.stdout).toBe(0);
+    expect(JSON.parse(matching.stdout).primaryCodeGraph).toEqual({
+      id: "codebase-memory-mcp",
+      source: "policy",
+    });
+  });
+
+  it("registers the exact generated entry after consent and removes only AIH-owned material on deactivation", async () => {
+    const root = consumerRoot();
+    const stateRoot = consumerRoot();
+    writeFileSync(
+      join(root, ".mcp.json"),
+      `${JSON.stringify({ mcpServers: { "operator-owned": { command: "operator-tool" } } })}\n`,
+    );
+    const options = {
+      acceptTokenOptimizerLicense: true,
+      activateHeadroom: true,
+      acceptHeadroomEgress: true,
+    };
+    const activation = consumerContext(root, stateRoot, options);
+    headroomHost(activation);
+    const activated = await executeDeveloperToolsCommand(activation, {
+      runtime: { operations: fixtureOperations("pin-1") },
+      headroom: headroomDeps(activation),
+    });
+    expect(activated.tools.find((tool) => tool.id === "headroom")).toMatchObject({
+      state: "verified",
+    });
+    const generated = mcpEntries("claude", { headroom: headroomMcpServer(activation) }).headroom;
+    expect(projectedServers(root).headroom).toEqual(generated);
+    expect(projectedServers(root)["operator-owned"]).toEqual({ command: "operator-tool" });
+    const layout = headroomLayout(activation);
+    expect(existsSync(layout.receiptPath)).toBe(true);
+
+    const deactivation = consumerContext(root, stateRoot, { deactivateHeadroom: true });
+    headroomHost(deactivation);
+    const deactivated = await executeDeveloperToolsCommand(deactivation, {
+      runtime: { operations: fixtureOperations("pin-1") },
+      headroom: headroomDeps(deactivation),
+    });
+    expect(deactivated.tools.find((tool) => tool.id === "headroom")).toMatchObject({
+      state: "selected-pending",
+      changed: true,
+    });
+    expect(projectedServers(root).headroom).toBeUndefined();
+    expect(projectedServers(root)["operator-owned"]).toEqual({ command: "operator-tool" });
+    expect(existsSync(layout.stateRoot)).toBe(false);
+  });
+
+  it("preserves a user-edited Headroom entry while removing AIH-owned state", async () => {
+    const root = consumerRoot();
+    const stateRoot = consumerRoot();
+    const activation = consumerContext(root, stateRoot, {
+      activateHeadroom: true,
+      acceptHeadroomEgress: true,
+    });
+    headroomHost(activation);
+    await executeDeveloperToolsCommand(activation, {
+      runtime: { operations: fixtureOperations("pin-1") },
+      headroom: headroomDeps(activation),
+    });
+    const edited = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
+    edited.mcpServers.headroom.args = [...edited.mcpServers.headroom.args, "--user-flag"];
+    writeFileSync(join(root, ".mcp.json"), `${JSON.stringify(edited, null, 2)}\n`);
+
+    writePolicy(root, { excluded: ["headroom"] });
+    const excluded = consumerContext(root, stateRoot);
+    headroomHost(excluded);
+    const result = await executeDeveloperToolsCommand(excluded, {
+      runtime: { operations: fixtureOperations("pin-1") },
+      headroom: headroomDeps(excluded),
+    });
+    expect(result.tools.find((tool) => tool.id === "headroom")).toMatchObject({
+      state: "policy-excluded",
+      changed: true,
+    });
+    expect(projectedServers(root).headroom).toEqual(edited.mcpServers.headroom);
+    expect(existsSync(headroomLayout(excluded).stateRoot)).toBe(false);
+  });
+
+  it("removes an unchanged activation when policy excludes Headroom and refuses re-activation", async () => {
+    const root = consumerRoot();
+    const stateRoot = consumerRoot();
+    const activation = consumerContext(root, stateRoot, {
+      activateHeadroom: true,
+      acceptHeadroomEgress: true,
+    });
+    headroomHost(activation);
+    await executeDeveloperToolsCommand(activation, {
+      runtime: { operations: fixtureOperations("pin-1") },
+      headroom: headroomDeps(activation),
+    });
+    expect(projectedServers(root).headroom).toBeDefined();
+
+    writePolicy(root, { excluded: ["headroom"] });
+    const excluded = consumerContext(root, stateRoot);
+    headroomHost(excluded);
+    await executeDeveloperToolsCommand(excluded, {
+      runtime: { operations: fixtureOperations("pin-1") },
+      headroom: headroomDeps(excluded),
+    });
+    expect(projectedServers(root).headroom).toBeUndefined();
+    expect(existsSync(headroomLayout(excluded).stateRoot)).toBe(false);
+
+    const refused = consumerContext(root, stateRoot, {
+      activateHeadroom: true,
+      acceptHeadroomEgress: true,
+    });
+    headroomHost(refused);
+    await expect(
+      executeDeveloperToolsCommand(refused, { headroom: headroomDeps(refused) }),
+    ).rejects.toThrow(/Headroom activation refused/u);
+  });
+
+  it("activates Headroom during an ordinary init journey and projects it afterwards", async () => {
+    const root = consumerRoot();
+    const stateRoot = consumerRoot();
+    const context = consumerContext(root, stateRoot, {
+      activateHeadroom: true,
+      acceptHeadroomEgress: true,
+      primaryCodeGraph: "codebase-memory-mcp",
+    });
+    headroomHost(context);
+    const result = await executeInitCommand(context, {
+      developerTools: {
+        runtime: { operations: fixtureOperations("pin-1") },
+        headroom: headroomDeps(context),
+      },
+    });
+    expect(result.capability).toBe("init");
+    expect(projectedServers(root).headroom).toEqual(
+      mcpEntries("claude", { headroom: headroomMcpServer(context) }).headroom,
+    );
+    expect(
+      readFileSync(join(root, "ai-coding", "rules", "agent-behavior-core.md"), "utf8"),
+    ).toContain("Primary code graph: **codebase-memory-mcp**");
   });
 });

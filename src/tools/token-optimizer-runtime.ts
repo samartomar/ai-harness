@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { windowsCommandArg } from "../ecc-profile/native-registration.js";
 import { readBoundedFileDescriptor } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
@@ -120,10 +121,11 @@ export interface TokenOptimizerReconcileResult {
 /** The qualified fallback binds the latest verified immutable source identity. */
 export const TOKEN_OPTIMIZER_PIN = {
   repository: "alexgreensh/token-optimizer",
-  tag: "v5.13.14",
-  commit: "37a9546b9fecba2c4e9a02ef4e90855d449bf08f",
-  tree: "b86bba7e8f3caea3a32d41ad134d81c3fea3e9e6",
-  manifestSha256: "c21cdc7034a0a501c5fb5c14e0c1e8b96560448a06ae778b79aea282a585c9ea",
+  tag: "v5.13.21",
+  commit: "e3c0fa6223b1a936bfc32485651f2f03add5c52b",
+  tree: "e954dfc0f4d521149fc47abd01d4b26a1e38175b",
+  manifestSha256: "3c451a291818c7937e20cd114cafcf98eded4cd42cca53adfcd75b6bd3da4a6f",
+  manifestRecords: 159,
 } as const;
 
 const TOKEN_OPTIMIZER_MARKER = "token-optimizer/scripts";
@@ -1021,7 +1023,8 @@ function assertPinnedSource(source: typeof TOKEN_OPTIMIZER_PIN): void {
     source.tag !== TOKEN_OPTIMIZER_PIN.tag ||
     source.commit !== TOKEN_OPTIMIZER_PIN.commit ||
     source.tree !== TOKEN_OPTIMIZER_PIN.tree ||
-    source.manifestSha256 !== TOKEN_OPTIMIZER_PIN.manifestSha256
+    source.manifestSha256 !== TOKEN_OPTIMIZER_PIN.manifestSha256 ||
+    source.manifestRecords !== TOKEN_OPTIMIZER_PIN.manifestRecords
   ) {
     throw new Error("Token Optimizer source is not the qualified immutable pin");
   }
@@ -1143,7 +1146,9 @@ async function authenticateCheckout(
     throw new Error("Token Optimizer manifest identity mismatch");
   }
   const records = parseManifest(manifest);
-  if (records.length !== 158) throw new Error("Token Optimizer manifest record count mismatch");
+  if (records.length !== source.manifestRecords) {
+    throw new Error("Token Optimizer manifest record count mismatch");
+  }
   for (const record of records) {
     const path = resolve(checkoutRoot, record.path);
     if (!isWithin(checkoutRoot, path) || path === resolve(checkoutRoot)) {
@@ -1623,9 +1628,9 @@ function parseSupportedHookCommand(
   return undefined;
 }
 
-function quoteWindowsHookArg(value: string): string {
-  if (!/[\s"]/.test(value)) return value;
-  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`;
+/** Quoted only when needed, in one linear pass (`windowsCommandArg`). */
+export function quoteWindowsHookArg(value: string): string {
+  return /[\s"]/.test(value) ? windowsCommandArg(value) : value;
 }
 
 function quotePosixHookArg(value: string): string {

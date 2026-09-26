@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type HostTuple, SUPPORTED_HOST_TUPLE } from "../../src/binding/host-tuple.js";
 import {
-  ciscoSkillScannerInspector,
+  type DeepDimensionInspector,
   deepScanIdentityOf,
   deepScanKey,
   readDeepScanCache,
@@ -13,7 +13,6 @@ import {
   runDeepScanTier,
   runtimeQualKey,
   ScanCacheTierError,
-  skillspectorInspector,
   sourceIdOf,
 } from "../../src/binding/scan-cache-tiers.js";
 import {
@@ -24,7 +23,8 @@ import {
   type ScannableSource,
 } from "../../src/binding/scan-gate.js";
 import type { BindingSource } from "../../src/binding/schema.js";
-import { fakeRunner, type Runner, type RunResult } from "../../src/internals/proc.js";
+import type { Runner, RunResult } from "../../src/internals/proc.js";
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 const SHA_TREE = "a".repeat(64);
 const COMMIT = "c".repeat(40);
@@ -42,44 +42,6 @@ const NPM_SOURCE: BindingSource = {
   exactVersion: "1.2.3",
   integrity: INTEGRITY,
 };
-
-/** A well-formed Cisco skill-scanner SARIF payload (two findings, distinct levels). */
-const CISCO_SARIF = JSON.stringify({
-  version: "2.1.0",
-  runs: [
-    {
-      tool: { driver: { name: "cisco-ai-skill-scanner" } },
-      results: [
-        {
-          ruleId: "skill-metadata-license",
-          level: "warning",
-          message: { text: "Skill manifest does not include a 'license' field." },
-          locations: [
-            {
-              physicalLocation: {
-                artifactLocation: { uri: "skills/foo/SKILL.md" },
-                region: { startLine: 1 },
-              },
-            },
-          ],
-        },
-        {
-          ruleId: "prompt-injection",
-          level: "error",
-          message: { text: "Pattern detected: ignore previous rules" },
-          locations: [
-            {
-              physicalLocation: {
-                artifactLocation: { uri: "skills/foo/SKILL.md" },
-                region: { startLine: 16 },
-              },
-            },
-          ],
-        },
-      ],
-    },
-  ],
-});
 
 let cacheHome: string;
 beforeEach(() => {
@@ -203,141 +165,43 @@ describe("sourceIdOf / deepScanIdentityOf", () => {
 });
 
 // ===========================================================================
-// Deep-scanner dimensions (§C.3, O6) — fake runner, NO real uvx/docker/network
-// ===========================================================================
-
-describe("ciscoSkillScannerInspector (uvx, produced)", () => {
-  const ctx = (runner: Runner) => ({ treePath: "/fake/tree", runner });
-
-  it("maps a captured SARIF payload to deterministic trust.cisco-finding findings", async () => {
-    const runner = fakeRunner((argv) => {
-      if (argv[0] === "uvx" && argv[1] === "--version") return { code: 0, stdout: "uvx 0.5.1" };
-      if (argv[0] === "uvx" && argv.includes("skill-scanner"))
-        return { code: 0, stdout: CISCO_SARIF };
-      return undefined;
-    });
-    const report = await ciscoSkillScannerInspector.run(ctx(runner));
-    expect(report.status).toBe("produced");
-    expect(report.findings.every((f) => f.code === "trust.cisco-finding")).toBe(true);
-    // Sorted by detail: the :1 license finding precedes the :16 injection finding.
-    expect(report.findings.map((f) => f.detail)).toEqual([
-      "skills/foo/SKILL.md:1 — Skill manifest does not include a 'license' field.",
-      "skills/foo/SKILL.md:16 — Pattern detected: ignore previous rules",
-    ]);
-    expect(report.findings.map((f) => f.severity)).toEqual(["medium", "high"]);
-    expect(report.findings.map((f) => f.path)).toEqual([
-      "skills/foo/SKILL.md",
-      "skills/foo/SKILL.md",
-    ]);
-
-    // Deterministic: a second identical run yields byte-identical findings.
-    const again = await ciscoSkillScannerInspector.run(ctx(runner));
-    expect(again).toEqual(report);
-  });
-
-  it("passes the pinned spec + offline SARIF argv through the runner", async () => {
-    const seen: string[][] = [];
-    const runner: Runner = async (argv) => {
-      seen.push(argv);
-      if (argv[1] === "--version") return { code: 0, stdout: "uvx 0.5.1", stderr: "" };
-      return { code: 0, stdout: CISCO_SARIF, stderr: "" };
-    };
-    await ciscoSkillScannerInspector.run(ctx(runner));
-    expect(seen[0]).toEqual(["uvx", "--version"]);
-    expect(seen[1]).toEqual([
-      "uvx",
-      "--from",
-      "cisco-ai-skill-scanner==2.0.14",
-      "skill-scanner",
-      "--offline",
-      "--format",
-      "sarif",
-      "/fake/tree",
-    ]);
-  });
-
-  it("reports MISSING (never a fabricated pass) on tool-absent / spawn / non-zero / unparseable", async () => {
-    const unavailable = fakeRunner((argv) =>
-      argv[1] === "--version" ? { code: 127, spawnError: true } : undefined,
-    );
-    expect((await ciscoSkillScannerInspector.run(ctx(unavailable))).status).toBe("missing");
-
-    const scanSpawnFail = fakeRunner((argv) => {
-      if (argv[1] === "--version") return { code: 0, stdout: "uvx 0.5.1" };
-      return { code: 1, spawnError: true };
-    });
-    expect((await ciscoSkillScannerInspector.run(ctx(scanSpawnFail))).status).toBe("missing");
-
-    const nonZero = fakeRunner((argv) => {
-      if (argv[1] === "--version") return { code: 0, stdout: "uvx 0.5.1" };
-      return { code: 2, stderr: "boom" };
-    });
-    expect((await ciscoSkillScannerInspector.run(ctx(nonZero))).status).toBe("missing");
-
-    const unparseable = fakeRunner((argv) => {
-      if (argv[1] === "--version") return { code: 0, stdout: "uvx 0.5.1" };
-      return { code: 0, stdout: "not sarif at all" };
-    });
-    const report = await ciscoSkillScannerInspector.run(ctx(unparseable));
-    expect(report.status).toBe("missing");
-    expect(report.findings).toEqual([]);
-    expect(report.reason).toContain("parseable");
-  });
-
-  it("PRODUCES a clean report (zero findings) for a valid empty SARIF envelope", async () => {
-    const clean = fakeRunner((argv) => {
-      if (argv[1] === "--version") return { code: 0, stdout: "uvx 0.5.1" };
-      return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }) };
-    });
-    const report = await ciscoSkillScannerInspector.run(ctx(clean));
-    expect(report.status).toBe("produced");
-    expect(report.findings).toEqual([]);
-  });
-});
-
-describe("skillspectorInspector (docker)", () => {
-  it("reports MISSING when docker is unavailable on this VM (incomplete coverage, not a false green)", async () => {
-    const noDocker = fakeRunner((argv) =>
-      argv[0] === "docker" && argv[1] === "--version" ? { code: 127, spawnError: true } : undefined,
-    );
-    const report = await skillspectorInspector.run({ treePath: "/fake/tree", runner: noDocker });
-    expect(report.status).toBe("missing");
-    expect(report.reason).toContain("docker");
-    expect(report.findings).toEqual([]);
-  });
-
-  it("PRODUCES trust.detector-finding where docker exists and emits SARIF", async () => {
-    const withDocker = fakeRunner((argv) => {
-      if (argv[0] === "docker" && argv[1] === "--version") return { code: 0, stdout: "Docker 27" };
-      if (argv[0] === "docker" && argv[1] === "run") return { code: 0, stdout: CISCO_SARIF };
-      return undefined;
-    });
-    const report = await skillspectorInspector.run({ treePath: "/fake/tree", runner: withDocker });
-    expect(report.status).toBe("produced");
-    expect(report.findings.every((f) => f.code === "trust.detector-finding")).toBe(true);
-    expect(report.findings.length).toBe(2);
-  });
-});
-
-// ===========================================================================
+// Deep-scan cache tier (§C.1)// ===========================================================================
 // Deep-scan cache tier (§C.1) — hit/miss, version bump, corruption, no re-scan
 // ===========================================================================
 
-/** A call-counting runner wrapping the cisco/skillspector fake handler. */
+/** A call-counting runner: every deep dimension run spawns through it. */
 function countingRunner(): { runner: Runner; calls: () => number } {
   let calls = 0;
-  const handler = fakeRunner((argv) => {
-    if (argv[1] === "--version") return { code: 0, stdout: "tool 1.0" };
-    if (argv.includes("skill-scanner")) return { code: 0, stdout: CISCO_SARIF };
-    if (argv[0] === "docker") return { code: 127, spawnError: true };
-    return undefined;
-  });
-  const runner: Runner = async (argv, opts) => {
+  const runner: Runner = async (): Promise<RunResult> => {
     calls += 1;
-    return handler(argv, opts);
+    return { code: 0, stdout: "", stderr: "" };
   };
   return { runner, calls: () => calls };
 }
+
+/**
+ * Caller-supplied deep dimensions (Core ships none): one that runs a tool
+ * through the runner and produces, one whose tool is unavailable (missing).
+ */
+const producedDeepInspector: DeepDimensionInspector = {
+  dimension: "fixture-deep-produced",
+  async run(ctx) {
+    await ctx.runner(["fixture-deep-tool", ctx.treePath]);
+    return { dimension: "fixture-deep-produced", status: "produced", findings: [] };
+  },
+};
+const missingDeepInspector: DeepDimensionInspector = {
+  dimension: "fixture-deep-missing",
+  async run(ctx) {
+    await ctx.runner(["fixture-docker-tool", "--version"]);
+    return {
+      dimension: "fixture-deep-missing",
+      status: "missing",
+      reason: "fixture docker tool is unavailable on this host",
+      findings: [],
+    };
+  },
+};
 
 describe("runDeepScanTier — cache hit means NO re-scan", () => {
   const tierInput = (runner: Runner, extra: Record<string, unknown> = {}) => ({
@@ -347,7 +211,7 @@ describe("runDeepScanTier — cache hit means NO re-scan", () => {
     treeDigest: SHA_TREE,
     treePath: "/fake/tree",
     runner,
-    inspectors: [ciscoSkillScannerInspector, skillspectorInspector],
+    inspectors: [producedDeepInspector, missingDeepInspector],
     ...extra,
   });
 
@@ -358,11 +222,13 @@ describe("runDeepScanTier — cache hit means NO re-scan", () => {
     expect(first.cacheHit).toBe(false);
     const callsAfterFirst = calls();
     expect(callsAfterFirst).toBeGreaterThan(0);
-    // cisco produced, skillspector missing (no docker) -> incomplete coverage present.
-    expect(first.coverage.find((c) => c.dimension === "cisco-skill-scanner")?.status).toBe(
+    // one produced, one missing -> incomplete coverage present.
+    expect(first.coverage.find((c) => c.dimension === "fixture-deep-produced")?.status).toBe(
       "produced",
     );
-    expect(first.coverage.find((c) => c.dimension === "skillspector")?.status).toBe("missing");
+    expect(first.coverage.find((c) => c.dimension === "fixture-deep-missing")?.status).toBe(
+      "missing",
+    );
 
     const second = await runDeepScanTier(tierInput(runner));
     expect(second.cacheHit).toBe(true);
@@ -534,6 +400,7 @@ describe("runFastScanGate deep-dimension fold (§C.4)", () => {
     reason: "docker is unavailable on this host",
     findings: [],
   };
+  const deps = () => ({ cacheHome, scanExecution: fakeBindingGateScan() });
 
   beforeEach(() => {
     treePath = mkdtempSync(join(tmpdir(), "aih-tier-tree-"));
@@ -543,37 +410,37 @@ describe("runFastScanGate deep-dimension fold (§C.4)", () => {
     rmSync(treePath, { recursive: true, force: true });
   });
 
-  it("is byte-identical to the pre-Phase-2 gate when the option is absent (or clean-produced deep dims)", () => {
-    const bare = runFastScanGate(source(), { posture: "enterprise" }, { cacheHome });
+  it("is byte-identical to the pre-Phase-2 gate when the option is absent (or clean-produced deep dims)", async () => {
+    const bare = await runFastScanGate(source(), { posture: "enterprise" }, deps());
     // Same cacheHome -> the second call is a warm read -> identical producedAt.
-    const withCleanDeep = runFastScanGate(
+    const withCleanDeep = await runFastScanGate(
       source(),
       { posture: "enterprise", deepDimensionReports: [cleanDeep] },
-      { cacheHome },
+      deps(),
     );
     expect(withCleanDeep).toEqual(bare);
   });
 
-  it("folds a MISSING deep dimension through the same coverage path: BLOCK at enterprise", () => {
-    const disposition = runFastScanGate(
+  it("folds a MISSING deep dimension through the same coverage path: BLOCK at enterprise", async () => {
+    const disposition = await runFastScanGate(
       source(),
       { posture: "enterprise", deepDimensionReports: [missingDeep] },
-      { cacheHome },
+      deps(),
     );
     expect(disposition.verdict).toBe("block");
     expect(disposition.selectedProfileGate).toBe("BLOCK");
   });
 
-  it("a MISSING deep dimension ALLOWS at vibe with allowIncompleteAtVibe (existing posture path)", () => {
-    const disposition = runFastScanGate(
+  it("a MISSING deep dimension ALLOWS at vibe with allowIncompleteAtVibe (existing posture path)", async () => {
+    const disposition = await runFastScanGate(
       source(),
       { posture: "vibe", allowIncompleteAtVibe: true, deepDimensionReports: [missingDeep] },
-      { cacheHome },
+      deps(),
     );
     expect(disposition.verdict).toBe("allow");
   });
 
-  it("a PRODUCED deep dimension carrying a finding surfaces it in the disposition", () => {
+  it("a PRODUCED deep dimension carrying a finding surfaces it in the disposition", async () => {
     const producedFinding: DimensionReport = {
       dimension: "cisco-skill-scanner",
       status: "produced",
@@ -586,10 +453,10 @@ describe("runFastScanGate deep-dimension fold (§C.4)", () => {
         },
       ],
     };
-    const disposition = runFastScanGate(
+    const disposition = await runFastScanGate(
       source(),
       { posture: "enterprise", deepDimensionReports: [producedFinding] },
-      { cacheHome },
+      deps(),
     );
     expect(disposition.findings.some((f) => f.code === "trust.cisco-finding")).toBe(true);
     // A high raw finding drives BLOCK in the legacy (no-closure) gate.
@@ -602,30 +469,26 @@ describe("runFastScanGate deep-dimension fold (§C.4)", () => {
 // ===========================================================================
 
 describe("end-to-end: deep tier output folds through the gate", () => {
-  it("a missing docker dimension from runDeepScanTier drives incomplete coverage at the gate", async () => {
+  it("a missing deep dimension from runDeepScanTier drives incomplete coverage at the gate", async () => {
     const treePath = mkdtempSync(join(tmpdir(), "aih-tier-e2e-"));
     writeFileSync(join(treePath, "SKILL.md"), "# bland\n", "utf8");
     try {
-      const noDocker: Runner = async (argv): Promise<RunResult> => {
-        if (argv[1] === "--version" && argv[0] === "uvx")
-          return { code: 0, stdout: "uvx 1", stderr: "" };
-        if (argv.includes("skill-scanner")) return { code: 0, stdout: CISCO_SARIF, stderr: "" };
-        return { code: 127, stdout: "", stderr: "not found", spawnError: true }; // docker absent
-      };
+      const { runner } = countingRunner();
       const tier = await runDeepScanTier({
         cacheHome,
         framework: "ecc",
         sourceId: COMMIT,
         treeDigest: SHA_TREE,
         treePath,
-        runner: noDocker,
+        runner,
+        inspectors: [producedDeepInspector, missingDeepInspector],
       });
-      const disposition = runFastScanGate(
+      const disposition = await runFastScanGate(
         { digest: SHA_TREE, treePath, identityFiles: ["SKILL.md"] },
         { posture: "enterprise", deepDimensionReports: tier.dimensionReports },
-        { cacheHome },
+        { cacheHome, scanExecution: fakeBindingGateScan() },
       );
-      // skillspector missing -> incomplete coverage -> BLOCK at enterprise.
+      // A missing deep dimension -> incomplete coverage -> BLOCK at enterprise.
       expect(disposition.verdict).toBe("block");
     } finally {
       rmSync(treePath, { recursive: true, force: true });

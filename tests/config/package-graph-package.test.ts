@@ -3,27 +3,20 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import * as core from "../../src/index.js";
 import {
   adaptSkillPackageGraph,
   classifyPackageGraphResidue,
   normalizeGitHubRepository,
   projectBaselinePackageGraphAuthority,
-  projectEccCapabilityPackageAuthority,
-  projectEccMaterializationAuthority,
-  projectEccMcpCapabilityPackageAuthority,
-  projectEccMcpReceiptAuthority,
 } from "../../src/index.js";
 
 const root = process.cwd();
 
 describe("Package Graph public package surface", () => {
-  it("exports every Package Graph authority adapter from the library root", () => {
+  it("exports the framework-neutral Package Graph authority adapters from the library root", () => {
     expect([
       projectBaselinePackageGraphAuthority,
-      projectEccCapabilityPackageAuthority,
-      projectEccMaterializationAuthority,
-      projectEccMcpCapabilityPackageAuthority,
-      projectEccMcpReceiptAuthority,
       normalizeGitHubRepository,
       adaptSkillPackageGraph,
       classifyPackageGraphResidue,
@@ -32,11 +25,11 @@ describe("Package Graph public package surface", () => {
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),
-      expect.any(Function),
-      expect.any(Function),
-      expect.any(Function),
-      expect.any(Function),
     ]);
+  });
+
+  it("keeps ECC types and adapters out of the library root", () => {
+    expect(Object.keys(core).filter((name) => /ecc/i.test(name))).toEqual([]);
   });
 
   it("ships and exports the committed Package Graph JSON Schema", () => {

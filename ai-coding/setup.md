@@ -6,7 +6,7 @@
 
 ## Ready a clone for Codex work
 
-Prerequisites are Node.js 20+, npm, Git, Codex CLI, `uv` with an installed
+Prerequisites are Node.js 20.6+, npm, Git, Codex CLI, `uv` with an installed
 Python 3.13, `rg`, `fd`, and `tree`. Then run:
 
 ```powershell

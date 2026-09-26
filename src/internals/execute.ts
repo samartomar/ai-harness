@@ -1285,65 +1285,72 @@ export async function executePlan(
         }
       }
       revalidate();
-      let res: Awaited<ReturnType<PlanContext["run"]>> | undefined;
-      let runnerError: unknown;
-      const input = execInputs.get(a);
+      a.sidecar?.open();
       try {
-        res = await ctx.run(a.argv, {
-          cwd: a.cwd,
-          env: a.env,
-          input,
-          timeoutMs: a.timeoutMs,
-        });
-      } catch (error) {
-        runnerError = error;
-      }
-      try {
-        revalidate();
-      } catch (error) {
-        const outcome =
-          runnerError === undefined ? `returned exit code ${res?.code ?? "unknown"}` : "threw";
-        throw new AihError(
-          `authority validation failed after child "${a.describe}" ${outcome}; child process effects may have occurred and cannot be rolled back: ${(error as Error).message}`,
-          "AIH_TRUST",
-        );
-      }
-      if (runnerError !== undefined) {
-        if (input !== undefined) {
+        let res: Awaited<ReturnType<PlanContext["run"]>> | undefined;
+        let runnerError: unknown;
+        const input = execInputs.get(a);
+        try {
+          res = await ctx.run(a.argv, {
+            cwd: a.cwd,
+            env: a.env,
+            input,
+            timeoutMs: a.timeoutMs,
+          });
+        } catch (error) {
+          runnerError = error;
+        }
+        try {
+          revalidate();
+        } catch (error) {
+          const outcome =
+            runnerError === undefined ? `returned exit code ${res?.code ?? "unknown"}` : "threw";
           throw new AihError(
-            `child "${a.describe}" runner failed while consuming bounded stdin`,
+            `authority validation failed after child "${a.describe}" ${outcome}; child process effects may have occurred and cannot be rolled back: ${(error as Error).message}`,
             "AIH_TRUST",
           );
         }
-        throw runnerError;
-      }
-      if (res === undefined)
-        throw new AihError(`child "${a.describe}" returned no result`, "AIH_TRUST");
-      const ok = res.code === 0 || Boolean(a.allowFailure);
-      // A failing child already wrote a good diagnostic; carry it so the exit
-      // code is not the only evidence the operator gets. Successful runs stay
-      // out of the envelope — that output is noise, and children can be chatty.
-      const collectedResult =
-        input === undefined ? res : { ...res, stdout: "", stderr: "bounded-stdin child failed" };
-      const stderr = ok ? undefined : surfacedChildOutput(collectedResult.stderr);
-      const stdout = ok ? undefined : surfacedChildOutput(collectedResult.stdout);
-      execs.push({
-        describe: a.describe,
-        argv: collectedArgv(a),
-        ran: true,
-        code: res.code,
-        ok,
-        ...(stderr === undefined ? {} : { stderr }),
-        ...(stdout === undefined ? {} : { stdout }),
-      });
-      if (!ok) {
-        priorExecFailed = true;
-        if (a.failureCheck) {
-          execFailureChecks.push(
-            typeof a.failureCheck === "function" ? a.failureCheck(collectedResult) : a.failureCheck,
-          );
+        if (runnerError !== undefined) {
+          if (input !== undefined) {
+            throw new AihError(
+              `child "${a.describe}" runner failed while consuming bounded stdin`,
+              "AIH_TRUST",
+            );
+          }
+          throw runnerError;
         }
-        if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;
+        if (res === undefined)
+          throw new AihError(`child "${a.describe}" returned no result`, "AIH_TRUST");
+        const ok = res.code === 0 || Boolean(a.allowFailure);
+        // A failing child already wrote a good diagnostic; carry it so the exit
+        // code is not the only evidence the operator gets. Successful runs stay
+        // out of the envelope — that output is noise, and children can be chatty.
+        const collectedResult =
+          input === undefined ? res : { ...res, stdout: "", stderr: "bounded-stdin child failed" };
+        const stderr = ok ? undefined : surfacedChildOutput(collectedResult.stderr);
+        const stdout = ok ? undefined : surfacedChildOutput(collectedResult.stdout);
+        execs.push({
+          describe: a.describe,
+          argv: collectedArgv(a),
+          ran: true,
+          code: res.code,
+          ok,
+          ...(stderr === undefined ? {} : { stderr }),
+          ...(stdout === undefined ? {} : { stdout }),
+        });
+        if (!ok) {
+          priorExecFailed = true;
+          if (a.failureCheck) {
+            execFailureChecks.push(
+              typeof a.failureCheck === "function"
+                ? a.failureCheck(collectedResult)
+                : a.failureCheck,
+            );
+          }
+          if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;
+        }
+      } finally {
+        a.sidecar?.close();
       }
     }
   };

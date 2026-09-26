@@ -1,16 +1,42 @@
 import { createHash, createPublicKey } from "node:crypto";
-import {
-  parseBaselineVetAttestationEnvelopeV1Json,
-  parseBaselineVetReceiptV1Json,
-  parseBaselineVetRequestV1Json,
-} from "@aihq/scan";
 import { z } from "zod";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import { DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1 } from "../evidence-freshness.js";
+import {
+  loadScanPackageExportsV1,
+  type ScanPackageLoadV1,
+  ScanPackageRefusalError,
+  scanPackageExportsOrThrowV1,
+} from "../scan-package/load-scan-package.js";
 import type { BaselineCatalog } from "./catalog.js";
-import { consumeVerifiedScannerBaselineBatchesWithClaims } from "./scanner-consumer.js";
 import type { BaselineSourceEvidence } from "./schema.js";
+
+type ScanPublicationParserNameV1 =
+  | "parseBaselineVetAttestationEnvelopeV1Json"
+  | "parseBaselineVetReceiptV1Json"
+  | "parseBaselineVetRequestV1Json";
+type ScanPublicationParsersV1 = Extract<
+  ScanPackageLoadV1<ScanPublicationParserNameV1>,
+  { ok: true }
+>["exports"];
+
+/**
+ * Scan's publication parsers and Core's batch consumer, both loaded on first
+ * use: `scanner-consumer.ts` loads `@aihq/scan` when it is imported, so it is
+ * imported here, not at the top of this module that Core's entry points reach.
+ */
+async function scanPublicationDependencies() {
+  const parsers = scanPackageExportsOrThrowV1(
+    await loadScanPackageExportsV1([
+      "parseBaselineVetAttestationEnvelopeV1Json",
+      "parseBaselineVetReceiptV1Json",
+      "parseBaselineVetRequestV1Json",
+    ]),
+  );
+  const { consumeVerifiedScannerBaselineBatchesWithClaims } = await import("./scanner-consumer.js");
+  return { parsers, consumeVerifiedScannerBaselineBatchesWithClaims };
+}
 
 export {
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
@@ -312,7 +338,10 @@ function verifiedPublicationAttestation(input: {
   return { attestedAt: new Date(earliest).toISOString(), ageSeconds };
 }
 
-function internalPublication(input: ConsumeScannerBaselinePublicationV1Input) {
+function internalPublication(
+  input: ConsumeScannerBaselinePublicationV1Input,
+  scan: ScanPublicationParsersV1,
+) {
   if (!SHA256.test(input.expectedRequestSha256)) fail("expected request digest");
   const discovery = parseCanonicalObject(
     input.discoveryBytes,
@@ -336,13 +365,13 @@ function internalPublication(input: ConsumeScannerBaselinePublicationV1Input) {
     "publication",
     publicationWire,
   );
-  const request = parseBaselineVetRequestV1Json(
+  const request = scan.parseBaselineVetRequestV1Json(
     canonicalStrictJsonBytesV1(publication.request).toString("utf8"),
   );
-  const receipt = parseBaselineVetReceiptV1Json(
+  const receipt = scan.parseBaselineVetReceiptV1Json(
     canonicalStrictJsonBytesV1(publication.receipt).toString("utf8"),
   );
-  const envelope = parseBaselineVetAttestationEnvelopeV1Json(
+  const envelope = scan.parseBaselineVetAttestationEnvelopeV1Json(
     canonicalStrictJsonBytesV1(publication.envelope).toString("utf8"),
   );
   if (
@@ -438,17 +467,22 @@ export async function consumeScannerBaselinePublicationsV1(
   try {
     if (input.publications.length === 0 || input.publications.length > 1_000)
       fail("publication batch count");
+    const { parsers, consumeVerifiedScannerBaselineBatchesWithClaims } =
+      await scanPublicationDependencies();
     const verified = input.publications.map((publication) =>
-      internalPublication({
-        sourceRoot: input.sourceRoot,
-        catalog: input.catalog,
-        ...publication,
-        publisher: input.publisher,
-        now: input.now,
-        maxAgeSeconds: input.maxAgeSeconds,
-        seenEvidenceDigests: input.seenEvidenceDigests,
-        seenReceiptBindings: input.seenReceiptBindings,
-      }),
+      internalPublication(
+        {
+          sourceRoot: input.sourceRoot,
+          catalog: input.catalog,
+          ...publication,
+          publisher: input.publisher,
+          now: input.now,
+          maxAgeSeconds: input.maxAgeSeconds,
+          seenEvidenceDigests: input.seenEvidenceDigests,
+          seenReceiptBindings: input.seenReceiptBindings,
+        },
+        parsers,
+      ),
     );
     const first = verified[0];
     if (first === undefined) fail("publication batch count");
@@ -500,6 +534,7 @@ export async function consumeScannerBaselinePublicationsV1(
     });
   } catch (error) {
     if (error instanceof AihError && error.code === "AIH_SCANNER_BASELINE_PUBLICATION") throw error;
+    if (error instanceof ScanPackageRefusalError) throw error;
     fail("content or Scanner verification");
   }
 }
@@ -513,7 +548,9 @@ export async function consumeScannerBaselinePublicationV1(
   input: ConsumeScannerBaselinePublicationV1Input,
 ): Promise<ConsumedScannerBaselinePublicationV1> {
   try {
-    const verified = internalPublication(input);
+    const { parsers, consumeVerifiedScannerBaselineBatchesWithClaims } =
+      await scanPublicationDependencies();
+    const verified = internalPublication(input, parsers);
     const consumed = await consumeVerifiedScannerBaselineBatchesWithClaims({
       sourceRoot: input.sourceRoot,
       catalog: input.catalog,
@@ -537,6 +574,7 @@ export async function consumeScannerBaselinePublicationV1(
     });
   } catch (error) {
     if (error instanceof AihError && error.code === "AIH_SCANNER_BASELINE_PUBLICATION") throw error;
+    if (error instanceof ScanPackageRefusalError) throw error;
     fail("content or Scanner verification");
   }
 }

@@ -200,7 +200,6 @@
       "docs/reference/claude-hook-settings.snapshot.json",
       "src/ecc-profile/default-hooks.ts",
       "src/ecc-profile/hook-core.ts",
-      "src/ecc-profile/opt-in-hooks.ts",
       "src/internals/git-hooks.ts",
       "src/kiro/hook-projection.ts",
       "src/org-policy/ecc-hook-controls-projection.ts",

@@ -7,7 +7,6 @@ import * as binding from "../../src/binding/index.js";
 import {
   AdapterRegistry,
   type BindingDeclaration,
-  type DimensionInspector,
   type ProvisionRequest,
   readBindingDeclaration,
   readBindingLock,
@@ -19,11 +18,7 @@ import {
 import { defaultRunner } from "../../src/internals/proc.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
 import { createFakeAdapter } from "./fake-adapter.js";
-
-const complete: DimensionInspector = {
-  dimension: "complete",
-  run: () => ({ dimension: "complete", status: "produced", findings: [] }),
-};
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 let projectRoot: string;
 let repoDir: string;
@@ -112,10 +107,10 @@ describe("binding W2 end-to-end (declaration authority + derived caches)", () =>
       declaration.source.kind === "git" ? declaration.source.treeDigest : "",
     );
 
-    const disposition = runFastScanGate(
+    const disposition = await runFastScanGate(
       scannableFromGit(resolved),
       { posture: "enterprise" },
-      { cacheHome, inspectors: [complete] },
+      { cacheHome, scanExecution: fakeBindingGateScan() },
     );
     const request: ProvisionRequest = { context: { declaration }, resolved };
     const { lock } = await adapter.provision(request, disposition);
@@ -151,10 +146,10 @@ describe("binding W2 end-to-end (declaration authority + derived caches)", () =>
       JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", binding: declaration }),
     );
 
-    const first = runFastScanGate(
+    const first = await runFastScanGate(
       scannableFromGit(resolved),
       { posture: "enterprise" },
-      { cacheHome },
+      { cacheHome, scanExecution: fakeBindingGateScan() },
     );
 
     // Blow away every derived cache and rebuild from the committed source.
@@ -164,10 +159,10 @@ describe("binding W2 end-to-end (declaration authority + derived caches)", () =>
       { repository: repoDir, ref: "HEAD" },
       { runner: defaultRunner, cacheHome },
     );
-    const second = runFastScanGate(
+    const second = await runFastScanGate(
       scannableFromGit(rebuilt),
       { posture: "enterprise" },
-      { cacheHome },
+      { cacheHome, scanExecution: fakeBindingGateScan() },
     );
 
     expect(second.verdict).toBe(first.verdict);

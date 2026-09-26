@@ -1,5 +1,6 @@
 import type { Posture, PostureSource } from "../config/posture.js";
 import { AihError } from "../errors.js";
+import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.js";
 import type { EnvShell, HostAdapter } from "../platform/base.js";
 import {
   legacyChecksToVerificationRun,
@@ -153,6 +154,11 @@ function structuredProbeCheckOptions(
   return { ...structured, name: structured.name ?? describe };
 }
 
+export interface ExecSidecar {
+  open(): void;
+  close(): void;
+}
+
 /**
  * A LOCAL helper command run after writes under `--apply` (e.g. icacls/chmod to
  * lock down a PEM, `mklink /J` for a VDI junction, `update-ca-certificates`, or
@@ -177,6 +183,12 @@ export interface ExecAction {
   timeoutMs?: number;
   /** Optional verification check to emit when the command exits non-zero. */
   failureCheck?: Check | ((result: RunResult) => Check);
+  /**
+   * Apply-only side channel the command reports through: `open` runs just
+   * before the command is spawned and `close` after its result and failureCheck
+   * are collected, whatever the outcome. Never runs on a dry run or a skipped exec.
+   */
+  sidecar?: ExecSidecar;
   /** Skip follow-on probes when this command fails. */
   blockProbesOnFailure?: boolean;
   /** Do not run this command when an earlier non-allowed exec failed. */
@@ -359,6 +371,10 @@ export interface PlanContext {
   progress?: (message: string) => void;
   /** Register command-owned resources for reverse-order cleanup at the command boundary. */
   deferCleanup?: (cleanup: () => void | Promise<void>) => void;
+  /** Cancels a delegated trust scan; Scan kills the analyzer and the scan stops as cancelled. */
+  signal?: AbortSignal;
+  /** Test seam: Scan's execution functions. Absent, commands load the installed `@aihq/scan`. */
+  scanExecution?: ScanExecutionAdapterV1;
   /**
    * The resolved CLI target set, injected by an orchestrator (`aih init`) that
    * resolves `--detect`/`--cli` ONCE and threads the result into every phase. A
@@ -463,6 +479,13 @@ export interface CommandSpec {
    * `aih heal` surfaces the health report and a non-zero exit when broken.
    */
   alwaysVerify?: boolean;
+  /**
+   * The report's findings and evidence problems are labels (D66): the command exits
+   * 0 when every failed check is one of them, and 1 for an integrity failure, the
+   * organization's own configured requirement, or an unclassified code. `--fail-on`
+   * (declare `FAIL_ON_OPTION`) turns findings or evidence problems back into exit 1.
+   */
+  labelledExit?: boolean;
   /**
    * Exempt from the dirty-worktree `--apply` preflight. For pure-analytics commands
    * (`aih report`) whose only writes are gitignored OUTPUT artifacts (the `.aih/`
@@ -649,6 +672,7 @@ export function exec(
     stdin?: { data: string; maxBytes: number };
     timeoutMs?: number;
     failureCheck?: ExecAction["failureCheck"];
+    sidecar?: ExecSidecar;
     blockProbesOnFailure?: boolean;
     requiresPriorExecSuccess?: boolean;
     expect?: ExecAction["expect"];
@@ -664,6 +688,7 @@ export function exec(
     ...(opts.stdin === undefined ? {} : { stdin: { maxBytes: opts.stdin.maxBytes } }),
     timeoutMs: opts.timeoutMs,
     failureCheck: opts.failureCheck,
+    ...(opts.sidecar === undefined ? {} : { sidecar: opts.sidecar }),
     blockProbesOnFailure: opts.blockProbesOnFailure,
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     allowFailure: opts.allowFailure,

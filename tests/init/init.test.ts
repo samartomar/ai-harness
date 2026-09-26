@@ -264,6 +264,10 @@ describe("aih init — command surface", () => {
       "--v3",
       "--accept-token-optimizer-license",
       "--token-optimizer-profile <profile>",
+      "--activate-headroom",
+      "--accept-headroom-egress",
+      "--deactivate-headroom",
+      "--primary-code-graph <id>",
       "--canon <mode>",
       "--baseline <id>",
       "--kiro-hook-runtime <runtime>",
@@ -322,7 +326,7 @@ describe("aih init — command surface", () => {
           expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
           "code-review-graph",
           "--package",
-          "code-review-graph==2.3.8",
+          "code-review-graph==2.3.9",
         ]),
       }),
     );
@@ -1024,6 +1028,10 @@ describe("aih init — BOUNDARY (no remote mutation introduced by the orchestrat
     let leafDocs = 0;
     const leafWritePaths = new Set<string>();
     for (const phase of INIT_PHASES) {
+      // A framework phase adds only its header to the composed plan; its plugin's
+      // evidence-gated command runs after the local bootstrap commits
+      // (tests/framework-plugin/superpowers-command.test.ts).
+      if (phase.framework !== undefined) continue;
       const sub = await phase.command.plan(leafCtx);
       for (const a of sub.actions) {
         if (a.kind === "write") leafWritePaths.add(a.path);

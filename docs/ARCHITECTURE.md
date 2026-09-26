@@ -56,12 +56,17 @@ and the executor is the only layer that performs filesystem or process effects.
 - **Reporting and local telemetry** (`src/report/`, `src/logging/`,
   `src/usage/`) render local diagnostics. They do not transmit prompts or costs.
 
-## Policy Workbench catalog providers
+## Retained policy and Catalog data
 
-The Policy Workbench composes its offline catalog from a fixed set of typed
-build-time providers. See [Policy Workbench catalog providers](workbench-catalog-providers.md)
-for source snapshots, Core evidence boundaries, fixture and test ownership, and
-its deliberate extension limits.
+Core still packages backend policy/catalog preassembly and shared JSON source records
+used by policy, evidence, and historical ECC consumers. Its former Policy Workbench
+browser renderer, HTML server, browser bundle, `aih --ui`, and `aih policy generate`
+are removed; no browser replacement was moved to `aih-ui`. Catalog ownership of
+the remaining provider data and history is a separate unfinished extraction. The
+installed `@aihq/catalog` reader already supplies the historical ECC runtime
+descriptor when no matching verified local source-data receipt exists, subject
+to Core's exact digest acceptance. This does not make the whole provider catalog
+an installed Catalog dependency yet.
 
 ## Data Boundaries
 
@@ -96,12 +101,15 @@ gateway, and observability-backend setup remains `doc` output for a human.
 
 ## Optional Extensions
 
-The only optional peer package the open-source CLI probes for is
-`@aihq/enterprise`, by literal name from the install tree that loaded `aih`.
-It is a reserved extension point for additive enterprise `CommandSpec` commands;
-the contract and fallback are defined in
+Core has two optional execution and data peers: `@aihq/scan` for Scan-backed
+detector execution and `@aihq/catalog` for its pinned index and runtime-descriptor
+readers. Neither is a general command-plugin loader. `@aihq/enterprise` remains the
+only optional **command** extension the open-source CLI probes for, by literal
+name from the install tree that loaded `aih`. It is a reserved extension point
+for additive enterprise `CommandSpec` commands; its contract and fallback are defined in
 [product/enterprise-extension-point.md](product/enterprise-extension-point.md).
-Not installed means local-only behavior.
+When Enterprise is not installed, those commands are unavailable and local-only
+Core behavior remains.
 
 MCP configuration is generated per supported CLI. MCP servers are never loaded
 just-in-case by the CLI; they are emitted into tool-specific config for the

@@ -1,23 +1,23 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { readAihConfig, readPolicyBinding } from "../config/marker.js";
-import {
-  describeEccEffectiveDiscovery,
-  type EccEffectiveDiscoveryReport,
-} from "../ecc/effective-discovery.js";
 import { inspectDestination, materializationRoot } from "../ecc/materialization-fs.js";
-import { ownedFragmentDigest, parseJsonObject } from "../ecc/materialization-plan.js";
 import {
   type EccOwnedFile,
   ownedFileSha256,
+  ownedFragmentDigest,
+  parseJsonObject,
   readEccMaterializationReceipt,
 } from "../ecc/materialization-receipt.js";
+import type {
+  FrameworkCodexRoleRegistrationV1,
+  FrameworkGovernedSelectionV1,
+  FrameworkPolicyDeliveryInspectorV1,
+} from "../framework-plugin/contract-v1.js";
 import {
-  type EccMaterializationTarget,
-  GOVERNED_MATERIALIZATION_TARGETS,
-} from "../ecc/materialization-target.js";
-import {
-  type GovernedCodexRoleRegistrationInspection,
-  inspectGovernedCodexRoleRegistration,
-} from "../ecc-profile/governed-codex-roles.js";
+  type EccReadOutcomeV1,
+  eccPolicyDeliveryInspectorV1,
+} from "../framework-plugin/ecc-read.js";
 import type { Cli } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import { applyPolicyBindingDefaults, assertPolicyBindingCurrent } from "./binding.js";
@@ -68,8 +68,46 @@ export interface PolicyDeliveryReport {
   binding?: { state: "unbound" | "current" | "blocked"; projectId?: string; detail: string };
   startupGuidance?: Pick<PolicyRequiredGuidanceInspection, "state" | "path" | "detail">;
   commandPermissions?: CommandPermissionInspection;
-  codexRoles?: GovernedCodexRoleRegistrationInspection;
-  selection?: EccEffectiveDiscoveryReport;
+  codexRoles?: FrameworkCodexRoleRegistrationV1;
+  selection?: FrameworkGovernedSelectionV1;
+  /** Present when the delivery needed ECC's knowledge and the ECC plugin could not supply it. */
+  eccChecks?: { state: "not-run"; detail: string };
+}
+
+/** ECC's inspector for one report, or why it is unavailable; `undefined` means it was not consulted. */
+export type PolicyDeliveryEccV1 = EccReadOutcomeV1<FrameworkPolicyDeliveryInspectorV1>;
+
+function hasEccSelection(policy: OrgPolicy | undefined): boolean {
+  return (
+    policy !== undefined &&
+    governanceOwnsAihSurfaces(policy) &&
+    policy.governance.externalSelections.some((selection) => selection.framework === "ecc")
+  );
+}
+
+/**
+ * Whether the delivery report needs ECC's knowledge: the policy selects ECC
+ * content, or a Codex target has ECC state aih wrote at the root (the Codex
+ * role registration receipt lives under it).
+ */
+export function policyDeliveryConsultsEcc(
+  root: string,
+  targets: readonly string[],
+  policy: OrgPolicy | undefined,
+): boolean {
+  return (
+    hasEccSelection(policy) || (targets.includes("codex") && existsSync(join(root, ".aih", "ecc")))
+  );
+}
+
+/** Load ECC's inspector through the plugin when the report needs it. */
+export async function loadPolicyDeliveryEccV1(
+  ctx: PlanContext,
+  targets: readonly string[],
+  policy: OrgPolicy | undefined,
+): Promise<PolicyDeliveryEccV1 | undefined> {
+  if (!policyDeliveryConsultsEcc(ctx.root, targets, policy)) return undefined;
+  return eccPolicyDeliveryInspectorV1(ctx);
 }
 
 function inspectBinding(
@@ -127,8 +165,14 @@ export function summarizePolicyDelivery(
   policyBlocked: boolean,
   env: NodeJS.ProcessEnv = {},
   contextDir = "ai-coding",
+  ecc?: PolicyDeliveryEccV1,
 ): PolicyDeliveryReport {
   const binding = inspectBinding(root, targets, env);
+  const eccRead: PolicyDeliveryEccV1 | undefined = policyDeliveryConsultsEcc(root, targets, policy)
+    ? (ecc ?? { state: "not-run", detail: "the ECC plugin was not consulted", broken: false })
+    : undefined;
+  const inspector = eccRead?.state === "ran" ? eccRead.value : undefined;
+  const eccNotRun = eccRead?.state === "not-run" ? eccRead.detail : undefined;
   const governance = policy && governanceOwnsAihSurfaces(policy) ? policy.governance : undefined;
   const requested =
     governance?.externalSelections.find((selection) => selection.framework === "ecc")?.items ?? [];
@@ -179,14 +223,11 @@ export function summarizePolicyDelivery(
       };
     })
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const governedTargets: readonly string[] = inspector?.governedTargets ?? [];
   const unsupportedTargets =
-    requested.length === 0
+    requested.length === 0 || inspector === undefined
       ? []
-      : targets
-          .filter(
-            (target) => !(GOVERNED_MATERIALIZATION_TARGETS as readonly string[]).includes(target),
-          )
-          .sort();
+      : targets.filter((target) => !governedTargets.includes(target)).sort();
   const selectedIds = new Set(requested.map((item) => item.id));
   const unrequestedOwnedComponents = owned
     .filter((item) => !selectedIds.has(item.id))
@@ -210,21 +251,22 @@ export function summarizePolicyDelivery(
     owned.filter((item) => selectedIds.has(item.id)),
   );
   const commandPermissions = inspectCommandPermissions(root, policy, targets);
-  const codexRoles = targets.includes("codex")
-    ? inspectGovernedCodexRoleRegistration(
-        root,
-        components
-          .filter((component) => component.state === "receipt-current")
-          .flatMap((component) =>
-            component.files.flatMap((file) => {
-              const id = /^\.codex\/agents\/([a-z0-9][a-z0-9_-]*)\.toml$/.exec(file.path)?.[1];
-              return id ? [{ id, configFile: file.path }] : [];
-            }),
-          ),
-      )
-    : undefined;
+  const codexRoles =
+    targets.includes("codex") && inspector !== undefined
+      ? inspector.inspectCodexRoles(
+          components
+            .filter((component) => component.state === "receipt-current")
+            .flatMap((component) =>
+              component.files.flatMap((file) => {
+                const id = /^\.codex\/agents\/([a-z0-9][a-z0-9_-]*)\.toml$/.exec(file.path)?.[1];
+                return id ? [{ id, configFile: file.path }] : [];
+              }),
+            ),
+        )
+      : undefined;
   const blocking =
     policyBlocked ||
+    eccNotRun !== undefined ||
     binding.state === "blocked" ||
     receipt.state === "malformed" ||
     unsupportedTargets.length > 0 ||
@@ -243,17 +285,18 @@ export function summarizePolicyDelivery(
     startupGuidance,
     commandPermissions,
     ...(codexRoles === undefined ? {} : { codexRoles }),
+    ...(eccNotRun === undefined
+      ? {}
+      : { eccChecks: { state: "not-run" as const, detail: eccNotRun } }),
     targets: [...targets].sort(),
     unsupportedTargets,
     receipt: receipt.state,
     components,
-    ...(policy && governance?.externalSelections.some((item) => item.framework === "ecc")
+    ...(policy && inspector && hasEccSelection(policy)
       ? {
-          selection: describeEccEffectiveDiscovery({
+          selection: inspector.describeSelection({
             policy,
-            targets: targets.filter((target): target is EccMaterializationTarget =>
-              (GOVERNED_MATERIALIZATION_TARGETS as readonly string[]).includes(target),
-            ),
+            targets: targets as Cli[],
             components: components.map((component) => ({
               id: component.id,
               provenance: {
@@ -306,13 +349,15 @@ export async function inspectPolicyDelivery(
     )
       return undefined;
     const effective = policy ? (await resolveRuntimeOrgPolicy(ctx, policy)).effective : undefined;
+    const targets = ctx.targets ?? ["claude"];
     return summarizePolicyDelivery(
       ctx.root,
-      ctx.targets ?? ["claude"],
+      targets,
       policy,
       effective?.blocking ?? false,
       ctx.env,
       contextDir,
+      await loadPolicyDeliveryEccV1(ctx, targets, policy),
     );
   } catch {
     return {
@@ -351,6 +396,7 @@ export function renderPolicyDelivery(report: PolicyDeliveryReport): string {
           `  Project binding: ${report.binding.state}${report.binding.projectId ? ` (${report.binding.projectId})` : ""}. ${report.binding.detail}`,
         ]
       : []),
+    ...(report.eccChecks ? [`  ECC checks were not run: ${report.eccChecks.detail}`] : []),
     ...(report.codexRoles
       ? [
           `  Codex role registration: ${report.codexRoles.state}; expected roles=${report.codexRoles.expectedRoleIds.join(", ") || "none"}; native loading=unverified${report.codexRoles.detail ? `; ${report.codexRoles.detail}` : ""}`,

@@ -7,8 +7,8 @@
     "id": "superpowers",
     "owner": "obra",
     "repository": "Superpowers",
-    "pinnedCommit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
-    "treeSha256": "3420d68292184fe345d2e3121ed2b3cb192d367ea6fb5f23d9d0fb3629a284b5"
+    "pinnedCommit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "treeSha256": "1e08b5076772c1cd96f62464f4e451cbc227013f553a2212281d4c18e2694165"
   },
   "components": [
     {
@@ -89,6 +89,13 @@
       "content": "general"
     },
     {
+      "id": "runtime:muse-plugin-a0952851165e",
+      "paths": [
+        ".muse-plugin"
+      ],
+      "content": "general"
+    },
+    {
       "id": "runtime:opencode-5e2dd251c591",
       "paths": [
         ".opencode"
@@ -109,10 +116,12 @@
         ".gitignore",
         ".pre-commit-config.yaml",
         ".version-bump.json",
+        "AGENTS.md",
         "CLAUDE.md",
         "CODE_OF_CONDUCT.md",
         "gemini-extension.json",
         "GEMINI.md",
+        "index.js",
         "LICENSE",
         "package.json",
         "README.md",
@@ -138,6 +147,13 @@
       "id": "skill:skills-brainstorming-f5b3dedd4df0",
       "paths": [
         "skills/brainstorming"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-diagnosing-superpowers-29c1b0024306",
+      "paths": [
+        "skills/diagnosing-superpowers"
       ],
       "content": "skill"
     },
@@ -233,43 +249,5 @@
       "content": "skill"
     }
   ],
-  "exclusions": [
-    {
-      "path": "AGENTS.md",
-      "reason": "source-symlink"
-    }
-  ],
-  "facets": {
-    "skills": [
-      "skills/brainstorming",
-      "skills/dispatching-parallel-agents",
-      "skills/executing-plans",
-      "skills/finishing-a-development-branch",
-      "skills/receiving-code-review",
-      "skills/requesting-code-review",
-      "skills/subagent-driven-development",
-      "skills/systematic-debugging",
-      "skills/test-driven-development",
-      "skills/using-git-worktrees",
-      "skills/using-superpowers",
-      "skills/verification-before-completion",
-      "skills/writing-plans",
-      "skills/writing-skills"
-    ],
-    "agents": [
-      "CLAUDE.md"
-    ],
-    "hooks": [
-      "docs/windows/polyglot-hooks.md",
-      "hooks/hooks-cursor.json",
-      "hooks/hooks.json",
-      "hooks/run-hook.cmd",
-      "hooks/session-start",
-      "tests/hooks/test-session-start.sh"
-    ],
-    "mcp": [],
-    "sourceSymlinks": [
-      "AGENTS.md"
-    ]
-  }
+  "exclusions": []
 }

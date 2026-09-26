@@ -1,7 +1,13 @@
-import { lstatSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import {
+  activateCandidateCatalogV1,
+  candidateCatalogUsePathV1,
+  openCandidateCatalogV1,
+  writeCandidateCatalogUseV1,
+} from "../catalog-package/candidate-catalog.js";
 import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 import { parseAihSupportedQualificationReceiptV2Bytes } from "../org-policy/supported-qualification-receipt-v2.js";
 import type { AuthoringCatalogBundleV1 } from "../org-policy/workbench/contracts.js";
@@ -150,31 +156,199 @@ export async function writeOperationalCatalogQualificationDraftV1(
   const output = resolve(input.output);
   const parent = dirname(output);
   if (lstatSync(parent).isSymbolicLink()) throw new TypeError("Draft output parent is linked.");
-  const data = catalogQualificationDraftDataV1(prepared);
-  const source = `${canonicalStrictJsonBytesV1(data).toString("utf8")}\n`;
-  writeFileSync(output, source, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  writeFileSync(output, catalogQualificationDraftSourceV1(prepared), {
+    encoding: "utf8",
+    flag: "wx",
+    mode: 0o600,
+  });
   return prepared;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const args = process.argv.slice(2);
-  const flags = ["--source", "--provider", "--artifacts", "--output"];
+/** The exact draft file text both modes write. */
+function catalogQualificationDraftSourceV1(prepared: PreparedOperationalCatalogQualificationV1) {
+  return `${canonicalStrictJsonBytesV1(catalogQualificationDraftDataV1(prepared)).toString("utf8")}\n`;
+}
+
+const BATCH_ENTRY_FILES = ["closure.json", "member.json", "receipt-set.json", "receipt.json"];
+
+export interface PrepareOperationalCatalogQualificationBatchV1Input {
+  readonly bundle: AuthoringCatalogBundleV1;
+  readonly sourceRoot: string;
+  readonly providerId: string;
+  /** One subdirectory per entry, named by its entry id, each holding exactly the four files. */
+  readonly artifactsRoot: string;
+  readonly now?: string;
+}
+
+export interface PreparedOperationalCatalogQualificationBatchEntryV1 {
+  readonly entryId: string;
+  readonly prepared: PreparedOperationalCatalogQualificationV1;
+}
+
+/**
+ * Every entry of one provider's artifacts root, each verified exactly as the single mode
+ * verifies one. The layout is checked for every entry before any is verified.
+ */
+export async function prepareOperationalCatalogQualificationBatchV1(
+  input: PrepareOperationalCatalogQualificationBatchV1Input,
+): Promise<readonly PreparedOperationalCatalogQualificationBatchEntryV1[]> {
+  const root = artifactRoot(input.artifactsRoot);
+  const entries = readdirSync(root, { withFileTypes: true }).sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
+  if (entries.length === 0)
+    throw new TypeError("Catalog qualification artifacts root holds no entry directories.");
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink())
+      throw new TypeError(
+        `Catalog qualification artifacts root holds ${entry.name}, which is not an entry directory.`,
+      );
+    const files = readdirSync(resolve(root, entry.name)).sort();
+    if (files.join("\n") !== BATCH_ENTRY_FILES.join("\n"))
+      throw new TypeError(
+        `Catalog qualification entry ${entry.name} must hold exactly closure.json, member.json, receipt-set.json and receipt.json.`,
+      );
+  }
+  const prepared: PreparedOperationalCatalogQualificationBatchEntryV1[] = [];
+  for (const entry of entries) {
+    const one = await prepareOperationalCatalogQualificationV1({
+      bundle: input.bundle,
+      sourceRoot: input.sourceRoot,
+      providerId: input.providerId,
+      artifactRoot: resolve(root, entry.name),
+      ...(input.now === undefined ? {} : { now: input.now }),
+    });
+    const subject = one.records[0]?.publisher.subjectName;
+    if (subject !== `${entry.name}.json`)
+      throw new TypeError(
+        `Catalog qualification entry ${entry.name} holds the receipt of ${String(subject).replace(/\.json$/u, "")}.`,
+      );
+    prepared.push(Object.freeze({ entryId: entry.name, prepared: one }));
+  }
+  return Object.freeze(prepared);
+}
+
+/**
+ * Writes one draft per entry, `<output-dir>/<entryId>.json`, byte-identical to what the
+ * single mode writes for that entry, and only after every entry verified.
+ */
+export async function writeOperationalCatalogQualificationDraftsV1(
+  input: PrepareOperationalCatalogQualificationBatchV1Input & { readonly outputDir: string },
+): Promise<readonly { readonly entryId: string; readonly output: string }[]> {
+  const outputDir = resolve(input.outputDir);
+  if (lstatSync(dirname(outputDir)).isSymbolicLink())
+    throw new TypeError("Draft output parent is linked.");
+  const prepared = await prepareOperationalCatalogQualificationBatchV1(input);
+  const sources = prepared.map(({ entryId, prepared: one }) => ({
+    entryId,
+    output: resolve(outputDir, `${entryId}.json`),
+    source: catalogQualificationDraftSourceV1(one),
+  }));
+  mkdirSync(outputDir, { mode: 0o700 });
+  for (const { output, source } of sources)
+    writeFileSync(output, source, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  return sources.map(({ entryId, output }) => ({ entryId, output }));
+}
+
+const USAGE =
+  "Usage: prepare-workbench-catalog-qualification --source <registered-root> --provider <id> --artifacts <four-file-root> --output <draft-data.json> [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
+const BATCH_USAGE =
+  "Usage: prepare-workbench-catalog-qualification --source <registered-root> --provider <id> --artifacts-root <one-directory-per-entry> --output-dir <new-directory> [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
+
+/**
+ * Batch mode: `--source --provider --artifacts-root --output-dir`, in that order, for one
+ * provider/source. Each `<artifacts-root>/<entryId>/` is verified exactly as the single
+ * mode verifies `--artifacts`; `<output-dir>` must not exist and is written only after
+ * every entry verified. With a candidate Catalog, each draft gets the same
+ * `<draft>.candidate-catalog.json` record the single mode writes.
+ */
+async function prepareWorkbenchCatalogQualificationBatchCommandV1(
+  args: readonly string[],
+): Promise<string> {
+  const flags = ["--source", "--provider", "--artifacts-root", "--output-dir"];
+  const withCandidate = args.length === 12;
+  if (withCandidate) flags.push("--candidate-catalog", "--candidate-catalog-sha256");
   if (
-    args.length !== 8 ||
+    (args.length !== 8 && !withCandidate) ||
     flags.some(
       (flag, index) =>
         args[index * 2] !== flag || !args[index * 2 + 1] || args[index * 2 + 1]?.startsWith("--"),
-    )
+    ) ||
+    (withCandidate && !/^[0-9a-f]{64}$/.test(args[11] as string))
   )
+    throw new TypeError(BATCH_USAGE);
+  const outputDir = resolve(args[7] as string);
+  if (existsSync(outputDir))
     throw new TypeError(
-      "Usage: prepare-workbench-catalog-qualification --source <registered-root> --provider <id> --artifacts <four-file-root> --output <draft-data.json>",
+      `EEXIST: Catalog qualification draft output directory already exists: ${outputDir}`,
     );
+  const candidate = withCandidate
+    ? openCandidateCatalogV1(resolve(args[9] as string), args[11] as string)
+    : undefined;
+  if (candidate !== undefined) activateCandidateCatalogV1(candidate);
+  const written = await writeOperationalCatalogQualificationDraftsV1({
+    bundle: defaultPreparedWorkbenchCatalog().bundle,
+    sourceRoot: resolve(args[1] as string),
+    providerId: args[3] as string,
+    artifactsRoot: resolve(args[5] as string),
+    outputDir,
+  });
+  if (candidate !== undefined)
+    for (const { output } of written)
+      writeCandidateCatalogUseV1("prepare-workbench-catalog-qualification", output);
+  const used =
+    candidate === undefined
+      ? ""
+      : ` Used candidate Catalog ${candidate.version} sha256:${candidate.sha256} (${candidate.digestOf}), recorded beside each draft.`;
+  return `Prepared ${written.length} entries of reviewable, authenticated Catalog qualification package-input drafts in ${outputDir}.${used}`;
+}
+
+/**
+ * `--source --provider --artifacts --output`, in that order. Qualification data comes
+ * from the installed Catalog's prepared authoring bundle; an existing output is refused
+ * before any artifact is read. With a named candidate Catalog, the candidate replaces the
+ * installed Catalog for the whole run and `<output>.candidate-catalog.json` names its
+ * digest and every file read from it.
+ */
+export async function prepareWorkbenchCatalogQualificationCommandV1(
+  args: readonly string[],
+): Promise<string> {
+  if (args[4] === "--artifacts-root")
+    return prepareWorkbenchCatalogQualificationBatchCommandV1(args);
+  const flags = ["--source", "--provider", "--artifacts", "--output"];
+  const withCandidate = args.length === 12;
+  if (withCandidate) flags.push("--candidate-catalog", "--candidate-catalog-sha256");
+  if (
+    (args.length !== 8 && !withCandidate) ||
+    flags.some(
+      (flag, index) =>
+        args[index * 2] !== flag || !args[index * 2 + 1] || args[index * 2 + 1]?.startsWith("--"),
+    ) ||
+    (withCandidate && !/^[0-9a-f]{64}$/.test(args[11] as string))
+  )
+    throw new TypeError(USAGE);
+  const output = resolve(args[7] as string);
+  if (existsSync(output))
+    throw new TypeError(`EEXIST: Catalog qualification draft output already exists: ${output}`);
+  if (withCandidate && existsSync(candidateCatalogUsePathV1(output)))
+    throw new TypeError("EEXIST: the candidate Catalog use record must not already exist");
+  const candidate = withCandidate
+    ? openCandidateCatalogV1(resolve(args[9] as string), args[11] as string)
+    : undefined;
+  if (candidate !== undefined) activateCandidateCatalogV1(candidate);
   await writeOperationalCatalogQualificationDraftV1({
     bundle: defaultPreparedWorkbenchCatalog().bundle,
     sourceRoot: resolve(args[1] as string),
     providerId: args[3] as string,
     artifactRoot: resolve(args[5] as string),
-    output: resolve(args[7] as string),
+    output,
   });
-  console.log("Prepared a reviewable, authenticated Catalog qualification package-input draft.");
+  const used =
+    candidate === undefined
+      ? ""
+      : ` Used candidate Catalog ${candidate.version} sha256:${candidate.sha256} (${candidate.digestOf}), recorded in ${writeCandidateCatalogUseV1("prepare-workbench-catalog-qualification", output)}.`;
+  return `Prepared a reviewable, authenticated Catalog qualification package-input draft.${used}`;
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
+  console.log(await prepareWorkbenchCatalogQualificationCommandV1(process.argv.slice(2)));

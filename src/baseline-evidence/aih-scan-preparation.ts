@@ -1,28 +1,28 @@
-import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import {
-  canonicalStrictJsonBytesV1,
+  cloneJsonValueStructureV1,
   deepFreezeStrictJsonV1,
+  jsonOwnEntriesV1,
   parseStrictJsonObjectV1,
+  STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { PolicyAuthoringCatalog } from "../org-policy/catalog.js";
 import {
   encodePackagedScannerCollectionEvidenceRecordV1,
-  PackagedScannerCollectionEvidenceRecordV1Schema,
   packagedCoverageProjectionDigestV1,
   packagedReportComponentDigestV1,
+  readPackagedScannerCollectionEvidenceRecordV1,
 } from "../org-policy/packaged-collection-evidence-v1.js";
-import type { CompiledBuiltInCatalogV1 } from "../org-policy/workbench/compilers/built-in.js";
 import {
   type AihScanMaterialCoreRevisionV1,
   type AihScanMaterialCoverageV1,
+  type CompiledBuiltInCatalogV1,
   materializeAihScanSubjectsV1,
   removeMaterializedAihScanSubjectsV1,
 } from "./aih-scan-material.js";
-import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import {
   consumeScannerBaselinePublicationsV1,
   type ScannerBaselinePublicationProvenanceV1,
@@ -140,7 +140,8 @@ function assertRecord(
     required.some((key) => !Object.hasOwn(value, key))
   )
     fail(label);
-  for (const key of Object.keys(value)) ownData(value, key, label);
+  // Every own key, enumerable or not, is a data property: a getter is never invoked.
+  for (const key of Reflect.ownKeys(value)) ownData(value, key as string, label);
 }
 
 function cloneBytes(value: unknown, maximum: number, label: string): Buffer {
@@ -149,9 +150,14 @@ function cloneBytes(value: unknown, maximum: number, label: string): Buffer {
   return Buffer.from(value);
 }
 
+/**
+ * A snapshot of the caller's input, read only through descriptors before any element or field is
+ * used: the batches array and every batch, the Core revision, catalog and compilation are copied
+ * from what was validated, so no getter runs and later awaits cannot observe caller mutations.
+ */
 function assertInput(
   input: PrepareAihScannerPublicationsV1Input,
-): asserts input is PrepareAihScannerPublicationsV1Input {
+): PrepareAihScannerPublicationsV1Input {
   assertRecord(
     input,
     [
@@ -166,18 +172,23 @@ function assertInput(
     ["packageRoot", "coreRevision", "catalog", "compiled", "batches", "now"],
     "input",
   );
+  const packageRoot = ownData(input, "packageRoot", "input");
+  const suppliedBatches = ownData(input, "batches", "input");
+  const now = ownData(input, "now", "input");
+  const materialOutputParent = Object.hasOwn(input, "materialOutputParent")
+    ? ownData(input, "materialOutputParent", "input")
+    : undefined;
   if (
-    typeof ownData(input, "packageRoot", "input") !== "string" ||
-    !Array.isArray(ownData(input, "batches", "input")) ||
-    typeof ownData(input, "now", "input") !== "string" ||
-    (Object.hasOwn(input, "materialOutputParent") &&
-      typeof ownData(input, "materialOutputParent", "input") !== "string")
+    typeof packageRoot !== "string" ||
+    !Array.isArray(suppliedBatches) ||
+    typeof now !== "string" ||
+    (Object.hasOwn(input, "materialOutputParent") && typeof materialOutputParent !== "string")
   )
     fail("input");
-  const batches = input.batches;
-  if (batches.length === 0 || batches.length > 1_000) fail("publication batch count");
+  const entries = jsonOwnEntriesV1(suppliedBatches, "AIH Scanner preparation: batches");
+  if (entries.length === 0 || entries.length > 1_000) fail("publication batch count");
   let total = 0;
-  for (const batch of batches) {
+  const batches = entries.map(([, batch]) => {
     assertRecord(
       batch,
       ["discoveryBytes", "publicationBytes"],
@@ -189,7 +200,28 @@ function assertInput(
     if (!Buffer.isBuffer(discovery) || !Buffer.isBuffer(publication)) fail("batch bytes");
     total += discovery.length + publication.length;
     if (!Number.isSafeInteger(total) || total > TOTAL_INPUT_MAX_BYTES) fail("total batch bytes");
-  }
+    return Object.freeze({
+      discoveryBytes: Buffer.from(discovery),
+      publicationBytes: Buffer.from(publication),
+    });
+  });
+  const snapshot = (key: "coreRevision" | "catalog" | "compiled") =>
+    cloneJsonValueStructureV1(
+      ownData(input, key, "input"),
+      `AIH Scanner preparation: ${key}`,
+      STRICT_JSON_MAX_DEPTH_V1,
+    );
+  return {
+    packageRoot,
+    ...(materialOutputParent === undefined
+      ? {}
+      : { materialOutputParent: materialOutputParent as string }),
+    coreRevision: snapshot("coreRevision") as PrepareAihScannerPublicationsV1Input["coreRevision"],
+    catalog: snapshot("catalog") as PolicyAuthoringCatalog,
+    compiled: snapshot("compiled") as CompiledBuiltInCatalogV1,
+    batches,
+    now,
+  };
 }
 
 function stagingRoot(path: string): string {
@@ -286,9 +318,9 @@ async function attestPublicationBytes(
  * generic checkout preparation: only the original Core checkout owns the Git pin.
  */
 export async function prepareAihScannerPublicationsV1(
-  input: PrepareAihScannerPublicationsV1Input,
+  supplied: PrepareAihScannerPublicationsV1Input,
 ): Promise<PreparedAihScannerPublicationsV1> {
-  assertInput(input);
+  const input = assertInput(supplied);
   const materialized = materializeAihScanSubjectsV1({
     packageRoot: input.packageRoot,
     ...(input.materialOutputParent === undefined
@@ -299,6 +331,8 @@ export async function prepareAihScannerPublicationsV1(
     compiled: input.compiled,
   });
   try {
+    // Loaded on use: importing the consumer loads @aihq/scan (see scanner-consumer.ts).
+    const { createCoreBaselineVetRequests } = await import("./scanner-consumer.js");
     const requests = createCoreBaselineVetRequests(materialized.sourceRoot, materialized.catalog);
     if (requests.length !== input.batches.length) fail("publication batch count");
     const discovery = parseStrictJsonObjectV1(
@@ -443,7 +477,7 @@ export function authorPackagedAihScannerEvidenceRecordV1(
     unmappedDerivedAssets: output.coverage.unmappedDerivedAssets,
   };
   return encodePackagedScannerCollectionEvidenceRecordV1({
-    version: "packaged-scanner-collection-evidence/v1" as const,
+    version: "packaged-scanner-collection-evidence/v2" as const,
     authority: "display-only" as const,
     catalog: {
       ...output.catalog,
@@ -503,25 +537,10 @@ export async function reverifyPackagedAihScannerEvidenceRecordV1(
     !Number.isFinite(Date.parse(now))
   )
     fail("sealed AIH record");
+  // A plain data-only wrapper, checked through its descriptors before anything reads a field.
   assertRecord(sealedInput, ["bytes", "sha256"], ["bytes", "sha256"], "sealed AIH record");
-  const bytes = ownData(sealedInput, "bytes", "sealed AIH record");
-  const sha256 = ownData(sealedInput, "sha256", "sealed AIH record");
-  if (typeof bytes !== "string" || typeof sha256 !== "string") fail("sealed AIH record");
-  const sealedBytes = Buffer.from(bytes, "utf8");
-  if (
-    sealedBytes.length === 0 ||
-    sealedBytes.length > 4 * 1024 * 1024 ||
-    `sha256:${createHash("sha256").update(sealedBytes).digest("hex")}` !== sha256
-  )
-    fail("sealed AIH record");
-  const sealed = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(bytes, "Sealed AIH record"),
-  );
-  if (
-    !canonicalStrictJsonBytesV1(sealed).equals(sealedBytes) ||
-    sealed.catalog.id !== "aih" ||
-    Date.parse(sealed.verification.preparedAt) > Date.parse(now)
-  )
+  const sealed = readPackagedScannerCollectionEvidenceRecordV1(sealedInput);
+  if (sealed.catalog.id !== "aih" || Date.parse(sealed.verification.preparedAt) > Date.parse(now))
     fail("sealed AIH record");
   assertRecord(coreRevision, ["pinnedSha"], ["pinnedSha"], "core revision");
   const pinnedSha = ownData(coreRevision, "pinnedSha", "core revision");
@@ -537,14 +556,14 @@ export async function reverifyPackagedAihScannerEvidenceRecordV1(
   });
   const reverified = authorPackagedAihScannerEvidenceRecordV1(prepared);
   if (reverified === undefined) fail("reverified AIH custody");
-  const current = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(reverified.bytes, "Reverified AIH record"),
-  );
+  const current = readPackagedScannerCollectionEvidenceRecordV1(reverified);
   const encoded = encodePackagedScannerCollectionEvidenceRecordV1({
     ...current,
     verification: { ...current.verification, preparedAt: sealed.verification.preparedAt },
   });
-  if (encoded.bytes !== bytes || encoded.sha256 !== sha256)
+  // The reader proved the sealed bytes canonical under their seal, so encoding reproduces both.
+  const expected = encodePackagedScannerCollectionEvidenceRecordV1(sealed);
+  if (encoded.bytes !== expected.bytes || encoded.sha256 !== expected.sha256)
     fail("packaged AIH record differs from reverified publication");
   return prepared;
 }

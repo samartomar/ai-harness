@@ -6,12 +6,536 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** the ECC implementation moved out of Core's own code into
+  `@aihq/framework-ecc`, which ships inside `@aihq/core` (see Changed). If that bundled plugin
+  is missing from an install, `aih ecc`, `aih ecc mcp add|remove`, governed delivery of a policy that
+  selects ECC content (`aih policy project`, `aih init` on a bound project), and
+  uninstall/prune with any aih ECC state (project `.aih/ecc/` receipts, the explicit MCP
+  receipt, the ECC profile lifecycle state and receipts under `.aih/ecc-profile/`, the native
+  registration's machine state root (`AIH_ECC_STATE_ROOT` and the platform default, resolved by
+  one Core function the plugin also uses; a relative `AIH_ECC_STATE_ROOT` counts as state), the
+  machine registration ledger, aih's Codex install state) refuse before any cleanup with
+  `framework-plugin-unavailable` (or `-incompatible`), naming the state found and the
+  `@aihq/core` reinstall; nothing is skipped silently. Each state path is inspected with `lstat` component by
+  component from the file-system root, including everything above a supplied base such as
+  `AIH_ECC_STATE_ROOT`, `HOME`, `XDG_STATE_HOME`, `USERPROFILE` or `LOCALAPPDATA`: a dangling
+  symbolic link or junction, an inaccessible entry or a component that is not a directory counts
+  as state and is named with its condition, never treated as absent. When the state includes the
+  native registration's machine state root, the refusal also names that root in full, never
+  truncated, with the manual route: reinstall `@aihq/core`, or, once no project on this
+  machine uses the ECC native registration, remove the root by hand. `aih doctor`, `aih report` and
+  `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
+  report blocks while it needs ECC's knowledge and cannot get it.
+- **Breaking (library):** the library root no longer exports the ECC Package Graph
+  adapters (`projectEccCapabilityPackageAuthority`, `projectEccMaterializationAuthority`,
+  `projectEccMcpCapabilityPackageAuthority`, `projectEccMcpReceiptAuthority` and their
+  types).
+- The CLI capability lines in `aih report` and `aih mcp` no longer claim ECC install or
+  governed-ECC support per host; the ECC plugin reports that itself (the `aih ecc` preview
+  refuses an unsupported target by name, and the policy-delivery report lists unsupported
+  ECC targets).
+
+- **Breaking:** `governance.eccHookControls` is removed and replaced by the generic
+  `governance.frameworkHookControls`, keyed by framework id (`ecc`, `superpowers`), each
+  entry `{ "profile"?: string, "disabledHookIds": string[] }`. It requires schemaVersion 3
+  and `minimumCoreVersion` 0.7.0. A policy that still declares `eccHookControls` is
+  refused with the migration. Migration: move
+  `governance.eccHookControls: { "profile": P, "disabledIds": [...] }` to
+  `governance.frameworkHookControls: { "ecc": { "profile": P, "disabledHookIds": [...] } }`,
+  set schemaVersion 3 and `minimumCoreVersion` "0.7.0". A project that projected the old
+  controls has `.aih/org-policy-ecc-hook-controls-receipt.json`; projection refuses while
+  it exists: remove `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` from
+  `.claude/settings.json` `env` and delete that receipt, then project again. The new
+  receipt is `.aih/org-policy-framework-hook-controls-receipt.json`. Hook ids and profiles
+  are validated by the framework plugin against its own inventory, not by Core's schema.
+- Remove legacy MCP-target reconstruction during saved-policy consumption. Policies authored
+  against an older MCP target declaration now fail closed with `Stale selected content`; re-save
+  the policy with the currently installed Catalog's MCP targets before consuming it.
+- Core runs no detector of its own any more; every detector runs in the installed
+  `@aihq/scan`. Removed with the engines: the native trust lint, dependency-name and
+  manifest engines (`src/trust/{lint,manifest,depnames}.ts`), the binding gate's in-Core
+  inspectors and visible-typography classifier, the dormant uvx/docker deep-tier inspectors
+  (`runDeepScanTier` now takes its inspectors explicitly), the committed analyzer projects
+  `tools/cisco-skill-scanner` and `tools/trust-scanners/*` (no longer in the package
+  `files`), `tools/skillspector.Dockerfile` (the image recipe is Scan's
+  `tools/skillspector/Dockerfile`), the Snyk qualification validator and the
+  `cisco-mcp-runtime` and `snyk-agent-qualification` workflows.
+- Remove the pre-release Policy Workbench browser/HTML/server bundle and its
+  `aih --ui` and `aih policy generate` command registrations. They have no
+  compatibility stubs or `aih-ui` replacement. Core retains policy validation,
+  protected authority consumption, policy-data commands, and backend catalog
+  records needed by current consumers. Earlier Workbench work in this changelog
+  remains development history, not a current browser feature.
+- Remove Core's Catalog producer tools `tools/build-catalog-preassembly.ts`,
+  `tools/copy-policy-data.mjs` and `tools/update-ecc-content-metadata.mjs`. Catalog's build
+  regenerates that data.
+- Remove Core's unreachable copies of ECC framework code that now lives in
+  `@aihq/framework-ecc`. The removed modules are:
+  - `src/ecc/{components,evidence,select,selection-closure,materialization-selection,materialization-types,materialization-target-kiro}.ts`
+  - `src/ecc-profile/{index,render,source-closure,projection-policy}.ts`
+  - the never-wired internal `src/ecc-profile/{token-savior,plan-canvas,opt-in-hooks}.ts` slices
+
+  Dead functions are also removed from the ECC modules Core keeps, including the manifest,
+  ledger and destination writers no command called and the Kiro and governed target
+  materializers. Reachable behavior is unchanged: Core keeps the destination inspection that
+  historical runtime descriptors are checked against, the native runtime, and the receipts and
+  ledgers aih writes. It also keeps the install-preview modules that the Catalog producer tooling
+  (`check:baseline-installable`, `baseline:*`) still uses. Control matrix rows CM-40, CM-42 and
+  CM-43, which described the removed internal slices, are withdrawn.
+
+### Changed
+
+- **Behavior change: a carried pin's DEFINITION authority is the Catalog's DECLARED definition
+  (D79).** Where Core resolves a supplied `--definition` against the installed Catalog — the
+  definition resolver and the `baseline:request`, `baseline:consume-publication(s)` and
+  `baseline:assemble` bridge — the authority for a framework pin the Catalog carries is the
+  accepted descriptor's `componentDefinitions`, the declared definition, not the component list of
+  the `vendorLock` evidence lock, which records whatever definition was current when that evidence
+  was sealed. A `--definition` equal to the declared catalog is accepted and the bridge uses
+  exactly that catalog; any other definition for a carried pin is refused, including the earlier
+  `vendorLock` one when it differs. The installed coverage route, installability, the package
+  graph, the plugin runtime, the analyzer and installable checks keep reading the sealed
+  `vendorLock` catalog, which stays verified as the evidence it is. `skillContent` is decided from
+  the DECLARED PIN's own tree in the checkout's object store (never the working tree), so a
+  component whose declared path is a host directory ECC mirrors skills into (`.kiro`, `.cursor`,
+  `.agents`) is skill content when that commit holds those files, and an untracked or modified
+  file cannot change the answer. The declaration is read strictly: a wrong section version, an
+  unknown field, an unknown asset kind, a missing asset source, an asset authored at another
+  repository or commit, a checkout that is not at the declared pin, or a call without a checkout
+  refuses with `AIH_CATALOG_DECLARED_DEFINITION` and a stable reason; it never falls back to
+  `vendorLock` or to the working tree. A carried collection keeps its registered route (snapshot
+  bytes, coverage, coverage output), and `baseline:assemble` binds every emitted source's identity
+  and every component's id and paths to its resolved catalog before writing, refusing an omitted,
+  extra or altered component with `AIH_BASELINE_ASSEMBLY_INVENTORY`.
+- Catalog-production collection preparation accepts explicit candidate source-bundle and vendor-lock
+  inputs for a carried pin when its supplied definition matches the installed Catalog declaration.
+  It verifies those inputs and binds framework coverage to the supplied lock. Without candidate
+  inputs, preparation keeps the installed coverage route.
+- **Behavior change: `aih trust scan` and `aih skill vet` exit 0 on findings and evidence
+  problems (D66).** A report whose every failed check is a finding or an evidence problem exits 0;
+  the findings and problems are still in the output as labels. Exit 1 remains for integrity and
+  execution failures, codes no trust class names (fail closed), and the organization's own
+  configured requirements (`trust.unapproved-skill`, `mcp.policy-denied`, `org-policy.drift`). The
+  new opt-in `--fail-on findings|evidence-problems` (comma-separated or repeated) exits 1 when the
+  named condition is present; an unknown value is a usage error. **Upgrade note:** a CI that relied
+  on exit 1 for findings adds `--fail-on findings`.
+- ECC and Superpowers support ships inside `@aihq/core`; nothing extra to install.
+  `@aihq/framework-ecc` and `@aihq/framework-superpowers` 0.1.0 are built into Core's package
+  under `packages/` and loaded only from Core's own package directory, with every identity check
+  kept: package name and version, framework plugin contract and host API versions, and the
+  installed Catalog's identity record. They are private, never published on their own, and Core
+  no longer declares them as peers. A plugin missing from an install refuses with
+  `framework-plugin-unavailable` and names the reinstall: `npm install -g @aihq/core`, or in a project delete `node_modules/@aihq/core` and run `npm install` (npm reports a
+  project's existing package as up to date without checking its files).
+- **Findings are labels; nothing blocks on them (D50).** Exact signed evidence about a
+  component's bytes authorizes it whatever the analyzers found, and its findings and evidence
+  problems travel as labels on the verification result, the install plan, receipts, and the
+  governance and policy views. A requested aih-owned MCP control or hook stays effective when a
+  detector reports a finding, a scan fails, evidence is incomplete, or a decision covers
+  different findings or is past its review date: each is shown as `findings`,
+  `evidenceProblems` or `decisionNotes`, and a matching approval or decision is attached as
+  the organization's record. Binding provisions a scanned source whatever its gate label (ALLOW,
+  ALLOW_WITH_CONDITIONS or BLOCK), and `workspace add` and `pack install` promote a source
+  with findings and record them in the trust lock; any finding can be acknowledged, and the
+  acknowledgement is the consumer's record, never a requirement. What still refuses is
+  integrity: evidence that is missing or does not match the selected bytes, a forged or altered
+  disposition, a changed source, a decision that does not bind or was rejected or revoked, a
+  fenced prerequisite, and the organization's own configured source requirements. The
+  `baseline.evidence-blocked` check code and the `vet-blocked` exclusion reason are removed.
+- Evidence formats move to v2 and Core reads v2 only: the vendor lock is schemaVersion 2
+  (verdict `no-findings` or `has-findings`, decided by findings alone, with a required
+  `evidenceProblems` list kept apart from findings; contradictory evidence is refused), with
+  packaged-scanner-collection-evidence/v2, evidence-summary/v2 (outcome `no-findings`,
+  `has-findings` or `unknown`, plus `evidenceProblems`), the ECC runtime declared
+  evaluation v2 and the qualify occurrence report schemaVersion 2. Core needs a Catalog that
+  carries these formats.
+- The skills lockfile, the skill card and the marketplace manifest are written as
+  schemaVersion 2, whose vet verdict can be GREEN, YELLOW, RED or UNKNOWN. Version 1 files
+  still load with their own GREEN/YELLOW value set and are rewritten as version 2 only when aih
+  writes them.
+- The root-aware MCP launchers (code-review-graph, codebase-memory-mcp and serena) have a
+  portable identity (D60): the approval subject hashes a path-free launcher document (server,
+  wrapper id and option contract, package, dependency lock, fixed options, path option names
+  and risk), and the runtime reports it only after verifying that the entry runs Core's own
+  wrapper. A Workbench selection of these launchers now becomes effective. **Upgrade note:** a
+  0.6.2 policy that selected code-review-graph, codebase-memory-mcp or serena names the old
+  machine-bound subject and reads `runtime-mcp-identity-mismatch` until it is re-selected
+  from a Catalog that carries the new declarations.
+- The ECC review records move to v2.2.1 (`5064474d`): the hook-control inventory gains
+  `pre:powershell:gateguard-fact-force` (44 rows, 43 disable-eligible) and binds the OpenCode
+  plugin source `.opencode/plugins/ecc-hooks.ts`; the skill-name set is unchanged; the MCP
+  contract digest is `d93be2b6…` (only the ito-compute description changed). A saved
+  `governance.eccMcpApprovals` entry or an ECC MCP explicit-add receipt record made for other
+  ECC content (a 0.6.2 approval at `a4426254…`, a receipt at `5caf398a`) no longer makes the
+  policy or the receipt invalid (D74): it is kept and labelled "recorded for ECC content <old>;
+  current is <new>; re-approve" (a receipt record reads `stale` with its `aih ecc mcp add`
+  route), and it never authorizes content it was not made for. Re-approving the MCP, or re-running
+  Add under a current approval, replaces it.
+- Core accepts the analyzers `@aihq/scan` installs after the U1 upgrade, each by version and
+  uv.lock digest: Semgrep 1.178.0, Cisco skill-scanner 2.1.0 (one lock under every profile, so
+  the host-profile known gap is gone), cisco-ai-mcp-scanner 4.8.4, snyk-agent-scan 0.6.4, and
+  SkillSpector v2.12.0 (`c7958a32…`, image `sha256:efe47bd7…`). The previous identities are
+  refused with the existing typed refusals. Rule ids new at those releases (19 SkillSpector, 24
+  Cisco, listed with provenance in `src/trust/unreviewed-analyzer-rules.ts`) report
+  `trust.unreviewed-analyzer-rule`, a WARN labelled "new analyzer rule, not yet reviewed" that
+  never blocks, wherever no existing route gives them a specific meaning (an egress, legal-text or
+  autonomy classification wins unchanged); any other unmapped id keeps its route. The Catalog fixture Core tests against
+  now carries the requalified vendor lock, vetted with these analyzers, so pin currency reports
+  no drift. `prepare:workbench-collection-evidence` takes
+  `--definition-overlap <disjoint|compiler-catalog>` (default `disjoint`), as the scanner
+  bridge already did.
+- `@aihq/framework-ecc` supports affaan-m/ECC v2.2.1 (`5064474d`) and requires a Catalog that
+  pins it. The ECC profile accounts 117 baseline skills: of the four ECC v2.2.1 adds,
+  `dev-team` and `living-docs-governance` are projected, and `council-multi-model` (sends
+  council material to OpenAI through an unmanaged Codex CLI) and `skill-comply` (runs nested
+  agents with pre-approved Bash and model-generated setup commands) are projected as unavailable
+  with a fallback, so only their stub ships, never their bundled scripts. The new role
+  `rag-pipeline-reviewer` is projected read-only. Core's installation trust record appends a
+  version-2 anchor for profile installations rendered at `5064474d`, for offline repair,
+  rollback and uninstall.
+- `@aihq/framework-superpowers` supports obra/Superpowers v6.4.1 (`5bf4e780`) and requires a
+  Catalog that pins it. It reads the five hooks Catalog records at that commit, including
+  Hermes's `pre_llm_call` hook, and labels the Muse and Hermes declarations `unenforced` with
+  the host's own hook controls as the next route. Devin's manifest declares no hook.
+- **Breaking:** `aih ecc --lifecycle install|update` (the ordinary ECC profile lifecycle) now
+  renders only from profile evidence in the installed Catalog's ECC framework descriptor
+  (`sections.profileEvidence`), bound to the plugin's one upstream commit. `@aihq/framework-ecc`
+  embeds no profile evidence. Until the installed Catalog carries that section, install and
+  update refuse with `framework-profile-evidence-unavailable` and name the next route; repair,
+  rollback and uninstall of an existing profile installation are unchanged. Every object in the
+  section, including the nested pinned manifest and module evidence, is strict: an unknown key
+  or a mistyped field refuses with `framework-profile-evidence-incompatible` naming its key path.
+- `aih ecc --lifecycle rollback` now authenticates the rollback snapshot as well as the active
+  installation: its source identity and projection digest must equal an entry in Core's
+  append-only ECC profile installation trust record before any write is planned. A snapshot that is not
+  anchored there (including a self-consistent one with recomputed hashes) refuses with
+  `framework-profile-recovery-unanchored` and writes nothing; repair, rollback and uninstall
+  report an unanchored active identity with the same typed refusal.
+- Move the developer-tool pins to their latest releases, each bound to its exact version,
+  full source commit and registry integrity re-observed on 2026-09-24:
+  - Chrome DevTools MCP 1.10.1. Everything aih emits for it now sets
+    `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`,
+    so its usage statistics, including the new MCP client name report, and its per-launch
+    registry update check never run. It also passes `--no-performance-crux`, so the
+    performance tools never send page URLs to the Google CrUX API. The Codex ECC install now also refuses, with
+    `mcp.telemetry-opt-out-missing`, when an entry in the user or project Codex config
+    launches `chrome-devtools-mcp` without both variables set to `"1"`. The refusal names the
+    entry and the missing variable. aih never rewrites that entry: remove it so aih manages
+    chrome-devtools, or add both variables.
+  - Token Optimizer v5.13.21 (159 manifest records). Its licence is still PolyForm
+    Noncommercial 1.0.0, now with an added `LICENSE-SMALL-BUSINESS.md` permission for
+    internal use by organisations with fewer than 5 people and under US$20,000 per month
+    in revenue.
+  - Code Review Graph 2.3.9 and Codebase Memory MCP 0.11.0 in the guarded native default
+    runtime (hash-locked closure re-exported with the matching resolution cutoff). Codebase
+    Memory 0.11.0 answers `list_projects` and `index_status` with a compact table by default,
+    so aih and the repository helper now request JSON explicitly.
+  - Codebase Memory MCP 0.11.0 for the raw fallback. The raw Code Review Graph fallback stays
+    on 2.3.7 because 2.3.8 and 2.3.9 turn ambient `CRG_OPENAI_*` variables into implicit
+    network egress.
+  - Playwright MCP 0.0.82, MarkItDown 0.1.8 (the CLI runtime and the converter the MCP adapter installs) and the GitHub MCP
+    self-host image v1.12.2.
+- ECC profile recovery identities are versioned. Installs and updates now record version 2,
+  whose projection digest also binds each file's merge strategy (`replace` or `toml-merge`), so a
+  snapshot entry switched between them no longer authenticates. A version-1 identity recorded by
+  an earlier release still verifies under version 1, and its write semantics must also match a
+  version-2 anchor at the same pin; a changed merge strategy refuses with
+  `framework-profile-recovery-unanchored`. The installation trust record appends the version-2
+  identity of ECC 0c1d7be9.
+- The ECC profile projection writes only the unavailable stub for a skill a client cannot run.
+  Scripts, references and other files beside that skill's `SKILL.md` are no longer copied to that
+  client. Upstream provenance and accounting are unchanged: every pinned source is still consumed
+  and the skill stays in the client inventory. A stub for a skill with such files carries derived
+  provenance (`unavailable-skill-stub`) that lists them as inputs. For the 0c1d7be9 pin the
+  projection now has 703 files instead of 759. Core's installation trust record appends the new
+  version-2 anchor and keeps the earlier anchors, so installations made before this change still
+  recover.
+- `aih ecc --lifecycle update` migrates an installation within its ECC pin when Core's
+  installation trust record anchors both the installed and the new projection at the same source
+  closure, such as an 0c1d7be9 installation moving to the stub-only render. It removes the files
+  aih owned that the new projection drops, leaves operator files alone, keeps merge destinations,
+  and keeps rollback to the installed projection. Any other change within the installed pin still
+  refuses. `--lifecycle repair` of an installation that a later anchored render of its pin
+  supersedes refuses and routes to update, instead of restoring files the current render withholds.
+  These refusals are typed `AIH_FRAMEWORK_PLUGIN` errors with a stable reason and a next route:
+  `framework-profile-superseded` (repair of a superseded installation),
+  `framework-profile-update-same-pin` (any other update within the installed pin) and
+  `framework-profile-already-owned` (install over an installation of another pin or projection),
+  where the CLI used to report a generic `AIH_ERROR`.
+- `@aihq/framework-ecc` validates the ECC descriptor's module graph where it reads it: a
+  dependency or profile member naming a module the graph lacks, a repeated module id, or a
+  dependency cycle refuses with `AIH_FRAMEWORK_DESCRIPTOR` naming it. A structural dependency
+  closure that cannot be computed is now a typed refusal instead of an empty closure, so governed
+  materialization can no longer admit a component whose dependencies were never resolved.
+- The ECC profile installation trust record (the recovery anchors) moved from
+  `@aihq/framework-ecc` into Core: `ECC_PROFILE_INSTALLATION_TRUST_V1`, a frozen, append-only
+  record exported through `@aihq/core/framework-host` (additive; host API version 1 is
+  unchanged). Recovery checks only Core's record: the plugin ships no anchors and has no seam to
+  add one at runtime, so a plugin release can no longer authorize its own receipts.
+- `aih ecc --lifecycle uninstall`, `update` and `rollback` no longer delete an ECC profile merge
+  destination (such as `.codex/config.toml`) when only whitespace remains after the managed blocks
+  are removed. They write the stripped bytes and name the kept file in the plan. The receipt's
+  `previousHash` sits outside every recovery anchor, so a forged value can no longer turn a
+  pre-existing empty or whitespace-only operator file into a deletion; an aih-created file is kept
+  the same way, for you to remove by hand if nothing uses it.
+- **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
+  The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
+  to prove that a plugin entry resolves inside its own install tree. `aih doctor` and
+  the readiness report now check the minor version too, so Node 20.0 to 20.5 fails the
+  runtime gate instead of passing it. Migration: upgrade Node to 20.6 or later (Node 22
+  LTS is recommended).
+- **Breaking:** Catalog-owned data no longer ships in Core. The ECC and Superpowers framework
+  descriptors (component definitions, module and profile graphs, install preview, MCP, skill and
+  hook inventories, vendor lock), the Policy Workbench authoring bundle and source inputs, the
+  public baseline, Core qualification material, scanner evidence and scanner-provider inputs
+  (including the Matt Pocock and Ponytail snapshots) are read only from the installed
+  `@aihq/catalog` 0.3.x. Operations that need them (ECC install preview and lifecycle, baseline
+  vetting and analysis, framework plug-ins, policy authoring and policy-data preparation or
+  import) report `catalog-package-unavailable` without Catalog and `catalog-package-incompatible`
+  for a Catalog that cannot supply them; Core-only operations keep working. There is no embedded
+  fallback. Migration: install `@aihq/catalog` 0.3.x next to Core.
+- **Breaking:** Core accepts each Catalog-carried authority input only when its SHA-256 matches
+  the digest this Core release pins, and refuses any other bytes with
+  `catalog-package-incompatible` naming the unaccepted SHA-256. A Catalog self-digest is an
+  integrity check, not authority. Policy bindings are derived by Core from the admitted authoring
+  bundle; bindings shipped by Catalog are ignored. Migration: use the Catalog release this Core
+  release accepts.
+- Core decodes every Catalog document and the Catalog package manifest as exact UTF-8: a
+  byte order mark or invalid UTF-8 is refused with `catalog-package-incompatible` instead of
+  being stripped or replaced with U+FFFD.
+- **Breaking:** Core no longer compiles Catalog-owned content. The `built-in/v1`,
+  `pinned-baseline/v1`, `pinned-skill-collection/v1` and `pinned-component-collection/v1`
+  producers, the Matt Pocock and Ponytail scanner providers and the embedded Workbench
+  preassembly moved to Catalog; Core keeps those format identities only to validate what Catalog
+  admits. Compiling a replacement Catalog-owned baseline is refused. Organization-authored
+  manifests and witnessed organization evidence still compile. Migration: regenerate
+  Catalog-owned content with Catalog's generators.
+- **Breaking:** Vetting an upstream pin that the installed Catalog does not carry is refused.
+  `aih baseline vet --pin <other>`, an `AIH_ECC_REF` other than the Catalog's pin, and baseline
+  analysis at another pin fail with `AIH_TRUST` naming both pins (`Catalog <framework> carries
+  pin <carried>; it does not carry requested pin <requested>`). Core no longer rebinds the
+  framework layout to an organization-vetted newer pin. Migration: install a Catalog that carries
+  the pin (Catalog's framework-descriptor generators produce one) and a Core release that accepts
+  that descriptor's SHA-256.
+- `@aihq/catalog` is now an optional peer dependency (`>=0.3.0 <0.4.0`), loaded at run
+  time through one module and never bundled. The historical ECC runtime descriptor used by
+  `aih ecc --lifecycle install` and `aih policy project` is resolved in a recorded order: a
+  matching verified local source-data receipt, then the installed Catalog's
+  `./catalog-runtime-descriptors.json` accepted only against the sha256 Core pins. A missing
+  Catalog is `catalog-package-unavailable`; an installed Catalog that cannot supply the
+  descriptor is a named refusal (`catalog-package-incompatible`,
+  `catalog-index-refused`, `catalog-runtime-descriptors-refused`,
+  `catalog-descriptor-absent`, `catalog-descriptor-unverified`,
+  `catalog-descriptor-not-accepted`), never an embedded fallback. The registry's
+  `@aihq/catalog` 0.2.0 is outside the peer range. The same bytes
+  are accepted as before (`sha256 52e67554…` for `affaan-m/ECC@5064474d…`), and the
+  source used is printed on stderr.
+- `@aihq/scan` is now an optional peer dependency (`>=0.5.0 <0.6.0`) and is no longer
+  bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
+  and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`
+  and update Scan independently. A Core-only installation supports operations that do not
+  require a sibling package; what needs Scan reports `scan-package-unavailable` or
+  `scan-package-incompatible` with the install command, and never falls back to a bundled copy.
+- Every detector runs in the installed `@aihq/scan` through its public API; Core keeps
+  inventory, classification, grading, policy and the gate decisions. `aih trust scan`,
+  `aih skill vet` and workspace acquisition take their native findings from Scan's
+  `detector.aih-trust-lint` (profile `in-process-trust-lint-v1`) and the facts it
+  reports; SkillSpector, Cisco, Cisco MCP scanner, Semgrep and Snyk Agent Scan run through
+  `runDetectorV1` under the profile Core names (uv detectors `host-process-uv-v1` on
+  every OS unless policy selects `linux-namespace-uv-v1`; SkillSpector only under the
+  never-pull `docker-host-local-skillspector-v1` container profile, with the policy's
+  approved local digests). The baseline vet's source-wide Cisco shards run through
+  `runCiscoShardV1` bound to the uv.lock digest Scan publishes for the profile, and the
+  baseline preflight asks `probeDetectorAvailabilityV1`. The binding scan gate's FAST tier
+  is Scan's `detector.aih-binding-gate`; `inspectTree` and `runFastScanGate` are now
+  asynchronous, the gate's typography overlay reads Scan's per-file verdicts, and the
+  derived scan cache moves to schema version 4 (older records are recomputed). A missing or
+  incompatible Scan is `scan-package-unavailable` or `scan-package-incompatible`
+  (`AIH_SCAN_PACKAGE`); Core never runs a detector in its place. The runtime advisory
+  names each detector's executor (`scan`, `precomputed-sarif`, `none`) and records Scan's
+  `detector.aih-native` identity observation.
+- Semgrep results are mapped through Core's canonical rule map for every executor, so the
+  same finding carries the same code whether Semgrep ran in Scan or arrived as SARIF.
+- Every SARIF log Core reads from Scan (a delegated run, precomputed SARIF, or a Cisco shard
+  job's output) passes one strict check: SARIF 2.1.0, every run an object with a results
+  array, typed result fields, positive start lines and source-relative URIs kept verbatim.
+  A malformed log fails the detector (a required detector fails at enterprise posture);
+  precomputed SARIF with absolute or unknown-rule results is no longer rewritten or read.
+- Scan's trust-lint facts must cover every selected file, or the native findings fail at
+  every posture instead of third-party findings losing their corroboration. The binding gate
+  recomputes each content pin from the file before any acceptance applies.
+- A SIGINT or SIGTERM during a delegated Scan call now waits, up to 30 seconds, for the
+  cancelled call to settle before command cleanup and the re-raised signal, so Scan removes
+  its snapshot and analyzer temporary directories; a call that does not settle in time is
+  reported on stderr as a cleanup warning.
+- Core pins the analyzer identity it accepts from Scan per detector and execution profile
+  (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`: analyzer version and uv.lock sha256). A capability
+  that declares another identity, or a run whose evidence names one, is refused as
+  `trust.detector-unavailable` naming the expected and observed identity; the binding gate
+  and Cisco shards refuse the same way. Fresh baseline vets name each uv analyzer from that
+  table, never from Scan's declaration (the host-process Cisco lock, which differs from the
+  committed receipts' lock, is an explicit table entry). Committed baseline evidence is still
+  checked against the pinned identities.
+- A detector run counts as completed, zero findings included, only when its SARIF proves the
+  analysis completed. Every log Core reads from Scan (delegated, precomputed, or a Cisco shard
+  job) must have at least one run, each naming a tool driver and reporting non-empty
+  `invocations` that are all `executionSuccessful: true`, with well-formed notifications and
+  none at `error` level. A delegated run, the binding gate and every Cisco shard job (in the run
+  and again before the join) must also carry Scan's completion evidence v1
+  (`invocations[0].properties.aihScanCompletionV1`). Core recomputes the subject digest and file
+  count from the files it submitted, and requires the requested detector and the analyzer
+  identity it accepted. Zero analyzed files are accepted only for the five detectors that
+  complete on an empty source. Anything else is `trust.detector-unavailable` (outcome `failed`).
+  An `@aihq/scan` without completion evidence (before S2g) therefore fails every delegated
+  detector, and a Snyk or mcp-scanner run whose SARIF names no tool driver fails too.
+- A SkillSpector run must state the image that ran (`evidence.observation.image`): its digest
+  must be Core's pinned digest or one Core's policy accepted for the request, stated with the
+  acceptance that digest implies (`scan-pinned` for the pinned digest, `caller-accepted`
+  otherwise) and a reference, and the observation's analyzer version must name exactly that
+  image under the pinned source revision. A missing or contradictory image fails the detector;
+  any other detector that states an image fails too.
+- Each delegated detector call, and the binding gate, binds its own subject: Core recomputes
+  it immediately before the call, checks the completion evidence against it, and recomputes it
+  after the call returns; a tree that changed during the call fails the detector. The
+  whole-tree inventory is no longer cached across the detectors of one scan, so a change between
+  two detectors is judged against the tree each one actually saw.
+- Precomputed SARIF (a Scanner annex) counts as completed only when every run carries
+  completion evidence v1 for the tree Core is scanning: the requested detector, the subject Core
+  recomputes for that detector, and an analyzer identity Core pins for it. SARIF with no
+  completion evidence at all, which is every publication made before Scan S2g, is never counted
+  complete: it is `trust.detector-unavailable` with reason `completion-evidence-absent`
+  (outcome `unavailable`), and must be republished with evidence. Evidence that is present but
+  wrong fails the detector. Joined Cisco shards stay exempt from the one-subject check because
+  each job was checked against its own subject; only a join `joinCiscoShardResults` verified
+  (`joinedCiscoShardSarif` now returns it as a `VerifiedCiscoShardSarifV1`) is exempt.
+- A verified Cisco shard join is exempt only for the tree it was verified for: the scanned root
+  (by realpath) must be the root it was issued for, the tree's jobs must be exactly the join's
+  jobs, and every job's subject, rehashed at the scan, must equal the subject verified at the
+  join. A join presented for another root, a job added or removed, or a job changed after the
+  join fails the detector naming the difference. No caller can name the root a join is bound
+  to: `joinedCiscoShardSarif` binds it to the verified root, and a baseline component scan gets
+  its join through `withCiscoShardJoinProjectionV1`, which creates the projection directory,
+  copies the included jobs into it from the verified root, and binds the join to that directory
+  by identity (device, inode and birth time, a real directory and never a link or junction).
+  The join is revoked when the projection's scan settles: presented afterwards, even at a
+  recreated pathname with the same jobs, it fails with "the shard join's projection no longer
+  exists", and a directory replaced at the same pathname during the scan fails too. A join whose
+  selected jobs nest (`skills/a` and `skills/a/nested`) can now be projected: Core copies only the
+  outermost selected jobs and still binds and rehashes every selected job. A file-system error
+  while Core checks a projection's identity at the scan fails the Cisco detector with a refusal
+  naming the path and the error code (such as `EACCES`), instead of rejecting the whole scan. A
+  projection Core cannot prepare (reading its identity, copying a job, resolving it) is never
+  scanned: `withCiscoShardJoinProjectionV1` now returns a typed result, either `scanned` with the
+  scan's own result or `refused` with the failed Cisco detector naming the path and code, and
+  reads nothing more there; baseline vet uses the refusal as the component's scan. A projection
+  Core cannot remove no longer replaces the result or the scan's own error, and is never lost:
+  the result carries a typed `cleanupFailure` with the path and code, and a rejected scan's own
+  error carries it as a `cleanupFailure` property (only a rejection that cannot take the
+  property, such as a frozen error or a thrown string, is wrapped in a
+  `ProjectionCleanupRejectionV1` whose `cause` it is; `projectionCleanupFailureOfV1` reads it).
+  Baseline vet keeps it on the component scan it returns (`projectionCleanupFailures`, also
+  reported as progress), and its own component projection now follows the same rules. Baseline
+  vet's "produced no analyzer receipt" error now names the detector diagnostics too.
+- The record `joinCiscoShardResults` verified is stored deep-frozen, and
+  `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each
+  job's subject), so a caller can no longer replace a job's SARIF, add or remove a job, or edit a
+  path, subject or root that the shard exemption later reads.
+- Precomputed SARIF must name the analyzer Core pins under the one profile Core requires for it,
+  no longer any pinned profile: the caller's `uvExecutionProfileId` when stated, otherwise Core's
+  default `host-process-uv-v1`. An annex naming another profile's identity (such as Cisco's
+  host-profile `knownGap` lock under the namespace profile) fails the detector with a message
+  naming both profiles. SkillSpector's image rule is unchanged. A baseline vet that aborts for a
+  missing required analyzer now also names detectors the source-wide scan graded `skip`, not only
+  `fail`.
+- Scanner-publication (baseline-vet) annexes are checked against Scan's baseline rule (decision
+  D24): only an annex the Scanner consumer issued after Scan's attestation verified carries
+  that rule, as a private brand on the `ScannerBaselineVetAnnexV1` it creates for the detector the
+  annex was published for; a plain string, a caller-built wrapper or another detector's annex is
+  inline SARIF, and no option lets a live scan claim the rule. Core recomputes the subject over
+  the consumer's source root as what Scan's batch snapshot received, for Semgrep, SkillSpector
+  and Cisco (Cisco as the whole-snapshot skill-directory scan): the top-level `.git` is left out
+  before the walk, so a broken link inside it no longer fails the subject, and a link must be
+  relative and resolve through real directories to a real file or directory inside the root, so
+  an absolute link, a link to or through another link, a link into `.git`, and a directory link
+  naming a directory that holds a link are refused as the snapshot refuses them. A directory link
+  contributes nothing (D26). The analyzer must be the one Scan's
+  batch runs (`SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1`, mirroring Scan's
+  `BASELINE_BATCH_EXECUTION_PROFILES_V1`): the `linux-namespace-uv-v1` identity for Semgrep and
+  Cisco, and `docker-hardened-skillspector-v1` (no lock, the pinned revision at an accepted digest)
+  for SkillSpector. Another profile's identity or a subject that includes `.git` fails the
+  detector; an evidence-less annex stays
+  `completion-evidence-absent`. Delegated runs and inline precomputed SARIF are unchanged.
+- An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
+  without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
+  malformed one such as `@my team` with its field path instead of ignoring it, and Scan
+  refuses one that arrives through `AIH_TRUST_INTERNAL_SCOPES`. This is an intentional
+  fail-closed change.
+- SARIF locations with a nonempty `file://` authority are refused as repository paths;
+  local `file:///` locations remain supported.
+- Independent Serena and Token Optimizer selections can be inspected with
+  read-only `aih developer-tools <root>` without requiring ECC selection.
+  Applying Token Optimizer still requires explicit license acceptance and a Codex
+  target; its usage is not reported as MCP usage.
+- The native-detector identity is regenerated for these `src/trust` changes. Earlier
+  native-detector reports are unchanged and need a new scan to carry the current identity.
+
 ### Added
 
+- Framework hook inventories accept a declaration for a host aih does not control (Catalog's
+  Superpowers `muse` declaration; Hermes and Devin follow). The declaration stays on its selectable
+  row with `hostControl: { kind: "none", enforcement: "unenforced", nextRoute }`, the next route
+  being that host's own plugin or hook controls. A disable of such a hook is planned for the
+  targeted hosts only (an undeclared targeted host stays `not-applicable`) and carries an
+  `unenforced` label for the uncontrolled host; aih never claims enforcement there. A malformed
+  host id is still refused. `FrameworkHookDeclarationV1.host` widens from `Cli` to a host id.
+- `@aihq/core/framework-host` exports `eccRuntimeScriptPath()`, the installed Core's own
+  `dist/ecc-runtime.js`. Native ECC registration from `@aihq/framework-ecc` runs that script;
+  the plugin ships no runtime of its own.
+- `@aihq/core/framework-host` exports `tomlParserModulePath()`, the installed Core's own
+  smol-toml entry, and the `ExecSidecar` and `RunResult` types. The Chrome DevTools MCP opt-out
+  predicate (`src/ecc/chrome-devtools-opt-out.cjs`) now ships in `@aihq/framework-ecc`, which
+  loads it from its own installation at plan time and in the Codex merge child, and judges TOML
+  with Core's parser at both stages; Core no longer ships it.
+- A user-level framework hook-control list, `frameworkHookControls` in the project's
+  `.aih-config.json`, keyed by framework id with `{ disabledHookIds }` only. It may only add
+  disables of disable-eligible rows; a profile or any other field is refused by name, since
+  enterprise policy is the only profile source. A malformed list fails closed. Framework plugin commands receive the merged
+  request in their policy view, and `aih policy project` applies the plugin's plan. Core
+  checks the plan's coverage: each requested disable must come back as exactly one disabled
+  decision under its strongest authority, with exactly one host decision per targeted host, and no
+  hook the request did not name may come back disabled, whatever authority it claims (unrequested
+  hooks stay enabled inventory decisions); an omission, a duplicate or an unrequested disable
+  refuses with `framework-plugin-incompatible`.
+- Org policy `trust.uvExecutionProfile` (`host-process-uv-v1` or `linux-namespace-uv-v1`)
+  names the execution profile Scan runs the uv-backed detectors under.
+- Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
+  runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
+  `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain
+  `--activate-headroom` (which requires `--accept-headroom-egress`) and `--deactivate-headroom`.
+  Activation installs the hash-locked closure in `src/tools/headroom-runtime/` into AIH-owned
+  state, pre-provisions two tokenizer vocabularies, records an activation receipt (consent flags
+  and UTC time, pins, lock digests, hosts, launcher digest), proves a real MCP handshake
+  (`initialize`, exactly `headroom_compress`/`headroom_retrieve`/`headroom_stats`, and a
+  `headroom_stats` call) and only then registers a `headroom` MCP server in the selected hosts.
+  Its launcher runs `headroom mcp serve` offline with `HEADROOM_BEACON=off`, `DO_NOT_TRACK=1`,
+  `HEADROOM_UPDATE_CHECK=off`, `HEADROOM_OFFLINE=1` and LiteLLM's network defaults switched off.
+  Deactivation and policy exclusion remove only unchanged AIH-owned host entries and all Headroom
+  state. Headroom's proxy, `wrap`, `deploy` and `learn --apply` modes are not used. A policy can
+  exclude Headroom but cannot activate it. Explicit Headroom choices require a V3 policy floor of
+  Core 0.7.0; existing explicit selections and 0.6.0 policies without Headroom remain accepted.
+- Add a primary code-graph choice. `developerTools.primaryCodeGraph` (`code-review-graph` or
+  `codebase-memory-mcp`, V3, Core 0.7.0 floor) binds when a policy sets it; otherwise
+  `--primary-code-graph <id>` on `aih developer-tools` and `aih init` records the user's choice in
+  the developer-tools receipt. Both tools stay available. The generated
+  `rules/agent-behavior-core.md` names the primary, and `aih doctor`'s large-repo graph readiness
+  checks Codebase Memory through its managed launcher when it is the primary.
+- Add `tools/verify-developer-tools-installed.mjs`, an installed proof that builds and packs Core,
+  installs it into a disposable consumer, and proves real Code Review Graph, Codebase Memory and
+  Headroom MCP setups against a disposable project with redirected home and state directories.
 - Add Playwright to default developer-tool setup for every project, with a headless isolated
   browser check and persistent policy opt-outs. Existing explicit tool selections stay unchanged.
-- Group default tool choices inside the compact Workbench Deployment setup. Keep catalog details
-  accessible there and remove duplicate default-tool rows from catalog browsing.
 - Add MarkItDown CLI to default developer-tool setup, with a pinned local-document runtime,
   conversion verification and persistent policy opt-outs. Its MCP adapter is separately optional.
 - Refresh Playwright MCP to 0.0.81 and the optional self-hosted GitHub MCP image to v1.12.1
@@ -36,7 +560,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   readiness and HTML results, keeping installed guidance separate from native
   loading and enforced behavior. Document independent adopter delivery and the
   required/optional content ownership contract.
-- Project authored organization command rules into Claude's native project
+- Project policy-supplied organization command rules into Claude's native project
   permissions with entry ownership, preserving custom rules and hooks during
   updates and withdrawal. Keep other clients advisory and native refusal
   verification separate from generated configuration.
@@ -52,31 +576,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Select the five Core baseline choices in new Workbench drafts and remove
-  GitHub from the Core browse list, preserving imported choices. Identify bundled
-  first-party skills, agents, and hooks separately from scan and qualification
-  status, with their package paths visible in the inspector.
-- Explain missing Workbench reports with an owner and next step. Show matching
-  reports from previous AIH catalog snapshots for reading, preserving findings
-  and dates without treating them as current evidence. Generated methodology
-  profiles link to separate source-item reports without claiming profile coverage.
-- Use one page scroll for the Workbench catalog and Policy exposure panel, so moving
-  the mouse between columns does not switch scrollbars. Mobile detail drawers scroll separately.
 - Prune ECC files only through recorded ownership and matching content digests, preserving
   unreceipted or modified files and removing the automatic upstream-uninstaller fallback.
 
 - Require explicit ECC hook/runtime consent across direct and Codex materialization,
   preview and reconciliation; Core and Full content profiles do not supply that consent.
   Keep governed runtime exclusions and consult-only boundaries intact.
+- Describe the pinned ECC installer's own plan in the install preview again. The ownership
+  refusal stays at apply: the preview route keeps component selection, the root-escape check,
+  the normalized destination-collision check, the MCP exclusion, executable consent for
+  host-runtime operations and the pinned adapter's own destination (including the Claude
+  settings hook merge, described with the artifact's existing `merge-json` kind), so
+  `baseline:assemble` writes the lock and preview for a pin whose plan carries upstream
+  scaffold material.
 - Preserve validated scoped MCP environment values in deterministic Codex TOML projection.
 - Support the pinned Token Optimizer 5.13.14 Codex quiet and balanced hooks,
   keeping approved commands bound to the authenticated source and preserving
   receipt ownership, custom hooks and policy exclusions.
 - Pin Commander to the maintained Node 20-compatible 14.0.3 release so Core's
   runtime dependency agrees with its advertised Node floor and existing test matrix.
-- Restore effective ECC selections when importing an exactly qualified source
-  into Workbench. Bind components to the verified local descriptor and preserve
-  explicit organization overrides and historical destination authority.
 - Keep one governed Codex skill projection in `.agents/skills/` during normal
   setup. Reconcile unchanged receipt-owned duplicate projections while preserving
   edited/custom content and unrelated client settings. Route generated governed

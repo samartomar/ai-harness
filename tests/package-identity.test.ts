@@ -37,7 +37,7 @@ describe("Core package identity (#866)", () => {
     }
   });
 
-  it("uses the current Core release identity without changing the command or exports", () => {
+  it("uses the current Core release identity with its pinned command and exports", () => {
     const manifest = JSON.parse(read("package.json")) as Record<string, unknown>;
 
     expect(manifest.name).toBe("@aihq/core");
@@ -47,6 +47,11 @@ describe("Core package identity (#866)", () => {
       ".": {
         types: "./dist/index.d.ts",
         import: "./dist/index.js",
+      },
+      // The versioned host API framework plugins import (C3).
+      "./framework-host": {
+        types: "./dist/framework-host/index.d.ts",
+        import: "./dist/framework-host.js",
       },
       "./schemas/*.json": "./schemas/*.json",
       "./package.json": "./package.json",

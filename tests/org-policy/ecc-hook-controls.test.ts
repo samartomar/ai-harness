@@ -10,66 +10,9 @@ import {
 } from "../../src/org-policy/ecc-hook-controls.js";
 import { ECC_SKILL_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-skill-catalog.js";
 import { POLICY_ENGINE_FIELD_CONSUMERS } from "../../src/org-policy/effective.js";
-import { parseOrgPolicy } from "../../src/org-policy/schema.js";
-
-function policy(eccHookControls?: Record<string, unknown>): Record<string, unknown> {
-  return {
-    schemaVersion: 2,
-    minimumPosture: "vibe",
-    references: { repoContract: "ai-coding/project.json" },
-    governance: {
-      policyVersion: "2026.08",
-      supportedClis: ["claude"],
-      catalog: { reviewed: [], custom: [] },
-      activations: [],
-      authority: { approvals: [] },
-      ...(eccHookControls === undefined ? {} : { eccHookControls }),
-    },
-  };
-}
 
 describe("source-locked ECC hook controls", () => {
-  it("canonicalizes disable ids in pinned source order for the selected profile", () => {
-    expect(
-      parseOrgPolicy(
-        policy({
-          profile: "standard",
-          disabledIds: ["post:quality-gate", "pre:observe"],
-        }),
-      ).governance?.eccHookControls,
-    ).toEqual({
-      profile: "standard",
-      disabledIds: ["pre:observe", "post:quality-gate"],
-    });
-    expect(parseOrgPolicy(policy({ profile: "minimal" })).governance?.eccHookControls).toEqual({
-      profile: "minimal",
-    });
-    expect(parseOrgPolicy(policy()).governance?.eccHookControls).toBeUndefined();
-  });
-
-  it("rejects duplicate, unknown, wrapper, and profile-ineligible disable ids", () => {
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:observe", "pre:observe"] })),
-    ).toThrowError(/unique/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["unknown:hook"] })),
-    ).toThrowError(/expected one of/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:bash:dispatcher"] })),
-    ).toThrowError(/expected one of/i);
-    expect(() =>
-      parseOrgPolicy(policy({ profile: "standard", disabledIds: ["pre:bash:tmux-reminder"] })),
-    ).toThrowError(/not eligible under the standard profile/i);
-    expect(
-      parseOrgPolicy(policy({ profile: "strict", disabledIds: ["pre:bash:tmux-reminder"] }))
-        .governance?.eccHookControls,
-    ).toEqual({
-      profile: "strict",
-      disabledIds: ["pre:bash:tmux-reminder"],
-    });
-  });
-
-  it("binds all reviewed source files and the exact 43-row, 42-gated active-pin inventory", () => {
+  it("binds all reviewed source files and the exact 44-row, 43-gated active-pin inventory", () => {
     for (const provenance of [
       ECC_CONTENT_METADATA_PROVENANCE,
       ECC_SKILL_CATALOG_PROVENANCE,
@@ -77,12 +20,12 @@ describe("source-locked ECC hook controls", () => {
     ]) {
       expect(provenance).toMatchObject({
         repository: "affaan-m/ECC",
-        commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+        commit: "5064474d4d762dc9640234a41617cccb79185cec",
       });
     }
     expect(ECC_HOOK_CONTROL_PROVENANCE).toMatchObject({
       repository: "affaan-m/ECC",
-      commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+      commit: "5064474d4d762dc9640234a41617cccb79185cec",
     });
     const sourcePairs = ECC_HOOK_CONTROL_PROVENANCE.sources.map(({ path, sha256 }) => [
       path,
@@ -98,10 +41,11 @@ describe("source-locked ECC hook controls", () => {
       "scripts/hooks/posttooluse-dispatcher.js",
       "scripts/hooks/run-with-flags.js",
       "scripts/lib/hook-flags.js",
+      ".opencode/plugins/ecc-hooks.ts",
     ]);
-    expect(eccHookControlCatalog).toHaveLength(43);
-    expect(new Set(eccHookControlCatalog.map(({ id }) => id)).size).toBe(43);
-    expect(ECC_DISABLE_ELIGIBLE_HOOK_IDS).toHaveLength(42);
+    expect(eccHookControlCatalog).toHaveLength(44);
+    expect(new Set(eccHookControlCatalog.map(({ id }) => id)).size).toBe(44);
+    expect(ECC_DISABLE_ELIGIBLE_HOOK_IDS).toHaveLength(43);
     expect(
       eccHookControlCatalog.filter(
         ({ disableEligible, profiles }) => disableEligible && profiles.includes("minimal"),
@@ -111,15 +55,23 @@ describe("source-locked ECC hook controls", () => {
       eccHookControlCatalog.filter(
         ({ disableEligible, profiles }) => disableEligible && profiles.includes("standard"),
       ),
-    ).toHaveLength(39);
+    ).toHaveLength(40);
     expect(
       eccHookControlCatalog.filter(
         ({ disableEligible, profiles }) => disableEligible && profiles.includes("strict"),
       ),
-    ).toHaveLength(42);
+    ).toHaveLength(43);
     expect(
       eccHookControlCatalog.find(({ id }) => id === "pre:bash:dispatcher")?.disableEligible,
     ).toBe(false);
+    // New at v2.2.1: the PowerShell fact-forcing gate, a run-with-flags hook of its own.
+    expect(
+      eccHookControlCatalog.find(({ id }) => id === "pre:powershell:gateguard-fact-force"),
+    ).toMatchObject({
+      event: "PreToolUse",
+      profiles: ["standard", "strict"],
+      disableEligible: true,
+    });
     expect(eccHookControlCatalog.find(({ id }) => id === "session:start")?.profiles).toEqual([
       "minimal",
       "standard",
@@ -148,11 +100,11 @@ describe("source-locked ECC hook controls", () => {
         eligibleIds: ECC_DISABLE_ELIGIBLE_HOOK_IDS,
       },
     });
-    expect(POLICY_ENGINE_FIELD_CONSUMERS["governance.eccHookControls.profile"]).toContain(
+    expect(POLICY_ENGINE_FIELD_CONSUMERS["governance.frameworkHookControls.ecc.profile"]).toContain(
       "receipt-backed",
     );
-    expect(POLICY_ENGINE_FIELD_CONSUMERS["governance.eccHookControls.disabledIds.*"]).toContain(
-      "ECC_DISABLED_HOOKS",
-    );
+    expect(
+      POLICY_ENGINE_FIELD_CONSUMERS["governance.frameworkHookControls.ecc.disabledHookIds.*"],
+    ).toContain("hook-control plan");
   });
 });

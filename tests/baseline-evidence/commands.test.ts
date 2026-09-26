@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requiredBaselineVetOptions } from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
+import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import {
   baselineVetPlanForSource,
   vetBaselineCommand,
@@ -24,6 +25,15 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { createSelfCompletingFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+
+// The vet runs through the installed @aihq/scan; this fake declares the uv
+// detectors with their analyzer locks, which is all the plan reads before vetting.
+const scan = createSelfCompletingFakeScanAdapterForTests({
+  "detector.cisco": { kind: "refused", reason: "unused", detail: "unused" },
+  "detector.semgrep": { kind: "refused", reason: "unused", detail: "unused" },
+});
+const scanPackageImporter = () => Promise.resolve(scan);
 
 let root: string;
 let sourceRoot: string;
@@ -85,9 +95,10 @@ function evidence() {
         id: "skill:clean",
         paths: ["skills/clean"],
         treeSha256: hashComponentTree(sourceRoot, ["skills/clean"]).treeSha256,
-        verdict: "pass",
+        verdict: "no-findings",
         analyzers: [{ name: "aih-native", version: "2.7.0" }],
         findings: [],
+        evidenceProblems: [],
       },
     ],
   });
@@ -109,14 +120,17 @@ describe("baseline vet command plan", () => {
     const vetCatalog = vi.fn(async () => evidence());
     const source = resolveTrustSource(sourceRoot, { root });
     const result = await executePlan(
-      await baselineVetPlanForSource(ctx(true), source, catalog(), { vetCatalog }),
+      await baselineVetPlanForSource(ctx(true), source, catalog(), {
+        vetCatalog,
+        scanPackageImporter,
+      }),
       ctx(true),
     );
     const rel = `.aih/baseline-reports/ecc-${"a".repeat(12)}.json`;
-    const required = requiredBaselineVetOptions({
-      run: fakeRunner(() => undefined),
+    const required = await requiredBaselineVetOptions({
       platform: "linux",
       env: {},
+      importer: scanPackageImporter,
     });
 
     expect(vetCatalog).toHaveBeenCalledOnce();
@@ -133,13 +147,14 @@ describe("baseline vet command plan", () => {
           env: {},
           platform: "linux",
           progress: expect.any(Function),
-          run: expect.any(Function),
+          scanExecution: expect.objectContaining({ runDetectorV1: scan.runDetectorV1 }),
+          uvExecutionProfileId: "host-process-uv-v1",
         }),
       }),
     );
     expect(existsSync(join(root, rel))).toBe(true);
     expect(JSON.parse(readFileSync(join(root, rel), "utf8"))).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [evidence()],
     });
     expect(result.execs).toHaveLength(0);
@@ -163,7 +178,7 @@ describe("baseline vet command plan", () => {
     const c = ctx(false);
     c.options = {
       source: "samartomar/ECC",
-      pin: "5caf398a91599029a176ca6d806409b00d1052c4",
+      pin: baselineCatalogById("ecc").pinnedSha,
       catalog: "ecc",
       components: "runtime:ecc-installer",
     };
@@ -176,7 +191,7 @@ describe("baseline vet command plan", () => {
     const c = ctx(false);
     c.options = {
       source: "affaan-m/ECC",
-      pin: "a".repeat(40),
+      pin: baselineCatalogById("ecc").pinnedSha,
       catalog: "ecc",
       components: "runtime:ecc-installer",
     };
@@ -184,5 +199,20 @@ describe("baseline vet command plan", () => {
 
     expect(result.execs).toEqual([expect.objectContaining({ ran: false })]);
     expect(existsSync(join(root, ".aih", "baseline-reports"))).toBe(false);
+  });
+
+  it("refuses a pin the installed Catalog does not carry before planning a fetch", async () => {
+    const c = ctx(false);
+    const carried = baselineCatalogById("ecc").pinnedSha;
+    c.options = {
+      source: "affaan-m/ECC",
+      pin: "a".repeat(40),
+      catalog: "ecc",
+      components: "runtime:ecc-installer",
+    };
+    await expect(vetBaselineCommand.plan(c)).rejects.toMatchObject({
+      code: "AIH_TRUST",
+      message: `Catalog ecc carries pin ${carried}; it does not carry requested pin ${"a".repeat(40)}`,
+    });
   });
 });

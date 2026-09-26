@@ -2,7 +2,9 @@ export type ResidualSurfaceClass =
   | "instructional-example"
   | "declarative-configuration"
   | "installed-executable"
-  | "automatically-activated-behavior";
+  | "automatically-activated-behavior"
+  /** The ungrouped group: no recorded grouping says what these occurrences are. */
+  | "not-classified";
 
 export interface EccReviewOccurrence {
   findingFingerprint: string;
@@ -15,7 +17,7 @@ export interface EccResidualReviewDecision {
   id: string;
   title: string;
   surfaceClass: ResidualSurfaceClass;
-  automaticActivation: boolean;
+  automaticActivation: boolean | "not-determined";
   decision: string;
   occurrenceFingerprints: string[];
   occurrences: EccReviewOccurrence[];
@@ -24,7 +26,7 @@ export interface EccResidualReviewDecision {
 interface DecisionDefinition {
   id: string;
   title: string;
-  surfaceClass: ResidualSurfaceClass;
+  surfaceClass: Exclude<ResidualSurfaceClass, "not-classified">;
   automaticActivation: boolean;
   decision: string;
   matches: (occurrence: EccReviewOccurrence) => boolean;
@@ -37,7 +39,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "instructional-example",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. Permit only with an explicit Nutrient egress and credential decision.",
+      "Full profile: an instructional example that calls the Nutrient document-processing service with a credential. ECC Lean does not select it.",
     matches: ({ path }) => path === "skills/nutrient-document-processing/SKILL.md",
   },
   {
@@ -46,7 +48,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "instructional-example",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. Permit only with an explicit X API egress and credential decision.",
+      "Full profile: an instructional example that calls the X API with a credential. ECC Lean does not select it.",
     matches: ({ path }) =>
       path === "skills/x-api/SKILL.md" || path === ".agents/skills/x-api/SKILL.md",
   },
@@ -56,7 +58,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "instructional-example",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. Examples do not execute until a selected skill is invoked.",
+      "Full profile: instructional examples that send media to ElevenLabs and media-generation services; they run only when a selected skill is invoked. ECC Lean does not select them.",
     matches: ({ path }) =>
       [
         "skills/fal-ai-media/SKILL.md",
@@ -71,7 +73,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "declarative-configuration",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. The declaration must not activate unless the MCP component is explicitly selected.",
+      "Full profile: a declaration of the browser-use remote MCP server; it takes effect only when the MCP component is selected. ECC Lean does not select it.",
     matches: ({ path, sourceValue }) =>
       path === "mcp-configs/mcp-servers.json" &&
       /"url"\s*:\s*"https:\/\/api\.browser-use\.com\/mcp"/.test(sourceValue),
@@ -82,7 +84,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "instructional-example",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. Approve each service boundary before its owning capability is selected.",
+      "Full profile: instructional examples that call the Jira and USPTO services. ECC Lean does not select them.",
     matches: ({ path }) =>
       path === "skills/jira-integration/SKILL.md" ||
       path === "skills/scientific-db-uspto-database/SKILL.md",
@@ -93,7 +95,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "instructional-example",
     automaticActivation: false,
     decision:
-      "Retain as one full-profile REVIEW decision. The examples are not automatically activated and are excluded from ECC Lean.",
+      "Full profile: generic scraper, API, stylesheet, and media-fetch examples; none activates automatically. ECC Lean does not select them.",
     matches: ({ path }) =>
       [
         "skills/autonomous-agent-harness/SKILL.md",
@@ -108,7 +110,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "declarative-configuration",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile. Tool declarations become effective only when the owning skill is selected and loaded; ECC Lean excludes these skills.",
+      "Full profile: skills that declare broad Bash and Write tool permissions; the declarations take effect only when the owning skill is selected and loaded. ECC Lean does not select them.",
     matches: ({ path }) =>
       [
         ".agents/skills/eval-harness/SKILL.md",
@@ -122,7 +124,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "installed-executable",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. Materialization alone must not invoke the package lifecycle command.",
+      "Full profile: a package lifecycle script (prepublishOnly) that runs when the package is published, not when it is materialized. ECC Lean does not select it.",
     matches: ({ path, sourceValue }) =>
       path === ".opencode/package.json" && sourceValue.includes("prepublishOnly"),
   },
@@ -132,7 +134,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "automatically-activated-behavior",
     automaticActivation: true,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. Require explicit consent before image processing or generated-script execution.",
+      "Full profile: a skill that processes images and runs generated scripts automatically, without asking for confirmation. ECC Lean does not select it.",
     matches: ({ path }) =>
       path === "skills/visa-doc-translate/SKILL.md" ||
       path === ".agents/skills/visa-doc-translate/SKILL.md",
@@ -143,7 +145,7 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     surfaceClass: "instructional-example",
     automaticActivation: false,
     decision:
-      "REVIEW for the full profile; excluded from ECC Lean. Permit only with an explicit DuckDNS egress and credential-use decision.",
+      "Full profile: an instructional example that calls the DuckDNS dynamic-DNS service with a token. ECC Lean does not select it.",
     matches: ({ path }) => path === "skills/homelab-wireguard-vpn/SKILL.md",
   },
 ];
@@ -179,15 +181,23 @@ export function groupEccResidualReviewDecisions(
   if (groupedFingerprints.length !== groupedSet.size) {
     throw new Error("an ECC review occurrence matched more than one residual decision");
   }
+  // A new REVIEW occurrence that no recorded grouping matches is a finding like
+  // any other (D64): it is shown in an explicit "ungrouped" group, never a stop.
   const ungrouped = occurrences.filter(
     (occurrence) => !groupedSet.has(occurrence.findingFingerprint),
   );
-  if (ungrouped.length > 0) {
-    throw new Error(
-      `ungrouped ECC review occurrence(s): ${ungrouped
-        .map((occurrence) => occurrence.findingFingerprint)
-        .join(", ")}`,
-    );
-  }
-  return grouped;
+  if (ungrouped.length === 0) return grouped;
+  return [
+    ...grouped,
+    {
+      id: "ungrouped",
+      title: "REVIEW occurrences with no recorded grouping",
+      surfaceClass: "not-classified",
+      automaticActivation: "not-determined",
+      decision:
+        "No recorded grouping matches these REVIEW occurrences. They are shown as findings for the consumer to decide on; a maintainer can add a grouping.",
+      occurrenceFingerprints: ungrouped.map((occurrence) => occurrence.findingFingerprint),
+      occurrences: ungrouped,
+    },
+  ];
 }

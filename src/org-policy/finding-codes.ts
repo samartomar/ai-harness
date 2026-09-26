@@ -16,12 +16,17 @@ export const DISPOSITIONABLE_POLICY_FINDING_CODES = [
 ] as const;
 
 /**
+ * What kept the evidence from being complete. It is a label of its own, beside
+ * the findings, and never a gate: the requested control stays effective.
+ */
+export const EVIDENCE_PROBLEM_POLICY_CODES = ["mandatory-detector-failed"] as const;
+
+/**
  * Prerequisites AIH needs before it can evaluate or project at all. Each marks
  * something absent or untrustworthy rather than something a detector asserted,
  * so no signature substitutes for it and approval cannot invent it.
  */
 export const FENCED_POLICY_PREREQUISITE_CODES = [
-  "mandatory-detector-failed",
   "evidence-identity-drift",
   "missing-projector",
   "unsupported-target",
@@ -30,12 +35,12 @@ export const FENCED_POLICY_PREREQUISITE_CODES = [
 ] as const;
 
 /**
- * The partition's union — the same 14 codes, none renamed or added. Resolution
- * still blocks on every one of them: separating the halves is what lets a
- * consumer tell a disposable finding from a hard prerequisite, and is not by
- * itself the administrator disposition flow, which does not exist yet.
+ * The partition's union — the same 14 codes, none renamed or added. Findings
+ * and evidence problems are labels on the candidate; only the fenced
+ * prerequisites keep a candidate from taking effect.
  */
 export const UNWAIVABLE_POLICY_DANGER_CODES = [
   ...DISPOSITIONABLE_POLICY_FINDING_CODES,
+  ...EVIDENCE_PROBLEM_POLICY_CODES,
   ...FENCED_POLICY_PREREQUISITE_CODES,
 ] as const;

@@ -1,0 +1,422 @@
+{
+  "source": "src/superpowers/{install,verified}.ts and src/kiro/content.ts at 80120883",
+  "sourceRoot": "C:\\quarantine\\tree",
+  "methodologySteering": "---\ninclusion: always\n---\n\n# Superpowers methodology\n\nKiro can't read `~/.claude/superpowers`, so this carries the same disciplined\nloop. Match the situation, follow the method:\n\n| Situation | Method |\n| --- | --- |\n| Fuzzy / open-ended problem | **Brainstorm** — diverge on 2–3 approaches, pressure-test against constraints, pick one. |\n| About to build a feature | **Plan first** — break into ordered, independently verifiable steps, a check per step. |\n| Writing code | **TDD** — write the failing test, make it pass, refactor. New behavior ships with a test. |\n| Fixing a bug | **Reproduce first** — a failing test that reproduces it, then fix to green. |\n| Risky or large change | **Subagent review** — an independent pass checks correctness + boundaries before committing. |\n| Done | **Report** ship / skipped / unverified — never claim done on unverified work. |\n\nInstall Superpowers natively where supported with `aih superpowers --cli <tool>`.\n",
+  "overview": {
+    "kind": "doc",
+    "describe": "Superpowers overview (obra/Superpowers)",
+    "text": "Superpowers installs a disciplined SDLC as agent skills: brainstorm ->\nplan -> test-driven implementation -> subagent review, plus a library of\nreusable skills. It pairs with ECC (`aih ecc`): ECC supplies stack-aware\nrules/agents/memory; Superpowers supplies the behavioral loop that uses them.\n\nAll marketplace/TUI targets are guidance-only because those installers cannot prove\nthey consumed the evidence-verified commit. aih runs no mutable remote plugin install.\n"
+  },
+  "perCli": {
+    "claude": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for Claude Code (plugin)",
+          "text": "Run inside Claude Code (slash commands, not shell):\n\n  /plugin install superpowers@claude-plugins-official\n\nAlternative via the Superpowers marketplace:\n  /plugin marketplace add obra/superpowers-marketplace\n  /plugin install superpowers@superpowers-marketplace\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for Claude Code (plugin)",
+          "text": "Run inside Claude Code (slash commands, not shell):\n\n  /plugin install superpowers@claude-plugins-official\n\nAlternative via the Superpowers marketplace:\n  /plugin marketplace add obra/superpowers-marketplace\n  /plugin install superpowers@superpowers-marketplace\n"
+        }
+      ]
+    },
+    "codex": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for Codex CLI",
+          "text": "Run `/plugins` inside Codex CLI, search \"superpowers\", then choose\nInstall Plugin. (The plugin picker is a TUI, so this can't be shell-run.)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for Codex CLI",
+          "text": "Run `/plugins` inside Codex CLI, search \"superpowers\", then choose\nInstall Plugin. (The plugin picker is a TUI, so this can't be shell-run.)\n"
+        }
+      ]
+    },
+    "cursor": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for cursor (see INSTALL guide)",
+          "text": "cursor is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for cursor (see INSTALL guide)",
+          "text": "cursor is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n"
+        }
+      ]
+    },
+    "antigravity": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Superpowers for Antigravity — exact-source adapter required",
+          "text": "aih's reviewed source is obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\nThe available plugin command fetches mutable repository/marketplace content and cannot\nbind the installed bytes to that commit, so aih deliberately does not run it.\nThat marketplace selection is not evidence-covered. Use an organization-approved local\ncheckout adapter pinned to the commit above, or keep this target uninstalled.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Superpowers for Antigravity — exact-source adapter required",
+          "text": "aih's reviewed source is obra/Superpowers@the aih baseline pin.\nThe available plugin command fetches mutable repository/marketplace content and cannot\nbind the installed bytes to that commit, so aih deliberately does not run it.\nThat marketplace selection is not evidence-covered. Use an organization-approved local\ncheckout adapter pinned to the commit above, or keep this target uninstalled.\n"
+        }
+      ]
+    },
+    "gemini": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for gemini (see INSTALL guide)",
+          "text": "gemini is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for gemini (see INSTALL guide)",
+          "text": "gemini is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n"
+        }
+      ]
+    },
+    "copilot": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Superpowers for Copilot CLI — exact-source adapter required",
+          "text": "aih's reviewed source is obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\nThe available plugin command fetches mutable repository/marketplace content and cannot\nbind the installed bytes to that commit, so aih deliberately does not run it.\nThat marketplace selection is not evidence-covered. Use an organization-approved local\ncheckout adapter pinned to the commit above, or keep this target uninstalled.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Superpowers for Copilot CLI — exact-source adapter required",
+          "text": "aih's reviewed source is obra/Superpowers@the aih baseline pin.\nThe available plugin command fetches mutable repository/marketplace content and cannot\nbind the installed bytes to that commit, so aih deliberately does not run it.\nThat marketplace selection is not evidence-covered. Use an organization-approved local\ncheckout adapter pinned to the commit above, or keep this target uninstalled.\n"
+        }
+      ]
+    },
+    "windsurf": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for windsurf (see INSTALL guide)",
+          "text": "windsurf is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for windsurf (see INSTALL guide)",
+          "text": "windsurf is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n"
+        }
+      ]
+    },
+    "opencode": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for opencode (see INSTALL guide)",
+          "text": "opencode is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for opencode (see INSTALL guide)",
+          "text": "opencode is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n"
+        }
+      ]
+    },
+    "zed": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for zed (see INSTALL guide)",
+          "text": "zed is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for zed (see INSTALL guide)",
+          "text": "zed is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n"
+        }
+      ]
+    },
+    "kimi": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for Kimi CLI",
+          "text": "Run `/plugins` inside Kimi CLI, search \"superpowers\", then choose\nInstall Plugin. (The plugin picker is a TUI, so this can't be shell-run.)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for Kimi CLI",
+          "text": "Run `/plugins` inside Kimi CLI, search \"superpowers\", then choose\nInstall Plugin. (The plugin picker is a TUI, so this can't be shell-run.)\n"
+        }
+      ]
+    },
+    "kiro": {
+      "withPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for kiro (see INSTALL guide)",
+          "text": "kiro is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+        }
+      ],
+      "withoutPin": [
+        {
+          "kind": "doc",
+          "describe": "Install Superpowers for kiro (see INSTALL guide)",
+          "text": "kiro is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n"
+        }
+      ]
+    }
+  },
+  "verifiedAllClis": {
+    "capability": "superpowers: verified guidance",
+    "actions": [
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for Claude Code (plugin)",
+        "text": "Run inside Claude Code (slash commands, not shell):\n\n  /plugin install superpowers@claude-plugins-official\n\nAlternative via the Superpowers marketplace:\n  /plugin marketplace add obra/superpowers-marketplace\n  /plugin install superpowers@superpowers-marketplace\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for Codex CLI",
+        "text": "Run `/plugins` inside Codex CLI, search \"superpowers\", then choose\nInstall Plugin. (The plugin picker is a TUI, so this can't be shell-run.)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for cursor (see INSTALL guide)",
+        "text": "cursor is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Superpowers for Antigravity — exact-source adapter required",
+        "text": "aih's reviewed source is obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\nThe available plugin command fetches mutable repository/marketplace content and cannot\nbind the installed bytes to that commit, so aih deliberately does not run it.\nThat marketplace selection is not evidence-covered. Use an organization-approved local\ncheckout adapter pinned to the commit above, or keep this target uninstalled.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for gemini (see INSTALL guide)",
+        "text": "gemini is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Superpowers for Copilot CLI — exact-source adapter required",
+        "text": "aih's reviewed source is obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\nThe available plugin command fetches mutable repository/marketplace content and cannot\nbind the installed bytes to that commit, so aih deliberately does not run it.\nThat marketplace selection is not evidence-covered. Use an organization-approved local\ncheckout adapter pinned to the commit above, or keep this target uninstalled.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for windsurf (see INSTALL guide)",
+        "text": "windsurf is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for opencode (see INSTALL guide)",
+        "text": "opencode is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for zed (see INSTALL guide)",
+        "text": "zed is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for Kimi CLI",
+        "text": "Run `/plugins` inside Kimi CLI, search \"superpowers\", then choose\nInstall Plugin. (The plugin picker is a TUI, so this can't be shell-run.)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Install Superpowers for kiro (see INSTALL guide)",
+        "text": "kiro is not a first-class Superpowers target yet. Follow the current\nper-tool steps in the Superpowers install guide:\n\n  https://github.com/obra/superpowers  (see INSTALL.md)\n\naih verified obra/Superpowers@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, but the marketplace/TUI selection below\ncannot prove it consumes those exact bytes and is therefore not evidence-covered.\nNo install is executed by aih; require an exact local/commit adapter before automation.\n"
+      },
+      {
+        "kind": "write",
+        "path": ".kiro/steering/superpowers-methodology.md",
+        "contents": "---\ninclusion: always\n---\n\n# Superpowers methodology\n\nKiro can't read `~/.claude/superpowers`, so this carries the same disciplined\nloop. Match the situation, follow the method:\n\n| Situation | Method |\n| --- | --- |\n| Fuzzy / open-ended problem | **Brainstorm** — diverge on 2–3 approaches, pressure-test against constraints, pick one. |\n| About to build a feature | **Plan first** — break into ordered, independently verifiable steps, a check per step. |\n| Writing code | **TDD** — write the failing test, make it pass, refactor. New behavior ships with a test. |\n| Fixing a bug | **Reproduce first** — a failing test that reproduces it, then fix to green. |\n| Risky or large change | **Subagent review** — an independent pass checks correctness + boundaries before committing. |\n| Done | **Report** ship / skipped / unverified — never claim done on unverified work. |\n\nInstall Superpowers natively where supported with `aih superpowers --cli <tool>`.\n",
+        "describe": "Kiro steering: first-party aih methodology bridge (not Superpowers vendor bytes)"
+      },
+      {
+        "kind": "doc",
+        "describe": "Kiro methodology bridge provenance",
+        "text": "The Kiro steering file is generated by aih and is not labeled as obra/Superpowers vendor evidence."
+      },
+      {
+        "kind": "doc",
+        "describe": "Superpowers overview (obra/Superpowers)",
+        "text": "Superpowers installs a disciplined SDLC as agent skills: brainstorm ->\nplan -> test-driven implementation -> subagent review, plus a library of\nreusable skills. It pairs with ECC (`aih ecc`): ECC supplies stack-aware\nrules/agents/memory; Superpowers supplies the behavioral loop that uses them.\n\nAll marketplace/TUI targets are guidance-only because those installers cannot prove\nthey consumed the evidence-verified commit. aih runs no mutable remote plugin install.\n"
+      },
+      {
+        "kind": "doc",
+        "describe": "Superpowers verified source",
+        "text": "aih verified the selected components from C:/quarantine/tree at exact commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; the quarantine is removed after this command."
+      },
+      {
+        "kind": "digest",
+        "describe": "Superpowers baseline evidence authorizations",
+        "text": "Superpowers component evidence receipts:\n- runtime:superpowers-plugin — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:brainstorming — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:diagnosing-superpowers — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:dispatching-parallel-agents — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:executing-plans — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:finishing-a-development-branch — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:receiving-code-review — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:requesting-code-review — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:subagent-driven-development — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:systematic-debugging — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:test-driven-development — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:using-git-worktrees — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:using-superpowers — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:verification-before-completion — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:writing-plans — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n- skill:writing-skills — vendor · aaaaaaaaaaaa · bbbbbbbbbbbb\n",
+        "data": {
+          "authorizations": [
+            {
+              "componentId": "runtime:superpowers-plugin",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:brainstorming",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:diagnosing-superpowers",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:dispatching-parallel-agents",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:executing-plans",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:finishing-a-development-branch",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:receiving-code-review",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:requesting-code-review",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:subagent-driven-development",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:systematic-debugging",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:test-driven-development",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:using-git-worktrees",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:using-superpowers",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:verification-before-completion",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:writing-plans",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "componentId": "skill:writing-skills",
+              "source": "obra/Superpowers",
+              "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tier": "vendor",
+              "issuer": "@aihq/core release",
+              "evidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../../internals/cli-registry.js";
 
 export const WORKBENCH_MINIMUM_CORE_VERSION = "0.6.0" as const;
+/** First Core candidate that understands a persisted Headroom developer-tool decision. */
+export const HEADROOM_MINIMUM_CORE_VERSION = "0.7.0" as const;
 export const WORKBENCH_MAX_POLICY_BYTES = 1_000_000;
 const MAX_STATE_BYTES = 900_000;
 const MAX_AGGREGATE_PINS = 5_000;
@@ -367,10 +369,10 @@ export const SelectionTemplateV1Schema = z
   })
   .strict();
 
-export const EvidenceSummaryV1Schema = z
+export const EvidenceSummaryV2Schema = z
   .object({
     id: CatalogIdSchema,
-    projectionVersion: z.literal("evidence-summary/v1"),
+    projectionVersion: z.literal("evidence-summary/v2"),
     subjects: z
       .array(
         z
@@ -396,7 +398,8 @@ export const EvidenceSummaryV1Schema = z
       .strict(),
     scan: z
       .object({
-        outcome: z.enum(["pass", "failed", "unknown"]),
+        /** A label (D50): what the analyzers observed, never a decision. */
+        outcome: z.enum(["no-findings", "has-findings", "unknown"]),
         coverage: z.enum(["complete", "partial", "none"]),
         analyzers: EvidenceAnalyzerListSchema.optional(),
         /** Authenticated report provenance; no scan execution time is implied. */
@@ -411,6 +414,8 @@ export const EvidenceSummaryV1Schema = z
       .strict(),
     qualification: z.object({ state: z.enum(["qualified", "unqualified", "unknown"]) }).strict(),
     findings: z.array(z.string().min(1).max(1_000)).max(50),
+    /** A separate label (D50/D56): what kept the evidence from being complete, never a finding. */
+    evidenceProblems: z.array(z.string().min(1).max(1_000)).max(50),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -440,11 +445,11 @@ export const EvidenceSummaryV1Schema = z
         path: ["verification"],
         message: "Only verified evidence may carry custody timestamps or context.",
       });
-    if (value.scan.outcome === "pass" && value.scan.coverage !== "complete")
+    if (value.scan.outcome === "no-findings" && value.scan.coverage !== "complete")
       ctx.addIssue({
         code: "custom",
         path: ["scan"],
-        message: "A passing scan requires complete coverage.",
+        message: "A no-findings scan requires complete coverage.",
       });
     const reportSignedAt = value.scan.reportSignedAt;
     const reportVerificationExpiresAt = value.scan.reportVerificationExpiresAt;
@@ -535,7 +540,7 @@ export const CatalogQualificationSummariesV1Schema = z
 
 declare const corePreparedEvidence: unique symbol;
 /** This brand is deliberately unavailable from parsed artifact JSON. */
-export type CorePreparedEvidenceSummaryV1 = z.infer<typeof EvidenceSummaryV1Schema> & {
+export type CorePreparedEvidenceSummaryV2 = z.infer<typeof EvidenceSummaryV2Schema> & {
   readonly [corePreparedEvidence]: true;
 };
 
@@ -853,7 +858,7 @@ export const AuthoringCatalogBundleV1Schema = z
     ),
     relations: z.array(CatalogRelationV1Schema).max(100_000),
     templates: z.record(CatalogIdSchema, SelectionTemplateV1Schema),
-    evidence: z.record(CatalogIdSchema, EvidenceSummaryV1Schema),
+    evidence: z.record(CatalogIdSchema, EvidenceSummaryV2Schema),
     qualifications: CatalogQualificationSummariesV1Schema.optional(),
     provenance: z.object({ bundleDigest: DigestSchema }).strict(),
     detailChunks: z.record(
@@ -1026,7 +1031,7 @@ export type WorkbenchStateV1 = z.infer<typeof WorkbenchStateV1Schema>;
 export type WorkbenchRootV1 = z.infer<typeof WorkbenchRootV1Schema>;
 export type WorkbenchRequestV1 = z.infer<typeof WorkbenchRequestV1Schema>;
 export type WorkbenchDraftV1 = z.infer<typeof WorkbenchDraftV1Schema>;
-export type EvidenceSummaryV1 = z.infer<typeof EvidenceSummaryV1Schema>;
+export type EvidenceSummaryV2 = z.infer<typeof EvidenceSummaryV2Schema>;
 
 export function parseAuthoringCatalogBundleV1(value: unknown): AuthoringCatalogBundleV1 {
   return AuthoringCatalogBundleV1Schema.parse(value);

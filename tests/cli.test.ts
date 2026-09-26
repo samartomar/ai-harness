@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Command } from "commander";
@@ -12,15 +12,12 @@ import {
   READONLY,
 } from "../src/commands/index.js";
 import * as processRunner from "../src/internals/proc.js";
-import { buildProgram, isUiFastPath } from "../src/program.js";
+import { buildProgram } from "../src/program.js";
 
 describe("CLI program", () => {
-  it("exposes the exact rootless --ui launch path used by npx @aihq/core --ui", () => {
+  it("does not register the removed embedded UI option", () => {
     const program = buildProgram();
-    expect(program.options.map((option) => option.long)).toContain("--ui");
-    expect(isUiFastPath(["node", "aih", "--ui"])).toBe(true);
-    expect(isUiFastPath(["node", "aih", "policy", "generate"])).toBe(false);
-    expect(isUiFastPath(["node", "aih", "--ui", "repair"])).toBe(false);
+    expect(program.options.map((option) => option.long)).not.toContain("--ui");
   });
 
   it("registers every capability and read-only command", () => {
@@ -141,13 +138,12 @@ describe("CLI program", () => {
     }
   });
 
-  it("registers policy workbench, binding, delivery, evaluation, and verification as nested commands", () => {
+  it("registers policy binding, delivery, evaluation, and verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual([
       "bind",
       "data",
       "evaluate",
-      "generate",
       "init",
       "lifecycle",
       "managed",
@@ -162,29 +158,11 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("keeps policy generate rootless while repo-scoped policy subcommands accept optional [root]", () => {
+  it("omits the removed HTML generator while policy subcommands keep their own roots", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.length).toBeGreaterThan(0);
+    expect(policy?.commands.map((sub) => sub.name())).not.toContain("generate");
     for (const sub of policy?.commands ?? []) {
-      if (sub.name() === "generate") {
-        // Still rootless with respect to a governed TARGET repository: its only
-        // positional is the administrator root that opts into signed supported
-        // catalog consumption, never the conventional repo-scoped [root].
-        expect(
-          sub.registeredArguments.map((a) => ({
-            name: a.name(),
-            required: a.required,
-          })),
-        ).toEqual([{ name: "admin-root", required: false }]);
-        expect(sub.options.map((option) => option.flags)).toEqual(
-          expect.arrayContaining([
-            "--organization-manifest <path>",
-            "--fresh-organization-manifest <path>",
-            "--fresh-artifact-intake <path>",
-          ]),
-        );
-        continue;
-      }
       if (sub.name() === "observe" || sub.name() === "lifecycle") {
         expect(sub.commands.map((nested) => nested.name())).toEqual([
           "npm-package",
@@ -221,59 +199,6 @@ describe("CLI program", () => {
         })),
         `policy ${sub.name()} should take an optional [root]`,
       ).toEqual([{ name: "root", required: false }]);
-    }
-  });
-
-  it("generates standalone from cwd despite hostile root markers, AIH_ROOT, and legacy GStack config", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "aih-policy-generate-hostile-root-"));
-    const output = mkdtempSync(join(tmpdir(), "aih-policy-generate-output-"));
-    const priorCwd = process.cwd();
-    const priorRoot = process.env.AIH_ROOT;
-    const priorExitCode = process.exitCode;
-    try {
-      const staleConfig = JSON.stringify({
-        binding: { framework: { id: "gstack" } },
-      });
-      mkdirSync(join(repo, ".git"));
-      mkdirSync(join(repo, ".aih"));
-      writeFileSync(join(repo, ".aih-config.json"), staleConfig);
-      writeFileSync(join(repo, "aih-org-policy.json"), "{not valid policy");
-      writeFileSync(join(output, ".aih-config.json"), staleConfig);
-      process.chdir(output);
-      process.env.AIH_ROOT = repo;
-      const dryRun = buildProgram();
-      dryRun.configureOutput({ writeOut: () => {}, writeErr: () => {} });
-      await dryRun.parseAsync(["node", "aih", "policy", "generate", "--root", repo, "--no-log"]);
-      expect(process.exitCode).toBe(0);
-      expect(existsSync(join(output, "aih-policy-workbench.html"))).toBe(false);
-      expect(existsSync(join(output, ".aih", "runs"))).toBe(false);
-
-      process.exitCode = undefined;
-      const program = buildProgram();
-      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
-      await program.parseAsync([
-        "node",
-        "aih",
-        "policy",
-        "generate",
-        "--root",
-        repo,
-        "--apply",
-        "--no-log",
-      ]);
-
-      expect(process.exitCode).toBe(0);
-      expect(existsSync(join(output, "aih-policy-workbench.html"))).toBe(true);
-      expect(existsSync(join(output, ".aih", "runs"))).toBe(false);
-      expect(existsSync(join(repo, "aih-policy-workbench.html"))).toBe(false);
-      expect(existsSync(join(repo, ".aih", "runs"))).toBe(false);
-    } finally {
-      process.chdir(priorCwd);
-      if (priorRoot === undefined) delete process.env.AIH_ROOT;
-      else process.env.AIH_ROOT = priorRoot;
-      process.exitCode = priorExitCode;
-      rmSync(repo, { recursive: true, force: true });
-      rmSync(output, { recursive: true, force: true });
     }
   });
 

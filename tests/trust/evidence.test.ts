@@ -1,12 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Check } from "../../src/internals/verify.js";
 import {
+  CONSUMER_POLICY_CODES_V1,
   dispositionForTrustFinding,
+  isConsumerPolicyCodeV1,
+  isFindingLevelV1,
   normalizeTrustFindings,
   type RawScannerOccurrence,
+  scanCoverageV1,
+  scanOutcomeV1,
+  trustCodeClassV1,
 } from "../../src/trust/evidence.js";
 
 const roots: string[] = [];
@@ -301,5 +307,159 @@ describe("trust evidence layers", () => {
     expect(dispositionForTrustFinding(finding("trust.legal-text-detector-finding")).level).toBe(
       "SUPPRESSED",
     );
+  });
+});
+
+describe("trust code classes (D50)", () => {
+  it.each([
+    "trust.auto-exec-hook",
+    "trust.dependency-confusion",
+    "trust.hidden-unicode",
+    "trust.malicious-code",
+    "trust.prompt-injection",
+    "trust.typosquat",
+    "trust.unpinned-dependency",
+    "trust.external-egress",
+    "trust.license-missing",
+    "trust.permission-risk",
+    "trust.skill-metadata-license",
+    "trust.untrusted-publisher",
+    "trust.cisco-finding",
+    "trust.detector-finding",
+    "trust.legal-text-detector-finding",
+    "trust.visible-unicode",
+    "trust.unreviewed-analyzer-rule",
+  ] as const)("classifies %s as a finding: information about the component", (code) => {
+    expect(trustCodeClassV1(code)).toBe("finding");
+  });
+
+  it.each([
+    "trust.detector-unavailable",
+    "trust.sandbox-smoke-unavailable",
+    "trust.sandbox-smoke-failed",
+    "trust.fetch-blocked",
+    "trust.unsigned-source",
+  ] as const)("classifies %s as an evidence problem: the evidence is incomplete", (code) => {
+    expect(trustCodeClassV1(code)).toBe("evidence-problem");
+  });
+
+  it.each([
+    "trust.source-changed",
+    "trust.source-drift",
+    "trust.fetch-metadata-missing",
+    "trust.fetch-metadata-unreadable",
+    "trust.fetch-metadata-malformed",
+    "trust.fetch-metadata-mismatched",
+  ] as const)("classifies %s as integrity: the evidence cannot be trusted", (code) => {
+    expect(trustCodeClassV1(code)).toBe("integrity");
+  });
+
+  it("leaves codes outside the trust lane unclassified", () => {
+    expect(trustCodeClassV1("mcp.policy-denied")).toBeUndefined();
+    expect(trustCodeClassV1("trust.unapproved-skill")).toBeUndefined();
+    expect(trustCodeClassV1("not-a-code")).toBeUndefined();
+  });
+
+  it("classifies every code whose disposition can put it in component evidence (D62)", () => {
+    const verifySource = readFileSync(
+      new URL("../../src/internals/verify.ts", import.meta.url),
+      "utf8",
+    );
+    const union = /export type CheckCode =([\s\S]*?)\nexport /.exec(verifySource)?.[1] ?? "";
+    const codes = [...union.matchAll(/^\s*\| "([a-z0-9-]+\.[a-z0-9-]+)";?$/gm)].map(
+      (m) => m[1] ?? "",
+    );
+    expect(codes.length).toBeGreaterThan(50);
+    const unclassified = codes.filter((code) => {
+      const levels = [[], ["raw:1"]].flatMap((raw) =>
+        (["fail", "skip"] as const).map(
+          (checkVerdict) =>
+            dispositionForTrustFinding({
+              fingerprint: `finding:${code}`,
+              code: code as Check["code"],
+              checkVerdict,
+              detail: `${code} observed`,
+              rawOccurrenceFingerprints: raw,
+            }).level,
+        ),
+      );
+      const reachesEvidence = levels.some(isFindingLevelV1) || code.startsWith("trust.");
+      return reachesEvidence && trustCodeClassV1(code) === undefined;
+    });
+    // trust.unapproved-skill is emitted only by workspace acquire (a missing
+    // approval record), never by a component tree scan.
+    expect(unclassified).toEqual(["trust.unapproved-skill"]);
+    const scanSource = readFileSync(new URL("../../src/trust/scan.ts", import.meta.url), "utf8");
+    expect(scanSource).not.toContain("trust.unapproved-skill");
+  });
+
+  it("classifies every trust CheckCode or names it as the consumer's own policy (D67)", () => {
+    const verifySource = readFileSync(
+      new URL("../../src/internals/verify.ts", import.meta.url),
+      "utf8",
+    );
+    const union = /export type CheckCode =([\s\S]*?)\nexport /.exec(verifySource)?.[1] ?? "";
+    const codes = [...union.matchAll(/^\s*\| "([a-z0-9-]+\.[a-z0-9-]+)";?$/gm)].map(
+      (m) => m[1] ?? "",
+    );
+    // The organization's own configured requirements, which the owner keeps as stops.
+    expect([...CONSUMER_POLICY_CODES_V1].sort()).toEqual([
+      "mcp.policy-denied",
+      "org-policy.drift",
+      "trust.unapproved-skill",
+    ]);
+    for (const code of CONSUMER_POLICY_CODES_V1) {
+      expect(codes, code).toContain(code);
+      expect(trustCodeClassV1(code), code).toBeUndefined();
+    }
+    // A new trust code must be classified: an unclassified one would silently stop
+    // workspace promotion, which fails closed on it.
+    const unaccounted = codes.filter(
+      (code) =>
+        code.startsWith("trust.") &&
+        trustCodeClassV1(code) === undefined &&
+        !isConsumerPolicyCodeV1(code),
+    );
+    expect(unaccounted).toEqual([]);
+  });
+});
+
+describe("scan coverage from evidence problems (Astra step-8 item 5)", () => {
+  it("states the coverage each evidence problem leaves, the narrowest winning", () => {
+    expect(scanCoverageV1([])).toBe("complete");
+    expect(scanCoverageV1([{ code: "trust.unsigned-source" }])).toBe("complete");
+    expect(scanCoverageV1([{ code: "trust.detector-unavailable" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.sandbox-smoke-unavailable" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.sandbox-smoke-failed" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.fetch-blocked" }])).toBe("none");
+    expect(
+      scanCoverageV1([{ code: "trust.detector-unavailable" }, { code: "trust.fetch-blocked" }]),
+    ).toBe("none");
+  });
+
+  it("never reads a code outside the table as complete coverage", () => {
+    expect(scanCoverageV1([{ code: "trust.some-new-problem" }])).toBe("partial");
+    expect(scanCoverageV1([{ code: "trust.unsigned-source" }, { code: "unknown" }])).toBe(
+      "partial",
+    );
+  });
+
+  it("holds a no-findings label only on complete coverage and states findings at any coverage", () => {
+    expect(scanOutcomeV1("no-findings", "complete")).toBe("no-findings");
+    expect(scanOutcomeV1("no-findings", "partial")).toBe("unknown");
+    expect(scanOutcomeV1("no-findings", "none")).toBe("unknown");
+    expect(scanOutcomeV1("has-findings", "complete")).toBe("has-findings");
+    expect(scanOutcomeV1("has-findings", "partial")).toBe("has-findings");
+    expect(scanOutcomeV1("has-findings", "none")).toBe("has-findings");
+  });
+
+  it("covers every evidence-problem code in the class table", () => {
+    const text = readFileSync(new URL("../../src/trust/evidence.ts", import.meta.url), "utf8");
+    const problems = [...text.matchAll(/"(trust\.[a-z-]+)":\s*"evidence-problem"/g)].map(
+      (match) => match[1] as string,
+    );
+    const coverage = text.slice(text.indexOf("const EVIDENCE_PROBLEM_COVERAGE_V1"));
+    expect(problems.length).toBeGreaterThan(0);
+    for (const code of problems) expect(coverage, code).toContain(`"${code}":`);
   });
 });

@@ -152,7 +152,8 @@ build, artifact, installer, self-hosting, and baseline-installability checks rem
 change.
 
 The complete coverage ratchet remains required for every full-fallback change and in the five-way
-nightly safety matrix. Bounded changes run every test selected by their owned domain; Workbench source
-changes select the complete 38-file Workbench project rather than unrelated policy tests. A protected
+nightly safety matrix. Bounded changes run every test selected by their owned domain; retained backend
+catalog/provider changes select their owned tests and shared-input changes broaden coverage. The
+retired browser project and its 38-file count are not current acceptance gates. A protected
 main push classifies the merged delta again and emits the same exact required contexts for release
 qualification without automatically expanding a bounded change to the complete suite.

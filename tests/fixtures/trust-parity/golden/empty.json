@@ -1,0 +1,376 @@
+{
+  "format": "aih-trust-parity-golden",
+  "version": 1,
+  "case": "empty",
+  "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+  "posture": "vibe",
+  "internalScopes": [],
+  "native": {
+    "byEnvironment": {
+      "linux-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "summary",
+            "name": "trust scan",
+            "verdict": "pass",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "scanned 0 trust document(s) in <root>",
+            "fingerprint": null,
+            "hostDependentDetail": true
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: no skill directories were found",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 0
+      },
+      "win32-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "summary",
+            "name": "trust scan",
+            "verdict": "pass",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "scanned 0 trust document(s) in <root>",
+            "fingerprint": null,
+            "hostDependentDetail": true
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: no skill directories were found",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 0
+      }
+    },
+    "identicalAcrossEnvironments": true
+  },
+  "detectors": {
+    "semgrep": {
+      "scanDetectorId": "detector.semgrep",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 9235,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "92ce562625991f27f04109b1deeeeb2b43a4fa80a4099e86a8a2bb4cde402894"
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 13560,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "f42064c7a636bb631c7505ad4337a3c9c9ecabefff877ca8e4846e0aa181d1c0"
+        }
+      },
+      "executedOn": [
+        "linux-x64",
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "cisco": {
+      "scanDetectorId": "detector.cisco",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (no SKILL.md directories found for Cisco scan); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 9359,
+          "checks": [
+            {
+              "name": "trust detector cisco",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (no SKILL.md directories found for Cisco scan); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "cisco",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 1,
+          "transcriptSha256": "c1bacb1a920b216d1bcc9a3a158fe26c8393596151a95e5ae899d7c5d848be58"
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    },
+    "mcp-scanner": {
+      "scanDetectorId": "detector.cisco-mcp-scanner",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco-mcp-scanner",
+          "mode": "executed",
+          "outcome": "not-applicable",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 1,
+          "checks": [],
+          "rawOccurrences": [],
+          "executions": [],
+          "scanObservations": [],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    },
+    "skillspector": {
+      "scanDetectorId": "detector.skillspector",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.skillspector",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "skillspector@docker"
+          ],
+          "durationMs": 13135,
+          "checks": [
+            {
+              "name": "trust detector skillspector",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: aih-native, skillspector@docker",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "skillspector",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skillspector",
+              "version": "2.9.4"
+            }
+          ],
+          "runnerCalls": 5,
+          "transcriptSha256": "04f20aaf34ac69570053838221bd73e804d3217e969d22644e2b22a094dabc54"
+        }
+      },
+      "executedOn": [
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "snyk-agent-scan": {
+      "scanDetectorId": "detector.snyk-agent-scan",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.snyk-agent-scan",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 4,
+          "checks": [
+            {
+              "name": "trust detector snyk-agent-scan",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "snyk-agent-scan",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    }
+  },
+  "sandboxSmoke": {
+    "byEnvironment": {
+      "linux-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: no skill directories were found",
+        "fingerprint": null
+      },
+      "win32-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: no skill directories were found",
+        "fingerprint": null
+      }
+    }
+  }
+}

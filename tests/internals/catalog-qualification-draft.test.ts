@@ -2,6 +2,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { catalogQualificationDraftDataV1 } from "../../src/internals/prepare-workbench-catalog-qualification.js";
 
+interface DraftRecord {
+  receiptBytesBase64: string;
+  receiptSetBytesBase64: string;
+  memberBytesBase64: string;
+  closureBytesByIdentityBase64: Record<string, string>;
+  publisher: unknown;
+  receiptSetPublisher: unknown;
+}
+
 describe("authenticated Catalog qualification draft encoding", () => {
   it("writes the package loader shape and excludes unrelated compiler bindings", () => {
     const fixture = JSON.parse(
@@ -14,7 +23,7 @@ describe("authenticated Catalog qualification draft encoding", () => {
     const unrelated = structuredClone(binding);
     unrelated.asset.assetId = "unrelated/skill:other";
     const prepared = {
-      records: fixture.records.map((record: any) => ({
+      records: fixture.records.map((record: DraftRecord) => ({
         receiptBytes: Buffer.from(record.receiptBytesBase64, "base64"),
         receiptSetBytes: Buffer.from(record.receiptSetBytesBase64, "base64"),
         memberBytes: Buffer.from(record.memberBytesBase64, "base64"),

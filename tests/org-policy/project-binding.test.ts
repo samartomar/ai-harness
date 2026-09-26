@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readAihConfig, readPolicyBinding } from "../../src/config/marker.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -28,6 +28,23 @@ import {
   policyProjectCommand,
 } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { loadEccFromSource } from "../framework-plugin/plugin-source.js";
+import { eccDescriptorLoad } from "../framework-plugin/source-plugin-mocks.js";
+
+// The real loader sees a Core install without its bundled plugins (D71): the
+// one route to framework-plugin-unavailable, whether or not packages/*/dist is built.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const { withBundledPluginsMissing } = await import(
+    "../framework-plugin/missing-bundled-plugins.js"
+  );
+  return withBundledPluginsMissing(await importOriginal());
+});
+
+/** `policy project` on a policy selecting ECC runs through @aihq/framework-ecc, read from package source. */
+const withEccPlugin = {
+  loadPlugin: () => loadEccFromSource(),
+  loadDescriptor: async () => eccDescriptorLoad(),
+};
 
 let root: string;
 beforeEach(() => {
@@ -233,7 +250,7 @@ describe("durable project policy binding", () => {
     };
     await executePlan(await policyBindCommand.plan(context), context);
 
-    await expect(executePolicyProjectCommand(context)).resolves.toMatchObject({
+    await expect(executePolicyProjectCommand(context, withEccPlugin)).resolves.toMatchObject({
       capability: "policy project",
       applied: true,
     });
@@ -267,7 +284,7 @@ describe("durable project policy binding", () => {
     await executePlan(await policyBindCommand.plan(applied), applied);
     const markerBefore = readFileSync(join(root, ".aih-config.json"), "utf8");
 
-    const preview = await executePolicyProjectCommand({ ...applied, apply: false });
+    const preview = await executePolicyProjectCommand({ ...applied, apply: false }, withEccPlugin);
 
     expect(preview.applied).toBe(false);
     expect(readFileSync(join(root, ".aih-config.json"), "utf8")).toBe(markerBefore);
@@ -276,6 +293,36 @@ describe("durable project policy binding", () => {
     expect(existsSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"))).toBe(
       false,
     );
+  });
+
+  it("refuses governed ECC delivery by name, before any projection, when the plugin is not installed", async () => {
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      `${JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "fixture",
+          supportedClis: ["claude"],
+          catalog: { reviewed: [], custom: [] },
+          externalSelections: [{ framework: "ecc", items: [] }],
+        },
+      })}
+`,
+    );
+    const context = {
+      ...ctx({ project: "payments-api", cli: "claude" }),
+      posture: "enterprise" as const,
+      targets: ["claude" as const],
+    };
+    await executePlan(await policyBindCommand.plan(context), context);
+    const markerBefore = readFileSync(join(root, ".aih-config.json"), "utf8");
+
+    await expect(executePolicyProjectCommand(context)).rejects.toThrow(
+      "framework-plugin-unavailable: @aihq/framework-ecc ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core",
+    );
+    expect(readFileSync(join(root, ".aih-config.json"), "utf8")).toBe(markerBefore);
   });
 
   it("refuses a public material mutation when ownership remains but its binding is missing", () => {

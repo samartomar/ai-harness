@@ -4,12 +4,16 @@ import type { CiImpactReceipt, CiOperatingSystem } from "./ci-impact.js";
 export const CI_STATIC_SCRIPTS = [
   "check:artifacts",
   "check:ecc-installer",
+  // The bundled framework plugins (packages/framework-*) load only from their
+  // built dist, which a fresh checkout does not carry: build before any suite.
+  "build:framework-plugins",
   "check:self-hosting-canon",
   "typecheck",
   "lint:ci",
   "docs:lint",
   "check:packed-doc-links",
   "build",
+  "verify:packed-core-policy",
   "baseline:check",
 ] as const;
 
@@ -40,19 +44,6 @@ export function localVerificationSteps(receipt: CiImpactReceipt): LocalVerificat
         FULL_SUITE: "false",
         TEST_LANE: receipt.testLane,
         PROVIDER_TESTS_JSON: JSON.stringify(receipt.providerTests),
-        REQUIRES_GENERIC_BROWSER_JOURNEYS: String(receipt.requiresGenericBrowserJourneys),
-      },
-    });
-  }
-  if (receipt.requiresGenericBrowserJourneys) {
-    steps.push({ script: "test:workbench:pr", args: [], env: {} });
-  } else if (receipt.affectedProviders.length > 0) {
-    steps.push({
-      script: "test:workbench:providers",
-      args: [],
-      env: {
-        AFFECTED_PROVIDERS_JSON: JSON.stringify(receipt.affectedProviders),
-        PROVIDER_TESTS_JSON: JSON.stringify(receipt.providerTests),
       },
     });
   }
@@ -77,9 +68,6 @@ export function localVerificationGaps(
       ? [`Selected tests still require hosted OS validation on: ${otherSystems.join(", ")}.`]
       : []),
     "Local results do not replace hosted runner/Node images, CodeQL, PR metadata or protected checks.",
-    ...(receipt.requiresPackedArtifact
-      ? ["Workbench acceptance still requires its hosted Ubuntu/Node/Chromium envelope."]
-      : []),
     ...(receipt.releasePreparation
       ? ["Release-preparation authorization and allowlist checks remain required in CI."]
       : []),

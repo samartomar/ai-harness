@@ -8,6 +8,8 @@ import {
   readAihConfig,
   readPolicyBinding,
 } from "../config/marker.js";
+import { prepareEccUninstallV1 } from "../framework-plugin/ecc-lifecycle.js";
+import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
@@ -65,7 +67,6 @@ import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
   type EccMaterializationRemovalOutcome,
   eccMaterializationUninstallState,
-  removeEccMaterialization,
 } from "./ecc-materialization.js";
 
 type UninstallDisposition = "backup" | "subtract" | "advisory";
@@ -248,7 +249,8 @@ const OPERATOR_CONTEXT_ARTIFACT_CANDIDATES = [
   "cross-repo-architecture.md",
 ] as const;
 
-const FIXED_GENERATED_CLI_ARTIFACTS: Readonly<Record<string, readonly string[]>> = {
+/** Generated per-CLI files uninstall may remove once receipts prove them unchanged. */
+export const FIXED_GENERATED_CLI_ARTIFACTS: Readonly<Record<string, readonly string[]>> = {
   cursor: [
     ".cursor/rules/01-stack.mdc",
     ".cursor/rules/02-node.mdc",
@@ -977,15 +979,32 @@ function uninstallPlan(ctx: PlanContext): Plan {
 /** Execute receipt-only cleanup in explicit, independently recoverable phases. */
 export async function executeUninstallCommand(
   ctx: PlanContext,
-  deps: { removeMaterialization?: typeof removeEccMaterialization } = {},
+  deps: {
+    /** Test seam for the ECC removal; production runs it through @aihq/framework-ecc. */
+    removeMaterialization?: (
+      root: string,
+    ) => EccMaterializationRemovalOutcome | Promise<EccMaterializationRemovalOutcome>;
+    frameworks?: FrameworkCommandDepsV1;
+  } = {},
 ): Promise<PlanResult> {
   const prepared = uninstallPlan(ctx);
   const set = prepared.actions.find((action) => action.kind === "digest")?.data as UninstallSet;
+  // Any aih ECC state needs the ECC plugin: preflight it before any cleanup
+  // runs, so a missing or broken plugin refuses by name, naming the state, with
+  // nothing touched. Receipt-proven ECC content is then removed by the plugin.
+  const removeEcc = await prepareEccUninstallV1(
+    ctx,
+    set.removeEccMaterialization === true && deps.removeMaterialization === undefined,
+    deps.frameworks,
+  );
   const result = await executePlan(prepared, ctx);
   if (!ctx.apply || !set.removeEccMaterialization || (result.report && !result.report.ok))
     return result;
   try {
-    const outcome = (deps.removeMaterialization ?? removeEccMaterialization)(ctx.root);
+    const outcome =
+      deps.removeMaterialization !== undefined
+        ? await deps.removeMaterialization(ctx.root)
+        : await (removeEcc as () => Promise<EccMaterializationRemovalOutcome>)();
     const receiptRetained = exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH);
     const actual = withMaterializationOutcome(set, outcome, receiptRetained);
     const report = result.report ?? new VerificationReport();

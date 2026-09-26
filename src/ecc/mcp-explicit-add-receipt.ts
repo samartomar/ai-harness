@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { entry } from "../internals/cli-registry.js";
 import {
   ECC_MCP_CATALOG_PROVENANCE,
-  eccExternalMcpCatalog,
+  eccExternalMcpCatalogV1,
 } from "../org-policy/ecc-mcp-catalog.js";
 
 export const ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH = ".aih/ecc-mcp-explicit-add-v1.json";
@@ -10,7 +10,11 @@ export const ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH = ".aih/ecc-mcp-explicit-add-v1.j
 export interface EccMcpExplicitAddRecord {
   id: string;
   target: string;
-  catalog: typeof ECC_MCP_CATALOG_PROVENANCE;
+  /**
+   * The ECC MCP content the entry was rendered from. A record made for other
+   * content is kept and labelled stale by its reader; it authorizes nothing (D74).
+   */
+  catalog: { repository: string; commit: string; path: string; contentSha256: string };
   config: {
     path: string;
     key: string;
@@ -46,7 +50,7 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boo
 function isSafeRecord(value: unknown): value is EccMcpExplicitAddRecord {
   if (!isRecord(value) || !isRecord(value.catalog) || !isRecord(value.config)) return false;
   const config = value.config;
-  const catalog = eccExternalMcpCatalog.find(
+  const catalog = eccExternalMcpCatalogV1().find(
     (candidate) => candidate.id === value.id && candidate.addability === "https-configurable",
   );
   let target: ReturnType<typeof entry> | undefined;
@@ -64,9 +68,11 @@ function isSafeRecord(value: unknown): value is EccMcpExplicitAddRecord {
     target !== undefined &&
     targetMcp !== undefined &&
     value.catalog.repository === ECC_MCP_CATALOG_PROVENANCE.repository &&
-    value.catalog.commit === ECC_MCP_CATALOG_PROVENANCE.commit &&
+    typeof value.catalog.commit === "string" &&
+    /^[0-9a-f]{40}$/.test(value.catalog.commit) &&
     value.catalog.path === ECC_MCP_CATALOG_PROVENANCE.path &&
-    value.catalog.contentSha256 === ECC_MCP_CATALOG_PROVENANCE.contentSha256 &&
+    typeof value.catalog.contentSha256 === "string" &&
+    /^[0-9a-f]{64}$/.test(value.catalog.contentSha256) &&
     config.path === targetMcp.configPath &&
     config.key === targetMcp.configKey &&
     config.format === targetMcp.configFormat &&

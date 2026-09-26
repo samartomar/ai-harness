@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {assertInputs,bindIdentity,validatePublicInputs} from './validate-public-inputs.mjs';
+import {assertInputs,bindIdentity,identity,validatePublicInputs} from './validate-public-inputs.mjs';
 import {regularBytes,compareInstalledTarball} from './bytes.mjs';
 const root=import.meta.dirname.replaceAll('\\','/');
 const input={qualificationPath:root+'/absent-qualification.json',qualificationSha256:'sha256:'+'a'.repeat(64),coreTarball:root+'/absent-core.tgz',corePackageRoot:root+'/absent-installed',seq4Receipt:root+'/absent-public-seq4.json',seq4SourceSha:'a'.repeat(40)};
@@ -23,17 +23,17 @@ await assert.rejects(main([]),/usage/u);checks++;
 console.log(`DRIVER_PREPARATION_${checks}_CONTROLS_PASS; imports inert, all three injected contexts refused, no live run`);
 import {readFileSync} from 'node:fs';
 import {decisionDispositionForSequence} from './policy-authoring.mjs';
-const formSource=readFileSync('src/org-policy/studio-protected-authority.ts','utf8');
-const select=formSource.match(/<select id="protected-disposition">([\s\S]*?)<\/select>/u)?.[1];
-assert(select,'current native disposition form exists');
-const allowed=[...select.matchAll(/<option value="([^"]+)">/gu)].map(match=>match[1]);
-for(let sequence=0;sequence<=4;sequence++)assert(allowed.includes(decisionDispositionForSequence(sequence)),`producer disposition supported by native form for seq${sequence}`);
 assert.deepEqual([0,1,2,3].map(decisionDispositionForSequence),Array(4).fill('approved'));
 assert.equal(decisionDispositionForSequence(4),'accepted-with-conditions');checks++;
 assert.throws(()=>decisionDispositionForSequence(5),/public sequence/u);checks++;
-const runtime=readFileSync('src/org-policy/studio-protected-authority-runtime.js','utf8');
-assert.match(runtime,/disposition: values\.disposition/u); // Native output retains this enum; authorAndCheck must expect approved, not accepted.
-console.log(`DISPOSITION_PREPARATION_${checks}_CONTROLS_PASS; actual form options and normalized runtime enum agree`);
+const {workbenchGenerateArguments}=await import('./custody-arguments.mjs');
+const historicHtml=root+'/historical-workbench.html';
+assert.deepEqual(workbenchGenerateArguments(historicHtml),['policy','generate','--apply','--out',historicHtml,'--no-log']);
+assert.equal(identity.version,'0.6.1');assert.equal(identity.tag,'v-core-0.6.1');
+const hosted848=readFileSync(root+'/run-848.mjs','utf8');
+assert.match(hosted848,/manifest\.version, '0\.6\.1'/u);
+assert.match(hosted848,/workbenchGenerateArguments\(htmlPath\)/u);checks++;
+console.log(`DISPOSITION_PREPARATION_${checks}_CONTROLS_PASS; producer enums and pinned Core0.6.1 route checked; installed browser form compatibility requires the hosted acceptance run`);
 for(const name of ['run-832.mjs','run-managed.mjs','run-848.mjs']) {
  const source=readFileSync(root+'/'+name,'utf8');
  const finalCheck=source.indexOf('await recheck(context);');

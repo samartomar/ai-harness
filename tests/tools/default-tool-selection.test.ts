@@ -6,7 +6,7 @@ import {
 } from "../../src/tools/default-tool-selection.js";
 
 describe("default developer tool selection", () => {
-  it("keeps Playwright as the seventh ordinary setup default", () => {
+  it("selects Headroom intent by default after the seven existing tools", () => {
     expect(DEFAULT_DEVELOPER_TOOL_IDS).toEqual([
       "code-review-graph",
       "codebase-memory-mcp",
@@ -15,6 +15,7 @@ describe("default developer tool selection", () => {
       "context7",
       "markitdown",
       "playwright",
+      "headroom",
     ]);
   });
 
@@ -87,7 +88,14 @@ describe("default developer tool selection", () => {
     ).toEqual({
       accepted: true,
       source: "legacy-unspecified",
-      selected: ["code-review-graph", "codebase-memory-mcp", "serena", "markitdown", "playwright"],
+      selected: [
+        "code-review-graph",
+        "codebase-memory-mcp",
+        "serena",
+        "markitdown",
+        "playwright",
+        "headroom",
+      ],
       excluded: ["token-optimizer", "context7"],
       diagnostics: [],
     });
@@ -138,10 +146,47 @@ describe("default developer tool selection", () => {
     expect(result.diagnostics).toEqual([expect.objectContaining({ code })]);
   });
 
+  it("returns a selected primary code graph and omits the key when none is chosen", () => {
+    expect(
+      resolveDefaultToolSelection({
+        policy: { kind: "bound", binding: "valid", primaryCodeGraph: "codebase-memory-mcp" },
+      }),
+    ).toMatchObject({
+      accepted: true,
+      source: "legacy-unspecified",
+      primaryCodeGraph: "codebase-memory-mcp",
+    });
+    expect(resolveDefaultToolSelection({ policy: { kind: "none" } })).not.toHaveProperty(
+      "primaryCodeGraph",
+    );
+  });
+
+  it.each([
+    { label: "an unsupported id", policy: { primaryCodeGraph: "serena" }, code: "invalid-primary" },
+    { label: "a non-string", policy: { primaryCodeGraph: 7 }, code: "invalid-primary" },
+    {
+      label: "an excluded tool",
+      policy: { primaryCodeGraph: "code-review-graph", excluded: ["code-review-graph"] },
+      code: "excluded-primary",
+    },
+    {
+      label: "an unselected tool",
+      policy: { primaryCodeGraph: "codebase-memory-mcp", selected: ["code-review-graph"] },
+      code: "excluded-primary",
+    },
+  ])("fails closed for a primary code graph naming $label", ({ policy, code }) => {
+    const result = resolveDefaultToolSelection({
+      policy: { kind: "bound", binding: "valid", ...policy },
+    });
+    expect(result).toMatchObject({ accepted: false, source: "fail-closed", selected: [] });
+    expect(result.diagnostics).toEqual([expect.objectContaining({ code })]);
+  });
+
   it("recognizes only supported developer tool ids", () => {
     expect(isDeveloperToolId("code-review-graph")).toBe(true);
     expect(isDeveloperToolId("token-optimizer")).toBe(true);
     expect(isDeveloperToolId("playwright")).toBe(true);
+    expect(isDeveloperToolId("headroom")).toBe(true);
     expect(isDeveloperToolId("github")).toBe(false);
     expect(isDeveloperToolId(42)).toBe(false);
   });

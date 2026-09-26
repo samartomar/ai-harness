@@ -7,7 +7,7 @@ import { materializeAihScanSubjectsV1 } from "../src/baseline-evidence/aih-scan-
 import { createCoreBaselineVetRequests } from "../src/baseline-evidence/scanner-consumer.ts";
 import { canonicalStrictJsonBytesV1 } from "../src/contract/strict-json-v1.ts";
 import { policyAuthoringCatalog } from "../src/org-policy/catalog.ts";
-import { compileBuiltInCatalogV1 } from "../src/org-policy/workbench/compilers/built-in.ts";
+import { aihScannerCompilationFromCatalogV1 } from "../src/baseline-evidence/aih-scan-material.ts";
 
 const flags = new Set(["--source", "--core-commit", "--output"]);
 const values = new Map();
@@ -41,7 +41,7 @@ mkdirSync(output, { recursive: false });
 const catalog = policyAuthoringCatalog();
 const material = materializeAihScanSubjectsV1({
   packageRoot: source, outputParent: output, coreRevision: { pinnedSha: coreCommit },
-  catalog, compiled: compileBuiltInCatalogV1(catalog),
+  catalog, compiled: aihScannerCompilationFromCatalogV1(),
 });
 const requests = createCoreBaselineVetRequests(material.sourceRoot, material.catalog);
 for (const [index, request] of requests.entries()) {

@@ -1,17 +1,12 @@
 import { createHash } from "node:crypto";
-import snapshot from "./ecc-mcp-catalog.snapshot.json";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
+import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-contract.js";
 
-/** Exact public upstream source whose bytes are committed beside this module. */
-export const ECC_MCP_CATALOG_PROVENANCE = {
-  repository: "affaan-m/ECC",
-  commit: "5caf398a91599029a176ca6d806409b00d1052c4",
-  path: "mcp-configs/mcp-servers.json",
-  contentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
-} as const;
+export { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE };
 
 /** Canonical parsed-content digest used after the JSON is bundled into dist. */
 export const ECC_MCP_CATALOG_CANONICAL_SHA256 =
-  "5bd0b00f7051b54e07a821f1e1fd121fcd2e50fe5ec464895b321476bd7fbae6";
+  "bab2a851f40920effb15f8ca13c34d5699697ff3de16afd03bcb6b6c93c281b3";
 
 /** Upstream order is a reviewable part of the source-locked inventory. */
 export const ECC_MCP_CATALOG_IDS = [
@@ -50,13 +45,6 @@ export const ECC_MCP_CATALOG_IDS = [
   "confluence",
   "evalview",
   "squish",
-] as const;
-
-export const AIH_OWNED_ECC_MCP_EXCLUSIONS = [
-  "github",
-  "sequential-thinking",
-  "context7",
-  "playwright",
 ] as const;
 
 type EccMcpId = (typeof ECC_MCP_CATALOG_IDS)[number];
@@ -633,13 +621,38 @@ export function validateEccMcpCatalogInventory(
   return entries;
 }
 
-/** Complete upstream inventory, validated at import time against pinned canonical content. */
-export const eccMcpCatalogInventory = validateEccMcpCatalogInventory(snapshot);
+let loadedInventory: readonly EccMcpCatalogEntry[] | undefined;
+function inventoryV1(): readonly EccMcpCatalogEntry[] {
+  if (loadedInventory !== undefined) return loadedInventory;
+  const document = loadFrameworkDescriptorSectionV1<{ bytesBase64: string; sha256: string }>(
+    "ecc",
+    "mcpInventoryDocument",
+  );
+  const bytes = Buffer.from(document.bytesBase64, "base64");
+  if (
+    document.sha256 !== ECC_MCP_CATALOG_PROVENANCE.contentSha256 ||
+    createHash("sha256").update(bytes).digest("hex") !== document.sha256
+  ) {
+    fail("Catalog-carried source document digest mismatch");
+  }
+  loadedInventory = validateEccMcpCatalogInventory(JSON.parse(bytes.toString("utf8")));
+  return loadedInventory;
+}
+
+/** Complete upstream inventory, loaded through the installed Catalog on explicit use. */
+export function eccMcpCatalogInventoryV1(): readonly EccMcpCatalogEntry[] {
+  return Object.freeze([...inventoryV1()]);
+}
 
 /**
  * ECC-owned options only. These are facts for a future explicit add flow, never
  * McpServer instances, governed candidates, settings, or an installation plan.
  */
-export const eccExternalMcpCatalog = eccMcpCatalogInventory.filter(
-  (entry) => entry.owner === "ecc",
-);
+let loadedExternal: readonly EccMcpCatalogEntry[] | undefined;
+function externalInventoryV1(): readonly EccMcpCatalogEntry[] {
+  loadedExternal ??= inventoryV1().filter((entry) => entry.owner === "ecc");
+  return loadedExternal;
+}
+export function eccExternalMcpCatalogV1(): readonly EccMcpCatalogEntry[] {
+  return Object.freeze([...externalInventoryV1()]);
+}

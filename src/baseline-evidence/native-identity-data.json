@@ -10,9 +10,10 @@
     "src/trust/acknowledge.ts",
     "src/trust/artifact-evidence.ts",
     "src/trust/artifact-intake.ts",
+    "src/trust/cisco-shard-delegation.ts",
     "src/trust/cisco-shards.ts",
     "src/trust/commands.ts",
-    "src/trust/depnames.ts",
+    "src/trust/detector-availability.ts",
     "src/trust/detectors.ts",
     "src/trust/directory-resolution.ts",
     "src/trust/docker.ts",
@@ -21,15 +22,20 @@
     "src/trust/fingerprint.ts",
     "src/trust/grade.ts",
     "src/trust/images.ts",
+    "src/trust/internal-scopes.ts",
     "src/trust/inventory.ts",
-    "src/trust/lint.ts",
     "src/trust/lock.ts",
-    "src/trust/manifest.ts",
     "src/trust/mcp-classify.ts",
+    "src/trust/report-exit.ts",
+    "src/trust/scan-analyzer-identity.ts",
+    "src/trust/scan-sarif.ts",
+    "src/trust/scan-subject-files.ts",
     "src/trust/scan.ts",
     "src/trust/scanner-runtime-identity.ts",
     "src/trust/script-files.ts",
-    "src/trust/smoke.ts"
+    "src/trust/smoke.ts",
+    "src/trust/trust-lint-sarif.ts",
+    "src/trust/unreviewed-analyzer-rules.ts"
   ],
-  "digest": "1b0a1503dad5"
+  "digest": "e129cbc0324b"
 }

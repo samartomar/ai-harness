@@ -1,11 +1,25 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+// The real CLI reaches the INSTALLED @aihq/scan (no injection seam across a
+// process). Every trust scan's native findings come from its
+// detector.aih-trust-lint; an installed Scan without it refuses the whole scan.
+const INSTALLED_SCAN_HAS_TRUST_LINT = await import("@aihq/scan").then(
+  (scan: { listDetectorCapabilitiesV1?: () => readonly { detectorId?: unknown }[] }) =>
+    (scan.listDetectorCapabilitiesV1?.() ?? []).some(
+      (capability) => capability.detectorId === "detector.aih-trust-lint",
+    ),
+  () => false,
+);
+
 const tmps: string[] = [];
-const TEST_PROCESS_TIMEOUT_MS = 25_000;
+// The installed Scan resolves analyzers outside PATH (Docker, uv in well-known
+// directories), so a real CLI run may execute the pinned SkillSpector image.
+const TEST_PROCESS_TIMEOUT_MS = 120_000;
+const TEST_TIMEOUT_MS = TEST_PROCESS_TIMEOUT_MS + 10_000;
 
 function fresh(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -42,115 +56,164 @@ function runAih(args: string[]) {
   });
 }
 
-describe("T3 real CLI trust gate", () => {
-  it("promotes a clean local source", () => {
-    const workspace = fresh("aih-cli-clean-root-");
-    const source = fresh("aih-cli-clean-source-");
-    write(source, "skills/clean/SKILL.md", "# Clean\n");
+describe("T3 real CLI trust gate without Scan's trust lint", () => {
+  it.runIf(!INSTALLED_SCAN_HAS_TRUST_LINT)(
+    "refuses the source instead of promoting it ungraded",
+    () => {
+      const workspace = fresh("aih-cli-no-lint-root-");
+      const source = fresh("aih-cli-no-lint-source-");
+      write(source, "skills/clean/SKILL.md", "# Clean\n");
 
-    const result = runAih([
-      "workspace",
-      "add",
-      source,
-      "--root",
-      workspace,
-      "--context-dir",
-      "ai-coding",
-      "--apply",
-      "--force",
-    ]);
+      const result = runAih([
+        "workspace",
+        "add",
+        source,
+        "--root",
+        workspace,
+        "--context-dir",
+        "ai-coding",
+        "--apply",
+        "--force",
+      ]);
 
-    const sourceId = basename(source).toLowerCase();
-    expect(result.status, result.stderr || result.stdout).toBe(0);
-    expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean", "SKILL.md"))).toBe(
-      true,
-    );
-    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
-  }, 30000);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain(
+        "declares no detector.aih-trust-lint capability",
+      );
+      expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+      expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
 
-  it("blocks an auto-exec local source without promoting", () => {
-    const workspace = fresh("aih-cli-auto-root-");
-    const source = fresh("aih-cli-auto-source-");
-    write(source, "skills/evil/SKILL.md", "# Evil\n");
-    write(source, "package.json", JSON.stringify({ scripts: { postinstall: "node setup.js" } }));
+describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
+  it(
+    "promotes a clean local source",
+    () => {
+      const workspace = fresh("aih-cli-clean-root-");
+      const source = fresh("aih-cli-clean-source-");
+      write(source, "skills/clean/SKILL.md", "# Clean\n");
 
-    const result = runAih([
-      "workspace",
-      "add",
-      source,
-      "--root",
-      workspace,
-      "--context-dir",
-      "ai-coding",
-      "--apply",
-      "--force",
-    ]);
+      const result = runAih([
+        "workspace",
+        "add",
+        source,
+        "--root",
+        workspace,
+        "--context-dir",
+        "ai-coding",
+        "--apply",
+        "--force",
+      ]);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("trust.auto-exec-hook");
-    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
-    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 30000);
+      const sourceId = basename(source).toLowerCase();
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      expect(
+        existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean", "SKILL.md")),
+      ).toBe(true);
+      expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it("blocks a third-party incoming MCP server at enterprise posture", () => {
-    const workspace = fresh("aih-cli-mcp-root-");
-    const source = fresh("aih-cli-mcp-source-");
-    write(source, "skills/clean/SKILL.md", "# Clean\n");
-    write(
-      source,
-      ".mcp.json",
-      JSON.stringify({ mcpServers: { hosted: { url: "https://mcp.vendor.example/mcp" } } }),
-    );
+  it(
+    "promotes an auto-exec local source and records the label",
+    () => {
+      const workspace = fresh("aih-cli-auto-root-");
+      const source = fresh("aih-cli-auto-source-");
+      write(source, "skills/evil/SKILL.md", "# Evil\n");
+      write(source, "package.json", JSON.stringify({ scripts: { postinstall: "node setup.js" } }));
 
-    const result = runAih([
-      "workspace",
-      "add",
-      source,
-      "--root",
-      workspace,
-      "--context-dir",
-      "ai-coding",
-      "--posture",
-      "enterprise",
-      "--apply",
-      "--force",
-    ]);
+      const result = runAih([
+        "workspace",
+        "add",
+        source,
+        "--root",
+        workspace,
+        "--context-dir",
+        "ai-coding",
+        "--apply",
+        "--force",
+      ]);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("mcp.policy-denied");
-    expect(result.stdout).toContain("hosted MCP server has no post-approval rug-pull protection");
-    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
-    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 30000);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("trust.auto-exec-hook");
+      expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(true);
+      expect(readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8")).toContain(
+        "trust.auto-exec-hook",
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it("blocks a bundled-local incoming MCP server at enterprise posture", () => {
-    const workspace = fresh("aih-cli-bundled-mcp-root-");
-    const source = fresh("aih-cli-bundled-mcp-source-");
-    write(source, "skills/clean/SKILL.md", "# Clean\n");
-    write(
-      source,
-      ".mcp.json",
-      JSON.stringify({ mcpServers: { bundled: { command: "node", args: ["./payload.js"] } } }),
-    );
+  it(
+    "blocks a third-party incoming MCP server at enterprise posture",
+    () => {
+      const workspace = fresh("aih-cli-mcp-root-");
+      const source = fresh("aih-cli-mcp-source-");
+      write(source, "skills/clean/SKILL.md", "# Clean\n");
+      write(
+        source,
+        ".mcp.json",
+        JSON.stringify({ mcpServers: { hosted: { url: "https://mcp.vendor.example/mcp" } } }),
+      );
 
-    const result = runAih([
-      "workspace",
-      "add",
-      source,
-      "--root",
-      workspace,
-      "--context-dir",
-      "ai-coding",
-      "--posture",
-      "enterprise",
-      "--apply",
-      "--force",
-    ]);
+      const result = runAih([
+        "workspace",
+        "add",
+        source,
+        "--root",
+        workspace,
+        "--context-dir",
+        "ai-coding",
+        "--posture",
+        "enterprise",
+        "--apply",
+        "--force",
+      ]);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("mcp.policy-denied");
-    expect(result.stdout).toContain("unpinned supply chain");
-    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
-    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 30000);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("mcp.policy-denied");
+      expect(result.stdout).toContain("hosted MCP server has no post-approval rug-pull protection");
+      expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+      expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "blocks a bundled-local incoming MCP server at enterprise posture",
+    () => {
+      const workspace = fresh("aih-cli-bundled-mcp-root-");
+      const source = fresh("aih-cli-bundled-mcp-source-");
+      write(source, "skills/clean/SKILL.md", "# Clean\n");
+      write(
+        source,
+        ".mcp.json",
+        JSON.stringify({ mcpServers: { bundled: { command: "node", args: ["./payload.js"] } } }),
+      );
+
+      const result = runAih([
+        "workspace",
+        "add",
+        source,
+        "--root",
+        workspace,
+        "--context-dir",
+        "ai-coding",
+        "--posture",
+        "enterprise",
+        "--apply",
+        "--force",
+      ]);
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("mcp.policy-denied");
+      expect(result.stdout).toContain("unpinned supply chain");
+      expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+      expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

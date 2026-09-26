@@ -45,7 +45,7 @@ function catalog() {
 
 function lockValue(overrides: Record<string, unknown> = {}) {
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -58,15 +58,16 @@ function lockValue(overrides: Record<string, unknown> = {}) {
             id: "module:agents-core:reviewer",
             paths: ["agents/reviewer.yaml", "agents/reviewer.md"],
             treeSha256: MODULE_TREE,
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "scanner-z", version: "9" }],
             findings: [],
+            evidenceProblems: [],
           },
           {
             id: "skill:alpha",
             paths: ["skills/alpha"],
             treeSha256: SKILL_TREE,
-            verdict: "blocked",
+            verdict: "has-findings",
             analyzers: [
               { name: "scanner-z", version: "9" },
               { name: "scanner-a", version: "1" },
@@ -76,6 +77,7 @@ function lockValue(overrides: Record<string, unknown> = {}) {
               { code: "trust.alpha", detail: "two" },
               { code: "trust.zeta", count: 2, detail: "three" },
             ],
+            evidenceProblems: [],
           },
         ],
         ...overrides,
@@ -198,7 +200,7 @@ describe("Package Graph baseline authority adapter", () => {
             sha256: sha256(bytes),
             subjectDigest: { algorithm: "sha256", value: SKILL_TREE },
           },
-          verdict: "blocked",
+          verdict: "has-findings",
           findings: [{ code: "trust.alpha" }, { code: "trust.zeta", count: 3 }],
         },
       ],
@@ -276,7 +278,7 @@ describe("Package Graph baseline authority adapter", () => {
     ];
 
     for (const source of mismatches) {
-      const bytes = lockBytes({ schemaVersion: 1, sources: [source] } as ReturnType<
+      const bytes = lockBytes({ schemaVersion: 2, sources: [source] } as ReturnType<
         typeof lockValue
       >);
       expect(() =>

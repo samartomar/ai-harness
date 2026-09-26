@@ -11,11 +11,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  CODEX_AGENTS_BLOCK_MARKER,
+  CODEX_INSTALL_STATE_FILE,
+} from "../../packages/framework-ecc/src/ecc/codex.js";
+import { eccPruneReconciliationActions } from "../../packages/framework-ecc/src/ecc/prune-reconcile.js";
 import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
-import { CODEX_AGENTS_BLOCK_MARKER, CODEX_INSTALL_STATE_FILE } from "../../src/ecc/codex.js";
-import { eccPruneReconciliationActions } from "../../src/ecc/prune-reconcile.js";
 import { registrationLedgerPath } from "../../src/ecc/registration.js";
 import { executePlan } from "../../src/internals/execute.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
@@ -24,6 +26,31 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/prune/index.js";
+
+// prune's ECC share runs through @aihq/framework-ecc: read it from this repository's package source.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/framework-plugin/load-framework-plugin.js")>();
+  const { sourcePluginAccess } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkPluginV1: (
+      id: Parameters<typeof actual.loadFrameworkPluginV1>[0],
+      options: Parameters<typeof actual.loadFrameworkPluginV1>[1] = {},
+    ) => actual.loadFrameworkPluginV1(id, { ...options, access: sourcePluginAccess(id) }),
+  };
+});
+vi.mock("../../src/catalog-package/framework-descriptors.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/catalog-package/framework-descriptors.js")>();
+  const { eccDescriptorLoad } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkDescriptorBytesV1: async (
+      id: Parameters<typeof actual.loadFrameworkDescriptorBytesV1>[0],
+    ) => (id === "ecc" ? eccDescriptorLoad() : actual.loadFrameworkDescriptorBytesV1(id)),
+  };
+});
 
 let dir: string;
 beforeEach(() => {

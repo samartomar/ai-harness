@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -12,9 +13,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { authorMcpPolicyViaPackedWorkbench } from "./lib/author-mcp-policy-via-workbench.mjs";
+import { buildMcpPolicyFixture } from "./lib/build-mcp-policy-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = process.env.npm_execpath;
@@ -36,8 +37,92 @@ const PATHS = {
   kimi: ".kimi-code/mcp.json",
   kiro: ".kiro/settings/mcp.json",
 };
-const SERVERS = ["sequential-thinking", "code-review-graph"];
+const SERVERS = ["sequential-thinking"];
+const DRIFTED_SERVER = "code-review-graph";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const SERVER_SHAPES = {
+  "code-review-graph": {
+    type: "stdio",
+    command: "uvx",
+    args: ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.7", "serve"],
+    env: {},
+    classification: "local",
+    egress: "none",
+    credentials: "none",
+    supplyChain: "pinned",
+  },
+  "sequential-thinking": {
+    type: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.8.31"],
+    env: {},
+    classification: "local",
+    egress: "none",
+    credentials: "none",
+    supplyChain: "pinned",
+  },
+};
+function stable(value) {
+  if (value === undefined) return "null";
+  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stable(child)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
+function reviewedServer(id) {
+  const server = SERVER_SHAPES[id];
+  assert(server !== undefined, "cold-mcp-server-fixture-missing");
+  const { type, command, args, env, classification, egress, credentials, supplyChain } = server;
+  const subject = `mcp-server-sha256:${sha256(
+    stable({
+      shape: { type, command, args, env },
+      risk: { classification, egress, credentials, supplyChain, skillsProvider: undefined },
+    }),
+  )}`;
+  return {
+    id,
+    kind: "mcp",
+    description: "Disposable exact-pinned AIH-owned MCP fixture",
+    capabilities: [],
+    risks: [],
+    source: { type: "mcp", server: id, subject },
+    targets: TARGETS,
+    projector: "mcp-managed-settings",
+    lifecycle: "supported",
+    evidence: { record: `cold-mcp-${id}` },
+  };
+}
+function basePolicy(targets, servers = SERVERS) {
+  return {
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
+    references: { repoContract: "ai-coding/project.json" },
+    mcp: { allowManagedOnly: true, allowedServers: [], disabledServers: [] },
+    governance: {
+      policyVersion: "cold-mcp-1",
+      supportedClis: targets,
+      catalog: { reviewed: servers.map(reviewedServer), custom: [] },
+      activations: servers.map((candidate) => ({ candidate, state: "active", targets })),
+      authority: { approvals: [] },
+    },
+  };
+}
+function authorityReceipt(targets, now) {
+  return {
+    format: "aih-policy-authority-receipt",
+    version: 3,
+    issuerRepository: "example.invalid/cold-mcp",
+    issuedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
+    trustedIssuers: [{ id: "cold-fixture-admin", githubRepository: "example.invalid/cold-mcp" }],
+    targets: [...targets].sort(),
+    decisions: [],
+    decisionRevocations: [],
+  };
+}
 const assert = (condition, code) => {
   if (!condition) throw new Error(code);
 };
@@ -50,15 +135,28 @@ const evidence = {
   checks: [],
   limitations: [
     "Generated MCP server commands were never executed.",
+    "Positive code-review-graph projection is not proven; its old generic identity is checked only for fail-closed refusal.",
     "Protected-file verification is exercised; operating-system ACL enforcement is outside this proof.",
   ],
 };
+let packedArchivePath;
 const environment = {
   ...process.env,
   HOME: join(temp, "home"),
   USERPROFILE: join(temp, "home"),
+  APPDATA: join(temp, "home", "AppData", "Roaming"),
+  LOCALAPPDATA: join(temp, "home", "AppData", "Local"),
+  XDG_CONFIG_HOME: join(temp, "home", ".config"),
+  XDG_CACHE_HOME: join(temp, "home", ".cache"),
+  XDG_DATA_HOME: join(temp, "home", ".local", "share"),
+  XDG_STATE_HOME: join(temp, "home", ".local", "state"),
+  XDG_RUNTIME_DIR: join(temp, "home", ".runtime"),
 };
-for (const key of Object.keys(environment)) if (key.startsWith("AIH_")) delete environment[key];
+if (process.platform === "win32") {
+  environment.HOMEDRIVE = environment.HOME.slice(0, 2);
+  environment.HOMEPATH = environment.HOME.slice(2);
+}
+for (const key of Object.keys(environment)) if (/^AIH_/iu.test(key)) delete environment[key];
 const emit = (name, data = {}) => {
   const outcome =
     data.outcome ?? (data.exitCode === undefined || data.exitCode === 0 ? "pass" : "blocked");
@@ -171,6 +269,7 @@ try {
       !manifest.filename.includes("\\"),
     "cold-mcp-pack-manifest-invalid",
   );
+  packedArchivePath = join(temp, manifest.filename);
   const consumer = join(temp, "consumer");
   const target = join(temp, "target");
   const admin = join(temp, "admin");
@@ -186,8 +285,26 @@ try {
   ]);
   assert(installed.status === 0, "cold-mcp-install-failed");
   const packageRoot = join(consumer, "node_modules", "@aihq", "core");
+  const installedRoot = realpathSync(packageRoot);
+  assert(
+    installedRoot.startsWith(`${realpathSync(consumer)}${sep}`),
+    "cold-mcp-installed-package-outside-consumer",
+  );
   const cli = join(packageRoot, "dist", "cli.js");
-  const core = await import(pathToFileURL(join(packageRoot, "dist", "index.js")).href);
+  const installedManifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+  const exportedEntry = installedManifest.exports?.["."]?.import;
+  assert(
+    installedManifest.name === "@aihq/core" &&
+      typeof exportedEntry === "string" &&
+      exportedEntry.startsWith("./dist/"),
+    "cold-mcp-public-core-export-invalid",
+  );
+  const publicEntry = resolve(packageRoot, exportedEntry);
+  assert(
+    realpathSync(publicEntry).startsWith(`${installedRoot}${sep}`),
+    "cold-mcp-public-core-entry-outside-install",
+  );
+  const core = await import(pathToFileURL(publicEntry).href);
   const invoke = (cwd, args, policyPath) =>
     run(
       cwd,
@@ -196,62 +313,80 @@ try {
     );
   emit("packed-install", {
     version: manifest.version,
-    archiveDigest: sha256(readFileSync(join(temp, manifest.filename))),
+    archiveDigest: sha256(readFileSync(packedArchivePath)),
+    publicEntry: publicEntry.slice(consumer.length + 1).replaceAll("\\", "/"),
   });
 
-  const htmlPath = join(admin, "aih-policy-workbench.html");
-  const generated = invoke(admin, ["policy", "generate", "--apply", "--out", htmlPath]);
-  assert(
-    generated.status === 0 && existsSync(htmlPath),
-    "cold-mcp-workbench-generation-failed",
+  // The old generic CRG pin is not the root-aware native CRG identity in
+  // current Core. Preserve it as an explicit fail-closed, zero-write check;
+  // a separate positive seven-host fixture uses the unchanged exact
+  // sequential-thinking server, never a relabeled positive CRG result.
+  const driftTarget = join(temp, "identity-drift-target");
+  mkdirSync(driftTarget);
+  for (const [host, path] of Object.entries(PATHS)) {
+    write(
+      join(driftTarget, path),
+      host === "codex"
+        ? '# operator-owned setting\nmodel = "operator-model"\n'
+        : '{"operator":true}\n',
+    );
+  }
+  const driftBefore = settingsSnapshot(driftTarget);
+  const driftedPolicyPath = join(admin, "identity-drift-policy.json");
+  const driftedBundle = buildMcpPolicyFixture({
+    core,
+    basePolicy: basePolicy(TARGETS, [DRIFTED_SERVER]),
+    targets: TARGETS,
+    servers: [DRIFTED_SERVER],
+    authorityReceipt: authorityReceipt(TARGETS, new Date()),
+  });
+  write(driftedPolicyPath, JSON.stringify(driftedBundle, null, 2));
+  const driftedProjection = invoke(
+    driftTarget,
+    ["policy", "project", "--cli", TARGETS.join(","), "--apply"],
+    driftedPolicyPath,
   );
-  const policy = await authorMcpPolicyViaPackedWorkbench({
-    htmlPath,
+  const driftedMessage = jsonOutput(driftedProjection)?.error?.message;
+  assert(
+    driftedProjection.status !== 0 &&
+      typeof driftedMessage === "string" &&
+      driftedMessage.includes("runtime-mcp-identity-mismatch") &&
+      same(driftBefore, settingsSnapshot(driftTarget)) &&
+      !existsSync(join(driftTarget, ".aih-config.json")),
+    "cold-mcp-crg-identity-drift-not-refused",
+  );
+  emit("crg-identity-drift-refused", {
+    ...diagnosticSummary(driftedProjection),
+    outcome: "expected-refusal",
+    unchangedHosts: 7,
+    positiveCrgProven: false,
+  });
+
+  // The fixture declares exact pinned built-in controls. The installed Core
+  // parser and CLI decide whether those claims are still valid; no private
+  // catalog compiler or browser authoring path is loaded by this cold proof.
+  const policy = buildMcpPolicyFixture({
+    core,
+    basePolicy: basePolicy(TARGETS),
     targets: TARGETS,
     servers: SERVERS,
   });
-  emit("packed-workbench-mcp-authoring", {
+  emit("headless-mcp-policy-fixture", {
     schemaVersion: policy.schemaVersion,
     targets: TARGETS.length,
     candidates: policy.governance.catalog.reviewed.length,
   });
 
-  // The protected Workbench requires one Decision V2 to export its authority
-  // envelope. This inert fixture tool is never activated. MCP admission uses
-  // only the packed, exact built-in catalog evidence from the selected policy.
+  // This exact V3 receipt bounds targets but asserts no Decision V2 approval.
+  // The selected built-in controls must pass Core's own clean-control checks.
   const now = new Date();
   const authorityPath = join(admin, "policy-bundle.json");
-  const authorityFields = {
-    "protected-bundle-version": "cold-mcp-1",
-    "protected-issued-at": now.toISOString(),
-    "protected-expires-at": new Date(now.getTime() + 86400000).toISOString(),
-    "protected-issuer": "cold-fixture-admin",
-    "protected-issuer-repository": "example.invalid/cold-mcp",
-    "protected-kind": "tool",
-    "protected-subject-id": "cold-inert-tool",
-    "protected-source-type": "aih",
-    "protected-source-release": manifest.version,
-    "protected-source-revision": `sha256:${"a".repeat(64)}`,
-    "protected-targets": TARGETS.join(","),
-    "protected-effects": "observe",
-    "protected-decision-id": "decision-cold-inert-tool",
-    "protected-evidence-id": "cold-inert-evidence",
-    "protected-evidence-digest": `sha256:${"b".repeat(64)}`,
-    "protected-attestor": "cold-fixture-attestor",
-    "protected-policy-id": "cold-fixture-policy",
-    "protected-policy-version": "1",
-    "protected-policy-digest": `sha256:${"c".repeat(64)}`,
-    "protected-control-id": "cold-inert-control",
-    "protected-control-digest": `sha256:${"d".repeat(64)}`,
-    "protected-actor": "fixture-admin@example.invalid",
-    "protected-reason":
-      "Inert disposable authority-envelope fixture; no tool activation or execution is requested.",
-  };
-  const bundle = await authorMcpPolicyViaPackedWorkbench({
-    htmlPath,
+  const bundle = buildMcpPolicyFixture({
+    core,
+    basePolicy: basePolicy(TARGETS),
     targets: TARGETS,
     servers: SERVERS,
-    authorityFields,
+    authorityReceipt: authorityReceipt(TARGETS, now),
   });
   assert(core.parsePolicyBundle(bundle).ok, "cold-mcp-protected-bundle-invalid");
   write(authorityPath, JSON.stringify(bundle, null, 2));
@@ -269,8 +404,19 @@ try {
   }
   const projectArgs = ["policy", "project", "--cli", TARGETS.join(","), "--apply"];
   const initial = invoke(target, projectArgs, authorityPath);
-  emit("all-seven-projection", diagnosticSummary(initial));
-  assert(initial.status === 0, "cold-mcp-all-seven-projection-failed");
+  const initialRefusal = jsonOutput(initial)?.error?.message;
+  emit("all-seven-sequential-projection", {
+    ...diagnosticSummary(initial),
+    server: "sequential-thinking",
+    // This first command uses only the generated disposable policy. Keep a
+    // bounded diagnostic without the temporary absolute path; later private
+    // policy checks still retain codes and counts only.
+    generatedFixtureRefusal:
+      initial.status !== 0 && typeof initialRefusal === "string"
+        ? initialRefusal.replaceAll(temp, "<disposable>").slice(0, 500)
+        : undefined,
+  });
+  assert(initial.status === 0, "cold-mcp-all-seven-sequential-projection-failed");
   for (const path of Object.values(PATHS)) {
     const text = readFileSync(join(target, path), "utf8");
     assert(
@@ -299,11 +445,12 @@ try {
   emit("idempotent-second-projection", { unchangedHosts: 7 });
 
   const limitedTargets = TARGETS.filter((host) => host !== "copilot");
-  const limitedAuthority = await authorMcpPolicyViaPackedWorkbench({
-    htmlPath,
+  const limitedAuthority = buildMcpPolicyFixture({
+    core,
+    basePolicy: basePolicy(limitedTargets),
     targets: limitedTargets,
     servers: SERVERS,
-    authorityFields: { ...authorityFields, "protected-targets": limitedTargets.join(",") },
+    authorityReceipt: authorityReceipt(limitedTargets, now),
   });
   const limitedTarget = join(temp, "limited-target");
   mkdirSync(limitedTarget);
@@ -319,8 +466,7 @@ try {
     "cold-mcp-limited-authority-setup-failed",
   );
   const limitedSnapshot = settingsSnapshot(limitedTarget);
-  // Clean shipped controls are sanctioned by the complete protected policy.
-  // Requesting another known host must not expand that unchanged authority.
+  // Requesting another known host must not expand the unchanged authority.
   const protectedDigest = sha256(readFileSync(limitedPath));
   const expansionEvaluation = invoke(
     limitedTarget,
@@ -347,7 +493,7 @@ try {
 
   const changedPath = join(target, PATHS.cursor);
   const original = readFileSync(changedPath, "utf8");
-  write(changedPath, original.replace("uvx", "operator-uvx"));
+  write(changedPath, original.replace("npx", "operator-npx"));
   const changedSnapshot = settingsSnapshot(target);
   const drift = invoke(target, projectArgs, authorityPath);
   assert(
@@ -358,15 +504,14 @@ try {
   write(changedPath, original);
 
   const kept = TARGETS.filter((host) => host !== "cursor");
-  const narrowed = await authorMcpPolicyViaPackedWorkbench({
-    htmlPath,
+  const narrowedPolicy = basePolicy(kept);
+  narrowedPolicy.governance.policyVersion = "cold-mcp-2";
+  const narrowed = buildMcpPolicyFixture({
+    core,
+    basePolicy: narrowedPolicy,
     targets: kept,
     servers: SERVERS,
-    authorityFields: {
-      ...authorityFields,
-      "protected-bundle-version": "cold-mcp-2",
-      "protected-targets": kept.join(","),
-    },
+    authorityReceipt: authorityReceipt(kept, now),
   });
   write(authorityPath, JSON.stringify(narrowed, null, 2));
   const explicitRemoval = invoke(target, projectArgs, authorityPath);
@@ -448,22 +593,6 @@ try {
     const privatePolicy = JSON.parse(privateBytes.toString("utf8"));
     const legacyTarget = join(temp, "legacy-target");
     mkdirSync(legacyTarget);
-    const privateWorkbench = join(admin, "private-workbench.html");
-    const reopened = invoke(admin, [
-      "policy",
-      "generate",
-      "--policy-input",
-      legacyPolicy,
-      "--out",
-      privateWorkbench,
-      "--apply",
-    ]);
-    emit("legacy-private-policy-reopen", {
-      ...diagnosticSummary(reopened),
-      generatedOutputBytes: existsSync(privateWorkbench)
-        ? readFileSync(privateWorkbench).byteLength
-        : 0,
-    });
     const validation = invoke(legacyTarget, ["policy", "validate"], legacyPolicy);
     const requestedTargets = [
       ...new Set(
@@ -548,7 +677,16 @@ try {
   try {
     if (evidenceDir !== undefined) {
       assert(isAbsolute(evidenceDir), "cold-mcp-evidence-dir-not-absolute");
-      mkdirSync(evidenceDir, { recursive: true });
+      assert(!existsSync(evidenceDir), "cold-mcp-evidence-dir-already-exists");
+      mkdirSync(evidenceDir);
+      if (packedArchivePath !== undefined && existsSync(packedArchivePath)) {
+        const archiveName = basename(packedArchivePath);
+        copyFileSync(packedArchivePath, join(evidenceDir, archiveName));
+        evidence.preservedArchive = {
+          file: archiveName,
+          sha256: sha256(readFileSync(packedArchivePath)),
+        };
+      }
       writeFileSync(
         join(evidenceDir, "packed-governed-mcp-proof.json"),
         `${JSON.stringify(evidence, null, 2)}\n`,

@@ -1,4 +1,4 @@
-import { ECC_MCP_CATALOG_PROVENANCE, eccExternalMcpCatalog } from "./ecc-mcp-catalog.js";
+import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-contract.js";
 
 /**
  * Portable, deliberately conservative email grammar for a human policy approver.
@@ -59,6 +59,7 @@ export interface EccMcpApprovalRecord {
 export type EccMcpApprovalResolution =
   | { state: "approved"; approval: EccMcpApprovalRecord }
   | { state: "revoked"; approval: EccMcpApprovalRecord }
+  | { state: "stale"; approval: EccMcpApprovalRecord; label: string }
   | { state: "source-mismatch" }
   | { state: "unapproved" };
 
@@ -71,10 +72,6 @@ const RECORD_KEYS = [
   "sourceContentSha256",
   "state",
 ] as const;
-
-function fail(message: string): never {
-  throw new Error(`invalid ECC MCP approval inventory: ${message}`);
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -115,6 +112,7 @@ function isExactApprovalRecord(value: unknown): value is EccMcpApprovalRecord {
     isStableId(value.id) &&
     EXTERNAL_IDS.has(value.id) &&
     typeof value.sourceContentSha256 === "string" &&
+    /^[0-9a-f]{64}$/.test(value.sourceContentSha256) &&
     (value.state === "approved" || value.state === "revoked") &&
     isApproverIdentity(value.approvedBy) &&
     isSafePolicyText(value.authenticationMode) &&
@@ -129,6 +127,8 @@ function isExactApprovalRecord(value: unknown): value is EccMcpApprovalRecord {
  * Resolves only an administrator's declaration over the exact pinned source.
  * It deliberately returns no launcher, configuration, projection, scan, or
  * endpoint/tool-surface fact; a future explicit Add flow must do that separately.
+ * An approval made for other ECC content is stale (D74): kept, labelled with the
+ * content it was made for and the route to re-approve, and never approved.
  */
 export function resolveEccMcpApproval(
   approvals: readonly unknown[],
@@ -141,18 +141,13 @@ export function resolveEccMcpApproval(
     return { state: "source-mismatch" };
   }
   const approval = matching[0];
+  if (approval.state === "revoked") return { state: "revoked", approval };
   if (approval.sourceContentSha256 !== ECC_MCP_CATALOG_PROVENANCE.contentSha256) {
-    return { state: "source-mismatch" };
+    return {
+      state: "stale",
+      approval,
+      label: `recorded for ECC content ${approval.sourceContentSha256}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-approve`,
+    };
   }
-  return approval.state === "approved"
-    ? { state: "approved", approval }
-    : { state: "revoked", approval };
-}
-
-const expected = eccExternalMcpCatalog.map((entry) => entry.id);
-if (
-  expected.length !== ECC_EXTERNAL_MCP_APPROVAL_IDS.length ||
-  expected.some((id, index) => id !== ECC_EXTERNAL_MCP_APPROVAL_IDS[index])
-) {
-  fail("approval ids do not match the pinned external catalog");
+  return { state: "approved", approval };
 }

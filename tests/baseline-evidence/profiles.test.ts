@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import {
   ECC_LEAN_EVIDENCE_COMPONENTS,
@@ -52,7 +53,7 @@ describe("active baseline qualification profiles", () => {
     expect(full.selectedComponentIds).toEqual(catalog.components.map((component) => component.id));
   });
 
-  it("does not let an unselected component block ECC Lean", () => {
+  it("does not let an unselected component's findings label ECC Lean", () => {
     const catalog = baselineCatalogById("ecc");
     const profile = qualificationProfile(catalog, ECC_LEAN_PROFILE_ID);
     const evidence = catalog.components.map((component) => {
@@ -69,15 +70,67 @@ describe("active baseline qualification profiles", () => {
 
     const result = qualifyActiveProfile(catalog, profile, evidence);
 
-    expect(result.verdict).toBe("PASS");
-    expect(result.componentCounts).toEqual({ pass: 10, review: 0, block: 0 });
+    expect(result.verdict).toBe("no-findings");
+    expect(result.componentCounts).toEqual({ noFindings: 10, hasFindings: 0 });
     expect(result.inventory.find((component) => component.id === "runtime:ecc-kiro")).toEqual({
       id: "runtime:ecc-kiro",
       discovery: "DISCOVERED",
       selection: "NOT SELECTED",
-      authorization: "NOT AUTHORIZED",
       installation: "NOT INSTALLED",
     });
+  });
+
+  it("reports a failed detector as an evidence problem, not a finding (Astra step-8 item 4)", () => {
+    // A self-contained catalog: this test needs no installed Catalog package.
+    const catalog = defineBaselineCatalog({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "d".repeat(40),
+      components: [
+        { id: "skill:a", paths: ["skills/a"] },
+        { id: "skill:b", paths: ["skills/b"] },
+      ],
+    });
+    const profile = {
+      id: "test-profile",
+      sourceId: "ecc",
+      origin: "AIH_CURATED" as const,
+      selectedComponentIds: ["skill:a", "skill:b"],
+    };
+    const first = "skill:a";
+    const fp = "problem:detector";
+    const evidence = catalog.components.map((component) => ({
+      id: component.id,
+      findings:
+        component.id === first
+          ? [
+              {
+                fingerprint: fp,
+                code: "trust.detector-unavailable" as const,
+                checkVerdict: "fail" as const,
+                detail: "required detector skillspector unavailable",
+                rawOccurrenceFingerprints: [],
+              },
+            ]
+          : [],
+      dispositions: component.id === first ? [disposition(fp, "BLOCK")] : [],
+    }));
+
+    const result = qualifyActiveProfile(catalog, profile, evidence);
+
+    expect(result.verdict).toBe("no-findings");
+    expect(result.findingCounts).toEqual({ warn: 0, review: 0, block: 0 });
+    expect(result.componentCounts).toEqual({ noFindings: 2, hasFindings: 0 });
+    expect(result.genuineReasons).toEqual([]);
+    expect(result.evidenceProblems).toEqual([
+      {
+        componentId: first,
+        code: "trust.detector-unavailable",
+        detail: "required detector skillspector unavailable",
+        fingerprint: fp,
+      },
+    ]);
   });
 
   it("reports the exact line and value for a selected review finding", () => {
@@ -105,7 +158,7 @@ describe("active baseline qualification profiles", () => {
 
     const result = qualifyActiveProfile(catalog, profile, evidence);
 
-    expect(result.verdict).toBe("REVIEW");
+    expect(result.verdict).toBe("has-findings");
     expect(result.genuineReasons).toEqual([
       expect.objectContaining({
         componentId: "skill:security-review",
@@ -116,7 +169,7 @@ describe("active baseline qualification profiles", () => {
     ]);
   });
 
-  it("makes a selected executable danger block the active profile", () => {
+  it("labels a selected executable danger on the active profile and leaves the decision to the consumer", () => {
     const catalog = baselineCatalogById("ecc");
     const profile = qualificationProfile(catalog, ECC_LEAN_PROFILE_ID);
     const evidence = profile.selectedComponentIds.map((id) => {
@@ -133,8 +186,18 @@ describe("active baseline qualification profiles", () => {
 
     const result = qualifyActiveProfile(catalog, profile, evidence);
 
-    expect(result.verdict).toBe("BLOCK");
-    expect(result.componentCounts).toEqual({ pass: 9, review: 0, block: 1 });
+    expect(result.verdict).toBe("has-findings");
+    expect(result.componentCounts).toEqual({ noFindings: 9, hasFindings: 1 });
+    expect(result.inventory.find((component) => component.id === "runtime:ecc-installer")).toEqual({
+      id: "runtime:ecc-installer",
+      discovery: "DISCOVERED",
+      selection: "SELECTED",
+      installation: "NOT INSTALLED",
+    });
+    expect(result.policyDecision).toBe(
+      "the selected components carry 1 finding(s), shown as labels; the consumer decides",
+    );
+    expect(result.policyDecision).not.toMatch(/block|authoriz/i);
     expect(result.findingCounts).toEqual({ warn: 0, review: 0, block: 1 });
     expect(result.genuineReasons[0]).toEqual(
       expect.objectContaining({

@@ -24,7 +24,10 @@ function put(rel: string, contents: string): void {
   writeFileSync(target, contents, "utf8");
 }
 
-function policy(signingRepository = "acme/engineering-governance") {
+function policy(
+  signingRepository = "acme/engineering-governance",
+  pinnedSha = baselineCatalogById("ecc").pinnedSha,
+) {
   const catalog = baselineCatalogById("ecc");
   return parseOrgPolicy({
     schemaVersion: 2,
@@ -36,7 +39,7 @@ function policy(signingRepository = "acme/engineering-governance") {
           catalog: "ecc",
           owner: catalog.owner,
           repo: catalog.repo,
-          pinnedSha: catalog.pinnedSha,
+          pinnedSha,
           bundle: ".aih/org-evidence/ecc",
           signingRepository,
           reason: "Reviewed ECC baseline",
@@ -86,7 +89,7 @@ function resolveWithPosture(input: OrgEvidenceInputWithPosture) {
 function defaultLock(): unknown {
   const catalog = baselineCatalogById("ecc");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -98,9 +101,10 @@ function defaultLock(): unknown {
             id: "skill:verification-loop",
             paths: ["skills/verification-loop"],
             treeSha256: "a".repeat(64),
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings: [],
+            evidenceProblems: [],
           },
         ],
       },
@@ -178,7 +182,7 @@ describe("resolveOrgBaselineEvidence", () => {
       tier: "org",
       issuer: "github:acme/engineering-governance",
       evidenceSha256: artifactSha256,
-      lock: { schemaVersion: 1 },
+      lock: { schemaVersion: 2 },
     });
   });
 
@@ -218,7 +222,7 @@ describe("resolveOrgBaselineEvidence", () => {
 
   it("rejects a signed lock newer than this build loudly, never as absent evidence", async () => {
     const lock = defaultLock() as { schemaVersion: number };
-    seedBundle({ ...lock, schemaVersion: 2 });
+    seedBundle({ ...lock, schemaVersion: 3 });
     const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
@@ -229,15 +233,15 @@ describe("resolveOrgBaselineEvidence", () => {
     expect(result.evidence).toBeUndefined();
     const failure = result.checks.find((check) => check.verdict === "fail");
     expect(failure?.code).toBe("baseline.evidence-schema-unsupported");
-    expect(failure?.detail).toContain("schema version 2");
-    expect(failure?.detail).toContain("version 1");
+    expect(failure?.detail).toContain("schema version 3");
+    expect(failure?.detail).toContain("version 2");
     // The misdiagnosis this floor exists to stop: skew must never be reported
     // as the absence it causes.
     expect(failure?.detail).not.toContain("contains no baseline evidence");
   });
 
   it("rejects a signed artifact this build cannot parse instead of silently skipping it", async () => {
-    seedBundle({ schemaVersion: 1, sources: [{ id: "ecc", componentsRenamed: [] }] });
+    seedBundle({ schemaVersion: 2, sources: [{ id: "ecc", componentsRenamed: [] }] });
     const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
@@ -255,8 +259,8 @@ describe("resolveOrgBaselineEvidence", () => {
   it("does nothing when policy has no override for the requested source pin", async () => {
     const result = await resolveWithPosture({
       root,
-      catalog: baselineCatalogById("ecc", "b".repeat(40)),
-      policy: policy(),
+      catalog: baselineCatalogById("ecc"),
+      policy: policy(undefined, "b".repeat(40)),
       run: fakeRunner(() => {
         throw new Error("should not run");
       }),
@@ -509,7 +513,7 @@ describe("resolveOrgBaselineEvidence", () => {
   });
 
   it("uses the live requested pin when an old same-source override is stale", async () => {
-    const liveCatalog = baselineCatalogById("ecc", "e".repeat(40));
+    const liveCatalog = baselineCatalogById("ecc");
     const result = await resolveWithPosture({
       root,
       catalog: liveCatalog,

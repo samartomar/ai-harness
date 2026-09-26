@@ -16,6 +16,13 @@ import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../ecc-profile/native-registratio
 import { prepareOwnedStateDirectory } from "../ecc-profile/native-runtime.js";
 import type { PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
+import {
+  isRootAwareLauncherId,
+  rootAwareLauncherOptionsV1,
+  rootAwareLauncherRiskV1,
+  rootAwareLauncherSpecV1,
+  rootAwareLauncherSubjectV1,
+} from "./root-aware-launcher-identity.js";
 import type { McpServer } from "./servers.js";
 
 export interface DefaultNativeRuntimeLayout {
@@ -121,7 +128,7 @@ export function defaultNativeMcpServers(ctx: PlanContext): Record<string, McpSer
         layout.uvCache,
       ],
       description:
-        "AIH-owned Code Review Graph 2.3.8 launcher for this canonical worktree. It exposes five reviewed operations, strips cloud-provider settings, and refuses provider/model refresh arguments. This is an environment and protocol boundary, not an operating-system network sandbox.",
+        "AIH-owned Code Review Graph 2.3.9 launcher for this canonical worktree. It exposes five reviewed operations, strips cloud-provider settings, and refuses provider/model refresh arguments. This is an environment and protocol boundary, not an operating-system network sandbox.",
       classification: "local",
       egress: "local-only",
       credentials: "none",
@@ -150,7 +157,7 @@ export function defaultNativeMcpServers(ctx: PlanContext): Record<string, McpSer
         layout.uvCache,
       ],
       description:
-        "AIH-owned Codebase Memory MCP 0.10.8 launcher with a verified native payload cache, project-specific index, and a short authenticated coordination root. Setup downloads the exact release payload; steady-state launch is offline.",
+        "AIH-owned Codebase Memory MCP 0.11.0 launcher with a verified native payload cache, project-specific index, and a short authenticated coordination root. Setup downloads the exact release payload; steady-state launch is offline.",
       classification: "local",
       egress: "local-only",
       credentials: "none",
@@ -184,6 +191,65 @@ export function defaultNativeMcpServers(ctx: PlanContext): Record<string, McpSer
       supplyChain: "pinned",
     },
   };
+}
+
+const LAUNCHER_FIELDS = new Set([
+  "type",
+  "command",
+  "args",
+  "description",
+  "classification",
+  "egress",
+  "credentials",
+  "supplyChain",
+]);
+
+/**
+ * The portable subject of a root-aware launcher, reported only after verifying locally
+ * that `server` is exactly Core's own launcher for `id`: this Node executable, Core's own
+ * wrapper in that server's mode, every expected option once and nothing else, the pinned
+ * package and dependency lock, Core's packaged lock directory, the fixed options, absolute
+ * machine paths, no environment and the launcher's risk axes. Anything else reports no
+ * identity, so a selection naming the portable subject stays a runtime identity mismatch.
+ */
+export function verifiedRootAwareLauncherSubjectV1(
+  id: string,
+  server: McpServer,
+): string | undefined {
+  if (!isRootAwareLauncherId(id) || server.type !== "stdio") return undefined;
+  if (Object.keys(server).some((field) => !LAUNCHER_FIELDS.has(field))) return undefined;
+  const risk = rootAwareLauncherRiskV1();
+  if (
+    server.classification !== risk.classification ||
+    server.egress !== risk.egress ||
+    server.credentials !== risk.credentials ||
+    server.supplyChain !== risk.supplyChain
+  )
+    return undefined;
+  if (server.command !== process.execPath) return undefined;
+  const [wrapper, mode, ...rest] = server.args;
+  if (wrapper === undefined || resolve(wrapper) !== resolve(defaultRuntimeScriptPath()))
+    return undefined;
+  if (mode !== id) return undefined;
+  const expected = rootAwareLauncherOptionsV1(id);
+  if (rest.length !== expected.length * 2) return undefined;
+  const values = new Map<string, string>();
+  for (let index = 0; index < rest.length; index += 2) {
+    const flag = rest[index] ?? "";
+    const value = rest[index + 1] ?? "";
+    if (!expected.includes(flag) || values.has(flag) || value === "" || value.startsWith("--"))
+      return undefined;
+    values.set(flag, value);
+  }
+  const spec = rootAwareLauncherSpecV1(id);
+  if (values.get("--package") !== spec.package) return undefined;
+  if (values.get("--dependency-lock-sha256") !== spec.dependencyLockSha256) return undefined;
+  if (resolve(values.get("--lock-root") ?? "") !== packagedDirectory(spec.lockDirectory))
+    return undefined;
+  for (const [flag, value] of Object.entries(spec.fixedOptions))
+    if (values.get(flag) !== value) return undefined;
+  for (const flag of spec.pathOptions) if (!isAbsolute(values.get(flag) ?? "")) return undefined;
+  return rootAwareLauncherSubjectV1(id);
 }
 
 export function managedCodeReviewGraphCliInvocation(

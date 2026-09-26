@@ -1,0 +1,1000 @@
+import {
+  AihError,
+  type BaselineAuthorization,
+  type BaselineCatalog,
+  type BaselineEvidenceLock,
+  type BaselineEvidencePipelineDeps,
+  type BaselineHeldComponent,
+  digest,
+  displaySafe,
+  ECC_KIRO_RUNTIME_COMPONENT_ID,
+  type EccCoreDerivedEvidenceReferenceV1,
+  lines,
+  type OrgPolicy,
+  type Plan,
+  type PlanContext,
+  type PlanResult,
+  type PolicyRequiredGuidancePlan,
+  plan,
+  planPolicyRequiredGuidance,
+  resolveEffectiveOrgPolicy,
+  type TrustSource,
+} from "@aihq/core/framework-host";
+import {
+  cleanupQuarantine,
+  consumeWorkbenchPolicy,
+  executeBaselineEvidencePipeline,
+  executePlan,
+} from "../core-runtime.js";
+import {
+  governedCodexRoleReceiptRoles,
+  planGovernedCodexRoleRegistration,
+} from "../profile/governed-codex-roles.js";
+import { ECC_DECLARATION_RIDERS } from "./components.js";
+import {
+  describeEccEffectiveDiscovery,
+  type EccEffectiveDiscoveryReport,
+} from "./effective-discovery.js";
+import {
+  applyEccMaterialization,
+  type EccMaterializationAdvisory,
+  type EccMaterializationFilePlan,
+  type EccMaterializationRequest,
+  type EccMaterializationTransactionGuard,
+  previewEccMaterialization,
+} from "./materialization.js";
+import {
+  type EccSelectionExclusion,
+  resolveEccMaterializationSelection,
+} from "./materialization-selection.js";
+import {
+  type EccMaterializationTarget,
+  type EccTargetedRefusal,
+  eccMaterializationTargetName,
+  resolveEccTargetMaterialization,
+} from "./materialization-target.js";
+import { eccModuleSelectableMemberIds } from "./materialize.js";
+import type { EccRuntimeAdapterCompatibilityV1 } from "./runtime-adapter-compatibility.js";
+import { eccMandatoryRequirementIds, eccSelectionSourcePaths } from "./selection-closure.js";
+
+/**
+ * F6: `aih ecc --lifecycle install` in a governed repository.
+ *
+ * Every part of the governed framework lifecycle already exists — the effective
+ * policy reader, the evidence-passed selection resolver (F2), the target
+ * adapter (F4) and the AIH-direct materialization engine (F1/F5). This module is
+ * the only thing that was missing: the route an operator can actually take to
+ * them. It composes them in exactly the order the acceptance journey walks
+ * (`tests/ecc/acceptance-governed-lifecycle.test.ts`) and adds no behavior of
+ * its own — a second copy of any of those decisions would be free to drift from
+ * the one the journey pins.
+ *
+ * Evidence is not optional and not re-derived here. The install runs through
+ * `executeBaselineEvidencePipeline`, which acquires the exact pinned source,
+ * verifies it, and hands this module the sourceRoot plus the authorizations and
+ * held records from that one verification. `allowPartial` is set because a
+ * governed selection may contain components no signed evidence covers: the
+ * resolver reports each one with its reason instead of failing the whole run,
+ * which is what "visible and selectable, never materialized" means. Findings
+ * never hold a component; they travel as labels.
+ *
+ * Preview-first is the harness's own `--apply` gate and nothing else: with the
+ * pinned source on disk the chain plans and reports without it, and applies with
+ * it. With the DEFAULT remote source there is nothing on disk to plan against in
+ * dry run — the evidence pipeline returns after the unrun acquisition — so the
+ * dry run reports the pin and the selected components and says outright that
+ * file-level preview needs `--ecc-path` or `--apply`, rather than implying that
+ * nothing would be written. There is no second preview flag, and this module
+ * never writes outside the engine.
+ *
+ * WHICH TARGETS is the caller's business, not a governed-only concept: the
+ * command resolves the ordinary workstation CLI selection and hands the
+ * narrowed target set in. N targets are ONE materialization here — the adapter
+ * unions their destinations per component, the engine sees one request against
+ * one root, and a later run with a narrower set subtracts the dropped target's
+ * files as stale ownership. Every report row that used to name Claude now names
+ * the target that produced it.
+ */
+
+/** The framework this lifecycle materializes. Superpowers is a later row. */
+const GOVERNED_FRAMEWORK = "ecc";
+
+/**
+ * Relation, source-path, and vendor-evidence projection obtained only through
+ * the sealed historical descriptor resolver. It deliberately omits a catalog:
+ * the command composition boundary chooses that catalog from the same opaque
+ * resolver result before it accepts any source path.
+ */
+export interface GovernedEccHistoricalContext {
+  readonly source: Readonly<{
+    readonly repository: string;
+    readonly commit: string;
+    readonly treeSha256: string;
+    readonly compilerInputDigest: string;
+  }>;
+  readonly evidence: Readonly<{
+    readonly vendorLock: BaselineEvidenceLock;
+    readonly vendorLockSha256: string;
+    readonly rawReportDigest: string;
+    readonly coreDerivedEvaluationDigest: string;
+    readonly projectionContractDigest: string;
+    readonly mappings: readonly Readonly<{
+      componentId: string;
+      rawComponentIds: readonly string[];
+    }>[];
+  }>;
+  /** Canonical digest of the sealed descriptor that retains the full raw report. */
+  readonly descriptorSha256: string;
+  readonly relations: Readonly<{
+    readonly mandatoryRequirementsById: ReadonlyMap<string, readonly string[]>;
+    readonly declarationRidersById: ReadonlyMap<string, readonly string[]>;
+    readonly moduleMembersById: ReadonlyMap<
+      string,
+      readonly Readonly<{ id: string; membership: "required" | "optional" }>[]
+    >;
+  }>;
+  readonly componentPathsById: ReadonlyMap<string, readonly string[]>;
+  readonly adapterCompatibility: EccRuntimeAdapterCompatibilityV1;
+}
+
+export interface GovernedEccMaterializationInput {
+  catalog: BaselineCatalog;
+  source: TrustSource;
+  /** The parsed governed policy, already read through the product's own reader. */
+  policy: OrgPolicy;
+  /** {@link governedEccComponentIds}, resolved by the caller BEFORE the source. */
+  componentIds: readonly string[];
+  /**
+   * The requested governed targets, narrowed by
+   * `assertGovernedMaterializationTargets` BEFORE the source is resolved — a
+   * target this lifecycle refuses must create no quarantine.
+   */
+  targets: readonly EccMaterializationTarget[];
+  /** Opaque historical relation/source/evidence view from the sealed resolver. */
+  historical?: GovernedEccHistoricalContext;
+  /** One verified protected-policy observation carried to the direct writer. */
+  transactionGuard?: EccMaterializationTransactionGuard;
+  /** Acquire and verify the source, then stop after building the exact destination plan. */
+  prepareOnly?: boolean;
+  /** Internal handoff for a verified request whose source quarantine can now be removed. */
+  onPrepared?: (prepared: PreparedGovernedEccDelivery) => void;
+}
+
+/** One normalized report for both halves of the `--apply` gate. */
+export interface GovernedMaterializationReport {
+  root: string;
+  applied: boolean;
+  targets: readonly EccMaterializationTarget[];
+  write: EccMaterializationFilePlan[];
+  subtract: EccMaterializationFilePlan[];
+  advisories: EccMaterializationAdvisory[];
+  excluded: EccSelectionExclusion[];
+  refused: EccTargetedRefusal[];
+  /** Read-only intent, ownership and native-path explanation for report consumers. */
+  selection?: EccEffectiveDiscoveryReport;
+}
+
+/** Exact verified bytes and ownership plan retained in memory for one later commit. */
+export interface PreparedGovernedEccDelivery {
+  request: EccMaterializationRequest;
+  report: GovernedMaterializationReport;
+  guidance: PolicyRequiredGuidancePlan;
+  roleRegistration: Plan;
+  codexRoles: readonly { id: string; description: string; configFile: string }[];
+  transactionGuard?: EccMaterializationTransactionGuard;
+}
+
+export interface GovernedEccLifecycleDeps extends BaselineEvidencePipelineDeps {
+  executeRequiredGuidancePlan?: (body: Plan, ctx: PlanContext) => Promise<PlanResult>;
+}
+
+/**
+ * The component ids the policy selected for this framework — the identity the
+ * evidence gate verifies and the selection resolver matches on. An id the
+ * catalog does not carry is refused here, by name: the alternative is a raw
+ * catalog error that never mentions the policy the id came from.
+ *
+ * Also the provenance gate. Each item's `source.repository`/`source.commit` is
+ * the POLICY'S CLAIM about where its bytes came from, and it flows verbatim into
+ * the materialization receipt (`materialization-selection.ts:191-197`) — while
+ * the bytes actually come from the catalog pin this run verifies against. When
+ * those disagree the receipt would assert a provenance nothing checked, so the
+ * run refuses and names both values. The authoring surface derives the claim
+ * from this same catalog identity (`src/org-policy/catalog.ts:388-392`), so an
+ * authored policy always agrees; a hand-edited one, a fork, or a stale pin
+ * against an `AIH_ECC_REF` override is exactly what this catches.
+ *
+ * Exported so the caller can validate BEFORE resolving a source: source
+ * resolution creates a quarantine directory, and a refusing invocation must
+ * create nothing.
+ */
+export function governedEccComponentIds(
+  policy: OrgPolicy,
+  catalog: BaselineCatalog,
+  historical?: GovernedEccHistoricalContext,
+): string[] {
+  const v3 = policy as OrgPolicy & { schemaVersion?: number; authoringSelections?: unknown };
+  if (v3.schemaVersion === 3) {
+    const state = v3.authoringSelections;
+    if (state === undefined || typeof state !== "object" || Array.isArray(state))
+      throw new AihError(
+        "refusing the governed ECC framework lifecycle: schema-v3 Workbench selections are missing",
+        "AIH_CONFIG",
+      );
+    const consumed = consumeWorkbenchPolicy(policy as Record<string, unknown>, state as never);
+    if (!consumed.accepted)
+      throw new AihError(
+        `refusing the governed ECC framework lifecycle: invalid Workbench selections: ${consumed.diagnostics.slice(0, 10).join("; ")}`,
+        "AIH_CONFIG",
+      );
+    if (consumed.policy === undefined)
+      throw new AihError(
+        "refusing the governed ECC framework lifecycle: consumed Workbench policy is absent",
+        "AIH_CONFIG",
+      );
+    policy = consumed.policy;
+  }
+  const expectedRepository = `${catalog.owner}/${catalog.repo}`;
+  const catalogById = new Map(catalog.components.map((component) => [component.id, component]));
+  const selected = new Set<string>();
+  const legacyClosed = new Set<string>();
+  const attributionRoots = new Set<string>();
+  const unattributedRoots = new Set<string>();
+  let hasRootMetadata = false;
+  let hasEccSelection = false;
+  for (const selection of policy.governance?.externalSelections ?? []) {
+    if (selection.framework !== GOVERNED_FRAMEWORK) continue;
+    hasEccSelection = true;
+    const hasExplicitRoots = Array.isArray(selection.roots);
+    const roots = new Set(selection.roots ?? []);
+    const unattributed = new Set(selection.unattributedItems ?? []);
+    if (hasExplicitRoots) hasRootMetadata = true;
+    for (const id of roots) attributionRoots.add(id);
+    for (const id of unattributed) unattributedRoots.add(id);
+    for (const item of selection.items) {
+      const component = catalogById.get(item.id);
+      if (component === undefined) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: the policy selects component the pinned ECC catalog does not carry: ${displaySafe(item.id)}`,
+          "AIH_CONFIG",
+        );
+      }
+      const expectedKind = item.id.slice(0, item.id.indexOf(":"));
+      if (item.kind !== expectedKind) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} declares kind ${displaySafe(item.kind)}, but its pinned kind is ${displaySafe(expectedKind)}`,
+          "AIH_TRUST",
+        );
+      }
+      // GitHub owner/repo identity is case-insensitive, and this repository
+      // carries both spellings of the ECC repo, so casing alone is never the
+      // disagreement. The commit is already lowercase-constrained by the policy
+      // schema, so it compares exactly.
+      if (item.source.repository.toLowerCase() !== expectedRepository.toLowerCase()) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} claims repository ${displaySafe(item.source.repository)}, but its bytes would come from ${displaySafe(expectedRepository)}`,
+          "AIH_TRUST",
+        );
+      }
+      if (item.source.commit !== catalog.pinnedSha) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} claims commit ${displaySafe(item.source.commit)}, but its bytes would come from ${displaySafe(catalog.pinnedSha)}`,
+          "AIH_TRUST",
+        );
+      }
+      const expectedPaths = eccSelectionSourcePaths(
+        item.id,
+        component.paths,
+        historical?.componentPathsById,
+      );
+      if (!expectedPaths.includes(item.source.path)) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} claims source path ${displaySafe(item.source.path)}, but its pinned catalog paths are ${expectedPaths.map((path) => displaySafe(path)).join(", ")}`,
+          "AIH_TRUST",
+        );
+      }
+      selected.add(item.id);
+      if (!hasExplicitRoots || unattributed.has(item.id)) legacyClosed.add(item.id);
+    }
+  }
+  if (selected.size === 0 && !hasEccSelection) {
+    throw new AihError(
+      "refusing the governed ECC framework lifecycle: the policy selects no ECC component to materialize",
+      "AIH_CONFIG",
+    );
+  }
+  if (selected.size === 0) return [];
+  const known = new Set(catalogById.keys());
+  const relatedComponentsFor = (id: string, includeMembers: boolean): string[] => {
+    if (id.startsWith("runtime:")) return [];
+    const declaredRiders = (
+      historical?.relations.declarationRidersById.get(id) ??
+      ECC_DECLARATION_RIDERS[id] ??
+      []
+    ).filter((rider) => known.has(rider));
+    const moduleMembers =
+      id.startsWith("module:") && includeMembers
+        ? historical === undefined
+          ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
+          : (historical.relations.moduleMembersById.get(id) ?? []).map((member) => member.id)
+        : [];
+    // Every selected id reached this point only after the catalog/provenance
+    // gate above accepted it; a closure the helper cannot compute is a typed
+    // refusal, never an empty closure.
+    return [
+      ...new Set([
+        ...eccMandatoryRequirementIds(id, historical?.relations),
+        ...moduleMembers,
+        ...declaredRiders,
+      ]),
+    ];
+  };
+  if (hasRootMetadata) {
+    const reachable = new Set<string>();
+    const expanded = new Set<string>();
+    const pending = [...attributionRoots, ...unattributedRoots].map((id) => ({
+      id,
+      includeMembers: true,
+    }));
+    while (pending.length > 0) {
+      const next = pending.shift();
+      if (next === undefined) break;
+      const expansionKey = `${next.id}|${next.includeMembers ? "members" : "structural"}`;
+      if (expanded.has(expansionKey)) continue;
+      expanded.add(expansionKey);
+      reachable.add(next.id);
+      for (const required of relatedComponentsFor(next.id, next.includeMembers)) {
+        reachable.add(required);
+        pending.push({ id: required, includeMembers: false });
+      }
+    }
+    const unreachable = [...selected].filter((id) => !reachable.has(id)).sort();
+    if (unreachable.length > 0) {
+      throw new AihError(
+        `refusing the governed ECC framework lifecycle: selected component(s) are not reachable from an explicit root or preserved legacy item: ${unreachable.map((id) => displaySafe(id)).join(", ")}`,
+        "AIH_CONFIG",
+      );
+    }
+  }
+  const missingDependencies = new Map<string, string[]>();
+  for (const id of selected) {
+    const dependencies = (
+      legacyClosed.has(id)
+        ? relatedComponentsFor(id, true)
+        : eccMandatoryRequirementIds(id, historical?.relations)
+    ).filter((dependency) => !selected.has(dependency));
+    if (dependencies.length > 0) missingDependencies.set(id, dependencies);
+  }
+  if (missingDependencies.size > 0) {
+    throw new AihError(
+      `refusing the governed ECC framework lifecycle: incomplete component dependency closure — ${[
+        ...missingDependencies,
+      ]
+        .map(
+          ([id, dependencies]) =>
+            `${displaySafe(id)} requires ${dependencies.map((dependency) => displaySafe(dependency)).join(", ")}`,
+        )
+        .join("; ")}`,
+      "AIH_CONFIG",
+    );
+  }
+  return [...selected];
+}
+
+/**
+ * The dry run available when the pinned source is NOT on disk. On the default
+ * remote source the evidence pipeline returns after acquisition in dry run and
+ * never reaches the plan builder (`baseline-evidence/pipeline.ts:126-135`), so
+ * there is nothing to preview file-by-file. Saying so plainly is the whole point:
+ * a dry run that reported nothing would let the first run that shows the plan be
+ * the run that already wrote.
+ */
+function sourceAbsentPlan(
+  catalog: BaselineCatalog,
+  componentIds: readonly string[],
+  targets: readonly EccMaterializationTarget[],
+): Plan {
+  const pinnedSource = `${catalog.owner}/${catalog.repo}@${catalog.pinnedSha}`;
+  return plan(
+    "ecc: governed framework materialization",
+    digest(
+      "governed ECC framework materialization (pinned source not present)",
+      lines(
+        `Governed ECC framework materialization would install from ${pinnedSource}.`,
+        `Requested target(s): ${targets.map(eccMaterializationTargetName).join(", ")}.`,
+        "",
+        "Selected components, each still subject to the evidence gate at apply:",
+        ...componentIds.map((id) => `  - ${id}`),
+        "",
+        "This is NOT a file-level preview: the pinned source is not on disk, so which",
+        "files would land cannot be computed here. Pass `--ecc-path <dir>` to preview",
+        "against a local checkout of the pin, or `--apply` to acquire the pin, run the",
+        "evidence gate and materialize.",
+        "",
+        "Nothing has been written and nothing has been fetched.",
+      ),
+      {
+        applied: false,
+        sourcePresent: false,
+        pinnedSource,
+        componentIds: [...componentIds],
+        targets: [...targets],
+      },
+    ),
+  );
+}
+
+/**
+ * Refusals, grouped under the target that made them, in the order the targets
+ * were requested. Grouping is a rendering concern only: the machine payload
+ * stays one flat list, each entry naming its own target, so a consumer never
+ * has to reassemble it.
+ */
+function refusalRows(report: GovernedMaterializationReport): string[] {
+  return report.targets.flatMap((target) => {
+    const rows = report.refused.filter((entry) => entry.target === target);
+    if (rows.length === 0) return [];
+    return [
+      "",
+      `Evidence-matched, and refused by the ${eccMaterializationTargetName(target)} target:`,
+      ...rows.map((entry) => `  [${entry.reason}] ${entry.id} - ${entry.detail}`),
+    ];
+  });
+}
+
+function reportBody(report: GovernedMaterializationReport): string {
+  const verb = report.applied ? "wrote" : "would write";
+  return lines(
+    `Governed ECC framework materialization (${report.applied ? "applied" : "preview"}):`,
+    ...(report.selection === undefined
+      ? []
+      : [
+          "Effective selected discovery:",
+          ...report.selection.components.map(
+            (component) =>
+              `  [${component.requirement}/${component.selectionReason}] ${component.id} - ${component.owner}/${component.ownership}; ${component.source.repository}@${component.source.commit.slice(0, 12)}:${component.source.componentPath}; ${component.destinations.map((destination) => `${destination.path} (${destination.discovery})`).join(", ")}${component.retainedBy.length > 0 ? `; retained by ${component.retainedBy.join(", ")}` : ""}`,
+          ),
+          ...report.selection.authoringExclusions.map(
+            (exclusion) =>
+              `  [excluded] ${exclusion.assetId} - ${exclusion.sourceId}@${exclusion.sourceRevisionId}`,
+          ),
+          ...report.selection.otherOwners.map(
+            (owner) => `  [${owner.state}] ${owner.owner}/${owner.scope} - ${owner.detail}`,
+          ),
+          "",
+        ]),
+    ...report.write.map((file) => `  [${verb}] ${file.path} - ${file.componentId}`),
+    // Neutral wording: a receipt entry the request no longer carries may be a
+    // genuine deselection OR a component this run could not map, and this layer
+    // cannot cheaply tell them apart. Naming it "deselected" would assert the
+    // one it did not check.
+    ...report.subtract.map(
+      (file) =>
+        `  [${report.applied ? "removed" : "would remove"}] ${file.path} - no longer part of this materialization`,
+    ),
+    ...(report.excluded.length > 0
+      ? [
+          "",
+          "Selected, and not materialized - each row names why:",
+          ...report.excluded.map((entry) => `  [${entry.reason}] ${entry.id} - ${entry.detail}`),
+        ]
+      : []),
+    ...refusalRows(report),
+    ...(report.advisories.length > 0
+      ? [
+          "",
+          "Manual review - owned destinations AIH could not act on:",
+          ...report.advisories.map(
+            (entry) => `  [${entry.reason}] ${entry.path} - ${entry.detail}`,
+          ),
+        ]
+      : []),
+    ...(report.applied ? [] : ["", "Dry-run: nothing was written; pass --apply to materialize."]),
+  );
+}
+
+function guardedPlan(body: Plan, guard?: EccMaterializationTransactionGuard): Plan {
+  return {
+    ...body,
+    ...(guard?.fileAssertions === undefined ? {} : { fileAssertions: guard.fileAssertions }),
+    ...(guard?.commitNotAfter === undefined ? {} : { commitNotAfter: guard.commitNotAfter }),
+    ...(guard?.commitLock === undefined ? {} : { commitLock: guard.commitLock }),
+  };
+}
+
+function appendPlanResult(target: PlanResult, added: PlanResult): void {
+  target.applied ||= added.applied;
+  target.writes.push(...added.writes);
+  target.docs.push(...added.docs);
+  target.probes.push(...added.probes);
+  target.execs.push(...added.execs);
+  target.digests.push(...added.digests);
+  target.backups.push(...added.backups);
+  target.removed.push(...added.removed);
+}
+
+/** Refuse a target-specific partial map that drops a structural dependency. */
+export function assertGovernedEccTargetClosure(
+  targets: readonly EccMaterializationTarget[],
+  includedIds: readonly string[],
+  refused: readonly EccTargetedRefusal[],
+  relations?: GovernedEccHistoricalContext["relations"],
+): void {
+  for (const requestedTarget of targets) {
+    const refusedIds = new Set(
+      refused.filter((entry) => entry.target === requestedTarget).map((entry) => entry.id),
+    );
+    const representedIds = new Set(includedIds.filter((id) => !refusedIds.has(id)));
+    const broken = [...representedIds]
+      .map((id) => ({
+        id,
+        missing: eccMandatoryRequirementIds(id, relations).filter(
+          (dependency) => !representedIds.has(dependency),
+        ),
+      }))
+      .filter((entry) => entry.missing.length > 0);
+    if (broken.length > 0) {
+      throw new AihError(
+        `refusing the governed ECC framework materialization for ${eccMaterializationTargetName(requestedTarget)}: target mapping would omit structural dependencies — ${broken
+          .map(
+            (entry) =>
+              `${displaySafe(entry.id)} requires ${entry.missing
+                .map((dependency) => displaySafe(dependency))
+                .join(", ")}`,
+          )
+          .join("; ")}`,
+        "AIH_TRUST",
+      );
+    }
+  }
+}
+
+/**
+ * Steps 2-5 of the journey, run against the verified source: resolve the
+ * effective policy, resolve the evidence-passed effective selection, map it onto
+ * the requested targets, and preview or apply.
+ *
+ * Multi-target is a union in ONE materialization, not N of them: the adapter
+ * returns each component's per-target destinations already merged, so the engine
+ * sees one request against one root and `apply IS the reconcile` handles a later
+ * run with a narrower target set by subtracting the dropped target's files as
+ * stale ownership.
+ */
+function receiptCoreDerivedEvidence(
+  historical: GovernedEccHistoricalContext | undefined,
+  components: readonly { id: string }[],
+): EccCoreDerivedEvidenceReferenceV1 | undefined {
+  if (historical === undefined) return undefined;
+  const mappings = new Map<string, readonly string[]>();
+  for (const mapping of historical.evidence.mappings) {
+    if (mappings.has(mapping.componentId)) {
+      throw new AihError("historical ECC evidence mappings are ambiguous", "AIH_TRUST");
+    }
+    mappings.set(mapping.componentId, mapping.rawComponentIds);
+  }
+  return {
+    descriptorSha256: historical.descriptorSha256,
+    rawReportDigest: historical.evidence.rawReportDigest,
+    coreDerivedEvaluationDigest: historical.evidence.coreDerivedEvaluationDigest,
+    projectionContractDigest: historical.evidence.projectionContractDigest,
+    componentMappings: components.map((component) => {
+      const rawComponentIds = mappings.get(component.id);
+      if (rawComponentIds === undefined) {
+        throw new AihError(
+          `historical ECC evidence mapping is missing materialized component: ${displaySafe(component.id)}`,
+          "AIH_TRUST",
+        );
+      }
+      return { componentId: component.id, rawComponentIds: [...rawComponentIds] };
+    }),
+  };
+}
+function governedMaterializationPlan(
+  ctx: PlanContext,
+  policy: OrgPolicy,
+  targets: readonly EccMaterializationTarget[],
+  sourceRoot: string,
+  authorizations: readonly BaselineAuthorization[],
+  held: readonly BaselineHeldComponent[],
+  historical?: GovernedEccHistoricalContext,
+  onPrepared?: (
+    request: EccMaterializationRequest,
+    report: GovernedMaterializationReport,
+    guidance: PolicyRequiredGuidancePlan,
+    roleRegistration: Plan,
+    codexRoles: readonly { id: string; description: string; configFile: string }[],
+  ) => void,
+  transactionGuard?: EccMaterializationTransactionGuard,
+  prepareOnly = false,
+): Plan {
+  const effective = resolveEffectiveOrgPolicy(policy);
+  const selection = resolveEccMaterializationSelection(
+    effective,
+    {
+      authorizations: [...authorizations],
+      held: [...held],
+    },
+    historical?.relations,
+  );
+  const target = resolveEccTargetMaterialization({
+    sourceRoot,
+    targets,
+    components: selection.included,
+    evidence: { authorizations: [...authorizations], held: [...held] },
+    componentPathsById: historical?.componentPathsById,
+    historicalAdapterCompatibility: historical?.adapterCompatibility,
+  });
+  assertGovernedEccTargetClosure(
+    targets,
+    selection.included.map((component) => component.id),
+    target.refused,
+    historical?.relations,
+  );
+  // Total refusal is ambiguity, and the engine cannot see it: an empty request
+  // is byte-identical to "every component was deselected", on which `apply`
+  // subtracts the whole prior install as stale ownership. Fail closed and name
+  // every refusal instead of wiping an install on a reading nothing confirmed.
+  // The gate spans the WHOLE requested target set: one target refusing
+  // everything is not total refusal while another still materializes.
+  if (selection.included.length > 0 && target.components.length === 0) {
+    const named = `the ${targets.map(eccMaterializationTargetName).join(", ")} target${
+      targets.length === 1 ? "" : "s"
+    }`;
+    throw new AihError(
+      `refusing the governed ECC framework materialization: ${named} refused every evidence-passed component, which is indistinguishable from deselecting all of them — ${target.refused
+        .map((entry) => `${displaySafe(entry.id)} (${entry.reason}: ${displaySafe(entry.detail)})`)
+        .join("; ")}`,
+      "AIH_TRUST",
+    );
+  }
+  const coreDerivedEvidence = receiptCoreDerivedEvidence(historical, target.components);
+  const request = {
+    root: ctx.root,
+    components: target.components.map((component) => ({
+      ...component,
+      targets: component.targets ?? [...targets],
+    })),
+    ...(coreDerivedEvidence === undefined ? {} : { coreDerivedEvidence }),
+  };
+  // Keep planning pure. The direct materializer runs later, inside its own
+  // authority assertion/lease boundary, after the evidence pipeline accepted
+  // this exact request.
+  const outcome = previewEccMaterialization(request);
+  const guidanceSource = target.components[0]?.provenance;
+  const guidance = planPolicyRequiredGuidance(
+    ctx.root,
+    ctx.contextDir,
+    target.components,
+    guidanceSource === undefined || effective.policyVersion === undefined
+      ? undefined
+      : {
+          policyVersion: effective.policyVersion,
+          source: {
+            repository: guidanceSource.repository,
+            commit: guidanceSource.commit,
+          },
+          targets,
+        },
+  );
+  const roleRegistration = planGovernedCodexRoleRegistration(ctx.root, target.codexRoles);
+  const report: GovernedMaterializationReport = {
+    root: ctx.root,
+    applied: false,
+    targets,
+    write: outcome.write,
+    subtract: outcome.subtract,
+    advisories: [
+      ...outcome.advisories,
+      ...guidance.advisories.map((detail) => ({
+        path: guidance.inspection.path,
+        reason: "drifted" as const,
+        detail,
+      })),
+    ],
+    excluded: selection.excluded,
+    refused: target.refused,
+    selection: describeEccEffectiveDiscovery({
+      policy,
+      targets,
+      components: target.components.map((component) => ({ ...component, ownership: "planned" })),
+      unavailable: selection.excluded,
+      refused: target.refused,
+      relations: historical?.relations ?? {
+        mandatoryRequirementsById: new Map(
+          selection.included.map((component) => [
+            component.id,
+            eccMandatoryRequirementIds(component.id),
+          ]),
+        ),
+      },
+    }),
+  };
+  onPrepared?.(request, report, guidance, roleRegistration, target.codexRoles);
+  return {
+    ...plan(
+      "ecc: governed framework materialization",
+      ...(!ctx.apply && !prepareOnly ? guidance.actions : []),
+      ...(!ctx.apply && !prepareOnly ? roleRegistration.actions : []),
+      digest("governed ECC framework materialization", reportBody(report), report),
+    ),
+    ...(transactionGuard?.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: transactionGuard.fileAssertions }),
+    ...(transactionGuard?.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: transactionGuard.commitNotAfter }),
+    ...(transactionGuard?.commitLock === undefined
+      ? {}
+      : { commitLock: transactionGuard.commitLock }),
+  };
+}
+
+/**
+ * Run the governed framework lifecycle's install verb. The caller has already
+ * proved the repository is governed and resolved the pinned source; this owns
+ * the evidence run and the chain that follows it.
+ */
+export async function executeGovernedEccMaterialization(
+  ctx: PlanContext,
+  input: GovernedEccMaterializationInput,
+  deps: GovernedEccLifecycleDeps = {},
+): Promise<PlanResult> {
+  // A remote pin in dry run: the evidence pipeline would return after the
+  // unrun acquisition and never build a plan, so answer here instead of
+  // reporting nothing. The quarantine that resolving the source created is
+  // removed the way the sibling preview does it (`pipeline.ts:268-270`).
+  if (!ctx.apply && !input.prepareOnly && input.source.kind === "github") {
+    try {
+      return await executePlan(
+        sourceAbsentPlan(input.catalog, input.componentIds, input.targets),
+        ctx,
+      );
+    } finally {
+      cleanupQuarantine(input.source);
+    }
+  }
+  const evidenceComponentIds = [...input.componentIds];
+  if (
+    input.targets.includes("kiro") &&
+    input.componentIds.some(
+      (id) => id === "baseline:rules" || id.startsWith("agent:") || id.startsWith("skill:"),
+    ) &&
+    !evidenceComponentIds.includes(ECC_KIRO_RUNTIME_COMPONENT_ID)
+  ) {
+    evidenceComponentIds.push(ECC_KIRO_RUNTIME_COMPONENT_ID);
+  }
+  let prepared: PreparedGovernedEccDelivery | undefined;
+  const hasApplicableBaselineOverride = input.policy.trust?.baselineOverrides?.some(
+    (override) =>
+      override.catalog === input.catalog.id &&
+      override.owner === input.catalog.owner &&
+      override.repo === input.catalog.repo,
+  );
+  const result = await executeBaselineEvidencePipeline(
+    ctx,
+    {
+      catalog: input.catalog,
+      source: input.source,
+      componentIds: evidenceComponentIds,
+      policy: input.policy,
+      transactionPins: input.transactionGuard,
+      // A governed selection may carry components no signed evidence covers.
+      // Each is reported with its reason by the resolver; one of them must not
+      // take the whole install down with it.
+      allowPartial: true,
+      buildInstallPlan: (sourceRoot, authorizations, held) =>
+        governedMaterializationPlan(
+          ctx,
+          input.policy,
+          input.targets,
+          sourceRoot,
+          authorizations,
+          held,
+          input.historical,
+          (request, report, guidance, roleRegistration, codexRoles) => {
+            prepared = {
+              request,
+              report,
+              guidance,
+              roleRegistration,
+              codexRoles,
+              ...(input.transactionGuard === undefined
+                ? {}
+                : { transactionGuard: input.transactionGuard }),
+            };
+            input.onPrepared?.(prepared);
+          },
+          input.transactionGuard,
+          input.prepareOnly === true,
+        ),
+    },
+    input.historical === undefined
+      ? deps
+      : {
+          ...deps,
+          vendorLock: input.historical.evidence.vendorLock,
+          vendorLockSha256: input.historical.evidence.vendorLockSha256,
+          expectedSourceTreeSha256: input.historical.source.treeSha256,
+          // The sealed descriptor was admitted through the active source-data
+          // trust root and its machine-local verification receipt. Requiring a
+          // second repository-authored baseline override would discard that
+          // independently verified historical authority before its exact
+          // descriptor-derived vendor lock can run.
+          ...(hasApplicableBaselineOverride
+            ? {}
+            : { resolveOrgEvidence: async () => ({ checks: [] }) }),
+        },
+  );
+  if (!ctx.apply || input.prepareOnly || prepared === undefined) return result;
+
+  return applyPreparedGovernedEccDelivery(ctx, prepared, result, deps);
+}
+
+/** Commit one exact in-memory preparation without reacquiring or reverifying its source. */
+export async function applyPreparedGovernedEccDelivery(
+  ctx: PlanContext,
+  prepared: PreparedGovernedEccDelivery,
+  result: PlanResult,
+  deps: GovernedEccLifecycleDeps = {},
+): Promise<PlanResult> {
+  // Refresh after policy projection: that command may have composed MCP changes
+  // into the same config after preparation. Validate and write registration
+  // before materializing role files so a config refusal leaves no orphan role.
+  const refreshedRoleRegistration = planGovernedCodexRoleRegistration(
+    ctx.root,
+    prepared.codexRoles,
+  );
+  const priorCodexRoles = governedCodexRoleReceiptRoles(ctx.root);
+  const transactionGuard =
+    prepared.transactionGuard === undefined
+      ? undefined
+      : {
+          ...prepared.transactionGuard,
+          fileAssertions: prepared.transactionGuard.fileAssertions?.filter(
+            (assertion) =>
+              assertion.path.replace(/\\/g, "/").replace(/^\.\//, "") !== ".codex/config.toml",
+          ),
+        };
+  if (refreshedRoleRegistration.actions.length > 0) {
+    const registrationResult = await executePlan(
+      guardedPlan(refreshedRoleRegistration, transactionGuard),
+      ctx,
+    );
+    appendPlanResult(result, registrationResult);
+  }
+  let outcome: ReturnType<typeof applyEccMaterialization>;
+  try {
+    outcome = applyEccMaterialization(prepared.request, {}, transactionGuard);
+  } catch (error) {
+    if (refreshedRoleRegistration.actions.length > 0) {
+      const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+      if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+    }
+    throw error;
+  }
+  if (outcome.advisories.length > 0 && refreshedRoleRegistration.actions.length > 0) {
+    const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+    if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+  }
+  if (outcome.advisories.length === 0 && prepared.guidance.actions.length > 0) {
+    const executeGuidance = deps.executeRequiredGuidancePlan ?? executePlan;
+    try {
+      const guidanceResult = await executeGuidance(
+        guardedPlan(
+          plan("ecc: required organization guidance", ...prepared.guidance.actions),
+          transactionGuard,
+        ),
+        ctx,
+      );
+      appendPlanResult(result, guidanceResult);
+    } catch (error) {
+      if (refreshedRoleRegistration.actions.length > 0) {
+        const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+        if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+      }
+      throw error;
+    }
+  }
+  const report: GovernedMaterializationReport = {
+    ...prepared.report,
+    applied: true,
+    selection:
+      prepared.report.selection === undefined
+        ? undefined
+        : {
+            ...prepared.report.selection,
+            components: prepared.report.selection.components.map((component) => ({
+              ...component,
+              ownership: outcome.advisories.length === 0 ? "receipt-recorded" : "missing-receipt",
+            })),
+          },
+    write: outcome.written,
+    subtract: outcome.removed,
+    advisories: [
+      ...outcome.advisories,
+      ...prepared.guidance.advisories.map((detail) => ({
+        path: prepared.guidance.inspection.path,
+        reason: "drifted" as const,
+        detail,
+      })),
+    ],
+  };
+  const digestIndex = result.digests.findIndex((entry) =>
+    entry.describe.includes("governed ECC framework materialization"),
+  );
+  if (digestIndex >= 0) {
+    result.digests[digestIndex] = {
+      describe: "governed ECC framework materialization",
+      text: reportBody(report),
+      data: report,
+    };
+  }
+  return result;
+}
+
+/**
+ * Reconcile an explicitly empty ECC selection without acquiring or trusting any
+ * incoming framework bytes. The receipt remains the sole removal authority, so
+ * drifted and operator-owned files retain the materializer's conservative rules.
+ */
+export async function executeGovernedEccWithdrawal(
+  ctx: PlanContext,
+  targets: readonly EccMaterializationTarget[],
+  transactionGuard?: EccMaterializationTransactionGuard,
+  prepareOnly = false,
+  onPrepared?: (prepared: PreparedGovernedEccDelivery) => void,
+  deps: GovernedEccLifecycleDeps = {},
+): Promise<PlanResult> {
+  const request: EccMaterializationRequest = { root: ctx.root, components: [] };
+  const preview = previewEccMaterialization(request);
+  const guidance = planPolicyRequiredGuidance(ctx.root, ctx.contextDir, []);
+  const roleRegistration = planGovernedCodexRoleRegistration(ctx.root, []);
+  const report: GovernedMaterializationReport = {
+    root: ctx.root,
+    applied: false,
+    targets,
+    write: preview.write,
+    subtract: preview.subtract,
+    advisories: [
+      ...preview.advisories,
+      ...guidance.advisories.map((detail) => ({
+        path: guidance.inspection.path,
+        reason: "drifted" as const,
+        detail,
+      })),
+    ],
+    excluded: [],
+    refused: [],
+  };
+  const prepared: PreparedGovernedEccDelivery = {
+    request,
+    report,
+    guidance,
+    roleRegistration,
+    codexRoles: [],
+    ...(transactionGuard === undefined ? {} : { transactionGuard }),
+  };
+  onPrepared?.(prepared);
+  const result = await executePlan(
+    {
+      ...plan(
+        "ecc: governed framework withdrawal",
+        ...(!ctx.apply && !prepareOnly ? guidance.actions : []),
+        ...(!ctx.apply && !prepareOnly ? roleRegistration.actions : []),
+        digest("governed ECC framework materialization", reportBody(report), report),
+      ),
+      ...(transactionGuard?.fileAssertions === undefined
+        ? {}
+        : { fileAssertions: transactionGuard.fileAssertions }),
+      ...(transactionGuard?.commitNotAfter === undefined
+        ? {}
+        : { commitNotAfter: transactionGuard.commitNotAfter }),
+      ...(transactionGuard?.commitLock === undefined
+        ? {}
+        : { commitLock: transactionGuard.commitLock }),
+    },
+    ctx,
+  );
+  if (!ctx.apply || prepareOnly) return result;
+  return applyPreparedGovernedEccDelivery(ctx, prepared, result, deps);
+}

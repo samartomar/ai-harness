@@ -7,7 +7,7 @@ import {
   deepFreezeStrictJsonV1,
 } from "../contract/strict-json-v1.js";
 import { evidenceExpiryV1 } from "../evidence-freshness.js";
-import { ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V1 } from "./runtime-descriptor-evaluation.js";
+import { ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V2 } from "./runtime-descriptor-evaluation.js";
 
 const MAX_RUNTIME_DESCRIPTOR_BYTES_V1 = 12 * 1024 * 1024;
 const sha256 = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -375,7 +375,7 @@ export const EccRuntimeDescriptorV1Schema = z
     if (
       value.evidence.projectionContractDigest !==
       `sha256:${createHash("sha256")
-        .update(canonicalStrictJsonBytesV1(ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V1))
+        .update(canonicalStrictJsonBytesV1(ECC_RUNTIME_DECLARED_EVALUATION_CONTRACT_V2))
         .digest("hex")}`
     )
       ctx.addIssue({
@@ -426,8 +426,6 @@ export interface PreparedEccRuntimeDescriptorV1 {
 }
 
 const packageFacts = new WeakMap<object, readonly EccRuntimeDescriptorV1[]>();
-
-export { currentEccRuntimeAdapterCompatibilityV1 } from "./runtime-adapter-compatibility.js";
 
 function fail(): never {
   throw new TypeError(

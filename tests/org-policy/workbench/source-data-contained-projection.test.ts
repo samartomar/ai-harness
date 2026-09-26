@@ -9,8 +9,7 @@ import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../../../src/baseline-eviden
 import type { ConsumedScannerBaselinePublicationsV1 } from "../../../src/baseline-evidence/scanner-publication.js";
 import { SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 } from "../../../src/baseline-evidence/scanner-publication-policy.js";
 import { projectContainedScannerEvidenceV1 } from "../../../src/org-policy/workbench/core/source-data-contained-projection.js";
-import { evidenceDisplayFor } from "../../../src/org-policy/workbench/ui/evidence-display.js";
-import { tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -44,7 +43,7 @@ function fixture(blocked = false) {
           id: "runtime:shared",
           paths: ["shared"],
           treeSha256: material.treeSha256,
-          verdict: blocked ? "blocked" : "pass",
+          verdict: blocked ? "has-findings" : "no-findings",
           analyzers: Object.entries(SCANNER_BASELINE_ANALYZER_VERSIONS)
             .filter(([name]) => name !== "cisco@uvx")
             .map(([name, version]) => ({ name, version })),
@@ -54,6 +53,7 @@ function fixture(blocked = false) {
                 detail: "Original broader component finding",
               }))
             : [],
+          evidenceProblems: [],
         },
       ],
     },
@@ -73,7 +73,7 @@ function fixture(blocked = false) {
       reportVerificationExpiresAt: "2026-09-09T00:45:00.000Z",
     })),
   };
-  const bundle = tinyStudioModel().workbenchBundle;
+  const bundle = tinyBackendCatalogFixture().workbenchBundle;
   const assets = [bundle.assets["fixture:control"]!, bundle.assets["fixture:external"]!];
   assets[0]!.originalPath = "shared/one.md";
   assets[1]!.originalPath = "shared/two.md";
@@ -132,7 +132,7 @@ describe("source-level report projection after independent consumption", () => {
         id: component.id,
         paths: component.paths,
         treeSha256: hashComponentTree(input.sourceRoot, component.paths).treeSha256,
-        verdict: index === 0 ? "pass" : "blocked",
+        verdict: index === 0 ? "no-findings" : "has-findings",
         analyzers: Object.entries(SCANNER_BASELINE_ANALYZER_VERSIONS)
           .filter(([name]) => index === 0 || name !== "cisco@uvx")
           .map(([name, version]) => ({ name, version })),
@@ -140,6 +140,10 @@ describe("source-level report projection after independent consumption", () => {
           index === 0
             ? []
             : [{ code: "helper-finding", detail: "Original helper finding remains" }],
+        evidenceProblems:
+          index === 0
+            ? []
+            : [{ code: "trust.detector-unavailable", detail: "Original helper problem remains" }],
       }));
       const publication = input.consumed.provenance[0];
       const request = input.requests[0];
@@ -173,8 +177,14 @@ describe("source-level report projection after independent consumption", () => {
       });
       const original = JSON.stringify(input.consumed);
       const result = Object.values(projectContainedScannerEvidenceV1(input));
-      expect(result[0]?.scan).toMatchObject({ coverage: "complete", outcome: "failed" });
+      // A detector that did not run leaves the scan partial; observed findings still show.
+      expect(result[0]?.scan).toMatchObject({ coverage: "partial", outcome: "has-findings" });
       expect(result[0]?.findings.join(" ")).toContain("Original helper finding remains");
+      // Evidence problems are their own label (D56), never folded into findings.
+      expect(result[0]?.evidenceProblems).toEqual([
+        "[runtime:helper] trust.detector-unavailable: Original helper problem remains",
+      ]);
+      expect(result[0]?.findings.join(" ")).not.toContain("detector-unavailable");
       expect(result[0]?.scan.reportSignedAt).toBe(publication.reportSignedAt);
       expect(result[0]?.scan.publishedAt).toBe(publication.attestedAt);
       expect(JSON.stringify(input.consumed)).toBe(original);
@@ -213,6 +223,24 @@ describe("source-level report projection after independent consumption", () => {
     };
     expect(projectContainedScannerEvidenceV1(input)).toEqual(before);
   });
+  it("states unknown on partial coverage instead of a no-findings label (Astra step-8 item 5)", () => {
+    const input = fixture();
+    input.consumed.evidence.components[0]!.evidenceProblems = [
+      { code: "trust.detector-unavailable", detail: "required detector skillspector unavailable" },
+    ];
+    for (const summary of Object.values(projectContainedScannerEvidenceV1(input))) {
+      expect(summary.scan).toMatchObject({ outcome: "unknown", coverage: "partial" });
+      expect(summary.evidenceProblems).toEqual([
+        "[runtime:shared] trust.detector-unavailable: required detector skillspector unavailable",
+      ]);
+    }
+    input.consumed.evidence.components[0]!.evidenceProblems = [
+      { code: "trust.unsigned-source", detail: "no reviewed pin" },
+    ];
+    for (const summary of Object.values(projectContainedScannerEvidenceV1(input))) {
+      expect(summary.scan).toMatchObject({ outcome: "no-findings", coverage: "complete" });
+    }
+  });
   it("retains original broad report facts and labels exact contained file coverage", () => {
     const input = fixture(true);
     const original = JSON.stringify(input.consumed);
@@ -220,7 +248,7 @@ describe("source-level report projection after independent consumption", () => {
     expect(Object.keys(result)).toHaveLength(2);
     for (const summary of Object.values(result)) {
       expect(summary.scan).toMatchObject({
-        outcome: "failed",
+        outcome: "has-findings",
         coverage: "complete",
         scope: "published-component-containment",
         publishedComponentIds: ["runtime:shared"],
@@ -228,13 +256,6 @@ describe("source-level report projection after independent consumption", () => {
       });
       expect(summary.findings).toHaveLength(50);
       expect(summary.findings[0]).toContain("[runtime:shared]");
-      expect(
-        evidenceDisplayFor(
-          input.bundle.assets[summary.subjects[0]!.assetId]!,
-          [summary],
-          Date.parse(input.preparedAt),
-        ).text,
-      ).toContain("shared source-file coverage");
     }
     expect(JSON.stringify(input.consumed)).toBe(original);
   });

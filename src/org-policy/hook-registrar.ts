@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isPlainObject } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
-import type { EccHookEnvKey, EccHookEnvPatch } from "./ecc-hook-controls-projection.js";
+import type { HookEnvPatch } from "./framework-hook-controls-projection.js";
 import type { HookAdoptionOffer } from "./hook-registrar-adoption.js";
 import {
   assertHookRegistrations,
@@ -611,19 +611,19 @@ function hookRegistrarVerdict(
 
 function settingsPayload(
   base: Record<string, unknown>,
-  envPatch: EccHookEnvPatch | undefined,
+  envPatch: HookEnvPatch | undefined,
 ): Record<string, unknown> {
   return envPatch === undefined || Object.keys(envPatch.set).length === 0
     ? base
     : { ...base, env: envPatch.set };
 }
 
-function settingsEnvOptions(envPatch: EccHookEnvPatch | undefined): {
+function settingsEnvOptions(envPatch: HookEnvPatch | undefined): {
   replaceJsonChildKeys?: Record<string, readonly string[]>;
   removeJsonKeys?: Record<string, readonly string[]>;
 } {
   if (envPatch === undefined) return {};
-  const setKeys = Object.keys(envPatch.set) as EccHookEnvKey[];
+  const setKeys = Object.keys(envPatch.set);
   const overlap = setKeys.find((key) => envPatch.remove.includes(key));
   if (overlap !== undefined) {
     throw new OrgPolicyError(`ECC hook env patch both sets and removes ${overlap}`);
@@ -644,7 +644,7 @@ export function hookRegistrarProjectionActions(
   registrations: readonly HookRegistration[],
   options: {
     policyVersion?: string;
-    envPatch?: EccHookEnvPatch;
+    envPatch?: HookEnvPatch;
     destinationRead?: GuardedRead;
   } = {},
 ): Action[] {
@@ -784,7 +784,7 @@ export function hookRegistrarProjectionActions(
  */
 export function hookRegistrarRevocationActions(
   ctx: PlanContext,
-  options: { envPatch?: EccHookEnvPatch; destinationRead?: GuardedRead } = {},
+  options: { envPatch?: HookEnvPatch; destinationRead?: GuardedRead } = {},
 ): Action[] {
   // ONE read of each file. The ownership verdict, the sole-key decision, the
   // apply-time pin and the merge base all come from these exact bytes, so a

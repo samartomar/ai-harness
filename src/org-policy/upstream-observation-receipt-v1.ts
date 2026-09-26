@@ -42,6 +42,9 @@ const effects = z
   .max(4)
   .refine(sortedUnique, "must be sorted and duplicate-free");
 
+/** The cross-boundary format name; see CONTRACTS.md. */
+export const UPSTREAM_OBSERVATION_RECEIPT_V1_FORMAT = "aih-upstream-observation-receipt";
+
 /**
  * Upstream-managed install observation only. It does not execute, preview, or
  * install candidate code (#744/#745), and it does not broaden generic npm
@@ -49,7 +52,7 @@ const effects = z
  */
 export const UpstreamObservationReceiptV1Schema = z
   .object({
-    format: z.literal("aih-upstream-observation-receipt"),
+    format: z.literal(UPSTREAM_OBSERVATION_RECEIPT_V1_FORMAT),
     version: z.literal(1),
     id: stableId.regex(/^observation-/, "observation ids must begin with observation-"),
     decision: z.object({ id: stableId, digest }).strict(),

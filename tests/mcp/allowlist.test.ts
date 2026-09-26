@@ -70,7 +70,7 @@ describe("managed allowlist generation deltas", () => {
 
   it("does not attribute the historical launcher to an arbitrary native wrapper", () => {
     const unrelatedWrapper = [...CURRENT_NATIVE_GRAPH_LAUNCHER];
-    unrelatedWrapper[4] = "code-review-graph==2.3.9";
+    unrelatedWrapper[4] = "code-review-graph==9.9.9";
 
     expect(
       managedAllowlistGenerationDelta(

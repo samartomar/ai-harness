@@ -2,20 +2,51 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { baselineAnalyzerVersions } from "../../src/baseline-evidence/analyzer-profile.js";
+import {
+  baselineAnalyzerVersions,
+  SEMGREP_VERSION,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { BASELINE_CATALOG_IDS, baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { comparePinSets, formatPinCurrency } from "../../src/baseline-evidence/pin-currency.js";
 import type { BaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
-import vendorLock from "../../src/baseline-evidence/vendor-lock.json" with { type: "json" };
+import {
+  readVendorBaselineLock,
+  vendorBaselineLockBytes,
+} from "../../src/baseline-evidence/vendor.js";
 import {
   checkBaselinePinCurrency,
-  defaultLockPath,
   runPinCurrencyCli,
 } from "../../src/internals/check-baseline-pin-currency.js";
 
 const CATALOGS = BASELINE_CATALOG_IDS.map((id) => baselineCatalogById(id));
-const lock = vendorLock as unknown as BaselineEvidenceLock;
+/**
+ * The installed Catalog fixture's lock is the requalified one, vetted with the U1
+ * analyzers. The drift cases below start from the same lock re-stamped at today's
+ * analyzer identities (a no-op for current receipts), so each shows only the drift
+ * it injects.
+ */
+const shipped = readVendorBaselineLock();
+const PRE_U1_SEMGREP_LABEL = "semgrep@uv:1.173.0";
+function vettedAtCurrentAnalyzers(evidence: BaselineEvidenceLock): BaselineEvidenceLock {
+  const current = baselineAnalyzerVersions();
+  return {
+    ...evidence,
+    sources: evidence.sources.map((source) => ({
+      ...source,
+      components: source.components.map((component) => ({
+        ...component,
+        analyzers: component.analyzers.map((receipt) => {
+          const name =
+            receipt.name === PRE_U1_SEMGREP_LABEL ? `semgrep@uv:${SEMGREP_VERSION}` : receipt.name;
+          return { name, version: current[name] ?? receipt.version };
+        }),
+      })),
+    })),
+  };
+}
+
+const lock = vettedAtCurrentAnalyzers(shipped);
 
 function withSourcePin(pin: string): BaselineEvidenceLock {
   return {
@@ -44,7 +75,11 @@ function withAnalyzerVersion(name: string, version: string): BaselineEvidenceLoc
 describe("baseline pin currency", () => {
   const analyzerVersions = baselineAnalyzerVersions();
 
-  it("reports no drift for the committed lock, which was vetted at these exact pins", () => {
+  it("reports no drift for the installed Catalog lock, vetted with the U1 analyzers", () => {
+    expect(comparePinSets({ lock: shipped, catalogs: CATALOGS, analyzerVersions })).toEqual([]);
+  });
+
+  it("reports no drift for a lock vetted at these exact pins", () => {
     expect(comparePinSets({ lock, catalogs: CATALOGS, analyzerVersions })).toEqual([]);
     expect(formatPinCurrency([])).toContain("matches every declared pin");
   });
@@ -131,10 +166,17 @@ describe("baseline pin currency", () => {
     );
   });
 
-  it("passes on the committed lock through the CLI entry point", () => {
-    const result = checkBaselinePinCurrency("src/baseline-evidence/vendor-lock.json");
-    expect(result.ok).toBe(true);
-    expect(result.report).toContain("matches every declared pin");
+  it("passes through the CLI entry point on a lock vetted at these exact pins", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-pin-currency-current-"));
+    const lockPath = join(dir, "vendor-lock.json");
+    const written: string[] = [];
+    try {
+      writeFileSync(lockPath, JSON.stringify(lock), "utf8");
+      expect(runPinCurrencyCli(lockPath, (text) => written.push(text))).toBe(0);
+      expect(written.join("")).toContain("matches every declared pin");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("reports not-ok through the CLI entry point when a pin has moved", () => {
@@ -159,15 +201,10 @@ describe("baseline pin currency", () => {
     expect(() => checkBaselinePinCurrency("package.json")).toThrow();
   });
 
-  it("defaults to the committed lock the check exists to defend", () => {
-    expect(defaultLockPath().replace(/\\/g, "/")).toContain(
-      "src/baseline-evidence/vendor-lock.json",
-    );
-  });
-
-  it("exits 0 and prints the report when the committed evidence is current", () => {
+  it("defaults to the installed Catalog lock and reports it current", () => {
+    expect(vendorBaselineLockBytes().length).toBeGreaterThan(0);
     const written: string[] = [];
-    expect(runPinCurrencyCli(defaultLockPath(), (text) => written.push(text))).toBe(0);
+    expect(runPinCurrencyCli(undefined, (text) => written.push(text))).toBe(0);
     expect(written.join("")).toContain("matches every declared pin");
   });
 

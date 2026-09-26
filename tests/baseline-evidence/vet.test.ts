@@ -12,7 +12,11 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
-import { defaultComponentScanner, vetBaselineCatalog } from "../../src/baseline-evidence/vet.js";
+import {
+  BaselineVetIntegrityError,
+  defaultComponentScanner,
+  vetBaselineCatalog,
+} from "../../src/baseline-evidence/vet.js";
 import type { Check } from "../../src/internals/verify.js";
 import {
   buildCiscoShardManifest,
@@ -21,6 +25,20 @@ import {
   joinCiscoShardResults,
 } from "../../src/trust/cisco-shards.js";
 import { TRUST_POLICY_VERSION } from "../../src/trust/evidence.js";
+import {
+  fakeCiscoJobSarif,
+  type HandJobSubjectsForTests,
+} from "../trust/fakes/fake-cisco-job-sarif.js";
+
+/**
+ * Each fixture job's subject (subject-files-v1), computed by hand with plain
+ * node:crypto: sha256 of `<job>/SKILL.md\0<sha256 of its bytes>\n`.
+ * SKILL.md holds `# Clean\n` and `# Blocked\n`.
+ */
+const JOB_SUBJECTS: HandJobSubjectsForTests = {
+  "skills/clean": "dcaa68965d2c6d3bb6a62dc39fe93d0aa86067a55765cb711482093b0aafb928",
+  "skills/blocked": "28c0d120433260b0f404da989081f038a3b9af6a0846e360dfd116c045fdb1df",
+};
 
 let root: string;
 
@@ -73,8 +91,8 @@ describe("vetBaselineCatalog", () => {
       repo: "ECC",
       pinnedSha: "d".repeat(40),
       components: [
-        { id: "skill:clean", verdict: "pass", findings: [] },
-        { id: "skill:blocked", verdict: "pass", findings: [] },
+        { id: "skill:clean", verdict: "no-findings", findings: [], evidenceProblems: [] },
+        { id: "skill:blocked", verdict: "no-findings", findings: [], evidenceProblems: [] },
       ],
     });
     expect(evidence.components[0]?.treeSha256).toBe(
@@ -83,7 +101,7 @@ describe("vetBaselineCatalog", () => {
     expect(evidence.components[0]?.analyzers).toEqual([{ name: "aih-native", version: "2.7.0" }]);
   });
 
-  it("preserves failing danger checks as a blocked verdict instead of acknowledging them", async () => {
+  it("labels failing danger checks as has-findings instead of acknowledging them", async () => {
     const danger: Check = {
       name: "trust.hidden-unicode",
       verdict: "fail",
@@ -102,7 +120,8 @@ describe("vetBaselineCatalog", () => {
 
     expect(evidence.components[1]).toMatchObject({
       id: "skill:blocked",
-      verdict: "blocked",
+      verdict: "has-findings",
+      evidenceProblems: [],
       findings: [
         {
           code: "trust.hidden-unicode",
@@ -113,7 +132,7 @@ describe("vetBaselineCatalog", () => {
     });
   });
 
-  it("treats a required unavailable detector failure as blocked evidence", async () => {
+  it("records a required unavailable detector as an evidence problem, not a finding", async () => {
     const unavailable: Check = {
       name: "trust detector skillspector",
       verdict: "fail",
@@ -125,7 +144,34 @@ describe("vetBaselineCatalog", () => {
       requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
-    expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
+    expect(evidence.components.every((component) => component.verdict === "no-findings")).toBe(
+      true,
+    );
+    expect(evidence.components[0]).toMatchObject({
+      findings: [],
+      evidenceProblems: [
+        {
+          code: "trust.detector-unavailable",
+          detail: "required detector skillspector unavailable",
+        },
+      ],
+    });
+  });
+
+  it("refuses to emit evidence when a component scan reports an integrity failure", async () => {
+    const drift: Check = {
+      name: "trust upstream drift",
+      verdict: "fail",
+      code: "trust.source-drift",
+      detail: "HEAD now resolves to another revision",
+    };
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: [drift] }),
+        requiredAnalyzers: ["aih-native"],
+        analyzerVersions: { "aih-native": "2.7.0" },
+      }),
+    ).rejects.toThrow(/evidence integrity.*trust.source-drift/);
   });
 
   it("summarizes repeated findings by code for a bounded shipped lock", async () => {
@@ -157,7 +203,7 @@ describe("vetBaselineCatalog", () => {
     ]);
   });
 
-  it("holds REVIEW dispositions and binds them to raw occurrence fingerprints", async () => {
+  it("labels REVIEW dispositions as findings bound to raw occurrence fingerprints", async () => {
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async ({ component }) => {
         const fingerprint = `finding:${component.id}`;
@@ -189,13 +235,168 @@ describe("vetBaselineCatalog", () => {
       analyzerVersions: { "aih-native": "2.7.0" },
     });
 
-    expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
+    expect(evidence.components.every((component) => component.verdict === "has-findings")).toBe(
+      true,
+    );
     expect(evidence.components[0]?.findings).toEqual([
       expect.objectContaining({
         code: "trust.external-egress",
         fingerprints: ["raw:skill:clean"],
       }),
     ]);
+  });
+
+  it("labels a WARN-only component has-findings and keeps INFORMATIONAL and SUPPRESSED out (D62)", async () => {
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async ({ component }) => {
+        const warnOnly = component.id === "skill:blocked";
+        const findings = warnOnly
+          ? [
+              {
+                fingerprint: "finding:warn",
+                code: "trust.cisco-finding" as const,
+                checkVerdict: "fail" as const,
+                detail: "Cisco rule flagged the skill",
+                location: { uri: "SKILL.md", startLine: 1 },
+                rawOccurrenceFingerprints: ["raw:warn"],
+              },
+            ]
+          : [
+              {
+                fingerprint: "finding:info",
+                code: "trust.visible-unicode" as const,
+                checkVerdict: "fail" as const,
+                detail: "typographic quote",
+                rawOccurrenceFingerprints: ["raw:info"],
+              },
+              {
+                fingerprint: "finding:suppressed",
+                code: "trust.detector-finding" as const,
+                checkVerdict: "fail" as const,
+                detail: "generic heuristic",
+                rawOccurrenceFingerprints: ["raw:suppressed"],
+              },
+            ];
+        return {
+          analyzersRun: ["aih-native"],
+          checks: [pass("scan")],
+          normalizedFindings: findings,
+          policyDispositions: findings.map((finding) => ({
+            findingFingerprint: finding.fingerprint,
+            level: warnOnly
+              ? ("WARN" as const)
+              : finding.code === "trust.visible-unicode"
+                ? ("INFORMATIONAL" as const)
+                : ("SUPPRESSED" as const),
+            reason: "fixture",
+            policyVersion: TRUST_POLICY_VERSION,
+          })),
+        };
+      },
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+
+    expect(evidence.components[1]).toMatchObject({
+      id: "skill:blocked",
+      verdict: "has-findings",
+      evidenceProblems: [],
+      findings: [
+        expect.objectContaining({
+          code: "trust.cisco-finding",
+          detail: "WARN: SKILL.md:1 — Cisco rule flagged the skill",
+          fingerprints: ["raw:warn"],
+        }),
+      ],
+    });
+    expect(evidence.components[0]).toMatchObject({
+      id: "skill:clean",
+      verdict: "no-findings",
+      findings: [],
+      evidenceProblems: [],
+    });
+  });
+
+  it("applies the same finding levels to a check-only scan (D62)", async () => {
+    const check = (code: Check["code"]): Check => ({
+      name: String(code),
+      verdict: "fail",
+      code,
+      detail: `${code} observed`,
+    });
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async ({ component }) => ({
+        analyzersRun: ["aih-native"],
+        checks:
+          component.id === "skill:blocked"
+            ? [check("trust.cisco-finding")]
+            : [check("trust.visible-unicode"), check("trust.legal-text-detector-finding")],
+      }),
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+    expect(evidence.components[1]).toMatchObject({
+      verdict: "has-findings",
+      findings: [{ code: "trust.cisco-finding", detail: "trust.cisco-finding observed" }],
+    });
+    expect(evidence.components[0]).toMatchObject({ verdict: "no-findings", findings: [] });
+  });
+
+  it.each([
+    ["an unclassified trust code", "trust.brand-new-code", "SUPPRESSED"],
+    [
+      "an integrity code at a non-finding level",
+      "trust.fetch-metadata-mismatched",
+      "INFORMATIONAL",
+    ],
+  ] as const)("refuses the evidence for %s at any level", async (_label, code, level) => {
+    const scan = vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({
+        analyzersRun: ["aih-native"],
+        checks: [pass("scan")],
+        normalizedFindings: [
+          {
+            fingerprint: "finding:x",
+            code: code as Check["code"],
+            checkVerdict: "fail" as const,
+            detail: "observed",
+            rawOccurrenceFingerprints: [],
+          },
+        ],
+        policyDispositions: [
+          {
+            findingFingerprint: "finding:x",
+            level,
+            reason: "fixture",
+            policyVersion: TRUST_POLICY_VERSION,
+          },
+        ],
+      }),
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+    await expect(scan).rejects.toBeInstanceOf(BaselineVetIntegrityError);
+    await expect(scan).rejects.toThrow(code);
+  });
+
+  it("refuses the evidence for an unclassified trust code in a check-only scan", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: ["aih-native"],
+          checks: [
+            {
+              name: "new",
+              verdict: "fail",
+              code: "trust.brand-new-code" as Check["code"],
+              detail: "observed",
+            },
+          ],
+        }),
+        requiredAnalyzers: ["aih-native"],
+        analyzerVersions: { "aih-native": "2.7.0" },
+      }),
+    ).rejects.toBeInstanceOf(BaselineVetIntegrityError);
   });
 
   it("fails closed when an analyzer ran without an attributable version receipt", async () => {
@@ -214,13 +415,13 @@ describe("vetBaselineCatalog", () => {
   it("keeps optional analyzer availability out of deterministic component receipts", async () => {
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({
-        analyzersRun: ["aih-native", "mcp-scanner@uv:4.8.2"],
+        analyzersRun: ["aih-native", "mcp-scanner@uv:4.8.4"],
         checks: [pass("scan")],
       }),
       requiredAnalyzers: ["aih-native"],
       analyzerVersions: {
         "aih-native": "native.aaaaaaaaaaaa",
-        "mcp-scanner@uv:4.8.2": "4.8.2+uvlock.bbbbbbbbbbbb",
+        "mcp-scanner@uv:4.8.4": "4.8.4+uvlock.bbbbbbbbbbbb",
       },
     });
 
@@ -348,8 +549,9 @@ describe("vetBaselineCatalog", () => {
     const scanTree = vi.fn(
       async (_projectionRoot: string, options?: Parameters<typeof defaultComponentScanner>[0]) => {
         const raw = options?.precomputedDetectorSarif?.cisco;
-        if (raw === undefined) throw new Error("expected precomputed Cisco SARIF");
-        const sarif = JSON.parse(raw) as {
+        if (raw === undefined || typeof raw === "string")
+          throw new Error("expected a verified Cisco shard join");
+        const sarif = JSON.parse(raw.sarif) as {
           runs: Array<{
             results: Array<{
               locations: Array<{
@@ -373,27 +575,27 @@ describe("vetBaselineCatalog", () => {
     );
     const dispatch = vi.fn(async (manifest: CiscoShardManifest) =>
       manifest.shards.map((shard) =>
-        buildCiscoShardResult(manifest, shard.id, (job) => ({
-          version: "2.1.0",
-          runs: [
-            {
-              results: [
-                {
-                  ruleId: "fixture",
-                  message: { text: job.path },
-                  locations: [
-                    {
-                      physicalLocation: {
-                        artifactLocation: { uri: `${job.path}/SKILL.md` },
-                        region: { startLine: 1 },
-                      },
+        buildCiscoShardResult(manifest, shard.id, (job) =>
+          fakeCiscoJobSarif(
+            JOB_SUBJECTS,
+            job.path,
+            [
+              {
+                ruleId: "fixture",
+                message: { text: job.path },
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: `${job.path}/SKILL.md` },
+                      region: { startLine: 1 },
                     },
-                  ],
-                },
-              ],
-            },
-          ],
-        })),
+                  },
+                ],
+              },
+            ],
+            manifest.analyzer,
+          ),
+        ),
       ),
     );
 
@@ -421,7 +623,9 @@ describe("vetBaselineCatalog", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(scanTree).toHaveBeenCalledTimes(2);
     expect(seenCiscoUris).toEqual([["skills/clean/SKILL.md"], ["skills/blocked/SKILL.md"]]);
-    expect(evidence.components.every((component) => component.verdict === "pass")).toBe(true);
+    expect(evidence.components.every((component) => component.verdict === "no-findings")).toBe(
+      true,
+    );
   });
 
   it("does not run a source-wide Cisco scan when every exact receipt is reusable", async () => {
@@ -448,7 +652,7 @@ describe("vetBaselineCatalog", () => {
       scanTree,
       requiredAnalyzers: ["aih-native", "cisco@uvx"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [first] },
+      reuseFrom: { schemaVersion: 2, sources: [first] },
       sourceWideCisco: {
         analyzerLockSha256: "a".repeat(64),
         dispatch,
@@ -478,12 +682,15 @@ describe("vetBaselineCatalog", () => {
     });
     const shard = manifest.shards[0];
     if (shard === undefined) throw new Error("fixture shard missing");
-    const shared = joinCiscoShardResults(manifest, [
-      buildCiscoShardResult(manifest, shard.id, () => ({
-        version: "2.1.0",
-        runs: [],
-      })),
-    ]);
+    const shared = joinCiscoShardResults(
+      manifest,
+      [
+        buildCiscoShardResult(manifest, shard.id, (job) =>
+          fakeCiscoJobSarif(JOB_SUBJECTS, job.path, [], manifest.analyzer),
+        ),
+      ],
+      root,
+    );
     const scanTree = vi.fn(async () => ({
       analyzersRun: ["aih-native", "cisco@uvx"],
       checks: [pass("must not run")],
@@ -503,6 +710,31 @@ describe("vetBaselineCatalog", () => {
       }),
     ).rejects.toThrow(/requires Cisco.*no exact source-wide Cisco job/i);
     expect(scanTree).not.toHaveBeenCalled();
+  });
+
+  it("names the detector's refusal when a component scan ran no analyzer", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: [],
+          checks: [
+            {
+              name: "trust detector cisco",
+              verdict: "fail",
+              code: "trust.detector-unavailable",
+              detail: "precomputed SARIF for detector.cisco is refused: fixture reason",
+            },
+          ],
+        }),
+        requiredAnalyzers: ["aih-native", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "native.test",
+          "cisco@uvx": "2.0.13+uvlock.fixture",
+        },
+      }),
+    ).rejects.toThrow(
+      /^baseline vet produced no analyzer receipt; detector diagnostics: precomputed SARIF for detector\.cisco is refused: fixture reason$/,
+    );
   });
 
   it("requires an explicit dispatcher before requesting multiple source shards", async () => {
@@ -657,7 +889,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: mustNotScan,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(mustNotScan).not.toHaveBeenCalled();
@@ -684,7 +916,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanOnly,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanOnly).toHaveBeenCalledTimes(1);
@@ -715,7 +947,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: mustNotScan,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(mustNotScan).not.toHaveBeenCalled();
@@ -753,7 +985,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanBoth,
       requiredAnalyzers: ["aih-native", "skillspector@docker"],
       analyzerVersions: versionsR2,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanBoth).toHaveBeenCalledTimes(2);
@@ -802,7 +1034,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanCiscoOnly,
       requiredAnalyzers,
       analyzerVersions: versionsR2,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanCiscoOnly).toHaveBeenCalledTimes(1);
@@ -830,7 +1062,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanAll,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "native.new000000000b" },
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     expect(rescanAll).toHaveBeenCalledTimes(2);
@@ -846,7 +1078,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
     ).toBe(true);
   });
 
-  it("preserves a blocked verdict and its findings byte-identically on reuse, never fabricating (bullet 5)", async () => {
+  it("preserves a has-findings verdict and its findings byte-identically on reuse, never fabricating (bullet 5)", async () => {
     const danger: Check = {
       name: "trust.hidden-unicode",
       verdict: "fail",
@@ -864,7 +1096,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       analyzerVersions,
     });
     const blockedPrior = priorEvidence.components.find((c) => c.id === "skill:blocked");
-    expect(blockedPrior?.verdict).toBe("blocked");
+    expect(blockedPrior?.verdict).toBe("has-findings");
 
     const mustNotScan = vi.fn(async () => {
       throw new Error("must not rescan on full reuse");
@@ -873,18 +1105,18 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: mustNotScan,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     const blocked = evidence.components.find((c) => c.id === "skill:blocked");
     expect(blocked).toEqual(blockedPrior);
-    expect(blocked?.verdict).toBe("blocked");
+    expect(blocked?.verdict).toBe("has-findings");
     expect(blocked?.findings).toEqual(blockedPrior?.findings);
   });
 
   it("never reuses a hand-crafted pass entry whose treeSha256 does not match the current tree", async () => {
     const staleLock = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       sources: [
         {
           id: "ecc",
@@ -896,17 +1128,19 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
               id: "skill:clean",
               paths: ["skills/clean"],
               treeSha256: "0".repeat(64),
-              verdict: "pass" as const,
+              verdict: "no-findings" as const,
               analyzers: [{ name: "aih-native", version: analyzerVersions["aih-native"] }],
               findings: [],
+              evidenceProblems: [],
             },
             {
               id: "skill:blocked",
               paths: ["skills/blocked"],
               treeSha256: "1".repeat(64),
-              verdict: "pass" as const,
+              verdict: "no-findings" as const,
               analyzers: [{ name: "aih-native", version: analyzerVersions["aih-native"] }],
               findings: [],
+              evidenceProblems: [],
             },
           ],
         },
@@ -949,7 +1183,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanComponent: rescanAll,
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
       full: true,
     });
 
@@ -978,7 +1212,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanOptions: { progress },
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
     });
 
     const lines = progress.mock.calls.map((call) => call[0] as string);
@@ -1017,7 +1251,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       scanOptions: { progress },
       requiredAnalyzers: ["aih-native"],
       analyzerVersions,
-      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      reuseFrom: { schemaVersion: 2, sources: [priorEvidence] },
       full: true,
     });
 

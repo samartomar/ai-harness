@@ -7,7 +7,6 @@ import { AdapterRegistry, type ProvisionRequest } from "../../src/binding/adapte
 import {
   assertResolvedMatchesDeclaration,
   BindingScanError,
-  type DimensionInspector,
   type ResolvedGitSource,
   resolveGitSource,
   runFastScanGate,
@@ -18,11 +17,7 @@ import { type BindingDeclaration, BindingDeclarationSchema } from "../../src/bin
 import { defaultRunner } from "../../src/internals/proc.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
 import { createFakeAdapter } from "./fake-adapter.js";
-
-const producedClean: DimensionInspector = {
-  dimension: "c",
-  run: () => ({ dimension: "c", status: "produced", findings: [] }),
-};
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 let repoDir: string;
 let cacheHome: string;
@@ -173,10 +168,10 @@ describe("FINDING 5 — registry-enforced provision guard", () => {
       { repository: repoDir, commitSha: sha },
       { runner: defaultRunner, cacheHome },
     );
-    const disposition = runFastScanGate(
+    const disposition = await runFastScanGate(
       scannableFromGit(resolved),
       { posture: "enterprise" },
-      { cacheHome, inspectors: [producedClean] },
+      { cacheHome, scanExecution: fakeBindingGateScan() },
     );
     return { resolved, disposition };
   }

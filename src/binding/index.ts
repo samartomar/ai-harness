@@ -124,68 +124,6 @@ export {
   type CostGateVerdict,
   measureCostGateVariant,
 } from "./frameworks/cost-gate.js";
-// W4b — the ECC Lean adapter (upstream-local-installer). Composes the shipped,
-// pin-bound ECC install-preview + an injected selective-install seam; adds no ECC
-// install machinery of its own (D9). W4c adds the Full variant to the same file.
-export {
-  componentInstallRoot,
-  computeEccFullLabel,
-  computeEccLeanPreviewDiff,
-  createEccAdapter,
-  ECC_AGENT_DATA_HOME_DEFAULT,
-  ECC_FULL_FEATURE_KEYS,
-  ECC_FULL_MARKETPLACE_NAME,
-  ECC_FULL_MCP_CONNECTORS,
-  ECC_FULL_PLUGIN_NAME,
-  ECC_HOMUNCULUS_DIR_DEFAULT,
-  ECC_HOST_TARGET,
-  ECC_LEAN_ACCEPTANCE_TUPLE,
-  ECC_LEAN_ALLOWLIST,
-  ECC_LEAN_EXCLUDED,
-  ECC_PIN_COMMIT,
-  ECC_REPOSITORY,
-  EccBindingError,
-  type EccFullLabelInput,
-  type EccFullProvisionResult,
-  type EccFullRemoveResult,
-  type EccLeanAdapterDeps,
-  EccLeanAllowlistError,
-  type EccLeanInstalledFile,
-  type EccLeanInstaller,
-  EccLeanInstallerUnavailableError,
-  type EccLeanInstallInput,
-  type EccLeanInstallResult,
-  type EccLeanManifest,
-  type EccLeanPreviewDiff,
-  type EccLeanRemoveResult,
-  type EccMode,
-  EccModeConflictError,
-  EccModeNotImplementedError,
-  type EccStateWriteFinding,
-  eccFullStateWriteInventory,
-  eccLeanManifest,
-  eccRuntimeSurfaceHit,
-  type NormalizedEccOp,
-  normalizeEccOperations,
-} from "./frameworks/ecc.js";
-// W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
-// assembly point. Composes the W3 Claude host services above; adds no new
-// host mechanism of its own.
-export {
-  ADAPTER_VERSIONS,
-  type BindingRegistryDeps,
-  createBindingAdapterRegistry,
-} from "./frameworks/registry.js";
-export {
-  createSuperpowersAdapter,
-  SUPERPOWERS_MARKETPLACE_NAME,
-  SUPERPOWERS_PIN_COMMIT,
-  SUPERPOWERS_PLUGIN_NAME,
-  SUPERPOWERS_REPOSITORY,
-  type SuperpowersAdapterDeps,
-  SuperpowersBindingError,
-  type SuperpowersRemoveResult,
-} from "./frameworks/superpowers.js";
 // W8 — the D14 Framework Value Gate: the CREDIT side vs the no-framework baseline
 // (surface deltas + the decisive characteristic-workflow signal), fail-closed to
 // INCOMPLETE. Reuses the cost/context surface primitive; never re-implements it.
@@ -327,14 +265,19 @@ export {
   writeBindingLockAtomic,
 } from "./lock.js";
 export { type AcquireNpmTreeOptions, acquireNpmTree } from "./npm-source.js";
+export {
+  BINDING_GATE_DETECTOR_ID,
+  BINDING_GATE_DIMENSIONS,
+  BINDING_GATE_EXECUTION_PROFILE,
+  BindingGateScanError,
+  type BindingTypographyFact,
+} from "./scan-binding-gate.js";
 // W7 §C (Phase 2) — the two D12 scan cache tiers (deep-scan + runtime-qualification),
 // the async deep-scanner dimensions (cisco@uvx produced, skillspector@docker missing
 // on this VM), and the canonical tier keys. Off-tuple never satisfies the runtime-qual
 // tier — structurally (the tuple is in the key) and defensively (the read-time guard).
 export {
   type CoverageEntry,
-  ciscoSkillScannerInspector,
-  DEEP_DIMENSION_INSPECTORS,
   DEEP_SCAN_TIMEOUT_MS,
   DEEP_SCANNER_VERSION,
   type DeepDimensionContext,
@@ -357,7 +300,6 @@ export {
   runtimeQualKey,
   SCAN_POLICY_VERSION,
   ScanCacheTierError,
-  skillspectorInspector,
   sourceIdOf,
 } from "./scan-cache-tiers.js";
 export {
@@ -367,8 +309,6 @@ export {
   BindingNotSupportedError,
   BindingScanError,
   bindingCacheHome,
-  type DimensionInspectionContext,
-  type DimensionInspector,
   type DimensionReport,
   type FastScanDeps,
   type FastScanPolicy,
@@ -403,7 +343,7 @@ export {
   scanAcceptanceReport,
   scannableFromGit,
   scannableFromNpm,
-  W2_DEFAULT_INSPECTORS,
+  type TypographyAdvisory,
 } from "./scan-gate.js";
 export {
   assertSingleMethodologyFramework,
@@ -427,14 +367,3 @@ export {
   readBindingDeclaration,
   safeParseBindingDeclaration,
 } from "./schema.js";
-// W5 rule-8 — gate-layer visible-typography reclassifier (advisory demotion of
-// hidden-unicode findings whose file is all prose/comment/human-string typography).
-export {
-  classifyFileTypography,
-  classifySentinelLineShape,
-  enumerateTypography,
-  type FileTypographyVerdict,
-  type SentinelLineShape,
-  type TypographyAdvisory,
-  type TypographyOccurrence,
-} from "./visible-typography.js";

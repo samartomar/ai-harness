@@ -54,15 +54,15 @@ export const MarketplaceFileSchema = z
  * One packaged skill — the lock entry's identity (name/source/commit/verdict)
  * plus the artifact-relative receipts: the committed card copy, the
  * content-addressed vet evidence copy, and every shipped file with its hash.
- * Verdict is restricted to the two APPROVABLE grades by construction — a RED or
- * UNKNOWN skill never has a lock entry, so it can never be packaged.
+ * Verdict is the vet verdict the approval recorded (GREEN, YELLOW, RED or
+ * UNKNOWN), carried as the skill's label for the consumer.
  */
 export const MarketplaceSkillSchema = z
   .object({
     name: skillNameSchema,
     source: z.string().min(1),
     commit: z.string().min(1),
-    verdict: z.enum(["GREEN", "YELLOW"]),
+    verdict: z.enum(["GREEN", "YELLOW", "RED", "UNKNOWN"]),
     license: z.string().min(1).optional(),
     riskClass: z.string().min(1).optional(),
     /** Artifact-relative path of the committed skill-card copy (`cards/<name>.json`). */
@@ -73,15 +73,32 @@ export const MarketplaceSkillSchema = z
   })
   .strict();
 
-export const MarketplaceManifestSchema = z
+/**
+ * The manifest version aih writes. Version 2 (D50) carries every vet verdict as a
+ * label; version 1 (0.6.2 and earlier) could only carry GREEN or YELLOW. Readers
+ * accept both, each with its own value set; aih writes version 2.
+ */
+export const MARKETPLACE_MANIFEST_SCHEMA_VERSION = 2;
+
+const MarketplaceManifestV2Schema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     name: z.string().min(1),
     /** Optional operator-supplied stamp (`--stamp`); NEVER a wall-clock read. */
     stamp: z.string().min(1).optional(),
     skills: z.array(MarketplaceSkillSchema),
   })
   .strict();
+
+const MarketplaceManifestV1Schema = MarketplaceManifestV2Schema.extend({
+  schemaVersion: z.literal(1),
+  skills: z.array(MarketplaceSkillSchema.extend({ verdict: z.enum(["GREEN", "YELLOW"]) })),
+}).strict();
+
+export const MarketplaceManifestSchema = z.discriminatedUnion("schemaVersion", [
+  MarketplaceManifestV1Schema,
+  MarketplaceManifestV2Schema,
+]);
 
 export type MarketplaceFile = z.infer<typeof MarketplaceFileSchema>;
 export type MarketplaceSkill = z.infer<typeof MarketplaceSkillSchema>;

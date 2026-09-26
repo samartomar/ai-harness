@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { hashComponentTree } from "../baseline-evidence/hash.js";
+import { checkedScanSarifLogV1, scanCompletionRefusalV1 } from "./scan-sarif.js";
+import { type ScanSubjectDigestV1, scanSubjectDigestV1 } from "./scan-subject-files.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_SHA = /^[0-9a-f]{40}$/;
@@ -317,9 +321,60 @@ function assertResultEnvelope(manifest: CiscoShardManifest, value: CiscoShardRes
   }
 }
 
+/**
+ * The one completion predicate for a Cisco shard job's SARIF (C2a §1.6), before
+ * any join: the checked shape, and completion evidence naming "detector.cisco",
+ * the job's files as Core rehashes them under `sourceRoot` (never zero), and
+ * the analyzer the manifest pins. Why it fails, or undefined.
+ */
+export function ciscoShardJobCompletionRefusalV1(
+  sarif: unknown,
+  sourceRoot: string,
+  jobPath: string,
+  analyzer: { readonly version: string; readonly lockSha256: string },
+): string | undefined {
+  const verified = verifiedCiscoShardJobSubjectV1(sarif, sourceRoot, jobPath, analyzer);
+  return "refusal" in verified ? verified.refusal : undefined;
+}
+
+/** The job's subject as Core rehashed it, once its SARIF proved that subject complete (above). */
+function verifiedCiscoShardJobSubjectV1(
+  sarif: unknown,
+  sourceRoot: string,
+  jobPath: string,
+  analyzer: { readonly version: string; readonly lockSha256: string },
+): { readonly subject: ScanSubjectDigestV1 } | { readonly refusal: string } {
+  const checked = checkedScanSarifLogV1(sarif);
+  if ("refusal" in checked) return { refusal: checked.refusal };
+  let subject: ScanSubjectDigestV1;
+  try {
+    subject = ciscoShardJobSubjectV1(sourceRoot, jobPath);
+  } catch (error) {
+    return {
+      refusal: `completion evidence Core cannot check, because it cannot rehash job ${jobPath}: ${(error as Error)?.message ?? "unknown error"}`,
+    };
+  }
+  const refusal = scanCompletionRefusalV1(checked.log, {
+    detectorId: "detector.cisco",
+    subject,
+    emptyAllowed: false,
+    analyzer: {
+      version: analyzer.version.split("+", 1)[0] ?? analyzer.version,
+      lockSha256: analyzer.lockSha256,
+    },
+  });
+  return refusal === undefined ? { subject } : { refusal };
+}
+
+/** A shard job's subject (C2a §1.6): every regular file under `<sourceRoot>/<jobPath>`, rehashed now. */
+export function ciscoShardJobSubjectV1(sourceRoot: string, jobPath: string): ScanSubjectDigestV1 {
+  return scanSubjectDigestV1(hashComponentTree(sourceRoot, [jobPath]).files);
+}
+
 export function joinCiscoShardResults(
   manifest: CiscoShardManifest,
   values: readonly CiscoShardResult[],
+  sourceRoot: string,
 ): JoinedCiscoShardEvidence {
   if (computedManifestSha256(manifest) !== manifest.manifestSha256) {
     throw new Error("Cisco shard manifest identity does not match its contents");
@@ -340,7 +395,9 @@ export function joinCiscoShardResults(
     if (!results.has(shard.id)) throw new Error(`missing Cisco shard result: ${shard.id}`);
   }
 
+  const root = realpathSync.native(sourceRoot);
   const outputs = new Map<string, CiscoShardOutput>();
+  const subjects = new Map<string, ScanSubjectDigestV1>();
   for (const shard of manifest.shards) {
     const result = results.get(shard.id);
     if (result === undefined) throw new Error(`missing Cisco shard result: ${shard.id}`);
@@ -359,13 +416,24 @@ export function joinCiscoShardResults(
       if (sha256(canonicalJson(output.evidence)) !== output.evidenceSha256) {
         throw new Error(`Cisco job ${job.path} has a mismatched evidence digest`);
       }
+      const verified = verifiedCiscoShardJobSubjectV1(
+        output.evidence,
+        sourceRoot,
+        job.path,
+        manifest.analyzer,
+      );
+      if ("refusal" in verified)
+        throw new Error(
+          `Cisco job ${job.path} did not prove it completed: it holds ${verified.refusal}`,
+        );
       outputs.set(output.jobId, output);
+      subjects.set(output.jobId, verified.subject);
     }
     for (const job of shard.jobs) {
       if (!outputs.has(job.id)) throw new Error(`missing Cisco job output: ${job.path}`);
     }
   }
-  return {
+  const joined: JoinedCiscoShardEvidence = {
     schemaVersion: 1,
     manifestSha256: manifest.manifestSha256,
     qualificationId: manifest.qualificationId,
@@ -376,4 +444,70 @@ export function joinCiscoShardResults(
       return output;
     }),
   };
+  VERIFIED_JOB_EVIDENCE.set(
+    joined,
+    frozenJoinRecord({
+      root,
+      jobs: manifest.jobs.map((job) => {
+        const output = outputs.get(job.id);
+        const subject = subjects.get(job.id);
+        if (output === undefined || subject === undefined)
+          throw new Error(`missing Cisco job output: ${job.path}`);
+        return { path: job.path, sarif: canonicalJson(output.evidence), subject };
+      }),
+    }),
+  );
+  return joined;
+}
+
+/** A deep-frozen copy of a verified record: it shares no object with its input. */
+function frozenJoinRecord(record: VerifiedCiscoShardJoinV1): VerifiedCiscoShardJoinV1 {
+  return Object.freeze({
+    root: record.root,
+    jobs: Object.freeze(
+      record.jobs.map((job) =>
+        Object.freeze({
+          path: job.path,
+          sarif: job.sarif,
+          subject: Object.freeze({
+            subjectTreeSha256: job.subject.subjectTreeSha256,
+            analyzedFileCount: job.subject.analyzedFileCount,
+          }),
+        }),
+      ),
+    ),
+  });
+}
+
+/**
+ * What `joinCiscoShardResults` verified: the canonical source root (realpath)
+ * and, per job in manifest order, the job evidence exactly as it stood and the
+ * job's subject (subject-files-v1) Core rehashed and the evidence proved.
+ */
+export interface VerifiedCiscoShardJoinV1 {
+  readonly root: string;
+  readonly jobs: readonly {
+    readonly path: string;
+    readonly sarif: string;
+    readonly subject: ScanSubjectDigestV1;
+  }[];
+}
+
+/**
+ * The verified record, deep-frozen when the join verified it and keyed by the
+ * joined object that call returned. A join built any other way, or evidence
+ * changed afterwards, is never read; the stored record is never handed out.
+ */
+const VERIFIED_JOB_EVIDENCE = new WeakMap<JoinedCiscoShardEvidence, VerifiedCiscoShardJoinV1>();
+
+/**
+ * A frozen copy of the verified record of a join `joinCiscoShardResults`
+ * returned, or undefined for any other value. Nothing a caller does to it
+ * reaches the stored record.
+ */
+export function verifiedCiscoShardJobSarifV1(
+  joined: JoinedCiscoShardEvidence,
+): VerifiedCiscoShardJoinV1 | undefined {
+  const record = VERIFIED_JOB_EVIDENCE.get(joined);
+  return record === undefined ? undefined : frozenJoinRecord(record);
 }
