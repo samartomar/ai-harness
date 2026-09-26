@@ -7,7 +7,8 @@ import {
   loadScanPackageExportsV1,
   scanPackageExportsOrThrowV1,
 } from "../scan-package/load-scan-package.js";
-import { BASELINE_CATALOG_IDS } from "./catalogs.js";
+import { assertAssembledInventoryV1 } from "./assembly-inventory.js";
+import { BASELINE_CATALOG_IDS, baselineCatalogById } from "./catalogs.js";
 import { checkoutHeadV1 } from "./committed-checkout.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
@@ -323,12 +324,23 @@ function sourceEvidence(path: string): BaselineSourceEvidence {
   return BaselineSourceEvidenceSchema.parse(readJson(path, 16 * 1024 * 1024));
 }
 
+/**
+ * `assemble` binds the WHOLE emitted inventory: every source's identity and every assembled
+ * component's id and paths must equal the catalog that source resolved to (the ECC source to
+ * the catalog the preview is authorized against, another framework source to the installed
+ * Catalog's own catalog for it). An omitted, extra or altered component refuses before the
+ * preview is generated and before anything is written.
+ */
 function assemble(args: readonly string[]): void {
   const eccRoot = resolve(flag(args, "--ecc-root"));
   const { catalog: eccCatalog } = assertCheckout(eccRoot, "ecc", args);
   const ecc = sourceEvidence(flag(args, "--ecc-evidence"));
   const superpowers = sourceEvidence(flag(args, "--superpowers-evidence"));
   const lock = parseBaselineEvidenceLock({ schemaVersion: 2, sources: [ecc, superpowers] });
+  assertAssembledInventoryV1(lock, (sourceId) => {
+    if (sourceId === "ecc") return eccCatalog;
+    return isFrameworkCatalogIdV1(sourceId) ? baselineCatalogById(sourceId) : undefined;
+  });
   const preview = generateAuthorizedEccInstallPreview({
     eccRoot,
     catalog: eccCatalog,
