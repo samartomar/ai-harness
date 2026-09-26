@@ -302,6 +302,21 @@ describe("definition resolution against the declared Catalog definition (D79)", 
     },
   );
 
+  it("keeps today's route for a pin the declared definition does not carry", () => {
+    // The checkout is at the fixture pin. A definition at another pin is uncarried, so the
+    // resolver never asks the checkout to be at the declared pin: it keeps the definition.
+    const elsewhere = {
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: EARLIER_PIN,
+      components: [{ id: "runtime:ecc-installer", paths: ["package.json"] }],
+    };
+    const resolved = resolve(elsewhere, EARLIER_PIN);
+    expect(resolved.route).toBe("definition");
+    expect(resolved.catalog).toEqual(elsewhere);
+  });
+
   it("refuses a pin the installed Catalog does not carry, by both identities", () => {
     // `baselineCatalogById` is the evidence-lock facade, so this reads the installed
     // descriptor (not the synthetic one this file mocks for the definition route).

@@ -397,6 +397,20 @@ function committedTreeAtPinV1(
 }
 
 /**
+ * The pin the declared definition states for one framework: the whole declaration is
+ * validated strictly (section, framework and every asset), but no checkout is read. The
+ * definition resolver uses it to decide whether the installed Catalog carries a supplied
+ * definition's pin at all — an uncarried pin keeps today's route and never needs the checkout
+ * that decides `skillContent`.
+ */
+export function declaredFrameworkCatalogPinV1(
+  id: BaselineCatalogId,
+  sections: Readonly<Record<string, unknown>>,
+): string {
+  return declaredFrameworkAssetsV1(id, sections.componentDefinitions).commit;
+}
+
+/**
  * The DECLARED definition of one framework pin (decision D79): the accepted descriptor's
  * `componentDefinitions` section, and nothing else. This is the definition authority for a
  * pin the installed Catalog carries — not `vendorLock`, which is the component list of an

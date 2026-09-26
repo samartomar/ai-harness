@@ -11,7 +11,7 @@ import {
 } from "../contract/strict-json-v1.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { type BaselineCatalog, BaselineCatalogSchema } from "./catalog.js";
-import { declaredFrameworkCatalogV1 } from "./catalogs.js";
+import { declaredFrameworkCatalogPinV1, declaredFrameworkCatalogV1 } from "./catalogs.js";
 import {
   admittedSourceFromCandidateBundleV1,
   assertCollectionSnapshotBytesV1,
@@ -345,17 +345,24 @@ function isFrameworkIdV1(id: DefinitionSourceId): id is CatalogFrameworkIdV1 {
 }
 
 /**
- * The installed Catalog's catalog for one subject. A framework's is the DECLARED definition
- * the accepted descriptor states for that pin (D79), read at the checkout that decides which
- * components its material makes skill content; the resolver always has that checkout. A
- * collection keeps its registered collection input.
+ * The installed Catalog's catalog for one subject and the pin a supplied definition states. A
+ * framework's is the DECLARED definition the accepted descriptor states for that pin (D79),
+ * read at the checkout that decides which components its material makes skill content; the
+ * resolver always has that checkout. A pin the declared definition does not state is
+ * uncarried, so it keeps today's route and no checkout is read. A collection keeps its
+ * registered collection input.
  */
 function installedCarriedCatalog(
   id: DefinitionSourceId,
   sourceRoot: string,
+  definitionPin: string,
 ): BaselineCatalog | undefined {
-  if (isFrameworkIdV1(id))
-    return declaredFrameworkCatalogV1(id, loadFrameworkDescriptorV1(id).sections, { sourceRoot });
+  if (isFrameworkIdV1(id)) {
+    const sections = loadFrameworkDescriptorV1(id).sections;
+    // The declaration is validated in full either way; only the checkout read is deferred.
+    if (declaredFrameworkCatalogPinV1(id, sections) !== definitionPin) return undefined;
+    return declaredFrameworkCatalogV1(id, sections, { sourceRoot });
+  }
   const input = registeredCollectionInputV1(id);
   return input === undefined ? undefined : collectionBaselineCatalogV1(input);
 }
@@ -418,7 +425,8 @@ function resolveDefinition(
 
   const carried = (
     deps.carriedCatalog ??
-    ((carriedId: DefinitionSourceId) => installedCarriedCatalog(carriedId, input.sourceRoot))
+    ((carriedId: DefinitionSourceId) =>
+      installedCarriedCatalog(carriedId, input.sourceRoot, catalog.pinnedSha))
   )(id);
   const collectionInput = collection === undefined ? {} : { collection: collection.input };
   if (carried === undefined || carried.pinnedSha !== catalog.pinnedSha)
