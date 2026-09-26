@@ -357,18 +357,17 @@ to 90 days from the original signed report date. Re-verification, publication,
 and import do not restart that age. Catalog qualification keeps its own signed
 expiry; neither kind of evidence grants organization permission.
 
-For ECC, a verified data snapshot can also retain an exact-version runtime
-descriptor for the existing materializer. Core reconstructs its component paths,
-required dependencies, optional riders, and source-tree digest from verified
-material. Before acquisition, Core checks that its current target adapter can
-interpret that descriptor. Unsupported destinations remain refusals; a snapshot
-cannot introduce an installer, executable adapter, or new permission.
+Historically, a verified ECC data snapshot could retain an exact-version runtime
+descriptor for the former materializer. Core reconstructed component paths,
+dependencies, riders, and a source-tree digest from verified material. The
+remaining descriptor reader and installability check serve dormant Catalog data;
+current `aih ecc` guidance and status do not consume them.
 
 An authenticated local snapshot matching the saved policy takes precedence over
 packaged data. If that matching snapshot is expired or incompatible, Core stops
 instead of falling back to older packaged evidence. A different source revision
-does not replace the saved policy's revision. Source bytes are checked again at
-both baseline evidence gates before materialization.
+does not replace the saved policy's revision. The former ECC materialization
+path checked source bytes at both baseline evidence gates; that path is retired.
 
 Historical ECC materialization receipts use version 2 to record separate
 descriptor, original-report, Core-derived evaluation, and projection digests,

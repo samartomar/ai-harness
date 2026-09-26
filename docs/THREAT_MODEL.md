@@ -54,9 +54,9 @@
 | Dependency confusion | `trust.internalScopes` lets orgs name private scopes; absent scopes stay inert instead of guessing. |
 | Path traversal or symlink escape in fetched sources | Quarantine extraction and trust-tree checks reject escaping paths and links. |
 | Unreviewed skill install | Enterprise posture blocks installs without committed approval and matching pin. |
-| Mutable or swapped ECC/Superpowers install bytes | Baseline commands fetch exact pins into quarantine, require per-component vendor/org hash evidence, and re-hash before constructing install actions. |
+| Mutable or swapped ECC/Superpowers install bytes | `aih ecc` gives exact pin guidance; `aih ecc --status` reports observed state. External installers remain developer-managed, and a pin alone does not prove installed bytes. |
 | Forged or stale baseline override | Org evidence requires bundle checksums plus a GitHub attestation from the repository named in strict org policy; source, pin, paths, and hashes must all match. |
-| Attempt to waive dangerous baseline findings | Exact `blocked` evidence denies at every posture; org evidence cannot replace a vendor-blocked verdict for the same bytes. |
+| Attempt to treat scan findings as third-party delivery authority | Baseline evidence keeps findings visible as information; they do not block third-party selection or delivery. Aih-owned controls retain their own integrity gates. |
 | Remote mutation by automation | The action model is local-only except explicit signing/provenance flows. |
 | Secrets exposure | Secret paths are denied to agents and checked with `aih secrets --verify`. |
 | Supply-chain release drift | `aih verify-release` checks npm signatures, release checksums, cosign bundle, and tarball hash. |

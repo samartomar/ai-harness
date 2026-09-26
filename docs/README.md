@@ -59,8 +59,8 @@ that carry their own status line.
   in the root README.
 - [security/skillspector.md](security/skillspector.md) — pinned local SkillSpector
   image workflow and review guidance.
-- [security/baseline-evidence.md](security/baseline-evidence.md) — shipped exact-pin
-  vendor/org component evidence for ECC and Superpowers installs.
+- [security/baseline-evidence.md](security/baseline-evidence.md) — exact-pin
+  vendor/org component evidence diagnostics and developer-managed framework guidance.
 - [security/release-slsa.md](security/release-slsa.md) — shipped SLSA v1.2 Build
   assessment for tagged release artifacts.
 - [security/run-ledger-siem.md](security/run-ledger-siem.md) — run-ledger v2 field map

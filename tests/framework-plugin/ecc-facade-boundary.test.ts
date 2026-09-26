@@ -18,6 +18,70 @@ const repo = resolve(import.meta.dirname, "..", "..");
 const src = join(repo, "src");
 const toPosix = (path: string) => relative(repo, path).split(sep).join("/");
 
+/**
+ * D91 source-scan exceptions, agreed 2026-09-26 (D99). These are transitional
+ * controls, not permission to add a second installer. The W1 import boundary
+ * below checks reachability; this list checks source-owned controls and therefore
+ * shares its transitional files without pretending the two checks are identical.
+ */
+const D91_CONTROL_ALLOWLIST = new Map([
+  [
+    "src/baseline-evidence/profiles.ts",
+    "Registry identity data; no install action. Remove with Cut 2 (U6) Catalog shape.",
+  ],
+  [
+    "src/framework-plugin/ecc-lifecycle.ts",
+    "Generic cleanup dispatch for earlier aih writes; SP2 lifecycle hooks.",
+  ],
+  ["src/init/phases.ts", "Superpowers init and guidance in Core; SP2 (owner topic 3)."],
+  ["src/init/index.ts", "Superpowers init and guidance in Core; SP2 (owner topic 3)."],
+  ["src/uninstall/index.ts", "Superpowers init/cleanup guidance in Core; SP2 (owner topic 3)."],
+  ["src/crispy/templates.ts", "Superpowers install guidance in Core; SP2 (owner topic 3)."],
+  [
+    "src/ecc/install-preview.ts",
+    "Read-only dormant installPreview reader; Cut 2 (U6), with Catalog shape change.",
+  ],
+  [
+    "src/internals/check-baseline-installable.ts",
+    "Catalog-build check of dormant preview; Cut 2 (U6).",
+  ],
+  [
+    "src/ecc/materialization-receipt.ts",
+    "Legacy receipt reader, including .kiro/agents; Cut 2 (U8) compact legacy bridge.",
+  ],
+  [
+    "src/framework-plugin/ecc-command.ts",
+    "Retired Core flags parse for diagnostic; SP2 plugin command surface.",
+  ],
+  [
+    "src/org-policy/ecc-hook-controls.ts",
+    "ECC hook-control profiles for today's Catalog import; Cut 2 (U6).",
+  ],
+]);
+
+const D91_CONTROL_MARKERS = [
+  /runtime:ecc-installer/,
+  /\b(?:installPreview|readEccInstallPreview)\b/,
+  /\.kiro\/agents\/\$\{/,
+  /export const ECC_HOOK_PROFILES\b/,
+  /\b(?:prepareEccUninstallV1|eccStatePathsV1)\b/,
+  /framework: "superpowers"/,
+  /superpowers-methodology\.md/,
+  /\/plugin install superpowers/,
+];
+
+function d91SourceControls(): string[] {
+  return sourceFiles(src)
+    .filter((file) => {
+      const source = readFileSync(file, "utf8");
+      const eccCommandFlags =
+        /name: "ecc"/.test(source) && /flags: "--(?:profile|with|ecc-path)\b/.test(source);
+      return eccCommandFlags || D91_CONTROL_MARKERS.some((marker) => marker.test(source));
+    })
+    .map(toPosix)
+    .sort();
+}
+
 /** The ECC profile modules that are framework code (the rest of src/ecc-profile is generic runtime). */
 const ECC_PROFILE_FRAMEWORK_MODULES = new Set([
   "index.ts",
@@ -154,5 +218,13 @@ describe("ECC framework boundary (phase 2)", () => {
     );
     expect(isEccFrameworkModule(join(src, "ecc-profile", "render.js"))).toBe(true);
     expect(isEccFrameworkModule(join(src, "ecc", "pipeline.js"))).toBe(true);
+  });
+});
+
+describe("D91 Core framework install controls", () => {
+  it("keeps every source-scanned control on the dated D99 allowlist", () => {
+    const found = d91SourceControls();
+    expect(found.filter((file) => !D91_CONTROL_ALLOWLIST.has(file))).toEqual([]);
+    expect([...D91_CONTROL_ALLOWLIST.keys()].filter((file) => !found.includes(file))).toEqual([]);
   });
 });

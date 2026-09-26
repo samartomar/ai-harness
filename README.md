@@ -116,9 +116,8 @@ npm install -g @aihq/core @aihq/scan @aihq/catalog   # global
 npm install @aihq/core @aihq/scan @aihq/catalog      # in a project
 ```
 
-Today Core reads one thing from it: the ECC runtime descriptor that
-`aih ecc --lifecycle install` and `aih policy project` need when a schema-v3 policy
-selects a historical ECC source. Core resolves it in a fixed order and prints which
+Core can read a Catalog ECC runtime descriptor for historical policy and cleanup
+records. Current `aih ecc` guidance and status do not consume its install fields. Core resolves it in a fixed order and prints which
 source it used on stderr:
 
 1. a machine-local, trust-verified Workbench source-data receipt, as before;
@@ -235,12 +234,8 @@ administrator-controlled read-only path outside the governed target, then select
 existing V3 decision-authority payload; no approval workflow or second policy store is required.
 Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
 a regular single-link file reached without symlinked parents, and exact byte re-observation before
-effects. Authority-dependent mutating transactions pin those same external bytes. ECC and
-Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
-mutation, standalone MCP planning, and standalone Usage ownership decisions reuse one verified
-policy observation. ECC profile install/update composes projection and native registration inside
-one pinned filesystem transaction; receipt-bound uninstall remains independently authorized by
-installed custody. Init retains each nested phase's file assertions, deadline, and lock and refuses
+effects. Authority-dependent mutating transactions pin those same external bytes. ECC and Superpowers evidence and standalone Usage ownership decisions reuse one verified
+policy observation. Historical ECC receipts remain available for ownership-checked cleanup. Init retains each nested phase's file assertions, deadline, and lock and refuses
 a conflicting observation before effects. Child-process effects retain a renewable cooperative
 lease and revalidate authority before and after execution; if the latter fails, Core blocks later
 effects without claiming it rolled back the already-run child.
@@ -512,9 +507,9 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih contract`](docs/commands.md#aih-contract) | Synthesize the machine-readable repo contract (`project.json`) from the detected stack. |
 | [`aih capability`](docs/commands.md#aih-capability) | Resolve repo capability needs; inspect or preview policy-driven packages; explicitly reconcile already-promoted, approved GitHub skill packs. |
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
-| [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and reconcile orphaned aih-managed ECC components from the machine registration ledger. <!-- aih:claim CM-22 --> |
+| [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and only unchanged ECC paths earlier aih versions provably wrote; report ambiguous records. <!-- aih:claim CM-22 --> |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, manage the reviewed Claude/Codex projection with `--lifecycle`, or explicitly add/remove policy-approved ECC HTTPS MCP entries for one selected native client with `aih ecc mcp add/remove`. In a governed repository, `--lifecycle install` materializes the org policy's evidence-passed selection for the targets `--cli` selects, including the separately evidence-bound Kiro skill/steering projection; removal lives in `aih uninstall`. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> <!-- aih:claim CM-50 --> <!-- aih:claim CM-55 --> |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Show exact developer-managed ECC guidance and `--status`; legacy `--lifecycle uninstall` and `mcp remove` remove only unchanged, receipt-owned aih writes. <!-- aih:claim CM-20 --> <!-- aih:claim CM-21 --> <!-- aih:claim CM-41 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
@@ -550,13 +545,12 @@ not guess which names are private to your organization.
 
 ### Baseline component evidence
 
-`aih ecc` and `aih superpowers` acquire only exact Git commits into quarantine. Selected component
-paths must match the vendor lock shipped in the npm release or an attributable GitHub-attested org
-bundle. Covered user seats verify hashes and signatures; they do not rerun the release analyzers.
-Missing/mismatched coverage warns without an authorization receipt at `vibe` and denies at
-`enterprise`. A signed `blocked` verdict denies at every posture and cannot be waived by org
-evidence for the same bytes. See [Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md)
-for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
+`aih ecc` shows the reviewed ECC source pin and developer-managed installation guidance;
+`aih ecc --status` reports observed ownership and external or unknown state. Neither
+command installs ECC. `aih evidence vet-baseline` remains an evidence diagnostic;
+findings inform selection rather than block third-party inventory. See
+[Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md).
+<!-- aih:claim CM-20 -->
 
 ### Analytics & operations
 
@@ -634,7 +628,7 @@ telemetry. `aih report --demo --v9` opens the same dashboard locally.*
 
 ### Targeting CLIs
 
-`aih ecc`, `aih superpowers`, and `aih bootstrap-ai` only touch the agent CLIs you actually use.
+`aih ecc` and `aih superpowers` give guidance for selected CLIs; `aih bootstrap-ai` writes only the agent CLI canon you target.
 Pass `--cli` with a comma-separated list, `--all-tools` for every supported CLI, or `--detect` to
 auto-target the CLIs found on this machine; the default is `claude`. Supported:
 `claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro`.
@@ -643,7 +637,7 @@ At Enterprise posture, an org policy must declare a non-empty `governance.suppor
 ```bash
 aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto-loaded)
 # repeatable declarations add to detection and the prior machine union
-aih ecc --cli claude,codex --with framework:react --with lang:typescript
+aih ecc --cli claude,codex       # exact developer-managed guidance
 aih superpowers --cli antigravity   # verify exact pin; guidance only (no mutable plugin exec)
 aih bootstrap-ai --cli kiro --kiro-hook-runtime ide1-cli3  # Kiro IDE1/CLI3 hooks opt-in
 aih bootstrap-ai --detect           # target only the CLIs installed here
@@ -680,14 +674,6 @@ real `.kiro/` tree):
   opt out of workspace MCP inheritance.
 - `aih ecc --cli kiro` → emits scoped consult guidance; Kiro's native installer cannot yet
   materialize the component union safely, so aih does not run it.
-- In a governed repository, `aih ecc --lifecycle install --cli kiro` is a separate AIH-owned
-  path: it projects only evidence-passed selected agents with an exact pinned Kiro mapping, skills,
-  and steering from the exact pinned source, under dual selected/runtime evidence and receipt
-  ownership. A mapped agent lands as its exact selected `.kiro/agents/<name>.md` IDE representation
-  and curated `.kiro/agents/<name>.json` CLI configuration; an unmapped agent is reported by name,
-  while a pre-existing same-name Markdown/JSON definition, including a
-  case-folded spelling on a case-sensitive filesystem, is refused rather than overwritten. It does
-  not run or adopt the native installer or project hooks/settings/scripts.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 
@@ -718,48 +704,22 @@ aih init --context-dir my-canon   # → my-canon/    (any name; everything adapt
 aih init --context-dir .ai-context  # → hidden, the old default
 ```
 
-ECC install actions execute under `--apply` only after exact component evidence clears and the same
-quarantined tree re-hashes. By default, `aih ecc` materializes the additive union of its common
-baseline, detected or repeatably declared project riders, posture-selected security, and validated
-MCPs; `--profile full` is the explicit full-surface opt-in. Evidence verdicts apply per component:
-authorized components install, while held components are quarantined and reported with their exact
-codes and reasons. No install process starts unless ECC's installer runtime is also authorized.
-The project contribution keeps the requested intent, while each target record contains only the
-surface actually installed. The primary project/target contribution ledger lives at
-`~/.aih/ecc/registration-ledger.json` and commits only after every install step succeeds. A bare
-`aih prune` also checks that ledger: missing project roots are retired, the live
-component/MCP union is recomputed, and only state-recorded aih-managed operations no longer shared
-by a live project are removed. Dry-run reports the diff without mutation; `--apply` hash-binds all
-inputs, rolls back partial failure, and replaces target state before committing the ledger last.
-Superpowers marketplace/TUI paths cannot bind installed bytes to that
-tree, so aih executes none of them; it emits pin-aware guidance and says those marketplace selections
-are not evidence-covered. ECC and Superpowers are complementary — ECC supplies stack-aware rules,
-agents, and memory; Superpowers supplies the disciplined agent loop that uses them.
-For Codex, installed ECC skills are consumed on demand by name, such as `$configure-ecc`, from the
-literal Codex skills path (`~/.codex/skills/<name>/SKILL.md`); they are not an ambient auto-loaded
-`.agents/skills/` surface. `aih ecc --cli codex` still installs the selected ECC Codex
-skills/agents from ECC's manifest, but uses add-only Codex TOML merge helpers and a fenced AGENTS
-merge rather than the upstream `ecc-install --target codex` copy mode for shared `~/.codex` files.
-Its scoped MCP block contains pinned `sequential-thinking` plus GitHub at enterprise (and
-repo-declared local graph/memory servers); Context7 and Exa are never defaults.
-
-For ECC's separate external MCP catalog, `governance.eccMcpApprovals` is only a seat approval record.
-An operator still performs an explicit Add when a project needs one approved HTTPS entry:
-`aih ecc mcp add memxus --cli claude --apply`. That path writes project-local JSON client configs for
-Claude, Cursor, Copilot, Kimi, and Kiro; guarded global JSON configs for Antigravity, Gemini, Windsurf,
-OpenCode, and Zed; and guarded Codex TOML. It records ownership under `.aih/`, removes only unchanged
-receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and doctor reports local
-receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
-approved entries.
-
-The former browser Policy Workbench, its HTML renderer/server, and `aih policy generate` were removed in this greenfield cutover. The browser was not moved to `aih-ui`. Core still validates schema-v2/v3 policy input, exact source-data receipts, protected Decision V2 authority, and governed lifecycle effects. Catalog provider data and packaged source records remain in Core for backend consumers pending separate Catalog extraction; Scan-backed execution and ECC ownership remain separate cutover work.
+`aih ecc` prints exact, copyable ECC installation guidance; `aih ecc --status`
+reports aih-owned exact or modified bytes, external observed content, absence in
+inspected roots, and unknown state. Full ECC is developer-managed. The retired
+`--apply`, `--lifecycle install|update|repair|rollback`, `--profile`, `--with`,
+and `aih ecc mcp add` routes do not install content. Earlier aih versions' receipts
+are used by `aih uninstall`, `aih prune`, `aih ecc --lifecycle uninstall`, and
+`aih ecc mcp remove` only to remove unchanged files or entries they prove aih
+wrote. Modified, external, and ambiguous content is reported and preserved.
+Third-party inventory remains selectable; scan findings are information.
 
 ### Layered AI canon (`bootstrap-ai`)
 
 The harness models the same two-layer setup used in the reference repos (eicp / ai-os / syntegris):
 
 - **Layer 1 — user baseline:** `--baseline ecc` — the default and sole selectable baseline
-  (ECC + Superpowers installed per CLI by `aih ecc` / `aih superpowers`).
+  (ECC and Superpowers are developer-managed; their aih commands give guidance).
 - **Layer 2 — repo canon:** the committed `ai-coding/` (or `--context-dir`) tree — `RULE_ROUTER.md`
   (stack-aware routing entry point), the contract files `project.json`, `project.md`, and `setup.md`,
   `adapters/<cli>.md` (per-tool wiring notes), and the root **bootloaders** (`CLAUDE.md`, `AGENTS.md`,

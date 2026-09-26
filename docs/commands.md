@@ -481,29 +481,13 @@ target refuses without `--force`. `--delete` hard-deletes to a gitignored `*.aih
 (never overwriting a prior backup) instead of archiving; `--unrunnable` also prunes a
 still-targeted CLI whose binary is absent from `PATH` (loud warning; never the default).
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
-ignored by `prune`; the digest says so and keeps the diff anchored to committed intent. When a
-dropped CLI is an ECC-supported target, prune uses the AIH registration ledger and ECC install
-state to identify its owned footprint. Without a registration ledger, it preserves unreceipted ECC
-client files and reports manual cleanup; ordinary AIH-owned adapter cleanup can still proceed.
-When Codex is dropped, prune also subtracts the recorded ECC TOML footprint from
-`~/.codex/config.toml` and the fenced ECC Codex block that `aih ecc` merges into
-`~/.codex/AGENTS.md`, leaving unrelated user config and text outside that block intact.
-
-A bare prune also reads `~/.aih/ecc/registration-ledger.json`, even when no committed CLI target
-changed. Project registrations whose roots are missing retire from the machine union; common or
-shared components and MCPs remain until their last live contributor disappears. The dry-run digest
-names retired roots, orphaned component/MCP IDs, target states, and managed destinations without
-changing bytes. Under `--apply`, prune removes only operations proven by ECC install state (plus
-aih's fenced Codex records). Copied files must match their recorded SHA-256; JSON cleanup subtracts
-only the recorded managed values. Modified files and legacy copies without a recorded digest are
-preserved, and the operation refuses with a manual-cleanup explanation. Apply re-verifies every
-planned input, prepares recovery material, performs owned removals, updates target state, and
-replaces the primary ledger last. It does not run an upstream uninstaller. Missing required target
-state, malformed or drifted state or markers, symlinks, concurrent input changes, or partial writes
-fail closed; failures during the transaction roll back its owned changes. Project-local state that
-never existed is not guessed. When a registration
-ledger predates a Codex target record, prune retains the state-file-based Codex cleanup path instead
-of treating the mere presence of a ledger as proof that Codex cleanup is coordinated.
+ignored by `prune`; the digest says so and keeps the diff anchored to committed intent.
+When a dropped CLI has historical ECC state, prune asks the ECC plugin to
+inspect old receipts. It removes only unchanged files or entries that
+independently prove an earlier aih version wrote them. A registration ledger or
+driver state alone is not ownership proof. Modified, external, shared, and
+ambiguous content stays in place with a manual-cleanup report. The command does
+not run ECC's uninstaller.
 
 ## aih capability
 
@@ -539,9 +523,11 @@ aih capability package remove <package-id> [--apply] [--json]
 `remove` are also local read-only previews unless `--apply` is explicit. Preview emits no
 filesystem action, process, network request, acquisition, or component load.
 
-Apply reconciles only domain state that already exists under an authoritative receipt: GitHub skill
-bytes in the repo promotion store bound by `.aih/trust-lock.json`, ECC agent/rule files bound by the
-ECC materialization receipt, and HTTPS ECC MCP configuration bound by the explicit-add receipt.
+Apply reconciles only supported aih-owned package state already under an
+authoritative receipt, including GitHub skill bytes in the repo promotion
+store bound by `.aih/trust-lock.json`. Historical ECC agent/rule and MCP
+receipts are observed for cleanup; this command does not install or update ECC
+content.
 Add/update publish derived intent, exact content-addressed custody, and ownership without fetching,
 loading, or executing a component. Remove is permitted only after effective policy deselects the
 package; it subtracts unchanged last-owned files, preserves shared members and unrelated domain
@@ -576,231 +562,25 @@ drift or unsafe paths revoke the claim without mutating `.kiro/settings/mcp.json
 
 ## aih ecc
 
-Register [affaan-m/ECC](https://github.com/affaan-m/ECC) for the selected CLIs. The default is the
-additive union of the locked common baseline, components detected from every registered project,
-repeatable advance declarations (`--with lang:cpp --with framework:react`), posture-selected
-security, and validated MCPs. Use `--profile full` for the full content selection.
-Unknown declarations fail closed. The ordinary native-installer path keeps Kiro and unsupported
-targets consult-only because their installers cannot materialize the scoped union safely. The
-governed lifecycle described below has a separate verified Kiro rules-and-skills adapter.
+`aih ecc [--cli <targets>] [--status]` prints exact ECC installation guidance
+for the selected CLI and the reviewed source pin. Full ECC remains
+developer-managed. A pin records provenance; an external marketplace install
+does not prove that it used the pinned bytes. `--status` reports observed
+aih-owned exact or modified content, external observed content, absence in
+inspected roots, and unknown state. Uninspected roots, mutable marketplace
+content, process state, credentials, and server reachability remain unknown.
 
-Core and Full profiles do not authorize ECC hooks, executable plugins or host runtime.
-Outside policy governance, explicitly declare `--with baseline:hooks` to admit those operations.
-Governed delivery keeps upstream host runtime excluded even with that declaration; AIH retains
-its separate MCP and hook ownership boundaries. Preview, installation and reconciliation apply
-the same consent filter. Consult-only targets provide component advice and cannot authorize
-executable or runtime recommendations.
+`aih ecc --apply`, `--lifecycle install|update|repair|rollback`, `--profile`,
+`--with`, `--ecc-path`, and `aih ecc mcp add` are retired. They do not
+install, update, or register ECC. For new installation, follow the exact
+developer-managed commands that `aih ecc` prints.
 
-When a verified upstream plan provides a hook-consent helper, AIH applies its effective
-decision before checking operation kinds. The plan, receipt and selected modules must
-agree; declined consent excludes `hooks-runtime`. Older plans without that helper retain
-their existing behavior. Claude plans that still require `update-claude-settings` are
-refused before installation because that operation's managed-hook ownership lifecycle
-is not supported. This compatibility handling does not change the qualified ECC pin.
-
-Reinstall refuses before changes when a narrower consent selection would leave previously
-installed runtime content behind. It preserves the existing files and ownership state for
-review and cleanup before retrying; reinstall does not silently withdraw that integration.
-
-The AIH-owned Claude/Codex profile has a separate, explicit lifecycle mode on the same command:
-
-```sh
-aih ecc --lifecycle install <project>
-aih ecc --lifecycle update <project> --apply
-aih ecc --lifecycle repair <project> --apply
-aih ecc --lifecycle rollback <project> --apply
-aih ecc --lifecycle uninstall <project> --apply
-```
-
-Lifecycle mode always projects the reviewed Claude and Codex surface together. Install and update
-read the profile and its evidence only from the installed Catalog's ECC framework descriptor
-(`sections.profileEvidence`), whose commit must equal the `@aihq/framework-ecc` upstream commit;
-while the installed Catalog carries no such section they refuse with
-`framework-profile-evidence-unavailable` and name the next route. It authenticates the
-exact ECC pin, the review receipt, every manifest, and every projected source byte before
-constructing a target plan. Dry-run is the default and may acquire the exact remote source into a
-disposable quarantine so the preview is based on real rendered bytes; it never writes the target.
-`--ecc-path <dir>` supplies an existing exact checkout to the same boundary. Lifecycle receipts live
-under `.aih/ecc-profile/` and make repeat install, repair, update, rollback, and uninstall fail closed
-on foreign or operator-modified files. Repair, rollback, and uninstall use the receipt's bounded,
-hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
-older managed installation. The receipt is operator-writable, so its self-declared identities never authorize
-a write on their own: the active source and, for rollback, the snapshot's source and projection digest
-must equal an entry in Core's append-only ECC profile installation trust record (shipped in `@aihq/core`, read by the plugin through `@aihq/core/framework-host`; the plugin ships no anchors of its own), or the command refuses
-with `framework-profile-recovery-unanchored` before planning any write. Recovery identities are versioned: version 2
-(recorded by current installs) also binds each file's merge strategy, and a version-1 identity from an earlier release
-recovers only when a version-2 anchor at the same pin authenticates its write semantics. Uninstall, update and rollback
-never delete a merge destination such as `.codex/config.toml`: they remove only aih's managed blocks and keep the
-file, even when only whitespace remains, because nothing proves aih created the whole file; the plan names each file
-kept that way so you can remove it by hand if nothing uses it. Update normally requires a new ECC pin; within the
-installed pin it migrates only between two projections that Core's trust record both anchors at the same source closure,
-such as a later render that projects only the stub for a skill a client cannot run. It removes the files aih owned that
-the new projection drops, never touches operator files, and keeps rollback to the installed projection. Repair of an
-installation that a later anchored render of its pin supersedes refuses and routes to `--lifecycle update`, because
-repair replays the receipt and would restore what the current render withholds. These refusals exit with
-`AIH_FRAMEWORK_PLUGIN`, a stable reason and the next route: `framework-profile-superseded` for that repair,
-`framework-profile-update-same-pin` for any other update within the installed pin, and `framework-profile-already-owned`
-for an install over an installation of another pin or projection. Legacy selection flags such as `--profile`, `--with`, and `--cli`
-cannot be combined with `--lifecycle`.
-
-In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this
-profile installer: it materializes the policy's evidence-passed component selection AIH-directly, and
-removal lives in `aih uninstall`. That governed install does read `--cli`, because which tools a
-materialization lands for is the ordinary workstation target selection — `--cli`, `--all-tools`, the
-committed `.aih-config.json` targets, else the `claude` default. At Enterprise posture, the active org policy must carry a non-empty `governance.supportedClis` allow-list; omission fails closed with the current registry ids and a paste-all remedy, never a wildcard. At Vibe posture, omission is unrestricted. A present list at either posture is the organization sanction gate and refuses any selected, detected, or marker-derived CLI outside it by name. The materialization capability gate then allows only `claude`, `codex`, `kimi`, `cursor`, `opencode`, and the single `kiro` identity; a sanctioned CLI outside that set is refused as not a governed materialization target. Four of the generic targets carry their own project root —
-`.claude/`, `.codex/`, `.cursor/`, and for Kimi `.kimi-code/`, which is where the framework's own
-Kimi adapter roots a project install. OpenCode materializes only the tool-shared project surfaces
-(`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only framework adapter is
-home-scoped and no evidenced per-tool `.opencode/` content layout exists; every other component
-refuses by name for that target rather than landing in an invented directory. Kiro materializes an
-evidence-passed selected `agent:<name>` with exact pinned Kiro mappings as the selected source
-Markdown at `.kiro/agents/<name>.md` for the IDE representation and the curated
-`.kiro/agents/<name>.json` CLI configuration. It projects a selected `skill:<name>` only as the exact pinned
-`.kiro/skills/<name>/SKILL.md` file, and `baseline:rules` only as top-level pinned
-`.kiro/steering/*.md` files. Those bytes require a separate current, unheld
-`runtime:ecc-kiro` content authorization recorded beside the selected component identity. Current
-[Kiro custom-agent documentation](https://kiro.dev/docs/custom-agents/) (verified 2026-08-13)
-describes JSON and Markdown agent configurations loaded from `.kiro/agents/` by IDE 1.x and CLI
-3.x. AIH projects both exact ECC mappings under one component receipt; it does not synthesize or
-convert either representation. An unmapped agent is refused by name; a pre-existing same-name
-Markdown/JSON or case-folded operator definition is refused without overwrite. Non-empty agent MCP or hook
-configuration, every other Kiro surface, and
-the native installer remain outside this lifecycle. The mapping is source-documented and
-receipt-verified; it is not a live host probe. Several targets in one
-run are one materialization into one root with one receipt: destinations two targets share
-(`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
-component does not stop the targets that own it, and a later `--apply` with a narrower target set
-subtracts the dropped target's files and reports each removal.
-
-Governed Codex skill selection uses the shared project `.agents/skills/` route.
-Reapplication withdraws an older `.codex/skills/` duplicate only when unchanged
-materialization receipts prove ownership; edited and unowned copies are retained
-and reported. It does not replace disabled-skill settings or filter native plugin
-inventory. The governed preview includes exact selection/source and destination
-facts beside exclusions, refusals and ownership advisories. Proposed destinations,
-installed bytes and actual native loading remain different claims. See the
-[selection ownership guide](../guides/portable-policy-delivery.md#inspect-selection-and-discovery-ownership)
-for preview, ordinary reinitialization and migration.
-
-ECC MCP approvals have a separate explicit Add/Remove surface:
-
-```sh
-aih ecc mcp add <ecc-mcp-id> --cli <client> --root <project>
-aih ecc mcp add <ecc-mcp-id> --cli <client> --root <project> --apply
-aih ecc mcp remove <ecc-mcp-id> --cli <client> --root <project> --apply
-```
-
-`add` requires exactly one explicit `--cli` target and a valid target-root `aih-org-policy.json`
-whose `governance.eccMcpApprovals` approves the requested id at the pinned ECC catalog digest. A
-present `governance.supportedClis` list must also sanction the selected client. It renders only the
-approved HTTPS entry for that one client, preserves unrelated client config, writes
-the client entry before `.aih/ecc-mcp-explicit-add-v1.json`, and pins both files against plan-to-apply
-changes. Dry-run is the default. `remove` does not need current approval; it subtracts only an
-unchanged entry whose receipt still proves AIH wrote that exact id/target/config digest. Missing,
-malformed, unsafe, absent, or drifted state is report-only and leaves the client config untouched.
-The write set covers project-local JSON for Claude `.mcp.json`, Cursor `.cursor/mcp.json`, Copilot
-`.vscode/mcp.json`, Kimi `.mcp.json`, and Kiro `.kiro/settings/mcp.json`; global JSON for Antigravity,
-Gemini, Windsurf, OpenCode, and Zed; and Codex TOML. Global writes opt into an execution-time
-trusted-HOME containment and no-symlink-parent guard. Doctor reports clean, absent, altered, revoked,
-malformed, or unsafe receipt/config state from local files only. This command does not contact an endpoint,
-scan remote tools, attest behavior, install all approved MCPs, or treat approval as automatic projection.
-
-The same lifecycle manages project-local Claude and Codex hook/MCP registration without claiming
-either client's whole shared settings file. It adds one AIH composite hook per supported native
-event, registers the reviewed MCP identities, preserves unrelated operator entries, and records
-the exact Node/AIH launcher bytes plus each owned config fragment in
-`.aih/ecc-profile/native-registration-v1.json`. Native state stays outside the project under the
-platform state directory; set `AIH_ECC_STATE_ROOT` to an absolute external directory to override
-that location. That machine state root is shared by every project on the machine and survives
-uninstall, so once it exists `aih uninstall` and `aih prune` in any project refuse when the
-`@aihq/framework-ecc` bundled in `@aihq/core` is missing (`framework-plugin-unavailable`) and name
-the root in full with the manual route: reinstall `@aihq/core`, or, once no project on this machine uses the ECC native
-registration, remove that root by hand. Conflicting server identities, linked launchers, overlapping state roots, modified
-managed fragments, and partial second-phase installs fail closed; a failed registration after a
-projection install triggers compensating projection recovery. Repair and rollback preflight the
-projection and native registration before applying either surface, so recovery runs as one
-filesystem transaction. The compound lifecycle uses its receipt-bound per-file ownership and
-content-pin checks instead of treating its own managed projection as generic worktree dirt;
-unowned files and intervening drift still fail closed. Serena starts only through the AIH
-protocol guard with the exact reviewed package pin, offline resolution, isolated `SERENA_HOME`,
-telemetry disabled, and the reviewed tool allowlist. Ordinary MCP-health failures remain visible
-and advisory rather than blocking unrelated work.
-
-The primary registration ledger is `~/.aih/ecc/registration-ledger.json`. It records each project's
-component/MCP contribution and each target's installed union plus evidence provenance. The ledger is
-written atomically only after all selected target installs succeed. Re-running is idempotent; adding
-a second project grows the machine union without removing the first project's surface. The ledger is
-the authoritative input for `aih prune`: missing project roots are retired and only orphaned,
-state-recorded aih-managed operations are removed in a rollback-safe ledger-last transaction.
-
-Evidence verdicts partition the request per component. Authorized components install; held
-components do not, and the report names each held component with its evidence code and reason. A
-mixed result is a successful partial install, not an all-or-nothing failure. The project entry keeps
-the requested intent so a later evidence refresh can satisfy it, while target entries record only
-the components and MCPs actually installed. Reconcile and prune operate on that partial target
-surface without inventing held components. Structural evidence failures that make the partition
-untrustworthy still fail the request, and aih refuses all installer execution unless
-`runtime:ecc-installer` itself has an authorization receipt.
-
-The ECC registration lane's validated MCP default is pinned local `sequential-thinking`, repo-declared
-`code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at enterprise. Context7, Exa, and
-other egress-bearing servers are not defaults of that lane. Project config receives that project's set; global
-target config receives the machine union, with existing user-defined same-name servers preserved.
-
-aih fetches the catalog's exact commit into quarantine, verifies signed evidence for the installer
-runtime and selected components, re-hashes the same tree, then filters ECC's manifest operations and
-state preview to the authorized selected surface. Dependency preparation uses
-`npm ci --omit=dev --ignore-scripts` only after clearance.
-
-For Codex, aih copies selected skills to `~/.codex/skills/<name>/SKILL.md`, installs selected agents,
-uses ECC's add-only TOML merge helper for non-MCP settings, owns a fenced MCP block, and merges a
-scoped fenced AGENTS supplement. It preflights genuine project/global MCP transport collisions while
-allowing its own idempotent reruns. `--ecc-path <dir>` supplies an exact local checkout to the same
-evidence gate, and `AIH_ECC_REF` requests a different exact commit; either must match vendor or
-attributed org evidence for that pin. Non-SHA refs are refused.
-For an exact remote pin, dry-run reads the shipped pin-bound install preview and prints the selected
-target's stable file/merge/exec operations without fetching, invoking the installer, or writing a
-target. Every row is marked `contingent on evidence authorization`: it previews what the authorized
-install phase would attempt and does not claim that evidence has passed.
-Installed Codex skills are invoked on demand with `$<skill-name>` from
-`~/.codex/skills/<name>/SKILL.md`; they are not an auto-loaded `.agents/skills` surface.
-Per-mechanism claims are registry-driven. Each target declares how ECC installs for it — ECC's npm
-installer, the cached checkout plus add-only Codex merge helpers, ECC's native `.kiro/install.sh`, or
-consult-only — and the summary emits only the claims true for the selected targets. An unmapped
-target defaults to consult, so a newly registered CLI installs nothing rather than inheriting a claim
-that is false for it. No mechanism replaces already-installed content, so a rerun cannot re-scope an
-existing install.
-
-Every `chrome-devtools-mcp` launch aih can read in the user (`~/.codex/config.toml`) or project
-(`.codex/config.toml`) Codex config must set `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1"` and
-`CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"` in its `env` table, whatever the entry is called. aih
-checks this at plan time and again just before apply, on governed installs too and for its own stale
-managed entries. It refuses with `mcp.telemetry-opt-out-missing`, naming the scope, entry, config
-path, missing variables and next step, and never rewrites the entry. aih sees only launches written
-literally in the config: an entry whose command is a wrapper script that starts
-`chrome-devtools-mcp` without naming it is outside what aih can verify, so set both variables inside
-that script yourself.
-
-Kiro installs are ownership-tracked so a stale copy is visible. Because ECC's own installer writes
-the bytes, aih attributes ownership by what a run CREATES: it snapshots `.kiro/` before the
-installer, re-walks it after a successful install, and records each created file's sha256 plus the
-ECC commit it came from into repo-local `.aih/ecc/install-manifest.json`. That location survives
-target-directory cleanup and is never committed. A later run re-checks each recorded path: a matching
-hash from an older commit is _stale_, a changed hash is _locally modified_ and is never
-auto-replaced, a recorded path that is gone is _removed_, and anything with no record is _unknown
-provenance_ and is never claimed or touched. Kiro's installer copies only absent destinations, so a
-rerun cannot clear a stale finding — replacing that content is deliberate operator work and is not
-automated.
-
-The finding is advisory (`ecc.install-drift`), so it reports without failing the run. Installs
-predating the manifest have no record and report as unknown provenance until reinstalled; ownership
-is never inferred from a content match, which cannot distinguish an aih-written file from a
-user-authored identical one. A missing or unreadable manifest fails closed the same way. Codex and
-the npm targets install into home-scoped directories shared by every repo on the machine, so they
-declare no managed root and receive no ownership claim at all.
-
-See [Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md) for posture behavior and org
-overrides. <!-- aih:claim CM-21 -->
+`aih uninstall`, `aih prune`, `aih ecc --lifecycle uninstall`, and
+`aih ecc mcp remove` retain legacy cleanup. They remove only unchanged paths
+or entries that receipts prove an earlier aih version wrote. Modified,
+external, and ambiguous state is preserved and reported with a manual route.
+Scan findings remain information on selectable third-party items.
+<!-- aih:claim CM-20 --> <!-- aih:claim CM-21 --> <!-- aih:claim CM-41 -->
 
 ## aih superpowers
 
@@ -1011,10 +791,9 @@ that blocks mutation; it does not delete content or stop native processes.
 Withdraw owned content through the authorized policy before revoking it. Rebind
 with current verified authority to recover.
 
-`aih policy project <root> --apply` projects supported controls and reconciles
-selected governed ECC content. `--ecc-path <path>` supplies a local checkout
-that must still pass exact source and qualification checks. An explicitly empty
-authorized ECC selection withdraws owned content; losing policy is not an
+`aih policy project <root> --apply` projects supported aih-owned controls.
+It does not install ECC content or accept `--ecc-path`. Historical ECC
+receipts remain available to ownership-checked uninstall and prune.
 unrestricted installer fallback. `aih init` also accepts `--ecc-path` for a bound
 project's required-content delivery and suppresses an unselected Superpowers
 baseline under governed policy.
@@ -1085,7 +864,7 @@ examples. Selected reviewed stdio MCP candidates also have receipt-owned workspa
 distribution for Codex, Cursor, Copilot CLI, OpenCode V1, Kimi Code, and Kiro; see
 [governed MCP targets and compatibility](governed-mcp.md) for the native paths and limits. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
-the existing host-specific generator. A policy may separately declare `governance.frameworkHookControls` (schema 3, `minimumCoreVersion` 0.7.0), keyed by framework id with `{ profile?, disabledHookIds }`; the project's `.aih-config.json` `frameworkHookControls` list is `{ disabledHookIds }` only and may add further disables of disable-eligible rows; a profile or any other field there is refused, because enterprise policy is the only profile source. Each framework plugin validates the ids and profile against its own hook inventory and returns the hook-control plan; a requested framework whose plugin is not installed refuses with `framework-plugin-unavailable`. Controls are planned and validated for every targeted host, OpenCode-only included, and each disabled hook's per-host decision (`upstream-switch`, `not-applicable`, or `unenforced` with its next route) is carried in the projection output as an `<framework> hook controls` label. For a Claude target, projection merges only the receipt-owned environment keys the plan names — for ECC, `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` — into `.claude/settings.json.env` (receipt `.aih/org-policy-framework-hook-controls-receipt.json`), preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. The framework—not AIH—executes and enforces those controls after process spawn, so a disabled ECC hook still incurs one spawn.
+the existing host-specific generator. A policy may separately declare `governance.frameworkHookControls` (schema 3, `minimumCoreVersion` 0.7.0), keyed by framework id with `{ profile?, disabledHookIds }`; the project's `.aih-config.json` `frameworkHookControls` list is `{ disabledHookIds }` only and may add further disables of disable-eligible rows; a profile or any other field there is refused, because enterprise policy is the only profile source. Each framework plugin validates the ids and profile against its own hook inventory and returns the hook-control plan; a requested framework whose plugin is not installed refuses with `framework-plugin-unavailable`. Controls are planned and validated for every targeted host, OpenCode-only included, and each disabled hook's per-host decision (`upstream-switch`, `not-applicable`, or `unenforced` with its next route) is carried in the projection output as an `<framework> hook controls` label. Historical framework hook-control receipts are observed for cleanup; current projection does not install ECC hook controls. The framework's own controls remain developer-managed.
 It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
 file is a Claude projection: it writes only when Claude is selected (the default).
 Other governed MCP targets receive their own workspace configuration rather than a Claude
@@ -1155,11 +934,9 @@ payload. Administrators prepare and validate that file outside the governed targ
 is an attribution identity required by the reused V3 schema, not a requirement that the file live in
 GitHub. Core accepts only current, strict, bounded, regular, single-link, non-symlinked custody,
 re-observes the exact bytes, and pins them inside every authority-dependent mutating transaction.
-ECC and Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
-mutation, standalone MCP planning, and standalone Usage ownership checks reuse that one verified
-policy observation. ECC profile install/update composes projection and native registration in one
-pinned filesystem transaction; receipt-bound uninstall remains independently authorized by installed
-custody. Init retains each nested phase's file assertions, deadline, and lock and refuses a
+ECC and Superpowers evidence and standalone Usage ownership checks reuse one
+verified policy observation. Historical ECC receipts remain available for
+ownership-checked uninstall. Init retains each nested phase's file assertions, deadline, and lock and refuses a
 conflicting observation before effects. A plan that launches a child process retains and renews the
 cooperative authority lease across the awaited process and revalidates immediately before and after
 it. A failed post-process revalidation blocks later effects and deferred writes but reports honestly
@@ -1191,8 +968,8 @@ policy-gated binding lifecycle exists — this command does not select, install,
 agents, skills, commands, or bindings. AIH-owned hook rollback removes only unchanged receipt-proven host
 entries and retains drifted user edits for doctor remediation. When `governance` is present it exclusively
 owns AIH MCP and usage-hook projection: `aih mcp` and `aih usage` fail closed, `aih init` suppresses their
-generic phases, workspace graph MCP registration is suppressed, and governed ECC materialization strips MCP and
-host-hook/runtime operations across core, platform, and full scope while retaining eligible agents, skills, and commands.
+generic phases, and workspace graph MCP registration is suppressed. ECC framework
+intent remains report-only with developer-managed guidance.
 Use
 `aih policy evaluate <root> --no-log --json` in CI and inspect the digest before `aih policy project --apply`.
 

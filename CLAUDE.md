@@ -18,26 +18,13 @@ roots in tests; repository-owned direct development checks may inspect this tree
 
 ## Vocabulary — two different things
 
-**ai-harness** (or *aih-harness*) is **this checkout**: the source tree, local
-development on it. **aih** is **the runtime**: the shipped product a user installs
-and runs. Keep them apart in every sentence you write; collapsing them is how
-"never run AIH against this checkout" gets misread.
+**ai-harness** (or *aih-harness*) is **this checkout**: the source tree and local development on it. **aih** is **the runtime**: the shipped product a user installs and runs. Keep them apart. Never run aih against this checkout.
 
-**ECC and Superpowers are third party to the runtime.** aih *records* their
-components with provenance — repository, pinned commit, path — and ECC or
-Superpowers install and run them. A pin on a third-party item is **provenance,
-not a gate**. Never describe third-party inventory as unsupported, blocked,
-fenced, or unable to become effective: aih is not withholding it, aih simply does
-not install it. Reserve *unsupported* and *blocked* for items where an aih-owned
-gate actually fails — which is aih's own MCP controls, hooks, and custom
-candidates, not someone else's catalog. Even then, the gate is a **label and a
-next route on a selectable row**, never a control-less row: the administrator can
-always record requested intent from the main window, and the gate holds at
-export and at target evaluation (owner decision 2026-09-04, issue #971).
+**ECC and Superpowers are third party to the runtime.** aih records their items with repository, commit, path, and evidence provenance. For an approved, self-contained content item and a verified CLI pair, aih may optionally copy exact third-party skill or agent files, record the files it wrote, and remove only those owned files while their bytes remain unchanged. Framework installers, MCP servers, runtime-dependent content, commands, hooks, rules, and scripts remain developer-managed with guidance and observation.
 
-Consent happens on the visible inventory: selecting an item, third-party or
-aih-owned, records requested intent, and absence of aih enforcement is a
-**label on a selectable item**, never a disabled authoring experience.
+A pin is provenance for an externally managed installation; it does not prove that a marketplace or other external installer used those bytes. For aih-owned content delivery, the pin and complete file digests are integrity requirements. Third-party inventory remains selectable and is never labelled **blocked** or **unsupported**. Scan findings are information: they never block selection or delivery. Show compatibility gaps and external-management requirements as guidance on the selectable row. Reserve blocking terms for an actual aih-owned gate on aih’s own controls; even there, the administrator can record requested intent.
+
+Consent happens on the visible inventory. Selecting a third-party or aih-owned item records requested intent. Missing aih delivery coverage is a label and a next route, never a disabled authoring experience.
 
 ## Read the source, not a summary of it
 

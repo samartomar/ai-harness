@@ -7,14 +7,11 @@ design churn doesn't reopen settled questions.
 
 ## The three tests
 
-1. **Delegate, don't vendor.** `aih` runs an upstream's own installer and pins
-   `owner/repo@SHA`; it never assembles, re-hosts, caches, or redistributes
-   third-party content.
+1. **Bounded third-party delivery.** `aih` records `owner/repo@SHA` as provenance. It may optionally deliver and remove approved, self-contained third-party skills and agents for verified CLI pairs, using complete file digests and receipts that prove which files it wrote. It does not run a third-party installer or remove unowned files. External framework installs remain the developer’s responsibility; a pin alone does not prove their installed bytes. Third-party inventory stays selectable, and scan findings inform rather than block selection or delivery.
 2. **Not a runtime.** `aih` configures, constrains, evaluates, and observes AI
    CLIs. Reject anything that turns it into one: agent dispatch, workboards, an
    agent-memory backend, an LLM client, `aih`-as-MCP-server.
-3. **Tool-neutral.** A mechanism that only works for one CLI is a regression
-   unless it degrades cleanly for the rest.
+3. **Tool-neutral mechanism, explicit coverage.** Shared delivery and reporting use per-CLI adapters. Offer aih-owned delivery only for tested item × CLI pairs; show guidance for every other pair.
 
 ## Default to curation, not surface
 

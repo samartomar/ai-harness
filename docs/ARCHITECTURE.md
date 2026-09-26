@@ -46,8 +46,8 @@ and the executor is the only layer that performs filesystem or process effects.
 - **Capability package reconciliation** (`src/capability/package-manager/`) projects effective
   org-policy roots through exact approval, evidence, catalog, Package Graph, intent, ownership,
   custody, and domain receipts. Read commands and previews are local and side-effect-free. Apply
-  coordinates already-promoted GitHub skill packs, existing receipt-owned ECC agent/rule
-  materialization, and explicitly added HTTPS ECC MCP configuration. Mixed closures publish
+  coordinates already-promoted GitHub skill packs and historical receipt-owned ECC agent/rule
+  and explicit HTTPS MCP cleanup state. Mixed closures publish
   ownership last through one ordered compensating transaction and conservatively retain drift or
   shared files; this layer is not an acquisition, approval, or general dependency-management
   authority and does not claim crash atomicity.
@@ -115,20 +115,12 @@ MCP configuration is generated per supported CLI. MCP servers are never loaded
 just-in-case by the CLI; they are emitted into tool-specific config for the
 operator's AI coding tool to use.
 
-ECC registration is component-scoped even though upstream installation is module-shaped.
-`scanRepo` and repeatable `--with` declarations contribute project intent; aih resolves those
-components to verified module paths, filters generated operations at leaf granularity, and installs
-the additive machine union. `~/.aih/ecc/registration-ledger.json` is the single carved-out primary
-machine store because a deleted project cannot report its former contribution; installed capability
-content remains derived and recomputable. Project-local MCP files receive the current project's set,
-while global target files receive the machine union. The ledger is committed after the sequential
-install driver, never before it. `aih prune` is the inverse: it classifies registered roots without
-following links, reduces the live union, and filters only operations claimed by strict target install
-state. A local transaction driver revalidates planned hashes and contained regular-file paths,
-backs up every changed file, writes target states, and commits the primary ledger last; any earlier
-failure restores the prior bytes. User-owned config and components still shared by a live project
-remain outside the removal set. Whole-target uninstall actions remain authoritative for dropped
-CLIs, and an uninstall failure blocks the dependent ledger transaction.
+ECC installation is developer-managed. `aih ecc` gives exact installation guidance and
+`aih ecc --status` reports observed state. Earlier aih versions wrote ECC registration
+and materialization records; current `aih uninstall` and `aih prune` use those records
+only to remove unchanged files whose aih ownership they prove. Modified, shared,
+external, or ambiguous content is preserved and reported. Current aih does not
+construct a new ECC component union or run an ECC install driver.
 
 ## Release Integrity
 

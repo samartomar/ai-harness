@@ -47,10 +47,10 @@ project paths in the table above.
 
 CLI wiring reports and MCP plans distinguish feature support from installed
 configuration and runtime acceptance. Governed MCP supports the seven targets
-above. Governed ECC materialization supports Claude, Codex, Cursor, OpenCode,
-Kimi and Kiro; Copilot CLI is not a governed ECC target. Ordinary ECC installation
-supports a different set: Claude, Codex, Cursor, Antigravity, Gemini, OpenCode and
-Zed. Governed AIH usage metering supports Claude and Codex, and the declarative
+above. ECC framework installation is developer-managed; aih no longer projects
+governed ECC content or installs ordinary ECC content for these hosts. `aih ecc`
+provides per-host guidance and `--status` reports observed state. Governed AIH
+usage metering supports Claude and Codex, and the declarative
 third-party hook registrar targets Claude settings.
 
 Kimi detection uses Kimi Code configuration, including `KIMI_CODE_HOME`; legacy
