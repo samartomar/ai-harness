@@ -96,8 +96,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Tracked artifact guard
         run: npm run check:artifacts
-      - name: ECC installer package check
-        run: npm run check:ecc-installer
       # The bundled framework plugins load only from their built dist inside
       # Core's package (packages/framework-*), which a fresh checkout does not
       # carry; build them before any test, as the packed Core ships them.

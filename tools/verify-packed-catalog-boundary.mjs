@@ -17,7 +17,7 @@
  *     - the package still starts up unaffected: the index loads
  *       `runSessionGuardrails`, `aih --version` and `aih --help` answer, and a
  *       TypeScript file importing `@aihq/core` compiles with skipLibCheck false;
- *     - `aih ecc --lifecycle install` on a temporary fixture whose schema-v3
+ *     - `aih ecc` guidance on a temporary fixture whose schema-v3
  *       policy selects the current ECC source now exits non-zero with the
  *       exact named refusal `catalog-package-unavailable`: no provenance line,
  *       no fallback to Core's embedded copy and no stack trace.
@@ -290,7 +290,7 @@ try {
   // ---- Fixture and TypeScript sources ------------------------------------
   // A hand-written schema-v3 policy whose one ECC source tuple is the given
   // revision: the current pin reads the framework descriptor; any other pin
-  // makes `aih ecc --lifecycle install` take the sealed-descriptor route.
+  // lets the guidance route authenticate the installed framework descriptor.
   const eccFixture = (name, commit) => {
     const root = join(work, name);
     mkdirSync(root, { recursive: true });
@@ -407,7 +407,7 @@ try {
   const eccRoute = (consumer, extraNodeArgs = [], root = fixture) => {
     const result = spawnSync(
       process.execPath,
-      [...extraNodeArgs, cli(consumer), "ecc", "--lifecycle", "install", "--root", root, "--no-log"],
+      [...extraNodeArgs, cli(consumer), "ecc", "--root", root],
       { cwd: work, encoding: "utf8", windowsHide: true, maxBuffer: 256 * 1024 * 1024, timeout: 10 * 60 * 1000, env: routeEnv },
     );
     if (result.error) throw new Error(`aih ecc: ${result.error.message}`);
@@ -579,19 +579,18 @@ try {
     loaded.some((url) => url.toLowerCase() === `${installedRoot}/${FRAMEWORK_DESCRIPTOR_PATH}`),
     loaded.join(" ") || "<nothing traced>",
   );
-  // The sealed-descriptor route: the installed Catalog is consulted, and the
-  // synthetic pin it does not carry is refused by name, never answered from Core.
+  // Guidance still authenticates the framework descriptor for a policy with a
+  // historical source selection; runtime descriptor custody is exercised by
+  // the policy source-data import route below.
   rmSync(traceLog, { force: true });
   const historicalRoute = eccRoute(full, ["--import", pathToFileURL(trace).href], historicalFixture);
   const historicalLoaded = existsSync(traceLog) ? [...new Set(readFileSync(traceLog, "utf8").trim().split("\n"))] : [];
   const historical = output(historicalRoute);
   check(
-    "Core+Scan+Catalog: the sealed-descriptor route reads the INSTALLED Catalog and refuses a pin it does not carry by name",
-    historicalRoute.status === 1 &&
-      historicalLoaded.some((url) => url.toLowerCase().startsWith(`${installedRoot}/defaults/catalog-runtime-descriptors`)) &&
-      historical.includes("catalog-descriptor-absent") &&
-      historical.includes(`no ECC runtime descriptor for the selected source ${ECC_REPOSITORY}@${SYNTHETIC_HISTORICAL_ECC_COMMIT}`) &&
-      provenanceOf(historicalRoute) === "" &&
+    "Core+Scan+Catalog: ECC guidance authenticates the installed framework descriptor with a historical selection",
+    historicalRoute.status === 0 &&
+      historicalLoaded.some((url) => url.toLowerCase() === `${installedRoot}/${FRAMEWORK_DESCRIPTOR_PATH}`) &&
+      historical.includes("developer-managed installation") &&
       !historical.includes("core-embedded"),
     `exit ${historicalRoute.status}; refusal: ${refusalLine(historicalRoute).slice(0, 400)}; loaded: ${historicalLoaded.join(" ") || "<nothing traced>"}`,
   );

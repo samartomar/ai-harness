@@ -12,13 +12,12 @@ import { afterAll, describe, expect, it } from "vitest";
 // optional-peer manifest, a single dynamic import and no bundled Catalog, that a
 // Core-only consumer still starts up and loads (index `runSessionGuardrails`,
 // `aih --version`, `aih --help`) with TypeScript compiling under skipLibCheck
-// false, and that its historical ECC route now refuses by the exact name
+// false, and that ECC guidance refuses by the exact name
 // `catalog-package-unavailable` with no provenance and no stack instead of
 // falling back to Core's embedded copy. Beside the installed Catalog the same
-// route resolves the descriptor from it (resolve trace and provenance line) and
+// guidance resolves the descriptor from it (resolve trace) and
 // refuses by name when the installed bytes change. The fixture is refused by the
-// later Workbench consumption check even when the descriptor resolves, so no
-// full ECC lifecycle success is asserted.
+// later Workbench consumption check even when the descriptor resolves.
 // ---------------------------------------------------------------------------
 
 const repoRoot = process.cwd();

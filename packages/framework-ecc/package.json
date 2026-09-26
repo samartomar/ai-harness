@@ -2,7 +2,7 @@
   "name": "@aihq/framework-ecc",
   "version": "0.1.0",
   "private": true,
-  "description": "affaan-m/ECC framework plugin for @aihq/core: ECC component selection, evidence-gated install and governed materialization, ECC MCP add/remove, hook inventory and hook controls",
+  "description": "affaan-m/ECC framework plugin for @aihq/core: developer-managed guidance, status, and receipt-bound legacy cleanup",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/samartomar/ai-harness.git",
@@ -22,7 +22,6 @@
   },
   "files": [
     "dist",
-    "src/ecc/chrome-devtools-opt-out.cjs",
     "README.md",
     "LICENSE"
   ],
