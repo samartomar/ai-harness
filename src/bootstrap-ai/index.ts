@@ -457,9 +457,9 @@ function summaryText(
       ? "Repo contract (stack/commands/scale/gaps): `aih contract`. Re-run `aih bootstrap-ai`"
       : "Context dir (INDEX/architecture/conventions): `aih scaffold`. Re-run `aih bootstrap-ai`";
   const layer1 = governed
-    ? `Required project guidance: ${dir}/policy-required-guidance.md. Reconcile the bound selection with \`aih policy project --apply\`; native plugins and user content remain separately owned.`
+    ? `Required project guidance: ${dir}/policy-required-guidance.md. Project policy-owned settings with \`aih policy project --apply\`; use \`aih ecc\` for developer-managed ECC installation.`
     : baseline.id === "ecc"
-      ? "Layer 1 (user baseline): install ECC + Superpowers with `aih ecc` / `aih superpowers`."
+      ? "Layer 1 (user baseline): use `aih ecc` for ECC installation guidance and `aih superpowers` for Superpowers setup."
       : `Layer 1 (user baseline): ${baseline.label} (${baseline.sources
           .map((repo) => `${repo.owner}/${repo.repo}@${repo.pinnedSha.slice(0, 12)}`)
           .join(" + ")}), installed via ${baseline.installVerb}.`;

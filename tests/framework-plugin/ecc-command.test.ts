@@ -104,11 +104,13 @@ describe("aih ecc — the Core command shell", () => {
     );
   });
 
-  it("runs the plugin's consult route through Core's runtime", async () => {
+  it("runs plugin-owned guidance through Core's runtime", async () => {
     const result = await executeEccCommand(ctx(), withPlugin);
-    const docs = result.docs.map((entry) => entry.describe).join("\n");
-    expect(docs).toContain("Install ECC for windsurf (via the consult advisor)");
-    expect(docs).toContain("supply chain — ECC runs LATEST upstream unless you pin it");
+    const docs = result.docs.map((entry) => entry.text).join("\n");
+    expect(docs).toContain("git clone https://github.com/affaan-m/ECC.git");
+    expect(docs).toContain("5064474d4d762dc9640234a41617cccb79185cec");
+    expect(result.writes).toEqual([]);
+    expect(result.execs).toEqual([]);
   });
 
   it("binds the runtime to the invocation root and revokes it when the invocation ends", async () => {

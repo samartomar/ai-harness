@@ -295,7 +295,7 @@ describe("durable project policy binding", () => {
     );
   });
 
-  it("refuses governed ECC delivery by name, before any projection, when the plugin is not installed", async () => {
+  it("projects policy without ECC delivery when the ECC plugin is not installed", async () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       `${JSON.stringify({
@@ -319,8 +319,14 @@ describe("durable project policy binding", () => {
     await executePlan(await policyBindCommand.plan(context), context);
     const markerBefore = readFileSync(join(root, ".aih-config.json"), "utf8");
 
-    await expect(executePolicyProjectCommand(context)).rejects.toThrow(
-      "framework-plugin-unavailable: @aihq/framework-ecc ships inside @aihq/core but is missing from this install. Reinstall @aihq/core with: npm install -g @aihq/core",
+    const result = await executePolicyProjectCommand(context);
+    expect(result.capability).toBe("policy project");
+    expect(result.applied).toBe(true);
+    expect(result.writes.some((write) => write.path.includes("ecc"))).toBe(false);
+    expect(existsSync(join(root, ".aih", "ecc", "materialization-v1.json"))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"))).toBe(
+      false,
     );
     expect(readFileSync(join(root, ".aih-config.json"), "utf8")).toBe(markerBefore);
   });

@@ -97,9 +97,11 @@ export function executeEccMcpRemoveCommand(
 
 export const eccMcpAddCommand: CommandSpec = {
   name: "add",
-  summary: "Add one policy-approved ECC HTTPS MCP to one selected CLI configuration",
+  summary: "Retired ECC MCP add route; use aih ecc for guidance",
   positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
+  options: [{ flags: "--cli <list>", description: "retired ECC MCP target" }],
   plan: runsThroughPlugin("ecc mcp add"),
+  zeroWrite: true,
 };
 
 export const eccMcpRemoveCommand: CommandSpec = {
@@ -111,28 +113,30 @@ export const eccMcpRemoveCommand: CommandSpec = {
 
 export const command: CommandSpec = {
   name: "ecc",
-  summary: "Install affaan-m/ECC from an evidence-verified exact source pin for the selected CLIs",
+  summary: "Show developer-managed ECC installation guidance or read-only status",
   options: [
     {
-      flags: "--profile <profile>",
-      description: "ECC install profile: minimal|core|full",
-      default: "minimal",
+      flags: "--status",
+      description: "report known ECC install-state and earlier aih record presence",
     },
+    { flags: "--cli <list>", description: "CLI targets for developer guidance" },
+    { flags: "--all-tools", description: "retired with --apply" },
+    { flags: "--profile <profile>", description: "retired ECC install profile" },
     {
       flags: "--with <component>",
-      description: "add an ECC component declaration (repeatable)",
+      description: "retired ECC component declaration (repeatable)",
       repeatable: true,
     },
     {
       flags: "--ecc-path <dir>",
-      description: "use an existing exact local ECC checkout as the evidence-gated source",
+      description: "retired ECC source option",
     },
     {
       flags: "--lifecycle <operation>",
       description:
-        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall. In a governed repository `install` instead materializes the policy's evidence-passed component selection (removal lives in `aih uninstall`), and update|repair|rollback are refused. The governed install materializes for the targets `--cli` selects (default claude); all six governed targets are wired — claude, codex, kimi, cursor, opencode, kiro — and any other CLI is refused by name. Kiro materializes only evidence-passed agent:* selections with an exact pinned Kiro mapping, baseline:rules, and skill:* selections; every unsupported or unmapped component refuses by name. OpenCode materializes only the tool-shared project surfaces (AGENTS.md, .agents/), because no evidenced per-tool .opencode/ content layout exists; every other component refuses by name for it",
+        "uninstall earlier aih-owned ECC profile; install|update|repair|rollback are retired",
     },
   ],
   plan: runsThroughPlugin("ecc"),
-  alwaysVerify: true,
+  zeroWrite: true,
 };

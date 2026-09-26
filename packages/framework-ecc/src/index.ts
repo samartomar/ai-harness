@@ -6,12 +6,14 @@ import type {
   FrameworkPluginV1,
   PlanResult,
 } from "@aihq/core/framework-host";
+import { AihError, doc, plan } from "@aihq/core/framework-host";
 import { capabilityPackages } from "./capability-packages.js";
 import { executePlan } from "./core-runtime.js";
 import { ECC_DESCRIPTOR_SECTIONS } from "./descriptor.js";
 import { doctor } from "./doctor.js";
-import { eccMcpAddCommand, eccMcpRemoveCommand } from "./ecc/index.js";
+import { eccMcpRemoveCommand } from "./ecc/index.js";
 import { executeEccCommand } from "./ecc/pipeline.js";
+import { eccGuidance, eccStatus } from "./guidance.js";
 import { hookInventory, planHookControls } from "./hooks.js";
 import { identifyComponents } from "./identify.js";
 import {
@@ -71,9 +73,52 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
   commands: Object.freeze({
     ecc: Object.freeze({
       execute: (ctx: FrameworkOperationContextV1): Promise<PlanResult> =>
-        withEccInvocation(ctx, async () => executeEccCommand(currentCoreRuntime().planContext)),
+        withEccInvocation(ctx, async () => {
+          const runtime = currentCoreRuntime();
+          const context = runtime.planContext;
+          const lifecycle = context.options.lifecycle;
+          if (lifecycle === "uninstall") return executeEccCommand(context);
+          const retired =
+            context.apply && context.options.allTools === true
+              ? "--all-tools --apply"
+              : context.apply
+                ? "--apply"
+                : lifecycle !== undefined
+                  ? `--lifecycle ${String(lifecycle)}`
+                  : context.options.profile !== undefined
+                    ? "--profile"
+                    : Array.isArray(context.options.with) && context.options.with.length > 0
+                      ? "--with"
+                      : context.options.eccPath !== undefined
+                        ? "--ecc-path"
+                        : undefined;
+          if (retired !== undefined)
+            throw new AihError(
+              `aih ecc ${retired} was retired: aih no longer installs ECC. Run aih ecc for the exact ECC commands.`,
+              "AIH_CONFIG",
+            );
+          const home = context.env.HOME ?? context.env.USERPROFILE ?? context.root;
+          const text =
+            context.options.status === true
+              ? eccStatus(context.root, home)
+              : eccGuidance(ctx.targets, context.host.platform);
+          return runtime.executePlan(
+            plan(
+              context.options.status === true ? "ecc: status" : "ecc: guidance",
+              doc("ECC", text),
+            ),
+            context,
+          );
+        }),
     }),
-    "ecc mcp add": commandOf(eccMcpAddCommand),
+    "ecc mcp add": Object.freeze({
+      execute: async (): Promise<PlanResult> => {
+        throw new AihError(
+          "aih ecc mcp add was retired: aih no longer installs ECC MCP content. Run aih ecc for guidance.",
+          "AIH_CONFIG",
+        );
+      },
+    }),
     "ecc mcp remove": commandOf(eccMcpRemoveCommand),
   }),
   policyDelivery: eccPolicyDelivery(),

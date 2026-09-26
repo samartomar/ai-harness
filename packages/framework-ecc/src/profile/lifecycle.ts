@@ -271,7 +271,7 @@ function assertNotSuperseded(
     throw new EccProfileLifecycleRefusalError(
       "framework-profile-superseded",
       `ECC profile repair: the installed projection ${installed.projectionSha256} of ${installed.repository}@${installed.commit} is superseded by the anchored projection ${later.projectionSha256} of the same pin, and repair would restore what that render withholds`,
-      "run aih ecc --lifecycle update to migrate; rollback to the installed projection stays available",
+      "run aih ecc for developer-managed migration guidance; aih ecc --lifecycle uninstall removes the earlier aih-owned profile",
     );
 }
 
@@ -293,7 +293,7 @@ function assertSamePinMigration(
     throw new EccProfileLifecycleRefusalError(
       "framework-profile-update-same-pin",
       "ECC profile update requires an exact new source pin or an anchored new projection of the installed pin",
-      "update to a new exact ECC source pin, or to a projection of the installed pin that Core's installation trust record anchors at the same source closure; to restore the installed projection, run aih ecc --lifecycle repair",
+      "run aih ecc for developer-managed installation guidance; aih ecc --lifecycle uninstall removes the earlier aih-owned profile",
     );
   assertAnchored(
     receipt.source,
@@ -714,7 +714,7 @@ function installPlan(
       throw new EccProfileLifecycleRefusalError(
         "framework-profile-already-owned",
         "ECC profile is already owned at a different pin or projection",
-        "run aih ecc --lifecycle update to move the installation; aih ecc --lifecycle uninstall removes it",
+        "run aih ecc for developer-managed installation guidance; aih ecc --lifecycle uninstall removes it",
       );
     assertReceiptMatchesProjection(receiptFile.receipt, files);
     for (const entry of receiptFile.receipt.files) assertOwnedCurrent(root, entry);

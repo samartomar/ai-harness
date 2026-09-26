@@ -100,7 +100,7 @@ export function superpowersOverviewDoc(): Action {
     lines(
       "Superpowers installs a disciplined SDLC as agent skills: brainstorm ->",
       "plan -> test-driven implementation -> subagent review, plus a library of",
-      "reusable skills. It pairs with ECC (`aih ecc`): ECC supplies stack-aware",
+      "reusable skills. ECC installation guidance is in `aih ecc`: ECC supplies stack-aware",
       "rules/agents/memory; Superpowers supplies the behavioral loop that uses them.",
       "",
       "All marketplace/TUI targets are guidance-only because those installers cannot prove",

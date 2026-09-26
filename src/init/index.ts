@@ -394,14 +394,12 @@ async function composeInit(ctx: PlanContext): Promise<InitComposition> {
     );
   }
 
-  // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git
-  // checkout), so `aih init` points at the separate gated step instead of running
-  // it. This single doc is the only action init adds beyond the phase headers.
+  // ECC is developer-managed; init only points to the read-only guidance.
   actions.push(
     governanceOwnsAihSurfaces(policy)
       ? doc(
-          "deliver selected organization content",
-          "Run `aih policy project --apply` to reconcile the verified policy selection and its owned components. Ordinary baseline installation cannot replace governed content.",
+          "review selected organization content",
+          "Run `aih policy project --apply` to project policy-owned settings. Run `aih ecc` for developer-managed ECC installation guidance.",
         )
       : baselineInstallDoc(baseline),
   );
@@ -499,13 +497,12 @@ async function composeInit(ctx: PlanContext): Promise<InitComposition> {
 function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>): Action {
   if (baseline.id === "ecc") {
     return doc(
-      "install ECC (separate, gated network step)",
+      "ECC installation guidance",
       lines(
-        "`aih init` scaffolds locally. ECC installs via ECC's OWN installer (network), so it",
-        "is a separate step you run when ready:",
+        "`aih init` scaffolds locally. ECC installation is developer-managed.",
+        "Run the read-only guide for reviewed source and uninstall commands:",
         "",
-        "  aih ecc --apply                # install ECC (latest) for your selected CLIs",
-        "  aih ecc --cli kiro --apply     # Kiro: git checkout of ECC + its native .kiro/install.sh",
+        "  aih ecc",
       ),
     );
   }
@@ -589,6 +586,12 @@ export async function executeInitCommand(
   ctx: PlanContext,
   deps: InitCommandDeps = {},
 ): Promise<PlanResult> {
+  if (ctx.options.eccPath !== undefined) {
+    throw new AihError(
+      "aih init --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
+      "AIH_CONFIG",
+    );
+  }
   const initial = await composeInit(ctx);
   if (!readPolicyBinding(ctx.root)) {
     const initialized = await executePlan(initial.plan, ctx);
@@ -624,8 +627,7 @@ export const command: CommandSpec = {
   options: [
     {
       flags: "--ecc-path <path>",
-      description:
-        "exact local ECC checkout for a bound project's governed required-content delivery",
+      description: "retired ECC source option; use aih ecc for guidance",
     },
     {
       flags: "--sidecar",

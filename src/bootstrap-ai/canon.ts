@@ -422,7 +422,7 @@ function baselineLayerLines(source: BaselineSource, governed: boolean): string[]
   if (source.id === "ecc") {
     return [
       "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
-      "  (obra/Superpowers), installed per CLI by `aih ecc` / `aih superpowers` —",
+      "  (obra/Superpowers); use `aih ecc` for ECC install guidance and `aih superpowers` for its setup —",
       "  generic agents, skills, memory, security, and the brainstorm→plan→TDD→review loop.",
     ];
   }

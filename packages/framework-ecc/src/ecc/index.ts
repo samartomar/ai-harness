@@ -175,7 +175,7 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
           "install dirs directly, so this means it's genuinely absent.)",
           "",
           "Fix: install Git for Windows (https://git-scm.com/download/win), which bundles Git",
-          "Bash, then re-run `aih ecc --cli kiro --apply`. Other ECC targets do not need",
+          "Bash, then run `aih ecc` for Kiro installation guidance. Other ECC targets do not need",
           "Git Bash — only the Kiro installer does.",
         ),
       ),
@@ -186,7 +186,7 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
         detail:
           "no Git Bash (bash.exe) found in a standard Git for Windows location; ECC's " +
           ".kiro/install.sh cannot run — install Git for Windows, then re-run " +
-          "`aih ecc --cli kiro --apply`",
+          "`aih ecc` for Kiro installation guidance",
       })),
     ];
   }
@@ -211,12 +211,12 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
                 name: "Kiro ECC install (Git Bash)",
                 verdict: "fail",
                 code: "env.git-bash-missing",
-                detail: `Git Bash could not run ECC's .kiro/install.sh (exit ${exit}); ensure Git for Windows is installed, then re-run \`aih ecc --cli kiro --apply\``,
+                detail: `Git Bash could not run ECC's .kiro/install.sh (exit ${exit}); ensure Git for Windows is installed, then run \`aih ecc\` for guidance`,
               }
             : {
                 name: "Kiro ECC install (Git Bash)",
                 verdict: "fail",
-                detail: `ECC's .kiro/install.sh exited ${exit}; re-run \`aih ecc --cli kiro --apply\` — if it persists, check the ECC installer output`,
+                detail: `ECC's .kiro/install.sh exited ${exit}; run \`aih ecc\` for guidance and check the ECC installer output`,
               };
         },
       },
@@ -402,9 +402,8 @@ function eccDriftProbe(ctx: PlanContext, cli: Cli, repo: EccRepoCheckout): Actio
           detail:
             `${drift.counts["unknown-provenance"]} file(s) under ${managed}/ have no ownership ` +
             "record, so aih cannot tell ECC-installed content from your own — this install " +
-            "predates the manifest. Re-run `aih ecc --cli " +
-            `${cli} --apply` +
-            "` to establish ownership; until then nothing here is claimed or touched.",
+            "predates the manifest. Run `aih ecc` for developer-managed guidance; " +
+            "aih cannot establish ownership retroactively, so nothing here is claimed or touched.",
         };
       }
       const parts = [

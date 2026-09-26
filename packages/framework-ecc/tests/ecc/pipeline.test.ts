@@ -355,11 +355,8 @@ describe("ECC baseline evidence pipeline", () => {
     expect(request.selection.mcps).toEqual([]);
   });
 
-  // `install` is no longer here: in a governed repository it runs the governed
-  // framework materialization instead (F6), pinned in
-  // `tests/ecc/governed-lifecycle-command.test.ts`. The remaining three still
-  // drive the framework's own profile installer, which may register native MCPs.
-  it("blocks the governed ECC lifecycle verbs that still drive the profile installer", async () => {
+  // Retired lifecycle verbs must refuse before reaching the old profile installer.
+  it("refuses the retired governed ECC lifecycle verbs", async () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       JSON.stringify({
@@ -384,7 +381,10 @@ describe("ECC baseline evidence pipeline", () => {
             throw new Error("lifecycle must not run");
           },
         }),
-      ).rejects.toThrow(/governance exclusively owns/);
+      ).rejects.toMatchObject({
+        code: "AIH_CONFIG",
+        message: expect.stringContaining(`aih ecc --lifecycle ${lifecycle}\` was retired`),
+      });
     }
 
     const uninstall = ctx(false);

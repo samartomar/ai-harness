@@ -956,7 +956,7 @@ export function codexMcpCollisionActions(
         "",
         `Collision(s): ${summary}.`,
         "",
-        "Resolve each collision, then rerun `aih ecc --cli codex --apply`.",
+        "Resolve each collision, then run `aih ecc` for developer-managed guidance.",
       ),
     ),
     probe("Codex MCP server name collision", () => ({
@@ -1334,7 +1334,7 @@ export function codexChromeDevtoolsOptOutActions(
         "",
         "Next: remove the entry and let aih manage chrome-devtools (aih always writes both",
         `opt-outs), or add both variables under [mcp_servers.${firstEntry}.env];`,
-        "then rerun `aih ecc --cli codex --apply`.",
+        "then run `aih ecc` for developer-managed guidance.",
       ),
     ),
     probe("Chrome DevTools MCP telemetry opt-outs", () => chromeDevtoolsOptOutCheck(refusals)),

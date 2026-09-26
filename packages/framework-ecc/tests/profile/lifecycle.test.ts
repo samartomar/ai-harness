@@ -643,13 +643,15 @@ describe("AIH-owned ECC projection lifecycle", () => {
       "framework-profile-already-owned",
     );
     expect(owned.message).toMatch(/already owned at a different pin/i);
-    expect(owned.nextRoute).toMatch(/aih ecc --lifecycle update/);
+    expect(owned.nextRoute).toMatch(/run aih ecc for developer-managed installation guidance/);
     const unchanged = lifecycleRefusal(
       () => planEccProfileLifecycle(root, projection(), "update"),
       "framework-profile-update-same-pin",
     );
     expect(unchanged.message).toMatch(/exact new source pin/i);
-    expect(unchanged.nextRoute).toMatch(/aih ecc --lifecycle repair/);
+    expect(unchanged.nextRoute).toMatch(
+      /aih ecc --lifecycle uninstall removes the earlier aih-owned profile/,
+    );
     expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "repair")).toThrow(
       /repair projection contradicts/i,
     );
@@ -1133,7 +1135,7 @@ describe("same-pin ECC profile projection migration", () => {
       "framework-profile-update-same-pin",
     );
     expect(refusal.message).toMatch(/exact new source pin/i);
-    expect(refusal.nextRoute).toMatch(/new exact ECC source pin/i);
+    expect(refusal.nextRoute).toMatch(/run aih ecc for developer-managed installation guidance/);
   });
 
   it("refuses repair of an installation a later anchored render of its pin supersedes", async () => {
@@ -1147,7 +1149,7 @@ describe("same-pin ECC profile projection migration", () => {
     ]) {
       const refusal = lifecycleRefusal(repair, "framework-profile-superseded");
       expect(refusal.message).toMatch(/superseded by the anchored projection/i);
-      expect(refusal.nextRoute).toMatch(/^run aih ecc --lifecycle update to migrate/);
+      expect(refusal.nextRoute).toMatch(/^run aih ecc for developer-managed migration guidance/);
     }
     // The current render of the pin still repairs.
     await executePlan(planInstalledEccProfileLifecycle(root, "repair", [installed]), ctx(true));

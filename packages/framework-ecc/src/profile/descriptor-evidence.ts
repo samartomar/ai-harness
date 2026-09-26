@@ -64,7 +64,7 @@ export class EccProfileEvidenceRefusalError extends AihError {
 }
 
 function nextRoute(commit: string): string {
-  return `install an @aihq/catalog whose ./catalog-framework-ecc.json carries sections.profileEvidence for ${UPSTREAM.repository}@${commit}; governed ECC delivery (\`aih policy project\`) and \`aih ecc\` previews do not need it`;
+  return `install an @aihq/catalog whose ./catalog-framework-ecc.json carries sections.profileEvidence for ${UPSTREAM.repository}@${commit}; run \`aih ecc\` for developer-managed installation guidance`;
 }
 
 function incompatible(problem: string, commit: string): EccProfileEvidenceRefusalError {

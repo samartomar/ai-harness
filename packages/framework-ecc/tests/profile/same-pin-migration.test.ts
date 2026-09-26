@@ -217,7 +217,7 @@ describe("same-pin ECC profile migration", () => {
       const repair = await cli(target, "repair", withCurrent);
       expect(repair.exit).toBe(1);
       expect(repair.output).toMatch(
-        /^error \[AIH_FRAMEWORK_PLUGIN\]: framework-profile-superseded: .*superseded by the anchored projection.*\. Next: run aih ecc --lifecycle update to migrate; rollback to the installed projection stays available\n$/,
+        /^error \[AIH_FRAMEWORK_PLUGIN\]: framework-profile-superseded: .*superseded by the anchored projection.*\. Next: run aih ecc for developer-managed migration guidance; aih ecc --lifecycle uninstall removes the earlier aih-owned profile\n$/,
       );
       expect(existsSync(at(target, payloads[0] as string))).toBe(false);
 
@@ -233,7 +233,7 @@ describe("same-pin ECC profile migration", () => {
       });
       expect(crossClosure.exit).toBe(1);
       expect(crossClosure.output).toMatch(
-        /^error \[AIH_FRAMEWORK_PLUGIN\]: framework-profile-update-same-pin: .*exact new source pin.*\. Next: .*new exact ECC source pin/,
+        /^error \[AIH_FRAMEWORK_PLUGIN\]: framework-profile-update-same-pin: .*exact new source pin.*\. Next: run aih ecc for developer-managed installation guidance; aih ecc --lifecycle uninstall removes the earlier aih-owned profile\n$/,
       );
       expect(readEccProfileOwnership(target)?.source).toEqual(legacyIdentity);
       coreAnchors([legacyIdentity, currentIdentity]);

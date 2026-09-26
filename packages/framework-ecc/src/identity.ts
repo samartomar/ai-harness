@@ -28,8 +28,7 @@ export const UPSTREAM: FrameworkUpstreamV1 = Object.freeze({
 });
 
 /**
- * `aih ecc` has a route for every host Core targets: an evidence-gated install
- * for ECC's installer targets and Codex, a consult-only route for the rest.
+ * `aih ecc` gives developer-managed installation guidance for Core targets.
  */
 export const SUPPORTED_HOSTS: readonly Cli[] = Object.freeze([...SUPPORTED_CLIS]);
 

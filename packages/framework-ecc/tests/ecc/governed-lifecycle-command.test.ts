@@ -509,47 +509,53 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     });
   });
 
-  it("delivers required ECC content from the normal policy project apply", async () => {
+  it("retires ECC source delivery from normal policy project apply", async () => {
     writeGovernedPolicy([...PASSED]);
     const context = ctx(true, { eccPath: sourceRoot, cli: "claude" });
+    const before = snapshot(root);
 
-    const result = await executePolicyProjectCommand(
-      context,
-      eccCoreDeps({
-        catalog: catalog(),
-        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
-      }),
-    );
-
-    expect(result.capability).toBe("policy project");
-    expect(materializationDigest(result).applied).toBe(true);
-    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
-    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(true);
-    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"))).toBe(true);
-    expect(
-      bytesAt(root, MATERIALIZED[0]?.destination ?? "").equals(
-        bytesAt(sourceRoot, MATERIALIZED[0]?.source ?? ""),
+    await expect(
+      executePolicyProjectCommand(
+        context,
+        eccCoreDeps({
+          catalog: catalog(),
+          resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+        }),
       ),
-    ).toBe(true);
+    ).rejects.toMatchObject({
+      code: "AIH_CONFIG",
+      message:
+        "aih policy project --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
+    });
+
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"))).toBe(
+      false,
+    );
+    expect(existsSync(join(root, MATERIALIZED[0]?.destination ?? ""))).toBe(false);
   });
 
-  it("previews normal policy project delivery from a local source without material effects", async () => {
+  it("retires ECC source preview from normal policy project without material effects", async () => {
     writeGovernedPolicy([...PASSED]);
     const before = snapshot(root);
     const context = ctx(false, { eccPath: sourceRoot, cli: "claude" });
 
-    const result = await executePolicyProjectCommand(
-      context,
-      eccCoreDeps({
-        catalog: catalog(),
-        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
-      }),
-    );
+    await expect(
+      executePolicyProjectCommand(
+        context,
+        eccCoreDeps({
+          catalog: catalog(),
+          resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "AIH_CONFIG",
+      message:
+        "aih policy project --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
+    });
 
-    expect(result.capability).toBe("policy project");
-    const reported = materializationDigest(result);
-    expect(reported.applied).toBe(false);
-    expect(reported.write.length).toBeGreaterThan(0);
     expect(snapshot(root)).toEqual(before);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
     expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(false);
@@ -579,7 +585,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     expect(materializationDigest(result).applied).toBe(true);
   });
 
-  it("prepares the exact ECC request and refuses target gaps before policy projection writes", async () => {
+  it("refuses the retired ECC source option before policy projection writes", async () => {
     writeGovernedPolicy([OTHER_LIFECYCLE]);
     const before = snapshot(root);
     const context = ctx(true, { eccPath: sourceRoot, cli: "claude" });
@@ -592,13 +598,17 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
           resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
         }),
       ),
-    ).rejects.toThrow(/refused every.*mcp:github.*unowned-destination/);
+    ).rejects.toMatchObject({
+      code: "AIH_CONFIG",
+      message:
+        "aih policy project --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
+    });
 
     expect(snapshot(root)).toEqual(before);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
   });
 
-  it("acquires and verifies the remote pin in an effect-free preparation before project writes", async () => {
+  it("projects policy without fetching or delivering ECC content", async () => {
     writeGovernedPolicy([...PASSED]);
     let fetches = 0;
     const run = fakeRunner((argv) => {
@@ -646,9 +656,10 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
       }),
     );
 
-    expect(fetches).toBe(1);
-    expect(materializationDigest(result).applied).toBe(true);
-    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+    expect(result.capability).toBe("policy project");
+    expect(result.applied).toBe(true);
+    expect(fetches).toBe(0);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
   });
 
   it("treats an explicit empty ECC selection as authorized receipt-bound withdrawal", async () => {
@@ -779,9 +790,9 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
       );
 
       expect(failure?.message).toContain(`aih ecc --lifecycle ${lifecycle}`);
-      // The message must name where install and removal actually live, and must
-      // no longer point at a design that has since landed.
-      expect(failure?.message).toContain("aih ecc --lifecycle install");
+      // The retired route directs users to guidance and preserves removal advice.
+      expect(failure?.message).toContain("was retired: aih no longer installs ECC");
+      expect(failure?.message).toContain("Run `aih ecc` for developer-managed guidance");
       expect(failure?.message).toContain("aih uninstall");
       expect(failure?.message).not.toContain("after the non-MCP framework lifecycle is designed");
       expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);

@@ -45,7 +45,7 @@ export interface InitPhase {
  * and usage recorder land last. Each
  * file has exactly one writer, so the composed plan dedupes to one write per path.
  *
- * ECC is deliberately NOT a phase: `aih ecc` runs ECC's own network installer
+ * ECC is deliberately NOT a phase: `aih ecc` provides developer-managed installation guidance
  * (`npx ecc-install` / a git checkout), so it stays a separate gated step rather
  * than something `aih init --apply` runs silently. `initPlan` points at it.
  */

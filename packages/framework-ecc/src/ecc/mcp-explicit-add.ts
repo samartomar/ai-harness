@@ -400,7 +400,7 @@ export function readExplicitEccMcpReceiptStates(options: {
         id: record.id,
         target: record.target,
         state: "stale",
-        detail: `recorded for ECC content ${record.catalog.contentSha256}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-add with aih ecc mcp add ${record.id} --cli ${record.target}`,
+        detail: `recorded for ECC content ${record.catalog.contentSha256}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; run aih ecc for developer-managed MCP guidance`,
       };
     }
     let rendered: ExplicitEccMcpRenderPlan;

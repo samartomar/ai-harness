@@ -635,7 +635,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
     });
   }
   if (spec.name === "ecc") {
-    const mcp = cmd.command("mcp").description("Explicit policy-approved ECC HTTPS MCP lifecycle");
+    const mcp = cmd.command("mcp").description("Earlier aih-owned ECC MCP removal; add is retired");
     for (const [mcpCommand, execute] of [
       [eccMcpAddCommand, executeEccMcpAddCommand],
       [eccMcpRemoveCommand, executeEccMcpRemoveCommand],

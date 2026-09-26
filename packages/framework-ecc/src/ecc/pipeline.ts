@@ -496,7 +496,7 @@ export async function executeEccCommand(
       (lifecycle === "update" || lifecycle === "repair" || lifecycle === "rollback")
     ) {
       throw new AihError(
-        `\`aih ecc --lifecycle ${lifecycle}\` drives the framework's own profile installer, which may register native MCPs that governance exclusively owns; the governed framework lifecycle is wired instead — \`aih ecc --lifecycle install\` materializes the policy's evidence-passed selection and \`aih uninstall\` removes it receipt-bound`,
+        `\`aih ecc --lifecycle ${lifecycle}\` was retired: aih no longer installs ECC. Run \`aih ecc\` for developer-managed guidance; \`aih uninstall\` removes earlier aih-owned content receipt-bound`,
         "AIH_CONFIG",
       );
     }

@@ -556,7 +556,7 @@ describe("project-local explicit ECC MCP lifecycle", () => {
         id: "memxus",
         target: "claude",
         state: "stale",
-        detail: `recorded for ECC content ${PREVIOUS_CONTENT}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; re-add with aih ecc mcp add memxus --cli claude`,
+        detail: `recorded for ECC content ${PREVIOUS_CONTENT}; current is ${ECC_MCP_CATALOG_PROVENANCE.contentSha256}; run aih ecc for developer-managed MCP guidance`,
       },
     ]);
     // A stale record authorizes nothing: Remove reports and leaves the configuration.

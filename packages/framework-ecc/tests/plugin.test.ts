@@ -81,6 +81,13 @@ describe("aihFrameworkPluginV1", () => {
     );
   });
 
+  it("exposes guidance and legacy removal", () => {
+    expect(aihFrameworkPluginV1.commands.ecc).toBeDefined();
+    expect(aihFrameworkPluginV1.commands["ecc mcp remove"]).toBeDefined();
+    expect(aihFrameworkPluginV1.uninstall?.remove).toBeTypeOf("function");
+    expect(aihFrameworkPluginV1.prune?.plan).toBeTypeOf("function");
+  });
+
   it("refuses to run a command when Core bound no runtime to the invocation", async () => {
     const command = aihFrameworkPluginV1.commands.ecc;
     await expect(command?.execute(operationContext())).rejects.toThrow(

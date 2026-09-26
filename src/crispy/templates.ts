@@ -168,7 +168,7 @@ export function installDocText(): string {
     "or via the Superpowers marketplace:",
     INSTALL_COMMANDS.map((c) => `  ${c}`),
     "",
-    "Run `aih superpowers` / `aih ecc` (dry-run by default) to see the exact, CLI-",
+    "Run `aih superpowers` / `aih ecc` to see the exact, CLI-",
     "specific commands for your selection. aih never runs in-tool slash commands for you.",
   );
 }

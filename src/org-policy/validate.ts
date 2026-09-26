@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { readPolicyBinding } from "../config/marker.js";
 import { AihError } from "../errors.js";
-import { prepareEccPolicyDelivery } from "../framework-plugin/ecc-command.js";
 import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
@@ -323,6 +321,12 @@ async function policyEvaluatePlan(ctx: PlanContext): Promise<Plan> {
 }
 
 async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
+  if (ctx.options.eccPath !== undefined) {
+    throw new AihError(
+      "aih policy project --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
+      "AIH_CONFIG",
+    );
+  }
   const bindingAssertion = policyBindingFileAssertion(ctx.root);
   const policyTargets = await verifiedOrgPolicyTargets(ctx);
   const { clis } = policyTargets.resolution;
@@ -376,7 +380,7 @@ export const policyProjectCommand: CommandSpec = {
   options: [
     {
       flags: "--ecc-path <path>",
-      description: "exact local ECC checkout for governed required-content delivery",
+      description: "retired ECC source option; use aih ecc for guidance",
     },
   ],
   plan: policyProjectPlan,
@@ -406,108 +410,20 @@ export function combineProjectResults(projected: PlanResult, delivered: PlanResu
   };
 }
 
-function assertPreparedEccDelivery(result: PlanResult): void {
-  const failedExec = result.execs.find((entry) => entry.ran && entry.ok === false);
-  if (failedExec !== undefined) {
-    throw new AihError(
-      `governed ECC preparation failed before policy projection: ${failedExec.describe}`,
-      "AIH_TRUST",
-    );
-  }
-  if (result.report !== undefined && !result.report.ok) {
-    const failures = result.report.checks
-      .filter((check) => check.verdict === "fail")
-      .map((check) => check.detail)
-      .join("; ");
-    throw new AihError(
-      `governed ECC preparation failed before policy projection${failures.length === 0 ? "" : `: ${failures}`}`,
-      "AIH_TRUST",
-    );
-  }
-  const materialization = result.digests.find((entry) =>
-    entry.describe.includes("governed ECC framework materialization"),
-  )?.data as
-    | {
-        refused?: Array<{ id?: unknown; reason?: unknown }>;
-        excluded?: Array<{ id?: unknown; reason?: unknown }>;
-        advisories?: Array<{ path?: unknown; reason?: unknown }>;
-      }
-    | undefined;
-  if (materialization === undefined) {
-    throw new AihError(
-      "governed ECC preparation produced no exact materialization preview",
-      "AIH_TRUST",
-    );
-  }
-  const blocked = [
-    ...(materialization.refused ?? []).map((item) => `${String(item.id)} (${String(item.reason)})`),
-    ...(materialization.excluded ?? []).map(
-      (item) => `${String(item.id)} (${String(item.reason)})`,
-    ),
-    ...(materialization.advisories ?? []).map(
-      (item) => `${String(item.path)} (${String(item.reason)})`,
-    ),
-  ];
-  if (blocked.length > 0) {
-    throw new AihError(
-      `governed ECC preparation refused required delivery before policy projection: ${blocked.join(", ")}`,
-      "AIH_TRUST",
-    );
-  }
-}
-
 /**
- * Project policy-owned settings and automatically reconcile required ECC
- * content. The ECC delivery is prepared through `@aihq/framework-ecc` before
- * the projection and committed, exactly as prepared, after it succeeded.
+ * Project policy-owned settings without delivering third-party ECC content.
  */
 export async function executePolicyProjectCommand(
   ctx: PlanContext,
-  deps: FrameworkCommandDepsV1 = {},
+  _deps: FrameworkCommandDepsV1 = {},
 ): Promise<PlanResult> {
-  const bindingAtStart = readPolicyBinding(ctx.root);
-  const policy = readOrgPolicy(ctx.root, ctx.env);
-  const governsEcc = policy?.governance?.externalSelections?.some(
-    (selection) => selection.framework === "ecc",
-  );
-  if (governsEcc !== true) return executePlan(await policyProjectPlan(ctx), ctx);
-  const delivery = await prepareEccPolicyDelivery(ctx, deps);
-  try {
-    if (ctx.apply) {
-      assertPreparedEccDelivery(delivery.result);
-      if (delivery.commit === undefined) {
-        throw new AihError(
-          "governed ECC preparation did not retain an exact delivery request",
-          "AIH_TRUST",
-        );
-      }
-    }
-    const projected = await executePlan(await policyProjectPlan(ctx), ctx);
-    const projectionFailed =
-      projected.execs.some((entry) => entry.ran && entry.ok === false) ||
-      (projected.report !== undefined && !projected.report.ok);
-    if (projectionFailed) return projected;
-    if (!ctx.apply || delivery.commit === undefined) {
-      return combineProjectResults(projected, delivery.result);
-    }
-    let policyBinding: ReturnType<typeof policyBindingFileAssertion>;
-    if (bindingAtStart !== undefined) {
-      const bindingAfterProjection = readPolicyBinding(ctx.root);
-      if (
-        bindingAfterProjection === undefined ||
-        !sameJson(bindingAfterProjection, bindingAtStart)
-      ) {
-        throw new AihError("project policy binding changed during policy projection", "AIH_TRUST");
-      }
-      policyBinding = policyBindingFileAssertion(ctx.root);
-      if (policyBinding === undefined) {
-        throw new AihError("project policy binding disappeared after projection", "AIH_TRUST");
-      }
-    }
-    return combineProjectResults(projected, await delivery.commit(policyBinding));
-  } finally {
-    delivery.end();
+  if (ctx.options.eccPath !== undefined) {
+    throw new AihError(
+      "aih policy project --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
+      "AIH_CONFIG",
+    );
   }
+  return executePlan(await policyProjectPlan(ctx), ctx);
 }
 
 export const policyValidateCommand: CommandSpec = {
