@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { BaselineCatalogSchema } from "../baseline-evidence/catalog.js";
 import { admittedSourceFromCandidateBundleV1 } from "../baseline-evidence/scanner-catalog-consumer.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../baseline-evidence/scanner-definition.js";
 import { scannerBaselinePublicationPublisherForLocatorV1 } from "../baseline-evidence/scanner-publication-policy.js";
 import {
   activateCandidateCatalogV1,
@@ -125,7 +126,7 @@ const FLAGS = [
   "--output",
 ] as const;
 const USAGE =
-  "Usage: prepare-packaged-workbench-source-data --provider <anthropics-skills|ponytail|ecc|superpowers> --source-root <pinned-checkout> --publication-root <batch-NNN/{discovery.json,publication.json,attestation.jsonl}> --source-bundle <catalog-compiled-single-source-bundle> --compiler-input <compiler-input> --published-catalog <requested-baseline-catalog> --output <new-json-file> [--update-kind evidence-only] [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
+  "Usage: prepare-packaged-workbench-source-data --provider <anthropics-skills|ponytail|ecc|superpowers> --source-root <pinned-checkout> --publication-root <batch-NNN/{discovery.json,publication.json,attestation.jsonl}> --source-bundle <catalog-compiled-single-source-bundle> --compiler-input <compiler-input> --published-catalog <requested-baseline-catalog> --output <new-json-file> [--definition-overlap <disjoint|compiler-catalog>] [--update-kind evidence-only] [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
 const BATCH_FILES = ["attestation.jsonl", "discovery.json", "publication.json"];
 const LIMITS = { discovery: 8_192, publication: 12_000_000, attestation: 512_000 };
 
@@ -133,7 +134,12 @@ function fail(message: string): never {
   throw new TypeError(`Packaged source data: ${message}`);
 }
 
-const OPTIONAL_FLAGS = ["--update-kind", "--candidate-catalog", "--candidate-catalog-sha256"];
+const OPTIONAL_FLAGS = [
+  "--definition-overlap",
+  "--update-kind",
+  "--candidate-catalog",
+  "--candidate-catalog-sha256",
+];
 
 function parseArgs(args: readonly string[]) {
   const optional = new Map<string, string>();
@@ -146,6 +152,7 @@ function parseArgs(args: readonly string[]) {
   }
   const candidate = optional.get("--candidate-catalog");
   const candidateSha256 = optional.get("--candidate-catalog-sha256");
+  const overlap = optional.get("--definition-overlap");
   if (
     args.length < FLAGS.length * 2 ||
     FLAGS.some(
@@ -153,12 +160,15 @@ function parseArgs(args: readonly string[]) {
         args[index * 2] !== flag || !args[index * 2 + 1] || args[index * 2 + 1]?.startsWith("--"),
     ) ||
     (optional.has("--update-kind") && optional.get("--update-kind") !== "evidence-only") ||
+    (overlap !== undefined && overlap !== "disjoint" && overlap !== "compiler-catalog") ||
     (candidate === undefined) !== (candidateSha256 === undefined) ||
     (candidateSha256 !== undefined && !/^[0-9a-f]{64}$/.test(candidateSha256)) ||
     !Object.hasOwn(PROVIDERS, args[1] as string)
   )
     throw new TypeError(USAGE);
   const value = (flag: (typeof FLAGS)[number]) => args[FLAGS.indexOf(flag) * 2 + 1] as string;
+  const definitionOverlap: ScannerDefinitionOverlapModeV1 =
+    overlap === "compiler-catalog" ? "compiler-catalog" : "disjoint";
   return {
     provider: value("--provider") as ProviderV1,
     sourceRoot: resolve(value("--source-root")),
@@ -168,6 +178,7 @@ function parseArgs(args: readonly string[]) {
     publishedCatalog: resolve(value("--published-catalog")),
     output: resolve(value("--output")),
     updateKind: optional.has("--update-kind") ? ("evidence-only" as const) : undefined,
+    overlap: definitionOverlap,
     candidate:
       candidate === undefined
         ? undefined
@@ -307,6 +318,7 @@ export async function preparePackagedWorkbenchSourceDataCommandV1(
       undefined,
       now,
       proofRoot,
+      options.overlap,
     );
     if (options.provider === "ecc" && facts.descriptor === undefined)
       fail("ecc verification produced no runtime descriptor");

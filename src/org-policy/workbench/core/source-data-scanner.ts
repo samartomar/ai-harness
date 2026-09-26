@@ -11,6 +11,7 @@ import {
   prepareCollectionScannerCoverageV1,
 } from "../../../baseline-evidence/scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "../../../baseline-evidence/scanner-consumer.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../../../baseline-evidence/scanner-definition.js";
 import { consumeScannerBaselinePublicationsV1 } from "../../../baseline-evidence/scanner-publication.js";
 import {
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
@@ -120,6 +121,7 @@ function preparedEccRuntimeDescriptorV1(
   }[],
   consumed: Awaited<ReturnType<typeof consumeScannerBaselinePublicationsV1>>,
   now: string,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): PreparedEccRuntimeDescriptorV1 | undefined {
   if (compilerInput.framework.id !== "ecc") return undefined;
   for (const asset of compilerInput.framework.assets) {
@@ -139,6 +141,7 @@ function preparedEccRuntimeDescriptorV1(
     sourceRoot,
     prepared.coverage.components,
     requestedComponents,
+    overlap,
   );
   const signedAt = Math.min(
     ...consumed.provenance.map((publication) => Date.parse(publication.reportSignedAt)),
@@ -290,6 +293,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
   now = new Date().toISOString(),
   proofRoot?: string,
   runtimeCollector?: RuntimeDescriptorCollectorV1,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): Promise<AuthoringCatalogBundleV1["evidence"]> {
   assertStrictJsonValueV1(input, "Scanner source proof");
   const proof = SourceDataScannerProofV1Schema.parse(input);
@@ -440,6 +444,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
         requests,
         consumed,
         preparedAt: proof.preparedAt,
+        overlap,
       });
       if (compilerInput.version === "pinned-baseline/v1") {
         const runtime = preparedEccRuntimeDescriptorV1(
@@ -449,6 +454,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
           requests.flatMap((request) => request.components),
           consumed,
           now,
+          overlap,
         );
         if (runtime !== undefined && runtimeCollector !== undefined)
           runtimeCollector.value = runtime;
@@ -563,6 +569,7 @@ export async function prepareSourceDataScannerRuntimeFactsV1(
   ),
   now = new Date().toISOString(),
   proofRoot?: string,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): Promise<
   Readonly<{
     evidence: AuthoringCatalogBundleV1["evidence"];
@@ -579,6 +586,7 @@ export async function prepareSourceDataScannerRuntimeFactsV1(
     now,
     proofRoot,
     collector,
+    overlap,
   );
   return Object.freeze({
     evidence,

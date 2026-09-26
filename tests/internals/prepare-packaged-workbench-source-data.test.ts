@@ -116,6 +116,7 @@ describe("prepare-packaged-workbench-source-data", () => {
     const message = await preparePackagedWorkbenchSourceDataCommandV1(args);
     expect(message).toMatch(/^Prepared packaged source data ponytail@c{40} sha256:[0-9a-f]{64}\./);
     expect(mocks.facts).toHaveBeenCalledTimes(1);
+    expect(mocks.facts.mock.calls[0]?.at(-1)).toBe("disjoint");
     const [bundle, proof, sourceRoot, issuedAt, authorized, now, proofRoot] =
       mocks.facts.mock.calls[0] ?? [];
     expect(bundle).toEqual(sealedSingleSourceBundle("ponytail", PIN, ["tdd"]));
@@ -161,6 +162,14 @@ describe("prepare-packaged-workbench-source-data", () => {
       record.inlineBlobs.map((blob) => Buffer.from(blob.bytesBase64, "base64").toString()),
     ).toEqual([JSON.stringify({ locator: locator("a".repeat(64)) }), '{"bundle":"batch-001"}\n']);
     expect(JSON.stringify(record.compilerTemplate)).not.toContain('bytesBase64":"');
+  });
+  it("passes compiler-catalog overlap only when explicitly requested", async () => {
+    await preparePackagedWorkbenchSourceDataCommandV1([
+      ...args,
+      "--definition-overlap",
+      "compiler-catalog",
+    ]);
+    expect(mocks.facts.mock.calls[0]?.at(-1)).toBe("compiler-catalog");
   });
 
   it("never overwrites an output and reads nothing when it already exists", async () => {
@@ -270,6 +279,7 @@ describe("prepare-packaged-workbench-source-data", () => {
       (a: string[]) => a.splice(0, 4, "--source-root", a[3] as string, "--provider", "ponytail"),
     ],
     ["an unknown update kind", (a: string[]) => a.push("--update-kind", "full")],
+    ["an unknown overlap mode", (a: string[]) => a.push("--definition-overlap", "any")],
     ["a flag value that is a flag", (a: string[]) => a.splice(13, 1, "--output")],
     ["a candidate Catalog without its digest", (a: string[]) => a.push("--candidate-catalog", "c")],
     [

@@ -2,6 +2,7 @@ import type { BaselineVetRequestV1 } from "@aihq/scan";
 import { type BaselineCatalog, BaselineCatalogSchema } from "../../../baseline-evidence/catalog.js";
 import { hashComponentTree, hashSourceTree } from "../../../baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../../baseline-evidence/license.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../../../baseline-evidence/scanner-definition.js";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../../../baseline-evidence/scanner-profile.js";
 import type { ConsumedScannerBaselinePublicationsV1 } from "../../../baseline-evidence/scanner-publication.js";
 import { BaselineSourceEvidenceSchema } from "../../../baseline-evidence/schema.js";
@@ -36,6 +37,7 @@ export function projectContainedScannerEvidenceV1(input: {
   requests: readonly BaselineVetRequestV1[];
   consumed: ConsumedScannerBaselinePublicationsV1;
   preparedAt: string;
+  overlap?: ScannerDefinitionOverlapModeV1;
 }): AuthoringCatalogBundleV1["evidence"] {
   const { bundle, sourceRoot, declared, requests, consumed, preparedAt } = input;
   const catalog = BaselineCatalogSchema.parse(input.catalog);
@@ -118,7 +120,12 @@ export function projectContainedScannerEvidenceV1(input: {
       publicationByComponent.set(component.id, publication);
     }
   }
-  const mappings = verifyScannerComponentContainmentV1(sourceRoot, declared, requested);
+  const mappings = verifyScannerComponentContainmentV1(
+    sourceRoot,
+    declared,
+    requested,
+    input.overlap,
+  );
   const sourceReportDigest = digest({
     catalog,
     report,
