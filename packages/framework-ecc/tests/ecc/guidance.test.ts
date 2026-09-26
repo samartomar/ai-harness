@@ -43,6 +43,17 @@ afterEach(() => {
 });
 
 describe("ECC basic guidance", () => {
+  it("runs project targets from the project and names home target scope", () => {
+    const text = eccGuidance(["claude", "codex", "opencode", "cursor", "gemini", "zed", "antigravity"], "linux");
+    expect(text).toContain("Home-scoped targets: claude, codex, opencode");
+    expect(text).toContain("Project-scoped targets: cursor, gemini, zed, antigravity");
+    expect(text).toContain("cd /path/to/project");
+    expect(text).toContain("bash /path/to/ECC/install.sh --profile minimal --target cursor");
+    expect(text).toContain("node /path/to/ECC/scripts/uninstall.js --target cursor --dry-run");
+    expect(text).not.toContain("cd ECC\n./install.sh --profile minimal --target cursor");
+    const windows = eccGuidance(["cursor"], "win32");
+    expect(windows).toContain("pwsh /path/to/ECC/install.ps1 --profile minimal --target cursor");
+  });
   it("gives the reviewed exact-source commands and labels marketplace routes mutable", () => {
     const text = eccGuidance(["claude", "codex"], "linux");
     expect(text).toContain("git clone https://github.com/affaan-m/ECC.git");
