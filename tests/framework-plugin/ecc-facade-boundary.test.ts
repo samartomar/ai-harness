@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
+import * as frameworkHost from "../../src/framework-host/index.js";
+import { AihError } from "../../src/errors.js";
 import { moduleSpecifiers, sourceFiles } from "./module-specifiers.js";
 
 /**
@@ -80,6 +82,27 @@ function d91SourceControls(): string[] {
     })
     .map(toPosix)
     .sort();
+}
+
+function d91ForbiddenControls(path: string, source: string): string[] {
+  const violations: string[] = [];
+  if (path !== "src/ecc-profile/native-registration.ts" && /\b(?:buildNativeEccRegistration|planNativeEccRegistration)\s*\(/.test(source)) {
+    violations.push("Core calls the retired native ECC installation planner");
+  }
+  if (/\b(?:function|const)\s+(?:install|update|repair|rollback)(?:Ecc|Superpowers)[A-Za-z0-9_]*\b/.test(source)) {
+    violations.push("framework installation control appeared in Core");
+  }
+  for (const match of source.matchAll(/\bexport\s+(?:async\s+)?(?:function|const)\s+(plan[A-Za-z0-9_]*(?:Ecc|Superpowers)[A-Za-z0-9_]*)\b/g)) {
+    const name = match[1];
+    if (name === "planNativeEccCleanup" && path === "src/framework-host/index.ts") continue;
+    if (path === "src/ecc-profile/native-registration.ts" &&
+      (name === "planNativeEccRegistration" || name === "planInstalledNativeEccRegistration")) continue;
+    violations.push(`framework-specific exported planner ${name}`);
+  }
+  if (path === "src/framework-host/index.ts" && /\b(?:buildNativeEccRegistration|planNativeEccRegistration|planInstalledNativeEccRegistration)\s*,/.test(source)) {
+    violations.push("framework host re-exports retired native installation API");
+  }
+  return violations;
 }
 
 /** The ECC profile modules that are framework code (the rest of src/ecc-profile is generic runtime). */
@@ -222,9 +245,29 @@ describe("ECC framework boundary (phase 2)", () => {
 });
 
 describe("D91 Core framework install controls", () => {
+  it("rejects negative mutation fixtures in new wrappers, allowlisted files, and host planners", () => {
+    expect(d91ForbiddenControls("src/new-wrapper.ts", 'import { planNativeEccRegistration } from "./ecc-profile/native-registration.js";\nexport const install = (root, registration) => planNativeEccRegistration(root, registration, "install");')).not.toEqual([]);
+    expect(d91ForbiddenControls("src/init/index.ts", 'export function installEccArtifacts() { return "install"; }')).not.toEqual([]);
+    expect(d91ForbiddenControls("src/framework-host/index.ts", 'export function planEccInstall() { return []; }')).not.toEqual([]);
+  });
+  it("exports only typed native ECC cleanup from the framework host", () => {
+    expect(frameworkHost).not.toHaveProperty("buildNativeEccRegistration");
+    expect(frameworkHost).not.toHaveProperty("planNativeEccRegistration");
+    expect(frameworkHost).not.toHaveProperty("planInstalledNativeEccRegistration");
+    const cleanup = (frameworkHost as typeof frameworkHost & { planNativeEccCleanup: (root: string, operation: string) => unknown }).planNativeEccCleanup;
+    expect(() => cleanup(process.cwd(), "install")).toThrow(AihError);
+    try { cleanup(process.cwd(), "repair"); } catch (error) {
+      expect((error as AihError).code).toBe("AIH_CONFIG");
+    }
+  });
   it("keeps every source-scanned control on the dated D99 allowlist", () => {
     const found = d91SourceControls();
     expect(found.filter((file) => !D91_CONTROL_ALLOWLIST.has(file))).toEqual([]);
     expect([...D91_CONTROL_ALLOWLIST.keys()].filter((file) => !found.includes(file))).toEqual([]);
+  });
+  it("rejects new framework installation controls even inside dated allowlist files", () => {
+    const violations = sourceFiles(src).flatMap((file) =>
+      d91ForbiddenControls(toPosix(file), readFileSync(file, "utf8")).map((reason) => `${toPosix(file)}: ${reason}`));
+    expect(violations).toEqual([]);
   });
 });

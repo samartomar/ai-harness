@@ -16,6 +16,17 @@
 /** The version of this host API. A plugin built against another version is incompatible. */
 export const FRAMEWORK_HOST_API_VERSION = 1;
 
+import { AihError } from "../errors.js";
+import { planInstalledNativeEccRegistration } from "../ecc-profile/native-registration.js";
+
+/** Historical receipt cleanup only; retired lifecycle operations refuse with a typed error. */
+export function planNativeEccCleanup(root: string, operation: "uninstall") {
+  if (operation !== "uninstall") {
+    throw new AihError("native ECC installation, update, repair and rollback were retired; run aih ecc for guidance", "AIH_CONFIG");
+  }
+  return planInstalledNativeEccRegistration(root, "uninstall");
+}
+
 // ---- contract ---------------------------------------------------------------
 
 /**
@@ -290,15 +301,12 @@ export {
   type EccProfileInstallationTrustV1,
 } from "../ecc-profile/installation-trust.js";
 export {
-  buildNativeEccRegistration,
   type EccNativeStateRootV1,
   eccNativeStateRootCandidatesV1,
   NATIVE_ECC_REGISTRATION_RECEIPT,
   NATIVE_ECC_REGISTRATION_SCOPE,
   type NativeEccRegistration,
   nativeRegistrationFiles,
-  planInstalledNativeEccRegistration,
-  planNativeEccRegistration,
   resolveEccNativeStateRootV1,
 } from "../ecc-profile/native-registration.js";
 export { SettingsError } from "../errors.js";

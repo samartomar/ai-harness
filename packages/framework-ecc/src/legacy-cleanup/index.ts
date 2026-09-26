@@ -13,7 +13,7 @@ import {
   type PlanContext,
   parseExplicitAddReceipt,
   planFrameworkHookControlsProjection,
-  planInstalledNativeEccRegistration,
+  planNativeEccCleanup,
   readContainedRegularFile,
   readFrameworkHookControlsReceipt,
   readRegistrationLedgerSnapshot,
@@ -132,7 +132,7 @@ function nativeActions(
     ];
   }
   try {
-    return planInstalledNativeEccRegistration(ctx.root, "uninstall").actions;
+    return planNativeEccCleanup(ctx.root, "uninstall").actions;
   } catch (error) {
     return [
       manual(
