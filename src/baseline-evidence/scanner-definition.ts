@@ -456,10 +456,10 @@ function readJsonFile(path: string, label: string, maxBytes: number): unknown {
 }
 
 /**
- * Coverage for a definition at a pin the installed Catalog does not carry. The admitted
- * source and its compiled assets come from a Catalog-compiled single-source bundle at that
- * pin; a framework's vetted snapshot comes from the assembled vendor lock (`baseline:assemble`).
- * Every binding the installed route checks is checked here against those explicit inputs.
+ * Coverage from explicit Catalog-production candidate inputs. For a carried pin,
+ * resolveDefinition first requires the definition to match the installed declaration.
+ * The admitted source and its compiled assets come from a Catalog-compiled single-source
+ * bundle; a framework's vetted snapshot comes from the supplied assembled vendor lock.
  */
 export function prepareDefinitionScannerCoverageV1(
   input: ScannerDefinitionInputV1 & {
@@ -470,8 +470,6 @@ export function prepareDefinitionScannerCoverageV1(
 ) {
   const { resolution, id, collection } = resolveDefinition(input, deps);
   const { catalog } = resolution;
-  if (resolution.route === "installed")
-    fail(`the installed Catalog carries ${id}@${catalog.pinnedSha}; run without candidate inputs`);
   const collectionSubject = SCANNER_DEFINITION_SOURCES_V1[id].kind === "collection";
   if (collectionSubject && input.vendorLockPath !== undefined)
     fail("--vendor-lock applies only to ecc and superpowers");

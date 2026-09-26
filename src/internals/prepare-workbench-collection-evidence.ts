@@ -284,8 +284,8 @@ export async function prepareWorkbenchCollectionEvidenceCommandV1(
   if (qualificationOutput !== undefined) preflightNewOutput(qualificationOutput);
   if (qualificationOutput !== undefined && sameOutputPath(qualificationOutput, output))
     throw new TypeError(usage);
-  // A pin the installed Catalog does not carry: Core prepares coverage from the definition
-  // and the Catalog-compiled candidate bundle before any publication byte is read.
+  // Explicit candidate inputs prepare coverage against their bundle and lock, including
+  // carried pins with an identity-equal definition, before any publication byte is read.
   const coverage =
     aih || definitionPath === undefined || sourceBundlePath === undefined
       ? undefined

@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import { hashComponentTree, hashSourceTree } from "../../src/baseline-evidence/hash.js";
+import { componentIdentityPaths } from "../../src/baseline-evidence/license.js";
 import { createCoreBaselineVetRequests } from "../../src/baseline-evidence/scanner-consumer.js";
 import {
   prepareDefinitionScannerCoverageV1,
@@ -183,16 +185,114 @@ describe("definition-route Scanner coverage", () => {
       ).toThrow("baseline definition: --vendor-lock applies only to ecc and superpowers");
     });
 
-    it("refuses candidate inputs at a pin the installed Catalog carries", () => {
-      expect(() =>
-        prepare(
-          sealedSingleSourceBundle("mattpocock", PIN, ["tdd"]),
-          {},
-          { carriedCatalog: () => carriedEqual },
-        ),
-      ).toThrow(
-        `baseline definition: the installed Catalog carries mattpocock@${PIN}; run without candidate inputs`,
+    it("accepts candidate inputs at an identity-equal carried pin", () => {
+      const prepared = prepare(
+        sealedSingleSourceBundle("mattpocock", PIN, ["tdd"]),
+        {},
+        { carriedCatalog: () => carriedEqual },
       );
+      expect(prepared.catalog).toEqual(carriedEqual);
+      expect(prepared.coverage.components).toHaveLength(1);
+    });
+  });
+
+  describe("carried ECC pin with candidate evidence", () => {
+    const PIN = "c".repeat(40);
+    const catalog: BaselineCatalog = {
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: PIN,
+      components: [{ id: "skill:demo", paths: ["skills/demo/SKILL.md"], skillContent: true }],
+    };
+    let source: string;
+
+    beforeEach(() => {
+      source = join(root, "ecc");
+      mkdirSync(join(source, "skills", "demo"), { recursive: true });
+      writeFileSync(join(source, "skills", "demo", "SKILL.md"), "# Demo\n");
+    });
+
+    const bundle = () => sealedSingleSourceBundle("ecc", PIN, ["demo"]);
+    const snapshot = (version: string) => ({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: PIN,
+      sourceTreeSha256: hashSourceTree(source).treeSha256,
+      components: [
+        {
+          id: "skill:demo",
+          paths: ["skills/demo/SKILL.md"],
+          treeSha256: hashComponentTree(
+            source,
+            componentIdentityPaths(source, ["skills/demo/SKILL.md"]),
+          ).treeSha256,
+          verdict: "no-findings",
+          analyzers: [{ name: "fixture", version }],
+          findings: [],
+          evidenceProblems: [],
+        },
+      ],
+    });
+    const prepare = (
+      definition: BaselineCatalog = catalog,
+      candidateBundle: unknown = bundle(),
+      lock?: unknown,
+    ) =>
+      prepareDefinitionScannerCoverageV1(
+        {
+          sourceRoot: source,
+          catalogId: "ecc",
+          definitionPath: file("ecc.definition.json", definition),
+          head: PIN,
+          sourceBundlePath: file("ecc.bundle.json", candidateBundle),
+          ...(lock === undefined ? {} : { vendorLockPath: file("ecc.lock.json", lock) }),
+        },
+        { carriedCatalog: () => catalog },
+      );
+
+    it("binds coverage to the new candidate lock instead of the installed snapshot", () => {
+      const oldSnapshot = snapshot("old");
+      const newSnapshot = snapshot("new");
+      const prepared = prepare(catalog, bundle(), { schemaVersion: 2, sources: [newSnapshot] });
+      const admitted = bundle().sources["source:ecc"];
+      const expected = `sha256:${canonicalStrictJsonSha256V1({ source: admitted, sourceSnapshot: newSnapshot })}`;
+      const previous = `sha256:${canonicalStrictJsonSha256V1({ source: admitted, sourceSnapshot: oldSnapshot })}`;
+      expect(prepared.catalog).toEqual(catalog);
+      expect(prepared.coverage.compilerInputDigest).toBe(expected);
+      expect(prepared.coverage.compilerInputDigest).not.toBe(previous);
+      expect(prepared.coverage.components).toHaveLength(1);
+    });
+
+    it("refuses a definition different from the carried Catalog declaration", () => {
+      const different = {
+        ...catalog,
+        components: [{ id: "skill:other", paths: ["skills/demo/SKILL.md"] }],
+      };
+      expect(() =>
+        prepare(different, bundle(), { schemaVersion: 2, sources: [snapshot("new")] }),
+      ).toThrow(/the definition differs/);
+    });
+
+    it("refuses a bundle for another pin", () => {
+      expect(() =>
+        prepare(catalog, sealedSingleSourceBundle("ecc", "d".repeat(40), ["demo"]), {
+          schemaVersion: 2,
+          sources: [snapshot("new")],
+        }),
+      ).toThrow(/candidate source bundle admits ecc@/);
+    });
+
+    it("refuses a lock that does not vet this pin", () => {
+      const other = { ...snapshot("new"), pinnedSha: "d".repeat(40) };
+      expect(() => prepare(catalog, bundle(), { schemaVersion: 2, sources: [other] })).toThrow(
+        `vendor lock does not vet ecc@${PIN}`,
+      );
+    });
+
+    it("requires --vendor-lock for a carried framework pin", () => {
+      expect(() => prepare()).toThrow("ecc coverage requires --vendor-lock <assembled lock>");
     });
   });
 

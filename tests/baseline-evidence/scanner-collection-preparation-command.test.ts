@@ -87,6 +87,7 @@ it("accepts a new output under the current temp root and refuses to replace it",
     "No scan, signing, publication, or qualification",
   );
   expect(mocks.author).toHaveBeenCalledWith(handle);
+  expect(mocks.definitionCoverage).not.toHaveBeenCalled();
   expect(JSON.parse(readFileSync(current.output, "utf8"))).toEqual({
     bytes: '{"authority":"display-only","fixture":true}',
     sha256: `sha256:${"a".repeat(64)}`,

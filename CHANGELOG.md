@@ -95,8 +95,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the `vendorLock` evidence lock, which records whatever definition was current when that evidence
   was sealed. A `--definition` equal to the declared catalog is accepted and the bridge uses
   exactly that catalog; any other definition for a carried pin is refused, including the earlier
-  `vendorLock` one when it differs. Every other consumer — coverage, installability, the package
-  graph, the plugin runtime, the analyzer and installable checks — keeps reading the sealed
+  `vendorLock` one when it differs. The installed coverage route, installability, the package
+  graph, the plugin runtime, the analyzer and installable checks keep reading the sealed
   `vendorLock` catalog, which stays verified as the evidence it is. `skillContent` is decided from
   the DECLARED PIN's own tree in the checkout's object store (never the working tree), so a
   component whose declared path is a host directory ECC mirrors skills into (`.kiro`, `.cursor`,
@@ -109,6 +109,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bytes, coverage, coverage output), and `baseline:assemble` binds every emitted source's identity
   and every component's id and paths to its resolved catalog before writing, refusing an omitted,
   extra or altered component with `AIH_BASELINE_ASSEMBLY_INVENTORY`.
+- Catalog-production collection preparation accepts explicit candidate source-bundle and vendor-lock
+  inputs for a carried pin when its supplied definition matches the installed Catalog declaration.
+  It verifies those inputs and binds framework coverage to the supplied lock. Without candidate
+  inputs, preparation keeps the installed coverage route.
 - **Behavior change: `aih trust scan` and `aih skill vet` exit 0 on findings and evidence
   problems (D66).** A report whose every failed check is a finding or an evidence problem exits 0;
   the findings and problems are still in the output as labels. Exit 1 remains for integrity and
