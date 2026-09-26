@@ -494,11 +494,24 @@ describe("ECC successor preview generation", () => {
       `const { getInstallTargetAdapter } = require("../install-targets/registry.js");
       exports.createManifestInstallPlan = (input) => {
         const targetRoot = getInstallTargetAdapter(input.target).resolveRoot(input);
+        // The rules destination each PINNED adapter writes for rules/common/security.md:
+        // claude-home.js namespaces rules under rules/ecc/, cursor-project.js flattens
+        // rules to <dir>-<file>.mdc, antigravity-project.js and zed-project.js flatten
+        // to <dir>-<file>.md, and codex/gemini scaffold the root-relative path.
+        const rulesSuffix = {
+          claude: "/rules/ecc/common/security.md",
+          codex: "/rules/common/security.md",
+          cursor: "/rules/common-security.mdc",
+          antigravity: "/rules/common-security.md",
+          gemini: "/rules/common/security.md",
+          opencode: "/rules/common/security.md",
+          zed: "/rules/common-security.md",
+        }[input.target];
         const operation = {
           kind: "copy-file",
           moduleId: "rules-core",
           sourceRelativePath: "rules/common/security.md",
-          destinationPath: targetRoot + "/rules/common/security.md",
+          destinationPath: targetRoot + rulesSuffix,
         };
         return {
           target: input.target,

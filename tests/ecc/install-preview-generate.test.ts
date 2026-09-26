@@ -33,12 +33,24 @@ describe("ECC install preview generation", () => {
       resolve(root, "scripts/lib/install/plan.js"),
       `exports.createManifestInstallPlan = (input) => {
         if (input.target === "opencode") throw new Error("compiled plugin payload is unavailable");
+        // The rules destination each PINNED adapter writes for rules/common/security.md:
+        // claude-home.js namespaces rules under rules/ecc/, cursor-project.js flattens
+        // rules to <dir>-<file>.mdc, antigravity-project.js and zed-project.js flatten
+        // to <dir>-<file>.md, and codex/gemini scaffold the root-relative path.
+        const rulesDestination = {
+          claude: "/rules/ecc/common/security.md",
+          codex: "/rules/common/security.md",
+          cursor: "/rules/common-security.mdc",
+          antigravity: "/rules/common-security.md",
+          gemini: "/rules/common/security.md",
+          zed: "/rules/common-security.md",
+        }[input.target];
         const operations = [
           {
             kind: "copy-file",
             moduleId: input.moduleIds[0],
             sourceRelativePath: "rules/common/security.md",
-            destinationPath: input.homeDir + "/." + input.target + "/rules/common/security.md",
+            destinationPath: input.homeDir + "/." + input.target + rulesDestination,
           },
           {
             kind: "copy-file",
@@ -66,7 +78,7 @@ describe("ECC install preview generation", () => {
         componentId: "baseline:rules",
         kind: "copy-file",
         source: "rules/common/security.md",
-        destination: "<home>/.claude/rules/common/security.md",
+        destination: "<home>/.claude/rules/ecc/common/security.md",
       }),
     );
     expect(result.operations).not.toContainEqual(

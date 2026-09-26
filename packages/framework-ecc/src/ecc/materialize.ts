@@ -629,16 +629,115 @@ function containedRelative(root: string, destination: string): string | undefine
     : normalized;
 }
 
+/**
+ * Where the PINNED ECC install target writes one source file, relative to the
+ * root its own `resolveRoot` returned.
+ *
+ * This is not `eccContentDestinationMapping`. That mapping answers where Core's
+ * governed PROJECT install puts a source, which for Claude, Cursor, Antigravity
+ * and Zed is deliberately its own layout. The install boundary instead has to
+ * describe what the pinned framework's adapter actually writes, because the
+ * operations it classifies came out of that adapter's own plan. The rows below
+ * are transcribed from the adapters at 5064474d —
+ * `scripts/lib/install-targets/{claude-home,cursor-project,antigravity-project,zed-project}.js`
+ * with the shared `helpers.js` flattening — and K1's sealed install preview for
+ * the same sources shows every one of them.
+ *
+ * `identity` is the shared `createScaffoldOperation` default: the source path
+ * joined under the resolved root. `unwritten` is an adapter that plans NO
+ * operation for the source (it dropped the file), so any destination claiming
+ * that source refuses.
+ */
+export type EccAdapterDestinationV1 =
+  | { readonly state: "identity" }
+  | { readonly state: "relative"; readonly relative: string }
+  | { readonly state: "unwritten" };
+
+/** The shared `helpers.js` flattening: a directory source becomes one flat name. */
+function flattenedFileName(relative: string): string {
+  return relative.replace(/\//g, "-");
+}
+
+export function eccAdapterDestinationV1(
+  source: string,
+  target: string | undefined,
+): EccAdapterDestinationV1 {
+  if (target === "claude") {
+    // claude-home.js: rules are namespaced under `rules/ecc/`; skills and docs
+    // keep the root-relative path, and everything else scaffolds.
+    if (source === "rules") return { state: "relative", relative: "rules/ecc" };
+    if (source.startsWith("rules/")) {
+      return { state: "relative", relative: `rules/ecc/${source.slice("rules/".length)}` };
+    }
+    return { state: "identity" };
+  }
+  if (target === "cursor") {
+    // cursor-project.js: rules flatten into `rules/` and gain `.mdc`, a README
+    // rule is dropped, and agent files gain the `ecc-` prefix.
+    if (source === "rules" || source.startsWith("rules/")) {
+      const relative = source.slice("rules".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      const file = relative.slice(relative.lastIndexOf("/") + 1);
+      if (file.toLowerCase() === "readme.md") return { state: "unwritten" };
+      const flattened = flattenedFileName(relative);
+      return {
+        state: "relative",
+        relative: `rules/${flattened.endsWith(".md") ? `${flattened.slice(0, -3)}.mdc` : flattened}`,
+      };
+    }
+    if (source === "agents" || source.startsWith("agents/")) {
+      const relative = source.slice("agents".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      const flattened = flattenedFileName(relative);
+      return {
+        state: "relative",
+        relative: `agents/${flattened.startsWith("ecc-") ? flattened : `ecc-${flattened}`}`,
+      };
+    }
+    return { state: "identity" };
+  }
+  if (target === "antigravity") {
+    // antigravity-project.js: rules flatten under `rules/`, commands become
+    // `workflows/`; agents and skills keep the root-relative path.
+    if (source === "rules" || source.startsWith("rules/")) {
+      const relative = source.slice("rules".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      return { state: "relative", relative: `rules/${flattenedFileName(relative)}` };
+    }
+    if (source === "commands") return { state: "relative", relative: "workflows" };
+    if (source.startsWith("commands/")) {
+      return { state: "relative", relative: `workflows/${source.slice("commands/".length)}` };
+    }
+    return { state: "identity" };
+  }
+  if (target === "zed") {
+    // zed-project.js: rules flatten under `rules/`; everything else scaffolds.
+    if (source === "rules" || source.startsWith("rules/")) {
+      const relative = source.slice("rules".length).replace(/^\/+/, "");
+      if (relative.length === 0) return { state: "unwritten" };
+      return { state: "relative", relative: `rules/${flattenedFileName(relative)}` };
+    }
+    return { state: "identity" };
+  }
+  return { state: "identity" };
+}
+
 function isEccContentDestination(
   source: string,
   destination: string,
   roots?: GovernedEccDestinationRoots,
 ): boolean {
-  if (
-    roots?.targetRoot !== undefined &&
-    containedRelative(roots.targetRoot, destination) === source
-  ) {
-    return true;
+  if (roots?.targetRoot !== undefined) {
+    const adapter = eccAdapterDestinationV1(source, roots.target);
+    if (adapter.state === "unwritten") return false;
+    if (adapter.state === "relative") {
+      // The pinned adapter remaps this source, so the one destination it writes
+      // for it is this one, under the root its own `resolveRoot` returned.
+      // Core's project layout for the same source is a different install and
+      // must not answer here.
+      return containedRelative(roots.targetRoot, destination) === adapter.relative;
+    }
+    if (containedRelative(roots.targetRoot, destination) === source) return true;
   }
   const mapping = eccContentDestinationMapping(source, roots?.target);
   if (mapping === undefined) {
@@ -655,9 +754,17 @@ function isEccContentDestination(
  * it could remap a rule to a skill or overwrite a sibling's content.
  *
  * Exported because it is the single answer to "where does this component's
- * source file land for this target". A target adapter that needed the same
- * answer and restated it would be a second mapping able to drift from the one
- * the governed classifier below enforces.
+ * source file land for this target" IN CORE'S GOVERNED PROJECT INSTALL. A
+ * target adapter that needed the same answer and restated it would be a second
+ * mapping able to drift from the one the governed classifier below enforces.
+ *
+ * The install boundary asks a different question when it classifies an
+ * operation that came out of the PINNED framework adapter's own plan: where
+ * does that adapter write this source under the root its `resolveRoot`
+ * returned. `eccAdapterDestinationV1` is that answer, and the governed
+ * classifier consults it first whenever a verified `targetRoot` is supplied.
+ * The two answers differ for Claude rules, Cursor rules/agents, Antigravity
+ * rules/commands and Zed rules; neither may be substituted for the other.
  *
  * Three rows are target-independent and therefore SHARED by every target:
  * `AGENTS.md`, `.agents/plugins/` and `.agents/skills/` are the same
