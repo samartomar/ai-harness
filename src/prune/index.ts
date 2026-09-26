@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
-import { eccPrunePlanV1 } from "../framework-plugin/ecc-lifecycle.js";
+import { frameworkPrunePlanV1 } from "../framework-plugin/cleanup-v1.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { extractManagedBlock, stripManagedBlock } from "../internals/markers.js";
@@ -326,9 +326,13 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
   // ECC's share (unreceipted-footprint preservation, the Codex footprint, the
   // ledger-coordinated reconciliation) is planned by @aihq/framework-ecc.
   // Without it, prune refuses when aih ECC state exists and adds nothing otherwise.
-  const ecc = await eccPrunePlanV1(ctx, set.dropped);
-  actions.push(...ecc.actions);
-  subtracted += ecc.subtracted;
+  const frameworks = await frameworkPrunePlanV1(
+    ctx,
+    set.dropped,
+    set.source === "none" ? undefined : set.targeted,
+  );
+  actions.push(...frameworks.actions);
+  subtracted += frameworks.subtracted;
   const headline =
     set.dropped.length > 0
       ? `Stale artifacts — ${set.artifacts.length} for ${set.dropped.length} dropped CLI(s)`

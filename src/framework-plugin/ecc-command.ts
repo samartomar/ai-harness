@@ -81,11 +81,14 @@ export function executeEccCommand(
   return executeEccPath("ecc", ctx, deps);
 }
 
-export function executeEccMcpAddCommand(
-  ctx: PlanContext,
-  deps: FrameworkCommandDepsV1 = {},
+export async function executeEccMcpAddCommand(
+  _ctx: PlanContext,
+  _deps: FrameworkCommandDepsV1 = {},
 ): Promise<PlanResult> {
-  return executeEccPath("ecc mcp add", ctx, deps);
+  throw new AihError(
+    "aih ecc mcp add was retired: aih no longer installs ECC MCP content. Run aih ecc for guidance.",
+    "AIH_CONFIG",
+  );
 }
 
 export function executeEccMcpRemoveCommand(
@@ -100,7 +103,12 @@ export const eccMcpAddCommand: CommandSpec = {
   summary: "Retired ECC MCP add route; use aih ecc for guidance",
   positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
   options: [{ flags: "--cli <list>", description: "retired ECC MCP target" }],
-  plan: runsThroughPlugin("ecc mcp add"),
+  plan: () => {
+    throw new AihError(
+      "aih ecc mcp add was retired: aih no longer installs ECC MCP content. Run aih ecc for guidance.",
+      "AIH_CONFIG",
+    );
+  },
   zeroWrite: true,
 };
 

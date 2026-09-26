@@ -8,8 +8,8 @@ import {
   type FrameworkUninstallHookV1,
   type FrameworkUninstallOutcomeV1,
   lines,
+  plan,
 } from "@aihq/core/framework-host";
-import { codexPruneRemovalActions } from "./ecc/codex.js";
 import { isAihDirectEccInstallTarget } from "./ecc/install.js";
 import { uninstallEccMaterialization } from "./ecc/materialization.js";
 import {
@@ -17,7 +17,8 @@ import {
   hasEccRegisteredTarget,
   hasEccRegistrationLedger,
 } from "./ecc/prune-reconcile.js";
-import { currentCoreRuntime, withEccInvocation } from "./invocation.js";
+import { currentCoreRuntime, currentEccInvocation, withEccInvocation } from "./invocation.js";
+import { legacyCleanupActions } from "./legacy-cleanup/index.js";
 
 /**
  * `aih uninstall --apply`: subtract every byte the governed materialization
@@ -29,13 +30,35 @@ export const uninstall: FrameworkUninstallHookV1 = Object.freeze({
   remove: (ctx: FrameworkOperationContextV1) =>
     withEccInvocation(ctx, async (): Promise<FrameworkUninstallOutcomeV1> => {
       const result = uninstallEccMaterialization(ctx.root);
+      const runtime = currentEccInvocation().runtime;
+      const legacy =
+        runtime === undefined
+          ? { removed: [], digests: [] }
+          : await runtime.executePlan(
+              plan(
+                "legacy ECC receipt cleanup",
+                ...legacyCleanupActions(runtime.planContext, "uninstall"),
+              ),
+              runtime.planContext,
+              { skipWorktreeGate: true },
+            );
       return {
-        removed: result.removed.map((file) => file.path),
-        advisories: result.advisories.map((advisory) => ({
-          path: advisory.path,
-          reason: advisory.reason,
-          detail: advisory.detail,
-        })),
+        removed: [
+          ...result.removed.map((file) => file.path),
+          ...legacy.removed.map((file) => file.path),
+        ],
+        advisories: [
+          ...result.advisories.map((advisory) => ({
+            path: advisory.path,
+            reason: advisory.reason,
+            detail: advisory.detail,
+          })),
+          ...legacy.digests.map((entry) => ({
+            path: "legacy ECC cleanup",
+            reason: "manual-review",
+            detail: entry.text,
+          })),
+        ],
       };
     }),
 });
@@ -59,13 +82,12 @@ function unreceiptedEccPreservationDoc(cli: Cli): Action {
  * ledger-coordinated reconciliation covers the rest.
  */
 export const prune: FrameworkPruneHookV1 = Object.freeze({
-  plan: (ctx: FrameworkOperationContextV1, dropped: readonly Cli[]) =>
+  plan: (ctx: FrameworkOperationContextV1, dropped: readonly Cli[], kept?: readonly Cli[]) =>
     withEccInvocation(ctx, async (): Promise<FrameworkPrunePlanV1> => {
       const planContext = currentCoreRuntime().planContext;
       const actions: Action[] = [];
-      let subtracted = 0;
+      const subtracted = 0;
       const coordinated = hasEccRegistrationLedger(planContext);
-      const coordinatedCodex = coordinated && hasEccRegisteredTarget(planContext, "codex");
       for (const cli of dropped) {
         if (
           isAihDirectEccInstallTarget(cli) &&
@@ -73,13 +95,9 @@ export const prune: FrameworkPruneHookV1 = Object.freeze({
         ) {
           actions.push(unreceiptedEccPreservationDoc(cli));
         }
-        if (!coordinatedCodex && cli === "codex") {
-          const codexPrune = codexPruneRemovalActions(planContext);
-          actions.push(...codexPrune.actions);
-          if (codexPrune.removesAgentsBlock) subtracted += 1;
-        }
       }
       actions.push(...eccPruneReconciliationActions(planContext, dropped));
+      actions.push(...legacyCleanupActions(planContext, "prune", dropped, kept));
       return { actions, subtracted };
     }),
 });

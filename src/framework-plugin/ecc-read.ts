@@ -120,7 +120,13 @@ export async function eccLanguagePacksV1(
   deps: Pick<FrameworkCommandDepsV1, "loadPlugin" | "loadDescriptor"> = {},
 ): Promise<EccReadOutcomeV1<readonly string[]>> {
   return withEccRead(ctx, "identifying components", deps, async (loaded, context) => {
-    const packs: unknown = loaded.plugin.identifyComponents(context).languagePacks ?? [];
+    const identify = loaded.plugin.identifyComponents;
+    if (identify === undefined)
+      throw new AihError(
+        "ECC plugin has no component identification for this retired install view",
+        "AIH_FRAMEWORK_PLUGIN",
+      );
+    const packs: unknown = identify(context).languagePacks ?? [];
     if (
       !Array.isArray(packs) ||
       packs.length > 200 ||

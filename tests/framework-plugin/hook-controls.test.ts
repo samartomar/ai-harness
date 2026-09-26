@@ -323,7 +323,7 @@ describe("frameworkHookControlPlansV1 decision coverage", () => {
   async function brokenPlan(mutate: (plan: Plan) => void) {
     const loaded = await loadEccFromSource();
     if (!loaded.ok) throw new Error("ECC source plugin did not load");
-    const original = loaded.plugin.planHookControls.bind(loaded.plugin);
+    const original = loaded.plugin.planHookControls!.bind(loaded.plugin);
     return {
       ...deps,
       loadPlugin: async (): Promise<FrameworkPluginLoadV1> => ({

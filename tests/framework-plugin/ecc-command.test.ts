@@ -100,7 +100,7 @@ describe("aih ecc — the Core command shell", () => {
       /framework-plugin-unavailable: .*npm install/,
     );
     await expect(executeEccMcpAddCommand(ctx({ options: { id: "x" } }))).rejects.toThrow(
-      /framework-plugin-unavailable/,
+      /aih ecc mcp add was retired/,
     );
   });
 

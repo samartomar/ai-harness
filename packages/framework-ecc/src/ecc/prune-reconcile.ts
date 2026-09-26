@@ -1,30 +1,22 @@
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   type Action,
   AihError,
   type Cli,
   digest,
+  doc,
   lines,
   type PlanContext,
   readRegistrationLedgerSnapshot,
   readRegularFileWithStats,
   serializeRegistrationLedger,
-  stripManagedBlock,
-  z,
 } from "@aihq/core/framework-host";
-import {
-  CODEX_AGENTS_BLOCK_MARKER,
-  codexHomeDir,
-  codexInstallStatePath,
-  stripCodexTomlFootprint,
-} from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
 import { isAihDirectEccInstallTarget } from "./install.js";
-import { eccMaterializationSpec } from "./materialize.js";
 import {
+  defaultProjectStatus,
   eccInstallStateCandidates,
   parseEccInstallState,
   reconcileEccInstallState,
@@ -36,25 +28,6 @@ import {
   type EccReconcileTransactionPayload,
   eccReconcileTransactionAction,
 } from "./reconcile-driver.js";
-
-const StringArray = z.array(z.string());
-const CodexAihStateSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    managedBy: z.literal("aih"),
-    codexToml: z
-      .object({
-        rootKeys: StringArray,
-        tables: StringArray,
-        tableKeys: z.record(z.string(), StringArray),
-        mcpServers: StringArray,
-      })
-      .strict(),
-    agentsBlock: z.boolean(),
-  })
-  .strict();
-
-type CodexAihState = z.infer<typeof CodexAihStateSchema>;
 
 interface SafeRead {
   contents: Buffer;
@@ -173,136 +146,39 @@ function addRead(
   reads.set(path, { path, sha256: hash });
 }
 
-function parseCodexAihState(contents: Buffer, path: string): CodexAihState {
-  try {
-    return CodexAihStateSchema.parse(JSON.parse(contents.toString("utf8")));
-  } catch (error) {
-    throw new AihError(
-      `invalid aih ECC Codex install state (${path}): ${(error as Error).message}`,
-      "AIH_CONFIG",
-    );
-  }
-}
-
-function codexMutations(
-  ctx: PlanContext,
+function codexUnprovenPaths(
   reconciliation: ReturnType<typeof reconcileEccRegistrationLedger>,
-  reads: Map<string, EccReconcileExpectedRead>,
-): EccReconcileMutation[] {
+  home: string,
+): string[] {
   if (reconciliation.full) return [];
-  const prior = reconciliation.prior.targets.find((target) => target.target === "codex");
-  const next = reconciliation.ledger.targets.find((target) => target.target === "codex");
+  const prior = reconciliation.prior.targets.find((entry) => entry.target === "codex");
   if (prior === undefined) return [];
-  const dropped = next === undefined;
-  const statePath = codexInstallStatePath(ctx);
-  const codexRoot = codexHomeDir(ctx);
-  const nextComponentIds = new Set(next?.components.map((component) => component.id) ?? []);
-  const componentsChanged = prior.components.some(
-    (component) => !nextComponentIds.has(component.id),
+  const next = reconciliation.ledger.targets.find((entry) => entry.target === "codex");
+  const removedComponents = prior.components.some(
+    (component) => !next?.components.some((remaining) => remaining.id === component.id),
   );
-  const nextMcpIds = new Set(next?.mcps.map((mcp) => mcp.slice("mcp:".length)) ?? []);
-  const opened = safeRead(codexRoot, statePath);
-  if (opened === undefined) {
-    if (componentsChanged || prior.mcps.some((mcp) => !next?.mcps.includes(mcp))) {
-      fail(`missing aih ECC Codex install state: ${statePath}`);
-    }
-    return [];
-  }
-  addRead(reads, statePath, opened.contents);
-  const state = parseCodexAihState(opened.contents, statePath);
-  const keptMcpNames = state.codexToml.mcpServers.filter((name) => nextMcpIds.has(name));
-  const mcpsChanged = keptMcpNames.length !== state.codexToml.mcpServers.length;
-  const removeAgentsBlock = (next?.components.length ?? 0) === 0;
-  const nextState: CodexAihState = {
-    ...state,
-    codexToml: { ...state.codexToml, mcpServers: keptMcpNames },
-    agentsBlock: removeAgentsBlock ? false : state.agentsBlock,
-  };
-  const mutations: EccReconcileMutation[] = [];
-  if (dropped) {
-    const configPath = join(codexRoot, "config.toml");
-    const config = safeRead(codexRoot, configPath);
-    if (config !== undefined) {
-      addRead(reads, configPath, config.contents);
-      mutations.push({
-        kind: "write-file",
-        phase: "owned-removal",
-        path: configPath,
-        root: codexRoot,
-        contents: stripCodexTomlFootprint(config.contents.toString("utf8"), state.codexToml),
-        mode: config.mode,
-      });
-    }
-    if (state.agentsBlock) {
-      const agentsPath = join(codexRoot, "AGENTS.md");
-      const agents = safeRead(codexRoot, agentsPath);
-      if (agents === undefined)
-        fail(`missing Codex AGENTS file claimed by ECC state: ${agentsPath}`);
-      addRead(reads, agentsPath, agents.contents);
-      mutations.push({
-        kind: "write-file",
-        phase: "owned-removal",
-        path: agentsPath,
-        root: codexRoot,
-        contents: stripManagedBlock(agents.contents.toString("utf8"), CODEX_AGENTS_BLOCK_MARKER),
-        mode: agents.mode,
-      });
-    }
-    mutations.push({
-      kind: "remove-file",
-      phase: "target-state",
-      path: statePath,
-      root: codexRoot,
-    });
-    return mutations;
-  }
-  if (mcpsChanged) {
-    const configPath = join(codexRoot, "config.toml");
-    const config = safeRead(codexRoot, configPath);
-    if (config === undefined) fail(`missing Codex config claimed by ECC state: ${configPath}`);
-    addRead(reads, configPath, config.contents);
-    mutations.push({
-      kind: "filter-codex-mcp-block",
-      phase: "owned-removal",
-      path: configPath,
-      root: codexRoot,
-      keepNames: keptMcpNames,
-    });
-  }
-  if (componentsChanged && state.agentsBlock) {
-    const agentsPath = join(codexRoot, "AGENTS.md");
-    const agents = safeRead(codexRoot, agentsPath);
-    if (agents === undefined) fail(`missing Codex AGENTS file claimed by ECC state: ${agentsPath}`);
-    addRead(reads, agentsPath, agents.contents);
-    mutations.push({
-      kind: "filter-codex-agents-block",
-      phase: "owned-removal",
-      path: agentsPath,
-      root: codexRoot,
-      keepSkills: eccMaterializationSpec(targetSelection(reconciliation, "codex")).skills.sort(),
-      removeBlock: removeAgentsBlock,
-    });
-  }
-  if (mcpsChanged || (componentsChanged && state.agentsBlock)) {
-    mutations.push({
-      kind: "write-file",
-      phase: "target-state",
-      path: statePath,
-      root: codexRoot,
-      contents: `${JSON.stringify(nextState, null, 2)}\n`,
-      mode: opened.mode,
-    });
-  }
-  return mutations;
+  const removedMcps = prior.mcps.some((mcp) => !next?.mcps.includes(mcp));
+  if (!removedComponents && !removedMcps) return [];
+  // The aih Codex state records table/key names, not the values or hashes it
+  // wrote. It cannot distinguish a changed block from unchanged aih content.
+  // Keep the state and ledger together for a manual, project-union-aware review.
+  return [
+    join(home, ".codex", "ecc-aih-install-state.json"),
+    ...(removedComponents ? [join(home, ".codex", "AGENTS.md")] : []),
+    ...(removedMcps ? [join(home, ".codex", "config.toml")] : []),
+  ];
 }
-
 export function hasEccRegistrationLedger(ctx: PlanContext): boolean {
-  const home = resolve(ctx.env.HOME || ctx.env.USERPROFILE || homedir());
+  const configuredHome = ctx.env.HOME ?? ctx.env.USERPROFILE;
+  if (configuredHome === undefined) return false;
+  const home = resolve(configuredHome);
   return readRegistrationLedgerSnapshot(home) !== undefined;
 }
 
 export function hasEccRegisteredTarget(ctx: PlanContext, target: Cli): boolean {
-  const home = resolve(ctx.env.HOME || ctx.env.USERPROFILE || homedir());
+  const configuredHome = ctx.env.HOME ?? ctx.env.USERPROFILE;
+  if (configuredHome === undefined) return false;
+  const home = resolve(configuredHome);
   const snapshot = readRegistrationLedgerSnapshot(home);
   return snapshot?.ledger.targets.some((entry) => entry.target === target) ?? false;
 }
@@ -310,11 +186,73 @@ export function hasEccRegisteredTarget(ctx: PlanContext, target: Cli): boolean {
 export function eccPruneReconciliationActions(
   ctx: PlanContext,
   droppedTargets: readonly Cli[] = [],
+  retireProjectRoot?: string,
 ): Action[] {
-  const home = resolve(ctx.env.HOME || ctx.env.USERPROFILE || homedir());
+  const configuredHome = ctx.env.HOME ?? ctx.env.USERPROFILE;
+  if (configuredHome === undefined) return [];
+  const home = resolve(configuredHome);
   const snapshot = readRegistrationLedgerSnapshot(home);
   if (snapshot === undefined) return [];
-  const reconciliation = reconcileEccRegistrationLedger(snapshot.ledger, { droppedTargets });
+  if (
+    droppedTargets.length > 0 &&
+    snapshot.ledger.projects.some(
+      (project) =>
+        resolve(project.root) !== resolve(ctx.root) &&
+        defaultProjectStatus(project.root) === "live",
+    )
+  ) {
+    const others = snapshot.ledger.projects
+      .filter(
+        (project) =>
+          resolve(project.root) !== resolve(ctx.root) &&
+          defaultProjectStatus(project.root) === "live",
+      )
+      .map((project) => project.root);
+    const listed: string[] = [];
+    const prior = reconcileEccRegistrationLedger(snapshot.ledger);
+    for (const candidate of eccInstallStateCandidates(home, prior)) {
+      if (!droppedTargets.includes(candidate.target)) continue;
+      const opened = safeRead(candidate.root, candidate.statePath);
+      if (opened === undefined) {
+        listed.push(`${candidate.statePath} (state absent)`);
+        continue;
+      }
+      const state = parseEccInstallState(opened.contents.toString("utf8"), candidate.statePath);
+      listed.push(...state.operations.map((operation) => operation.destinationPath));
+    }
+    const paths = [...new Set(listed)].sort();
+    return [
+      doc(
+        "Preserve shared ECC home registration",
+        lines(
+          "The ECC ledger does not map each target claim to a project. Another live project still shares this home registration.",
+          ...others.map(
+            (root) =>
+              `  [manual] ${root}: keep its ECC files and registration; review this project's stale target pin separately`,
+          ),
+          ...paths.map(
+            (path) =>
+              `  [manual] ${path}: inspect this driver-listed destination before any removal`,
+          ),
+        ),
+      ),
+      digest("ECC shared home registration needs manual review", [...others, ...paths].join("\n"), {
+        projects: others,
+        paths,
+      }),
+    ];
+  }
+  const reconciliation = reconcileEccRegistrationLedger(snapshot.ledger, {
+    droppedTargets,
+    ...(retireProjectRoot === undefined
+      ? {}
+      : {
+          projectStatus: (root: string) =>
+            resolve(root) === resolve(retireProjectRoot)
+              ? ("missing" as const)
+              : defaultProjectStatus(root),
+        }),
+  });
   const reads = new Map<string, EccReconcileExpectedRead>();
   addRead(reads, snapshot.path, snapshot.contents);
   const mutations: EccReconcileMutation[] = [];
@@ -333,7 +271,13 @@ export function eccPruneReconciliationActions(
   const candidateMap = new Map(
     [
       ...eccInstallStateCandidates(home, reconciliation),
-      ...priorCandidates.filter((candidate) => receiptBoundDroppedTargets.has(candidate.target)),
+      ...priorCandidates.filter(
+        (candidate) =>
+          receiptBoundDroppedTargets.has(candidate.target) ||
+          (retireProjectRoot !== undefined &&
+            candidate.projectRoot !== undefined &&
+            resolve(candidate.projectRoot) === resolve(retireProjectRoot)),
+      ),
     ].map((candidate) => [pathIdentity(candidate.statePath), candidate]),
   );
   const candidates = [...candidateMap.values()].sort((left, right) =>
@@ -342,9 +286,14 @@ export function eccPruneReconciliationActions(
   const foundStateTargets = new Set<Cli>();
   const affectedStatePaths: string[] = [];
   const removedDestinations: string[] = [];
+  const unprovenDestinations: string[] = [];
 
   for (const candidate of candidates) {
-    const dropped = receiptBoundDroppedTargets.has(candidate.target);
+    const dropped =
+      receiptBoundDroppedTargets.has(candidate.target) ||
+      (retireProjectRoot !== undefined &&
+        candidate.projectRoot !== undefined &&
+        resolve(candidate.projectRoot) === resolve(retireProjectRoot));
     const opened = safeRead(candidate.root, candidate.statePath);
     if (opened === undefined) continue;
     foundStateTargets.add(candidate.target);
@@ -362,6 +311,15 @@ export function eccPruneReconciliationActions(
       dropped ? emptyTargetSelection() : targetSelection(reconciliation, candidate.target),
     );
     if (stateReconciliation.removed.length === 0 && !dropped) continue;
+    if (stateReconciliation.removed.length > 0) {
+      // The driver wrote this state, but its list can include pre-existing files
+      // and JSON entries. A ledger registration plus this state is not a per-path
+      // aih ownership receipt. Keep both records so a rerun remains inspectable.
+      unprovenDestinations.push(
+        ...stateReconciliation.removed.map((operation) => operation.destinationPath),
+      );
+      continue;
+    }
     for (const operation of stateReconciliation.removed) {
       const destination = safeRead(candidate.root, operation.destinationPath);
       if (destination === undefined) continue;
@@ -434,7 +392,24 @@ export function eccPruneReconciliationActions(
     }
   }
 
-  mutations.push(...codexMutations(ctx, reconciliation, reads));
+  unprovenDestinations.push(...codexUnprovenPaths(reconciliation, home));
+  if (unprovenDestinations.length > 0) {
+    const paths = [...new Set(unprovenDestinations)].sort();
+    return [
+      doc(
+        "Preserve unproven ECC driver destinations",
+        lines(
+          "AIH's ledger and ECC's install state together do not prove that aih created each destination.",
+          ...paths.map(
+            (path) =>
+              `  [manual] ${path}: inspect the recorded ECC state and current bytes; remove only after confirming ownership`,
+          ),
+          "Use the upstream ECC uninstaller dry run for the named target before any manual removal.",
+        ),
+      ),
+      digest("ECC driver destinations need manual review", paths.join("\n"), { paths }),
+    ];
+  }
   const nextLedger = serializeRegistrationLedger(reconciliation.ledger);
   const ledgerChanged = Buffer.compare(snapshot.contents, Buffer.from(nextLedger, "utf8")) !== 0;
   if (!ledgerChanged && mutations.length === 0) return [];

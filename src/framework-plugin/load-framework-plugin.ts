@@ -13,6 +13,7 @@ import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { sanitizeLabel } from "../plugins/registry.js";
 import { PACKAGE_NAME } from "../version.js";
 import {
+  FRAMEWORK_PLUGIN_CLEANUP_VERSION,
   FRAMEWORK_PLUGIN_COMMANDS,
   FRAMEWORK_PLUGIN_CONTRACT_VERSION,
   FRAMEWORK_PLUGIN_PACKAGE_NAMES,
@@ -266,6 +267,9 @@ function contractProblems(
   if (candidate.contractVersion !== FRAMEWORK_PLUGIN_CONTRACT_VERSION) {
     problems.push(`declares contract version ${show(candidate.contractVersion)}`);
   }
+  if (candidate.cleanupVersion !== FRAMEWORK_PLUGIN_CLEANUP_VERSION) {
+    problems.push(`declares cleanup version ${show(candidate.cleanupVersion)}`);
+  }
   if (candidate.hostApiVersion !== FRAMEWORK_HOST_API_VERSION) {
     problems.push(`was built against framework host API ${show(candidate.hostApiVersion)}`);
   }
@@ -280,8 +284,12 @@ function contractProblems(
       `declares version ${show(candidate.packageVersion)} but its package.json is ${version}`,
     );
   }
-  for (const name of ["describe", "identifyComponents", "hookInventory", "planHookControls"]) {
+  for (const name of ["describe"]) {
     if (!functionMember(candidate, name)) problems.push(`does not implement ${name}()`);
+  }
+  for (const name of ["identifyComponents", "hookInventory", "planHookControls"]) {
+    if (candidate[name] !== undefined && !functionMember(candidate, name))
+      problems.push(`provides an incomplete ${name}()`);
   }
   const commands = candidate.commands;
   for (const path of FRAMEWORK_PLUGIN_COMMANDS[frameworkId]) {
@@ -298,6 +306,14 @@ function contractProblems(
     ["doctor", "checks"],
     ["report", "panels"],
   ];
+  for (const [hook, member] of [
+    ["uninstall", "remove"],
+    ["prune", "plan"],
+  ] as const) {
+    const value = candidate[hook];
+    if (!isRecord(value) || !functionMember(value, member))
+      problems.push(`does not implement the ${hook} cleanup hook`);
+  }
   for (const [hook, member] of hooks) {
     const value = candidate[hook];
     if (value !== undefined && (!isRecord(value) || !functionMember(value, member))) {

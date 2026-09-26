@@ -118,7 +118,7 @@ describe("aih uninstall preflights all aih ECC state", () => {
       await expect(refused).rejects.toThrow(/framework-plugin-unavailable: .*npm install/);
       await expect(
         executeUninstallCommand(context(), { frameworks: { loadPlugin: unavailable } }),
-      ).rejects.toThrow(/aih ECC state found: /);
+      ).rejects.toThrow(/framework-plugin-unavailable:/);
       expect(snapshot(base)).toBe(before);
     },
   );
@@ -130,27 +130,24 @@ describe("aih uninstall preflights all aih ECC state", () => {
     const before = snapshot(base);
     await expect(
       executeUninstallCommand(context(), { frameworks: { loadPlugin: incompatible } }),
-    ).rejects.toThrow(
-      new RegExp(
-        `framework-plugin-incompatible: .*aih ECC state found: ${receipt.replace(/[\\.]/g, "\\$&")}`,
-      ),
-    );
+    ).rejects.toThrow(/framework-plugin-incompatible:/);
     expect(snapshot(base)).toBe(before);
   });
 
-  it("does not load the plugin when no aih ECC state exists", async () => {
+  it("loads every registered plugin before cleanup even without ECC state", async () => {
     await installed();
     let loads = 0;
-    const result = await executeUninstallCommand(context(), {
-      frameworks: {
-        loadPlugin: async () => {
-          loads += 1;
-          return unavailable();
+    await expect(
+      executeUninstallCommand(context(), {
+        frameworks: {
+          loadPlugin: async () => {
+            loads += 1;
+            return unavailable();
+          },
         },
-      },
-    });
-    expect(result.applied).toBe(true);
-    expect(loads).toBe(0);
+      }),
+    ).rejects.toThrow(/framework-plugin-unavailable:/);
+    expect(loads).toBe(1);
   });
 
   it("with the plugin and only non-materialization state, cleans up without an ECC removal", async () => {
@@ -168,6 +165,6 @@ describe("aih uninstall preflights all aih ECC state", () => {
       },
     });
     expect(result.applied).toBe(true);
-    expect(removals).toBe(0);
+    expect(removals).toBe(1);
   });
 });

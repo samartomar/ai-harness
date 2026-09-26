@@ -1,4 +1,8 @@
-import type { FrameworkPluginDescriptionV1, FrameworkPluginV1 } from "@aihq/core/framework-host";
+import {
+  FRAMEWORK_PLUGIN_CLEANUP_VERSION,
+  type FrameworkPluginDescriptionV1,
+  type FrameworkPluginV1,
+} from "@aihq/core/framework-host";
 import { executeSuperpowers, identifyComponents } from "./command.js";
 import { hookInventory, planHookControls } from "./hooks.js";
 import {
@@ -28,6 +32,7 @@ function describe(): FrameworkPluginDescriptionV1 {
 /** The framework plugin export `@aihq/core` loads (contract 1, C3). */
 export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
   contractVersion: CONTRACT_VERSION,
+  cleanupVersion: FRAMEWORK_PLUGIN_CLEANUP_VERSION,
   hostApiVersion: HOST_API_VERSION,
   frameworkId: "superpowers",
   packageName: PACKAGE_NAME,
@@ -37,4 +42,6 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
   hookInventory,
   planHookControls,
   commands: Object.freeze({ superpowers: Object.freeze({ execute: executeSuperpowers }) }),
+  uninstall: Object.freeze({ remove: async () => ({ removed: [], advisories: [] }) }),
+  prune: Object.freeze({ plan: async () => ({ actions: [], subtracted: 0 }) }),
 });

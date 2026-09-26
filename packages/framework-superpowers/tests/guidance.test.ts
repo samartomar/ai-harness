@@ -56,7 +56,15 @@ describe("per-CLI Superpowers guidance — parity with Core", () => {
   });
 
   it("the overview matches Core's", () => {
-    expect(superpowersOverviewDoc()).toEqual(golden.overview);
+    const actual = JSON.parse(JSON.stringify(superpowersOverviewDoc())) as Action;
+    if (golden.overview.kind !== "doc") throw new Error("expected a golden overview doc");
+    expect(actual).toEqual({
+      ...golden.overview,
+      text: golden.overview.text.replace(
+        "It pairs with ECC (`aih ecc`):",
+        "ECC installation guidance is in `aih ecc`:",
+      ),
+    });
   });
 });
 

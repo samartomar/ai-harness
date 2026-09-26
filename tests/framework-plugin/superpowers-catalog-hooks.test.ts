@@ -37,7 +37,7 @@ async function plugin() {
 
 describe("Superpowers hook operations over the installed Catalog descriptor", () => {
   it("exposes the hook inventory the installed Catalog carries", async () => {
-    const inventory = (await plugin()).hookInventory(await catalogContext(["claude"]));
+    const inventory = (await plugin()).hookInventory!(await catalogContext(["claude"]));
     expect(inventory.frameworkId).toBe("superpowers");
     expect(inventory.upstream).toEqual({
       repository: "obra/Superpowers",
@@ -56,7 +56,7 @@ describe("Superpowers hook operations over the installed Catalog descriptor", ()
   });
 
   it("plans hook controls from the installed Catalog descriptor", async () => {
-    const planned = (await plugin()).planHookControls(await catalogContext(["claude", "codex"]), {
+    const planned = (await plugin()).planHookControls!(await catalogContext(["claude", "codex"]), {
       disabled: [{ hookId: "hook:session-start", authority: "enterprise" }],
     });
     const [decision] = planned.decisions;

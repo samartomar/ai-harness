@@ -187,6 +187,8 @@ export async function frameworkHookControlPlansV1(
       { policy, options: {}, host: selfContainedFrameworkHostV1(ctx, "planning hook controls") },
       deps,
     );
+    if (loaded.plugin.planHookControls === undefined)
+      refuse(frameworkId, "this plugin has no hook-control planner");
     const plan: FrameworkHookControlPlanV1 = loaded.plugin.planHookControls(
       context,
       context.policy.hookControls,

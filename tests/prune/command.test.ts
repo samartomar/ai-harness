@@ -1,14 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -174,7 +166,7 @@ describe("aih prune command", () => {
       actions.some(
         (action) =>
           action.kind === "doc" &&
-          action.text.includes("No AIH ECC registration ledger target receipt"),
+          action.text?.includes("No AIH ECC registration ledger target receipt"),
       ),
     ).toBe(true);
   });
@@ -432,7 +424,7 @@ describe("aih prune command", () => {
     ).toBe(false);
   });
 
-  it("subtracts the managed ECC Codex AGENTS block when codex is dropped", async () => {
+  it("preserves a home Codex AGENTS block when no project union proves last ownership", async () => {
     const home = join(dir, "home");
     marker("claude");
     write("ai-coding/adapters/claude.md");
@@ -455,11 +447,17 @@ describe("aih prune command", () => {
       (a): a is Extract<Action, { kind: "write" }> =>
         a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("/home/.codex/AGENTS.md"),
     );
-    expect(subtract?.external).toBe(true);
-    expect(subtract?.contents).toBe("# My Codex notes\n");
+    expect(subtract).toBeUndefined();
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "digest" &&
+          action.text?.includes("Codex home state lacks a project ownership union"),
+      ),
+    ).toBe(true);
   });
 
-  it("subtracts the recorded ECC Codex TOML footprint when codex is dropped", async () => {
+  it("preserves recorded Codex TOML when no project union proves last ownership", async () => {
     const home = join(dir, "home");
     marker("claude");
     write("ai-coding/adapters/claude.md");
@@ -512,21 +510,22 @@ describe("aih prune command", () => {
       (a): a is Extract<Action, { kind: "write" }> =>
         a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("/home/.codex/config.toml"),
     );
-    expect(subtract?.external).toBe(true);
-    expect(subtract?.contents).not.toContain("approval_policy");
-    expect(subtract?.contents).not.toContain("[features]");
-    expect(subtract?.contents).not.toContain("[mcp_servers.context7]");
-    expect(subtract?.contents).not.toContain("[mcp_servers.context7.env]");
-    expect(subtract?.contents).toContain('user_key = "keep"');
-    expect(subtract?.contents).toContain("[mcp_servers.user]");
+    expect(subtract).toBeUndefined();
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "digest" &&
+          action.text?.includes("Codex home state lacks a project ownership union"),
+      ),
+    ).toBe(true);
     expect(
       actions.some(
         (a) => a.kind === "exec" && a.argv.includes(join(home, ".codex", CODEX_INSTALL_STATE_FILE)),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it("refuses a post-plan Codex state custody change before subtracting its config", async () => {
+  it("leaves Codex state and config untouched when home ownership is ambiguous", async () => {
     const home = join(dir, "state-custody-race-home");
     const codexDir = join(home, ".codex");
     const configPath = join(codexDir, "config.toml");
@@ -557,9 +556,7 @@ describe("aih prune command", () => {
     })}\n`;
     writeFileSync(statePath, operatorState, "utf8");
 
-    await expect(executePlan({ capability: "prune", actions }, context)).rejects.toThrow(
-      /changed after the plan was computed/,
-    );
+    await executePlan({ capability: "prune", actions }, context);
     expect(readFileSync(configPath, "utf8")).toBe(originalConfig);
     expect(readFileSync(statePath, "utf8")).toBe(operatorState);
   });
@@ -574,25 +571,22 @@ describe("aih prune command", () => {
 
     const context = ctx({ env: { HOME: home, USERPROFILE: home } });
     const actions = (await command.plan(context)).actions;
-    const refusal = actions.find(
-      (action): action is Extract<Action, { kind: "probe" }> =>
-        action.kind === "probe" && action.describe.includes("invalid AIH ECC Codex install-state"),
-    );
-
-    expect(refusal).toBeDefined();
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "digest" &&
+          action.text?.includes("Codex home state lacks a project ownership union"),
+      ),
+    ).toBe(true);
     expect(
       actions.some(
         (action) =>
           action.kind === "exec" && action.describe.includes("remove aih ECC Codex install-state"),
       ),
     ).toBe(false);
-    expect(await refusal?.run(context)).toMatchObject({
-      verdict: "fail",
-      code: "mcp.config-invalid",
-    });
   });
 
-  it("subtracts recorded ECC Codex keys from inline TOML tables when codex is dropped", async () => {
+  it("preserves inline Codex TOML tables without a project ownership union", async () => {
     const home = join(dir, "home");
     marker("claude");
     write("ai-coding/adapters/claude.md");
@@ -633,10 +627,14 @@ describe("aih prune command", () => {
       (a): a is Extract<Action, { kind: "write" }> =>
         a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("/home/.codex/config.toml"),
     );
-    expect(subtract?.contents).toContain('"strict" = { "approval_policy" = "on-request" }');
-    expect(subtract?.contents).toContain('yolo = { approval_policy = "never" }');
-    expect(subtract?.contents).not.toContain("sandbox_mode");
-    expect(subtract?.contents).not.toContain("web_search");
+    expect(subtract).toBeUndefined();
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "digest" &&
+          action.text?.includes("Codex home state lacks a project ownership union"),
+      ),
+    ).toBe(true);
   });
 
   it("skips a bootloader that carries no aih block (nothing to subtract)", async () => {
@@ -935,7 +933,7 @@ describe("aih prune ECC registration reconciliation", () => {
     return { ledgerPath, managed, operator, statePath };
   }
 
-  it("plans and applies a deterministic ledger-last diff even without committed CLI intent", async () => {
+  it("preserves driver-listed files when no aih per-path receipt proves them", async () => {
     const home = join(dir, "home");
     const reactRoot = join(home, "projects", "react");
     const cppRoot = join(home, "projects", "deleted-cpp");
@@ -948,74 +946,20 @@ describe("aih prune ECC registration reconciliation", () => {
     const before = new Map(
       [ledgerPath, statePath, cppSkill, reactSkill].map((path) => [path, readFileSync(path)]),
     );
-
-    const actions = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
-    const reconcile = actions.find(
-      (action): action is Extract<Action, { kind: "exec" }> =>
-        action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
-    );
-    const evidence = actions.find(
-      (action): action is Extract<Action, { kind: "digest" }> =>
-        action.kind === "digest" && action.describe === "ECC component registration reconciliation",
-    );
-
-    expect(reconcile).toBeDefined();
-    expect(evidence?.text).toContain(cppRoot);
-    expect(evidence?.text).toContain("lang:cpp");
-    expect(evidence?.text).toContain(cppSkill);
-    if (reconcile === undefined) throw new Error("missing ECC reconciliation action");
-    const encoded = reconcile.argv.at(-1);
-    if (encoded === undefined) throw new Error("missing ECC reconciliation payload");
-    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
-      mutations: Array<{ kind: string; path: string }>;
-    };
-    expect(payload.mutations).toContainEqual(
-      expect.objectContaining({
-        kind: "remove-file",
-        phase: "owned-removal",
-        path: cppSkill,
-        root: join(home, ".codex"),
-      }),
-    );
-    expect(payload.mutations).toContainEqual(
-      expect.objectContaining({ kind: "write-file", path: statePath }),
-    );
-    for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
-
-    const executable = reconcile.argv[0];
-    if (executable === undefined) throw new Error("missing ECC reconciliation executable");
-    const result = spawnSync(executable, reconcile.argv.slice(1), {
-      cwd: reconcile.cwd ?? dir,
-      env: process.env,
-      encoding: "utf8",
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(() => readFileSync(cppSkill)).toThrow();
-    expect(readFileSync(reactSkill, "utf8")).toBe("react\n");
-    expect(readFileSync(statePath, "utf8")).not.toContain("cpp-testing");
-    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as {
-      projects: Array<{ root: string }>;
-      targets: Array<{ components: Array<{ id: string }>; mcps: string[] }>;
-    };
-    expect(ledger.projects.map((project) => project.root)).toEqual([reactRoot]);
-    expect(ledger.targets[0]?.components.map((component) => component.id)).toEqual([
-      "baseline:rules",
-      "framework:react",
-    ]);
-    expect(ledger.targets[0]?.mcps).toEqual(["mcp:sequential-thinking"]);
-    expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).not.toContain(
-      'mcp_servers."github"',
-    );
-    expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).not.toContain("cpp-testing");
-    const replanned = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
+    const context = ctx({ apply: true, env: { HOME: home, USERPROFILE: home } });
+    const actions = (await command.plan(context)).actions;
     expect(
-      replanned.some(
+      actions.some(
         (action) =>
           action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
       ),
     ).toBe(false);
+    expect(
+      actions.some((action) => action.kind === "digest" && action.text?.includes(cppSkill)),
+    ).toBe(true);
+    await executePlan({ capability: "prune", actions }, context);
+    for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
   });
-
   it("fails closed on a malformed primary registration ledger", async () => {
     const home = join(dir, "home");
     const path = registrationLedgerPath(home);
@@ -1063,62 +1007,35 @@ describe("aih prune ECC registration reconciliation", () => {
     });
     const apply = ctx({ apply: true, env: { HOME: home, USERPROFILE: home }, run });
 
-    await expect(command.plan(apply)).rejects.toThrow(
-      /missing ECC install state for dropped target/i,
-    );
+    const planned = await command.plan(apply);
+    expect(
+      planned.actions.some(
+        (action) => action.kind === "digest" && action.text?.includes("state absent"),
+      ),
+    ).toBe(true);
     expect(calls.some((argv) => argv[0] === "npx")).toBe(false);
     expect(readFileSync(ledgerPath)).toEqual(before);
   });
 
-  it("drops a direct target from receipt-bound state without launching upstream code", async () => {
+  it("preserves a direct target whose state is the only file-level claim", async () => {
     const home = join(dir, "home");
     const { ledgerPath, managed, operator, statePath } = writeDroppedCursorReceipt(home);
-
+    const before = new Map(
+      [ledgerPath, managed, operator, statePath].map((path) => [path, readFileSync(path)]),
+    );
     const actions = eccPruneReconciliationActions(ctx({ env: { HOME: home, USERPROFILE: home } }), [
       "cursor",
     ]);
-    const reconcile = actions.find(
-      (action): action is Extract<Action, { kind: "exec" }> => action.kind === "exec",
-    );
-    if (reconcile === undefined) throw new Error("missing dropped-target reconciliation action");
-    const encoded = reconcile.argv.at(-1);
-    if (encoded === undefined) throw new Error("missing reconciliation payload");
-    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
-      mutations: Array<{ kind: string; path: string }>;
-      uninstalls: unknown[];
-    };
-
-    expect(payload.uninstalls).toEqual([]);
-    expect(payload.mutations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "remove-file", path: managed }),
-        expect.objectContaining({ kind: "remove-file", path: statePath }),
-      ]),
-    );
-    expect(payload.mutations).not.toContainEqual(expect.objectContaining({ path: operator }));
-
+    expect(actions.some((action) => action.kind === "exec")).toBe(false);
+    expect(
+      actions.some((action) => action.kind === "digest" && action.text?.includes(managed)),
+    ).toBe(true);
     await executePlan(
       { capability: "prune", actions },
-      ctx({
-        apply: true,
-        env: { HOME: home, USERPROFILE: home },
-        run: async (argv) => {
-          const result = spawnSync(argv[0] ?? "", argv.slice(1), { encoding: "utf8" });
-          return {
-            code: result.status ?? 1,
-            stdout: result.stdout ?? "",
-            stderr: result.stderr ?? "",
-          };
-        },
-      }),
+      ctx({ apply: true, env: { HOME: home, USERPROFILE: home } }),
     );
-    expect(existsSync(managed)).toBe(false);
-    expect(existsSync(statePath)).toBe(false);
-    expect(readFileSync(operator, "utf8")).toBe("operator\n");
-    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as { targets: unknown[] };
-    expect(ledger.targets).toEqual([]);
+    for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
   });
-
   it("preserves legacy managed files whose state has no content proof", () => {
     const home = join(dir, "home");
     const { ledgerPath, managed, operator, statePath } = writeDroppedCursorReceipt(home, {
@@ -1128,13 +1045,17 @@ describe("aih prune ECC registration reconciliation", () => {
       [ledgerPath, managed, operator, statePath].map((path) => [path, readFileSync(path)]),
     );
 
-    expect(() =>
-      eccPruneReconciliationActions(ctx({ env: { HOME: home, USERPROFILE: home } }), ["cursor"]),
-    ).toThrow(/without a recorded content digest.*preserve it for manual cleanup/i);
+    const actions = eccPruneReconciliationActions(ctx({ env: { HOME: home, USERPROFILE: home } }), [
+      "cursor",
+    ]);
+    expect(
+      actions.some((action) => action.kind === "digest" && action.text?.includes(managed)),
+    ).toBe(true);
+    expect(actions.some((action) => action.kind === "exec")).toBe(false);
     for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
   });
 
-  it("moves dropped Codex config, block, and state removals into the coordinated payload", async () => {
+  it("keeps coordinated Codex state while driver-listed files lack independent proof", async () => {
     const home = join(dir, "home");
     const reactRoot = join(home, "projects", "react");
     const cppRoot = join(home, "projects", "deleted-cpp");
@@ -1142,96 +1063,35 @@ describe("aih prune ECC registration reconciliation", () => {
     const ledgerPath = writeLedger(home, reactRoot, cppRoot);
     const cppSkill = join(home, ".codex", "skills", "cpp-testing", "SKILL.md");
     const reactSkill = join(home, ".codex", "skills", "react-patterns", "SKILL.md");
-    const upstreamStatePath = writeCodexState(home, cppSkill, reactSkill);
+    const statePath = writeCodexState(home, cppSkill, reactSkill);
     writeCodexMergeState(home);
-    const operatorFile = join(home, ".codex", "operator-notes.md");
-    writeFileSync(operatorFile, "operator\n", "utf8");
     marker("claude");
     write("ai-coding/adapters/claude.md");
     write("ai-coding/adapters/codex.md");
-
-    const actions = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
-    const reconcile = actions.find(
-      (action): action is Extract<Action, { kind: "exec" }> =>
-        action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
-    );
-    if (reconcile === undefined) throw new Error("missing coordinated reconciliation action");
-    const encoded = reconcile.argv.at(-1);
-    if (encoded === undefined) throw new Error("missing coordinated reconciliation payload");
-    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
-      mutations: Array<{ kind: string; phase?: string; path: string }>;
-      uninstalls: Array<{ target: string }>;
-    };
-
-    expect(payload.uninstalls).toEqual([]);
-    expect(payload.mutations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "write-file",
-          phase: "owned-removal",
-          path: join(home, ".codex", "config.toml"),
-        }),
-        expect.objectContaining({
-          kind: "write-file",
-          phase: "owned-removal",
-          path: join(home, ".codex", "AGENTS.md"),
-        }),
-        expect.objectContaining({
-          kind: "remove-file",
-          phase: "target-state",
-          path: join(home, ".codex", CODEX_INSTALL_STATE_FILE),
-        }),
-        expect.objectContaining({
-          kind: "remove-file",
-          phase: "owned-removal",
-          path: cppSkill,
-        }),
-        expect.objectContaining({
-          kind: "remove-file",
-          phase: "owned-removal",
-          path: reactSkill,
-        }),
-        expect.objectContaining({
-          kind: "remove-file",
-          phase: "target-state",
-          path: upstreamStatePath,
-        }),
-      ]),
-    );
-    expect(payload.mutations).not.toContainEqual(expect.objectContaining({ path: operatorFile }));
+    const homePaths = [
+      ledgerPath,
+      cppSkill,
+      reactSkill,
+      statePath,
+      join(home, ".codex", "config.toml"),
+      join(home, ".codex", "AGENTS.md"),
+    ];
+    const before = new Map(homePaths.map((path) => [path, readFileSync(path)]));
+    const context = ctx({ apply: true, env: { HOME: home, USERPROFILE: home } });
+    const actions = (await command.plan(context)).actions;
     expect(
       actions.some(
         (action) =>
-          action.kind === "write" &&
-          (action.path.endsWith("config.toml") || action.path.endsWith("AGENTS.md")),
+          action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
       ),
     ).toBe(false);
-
-    await executePlan(
-      { capability: "prune", actions },
-      ctx({
-        apply: true,
-        env: { HOME: home, USERPROFILE: home },
-        run: async (argv) => {
-          const result = spawnSync(argv[0] ?? "", argv.slice(1), { encoding: "utf8" });
-          return {
-            code: result.status ?? 1,
-            stdout: result.stdout ?? "",
-            stderr: result.stderr ?? "",
-          };
-        },
-      }),
-    );
-    expect(existsSync(cppSkill)).toBe(false);
-    expect(existsSync(reactSkill)).toBe(false);
-    expect(existsSync(upstreamStatePath)).toBe(false);
-    expect(existsSync(join(home, ".codex", CODEX_INSTALL_STATE_FILE))).toBe(false);
-    expect(readFileSync(operatorFile, "utf8")).toBe("operator\n");
-    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as { targets: unknown[] };
-    expect(ledger.targets).toEqual([]);
+    expect(
+      actions.some((action) => action.kind === "digest" && action.text?.includes(cppSkill)),
+    ).toBe(true);
+    await executePlan({ capability: "prune", actions }, context);
+    for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
   });
-
-  it("falls back to standalone Codex cleanup when the ledger has no Codex target record", async () => {
+  it("reports Codex home content when the ledger has no Codex target", async () => {
     const home = join(dir, "home");
     const reactRoot = join(home, "projects", "react");
     const cppRoot = join(home, "projects", "deleted-cpp");
@@ -1239,31 +1099,28 @@ describe("aih prune ECC registration reconciliation", () => {
     const ledgerPath = writeLedger(home, reactRoot, cppRoot);
     const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as { targets: unknown[] };
     ledger.targets = [];
-    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+    writeFileSync(ledgerPath, JSON.stringify(ledger) + "\n", "utf8");
     mkdirSync(join(home, ".codex"), { recursive: true });
     writeCodexMergeState(home);
     marker("claude");
     write("ai-coding/adapters/claude.md");
     write("ai-coding/adapters/codex.md");
-
     const actions = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
-    const config = actions.find(
-      (action): action is Extract<Action, { kind: "write" }> =>
-        action.kind === "write" && action.path === join(home, ".codex", "config.toml"),
-    );
-    const agents = actions.find(
-      (action): action is Extract<Action, { kind: "write" }> =>
-        action.kind === "write" && action.path === join(home, ".codex", "AGENTS.md"),
-    );
-
-    expect(config).toBeDefined();
-    expect(config?.contents).not.toContain("mcp_servers");
-    expect(agents).toBeDefined();
-    expect(agents?.contents).not.toContain("BEGIN ecc-codex:agents");
+    expect(
+      actions.some(
+        (action) => action.kind === "write" && action.path === join(home, ".codex", "config.toml"),
+      ),
+    ).toBe(false);
+    expect(
+      actions.some(
+        (action) => action.kind === "write" && action.path === join(home, ".codex", "AGENTS.md"),
+      ),
+    ).toBe(false);
     expect(
       actions.some(
         (action) =>
-          action.kind === "exec" && action.describe.includes("remove aih ECC Codex install-state"),
+          action.kind === "digest" &&
+          action.text?.includes("Codex home state lacks a project ownership union"),
       ),
     ).toBe(true);
   });

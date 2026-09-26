@@ -25,6 +25,7 @@ export const FRAMEWORK_HOST_API_VERSION = 1;
  */
 export {
   FRAMEWORK_IDS_V1,
+  FRAMEWORK_PLUGIN_CLEANUP_VERSION,
   FRAMEWORK_PLUGIN_COMMANDS,
   FRAMEWORK_PLUGIN_CONTRACT_VERSION,
   FRAMEWORK_PLUGIN_PACKAGE_NAMES,
@@ -209,6 +210,7 @@ export {
   type EccInstallMechanism,
   eccInstallDriftForRoot,
   eccInstallManifestPath,
+  readEccInstallManifest,
   walkManagedRoot,
 } from "../ecc/install-manifest.js";
 export {
@@ -291,6 +293,7 @@ export {
   buildNativeEccRegistration,
   type EccNativeStateRootV1,
   eccNativeStateRootCandidatesV1,
+  NATIVE_ECC_REGISTRATION_RECEIPT,
   NATIVE_ECC_REGISTRATION_SCOPE,
   type NativeEccRegistration,
   nativeRegistrationFiles,
@@ -379,6 +382,12 @@ export {
   type EffectiveOrgPolicy,
   resolveEffectiveOrgPolicy,
 } from "../org-policy/effective.js";
+export {
+  FRAMEWORK_HOOK_CONTROLS_RECEIPT_PATH,
+  LEGACY_ECC_HOOK_CONTROLS_RECEIPT_PATH,
+  planFrameworkHookControlsProjection,
+  readFrameworkHookControlsReceipt,
+} from "../org-policy/framework-hook-controls-projection.js";
 export {
   type PolicyRequiredGuidancePlan,
   planPolicyRequiredGuidance,

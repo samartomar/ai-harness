@@ -8,7 +8,8 @@ import {
   readAihConfig,
   readPolicyBinding,
 } from "../config/marker.js";
-import { prepareEccUninstallV1 } from "../framework-plugin/ecc-lifecycle.js";
+import { prepareFrameworkUninstallV1 } from "../framework-plugin/cleanup-v1.js";
+import { eccStatePathsV1, prepareEccUninstallV1 } from "../framework-plugin/ecc-lifecycle.js";
 import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
@@ -734,7 +735,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     ),
   );
 
-  if (exists(ctx, ".aih") && ownsContextDir) {
+  if (exists(ctx, ".aih") && ownsContextDir && eccStatePathsV1(ctx).length === 0) {
     artifacts.push({
       path: ".aih",
       kind: "cache",
@@ -747,7 +748,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
       kind: "cache",
       disposition: "advisory",
       reason:
-        "aih-looking cache/output directory found, but no valid root install marker proves ownership",
+        "aih state is retained when legacy framework ownership records may still be needed for cleanup or a retry",
     });
   }
 
@@ -992,21 +993,23 @@ export async function executeUninstallCommand(
   // Any aih ECC state needs the ECC plugin: preflight it before any cleanup
   // runs, so a missing or broken plugin refuses by name, naming the state, with
   // nothing touched. Receipt-proven ECC content is then removed by the plugin.
-  const removeEcc = await prepareEccUninstallV1(
-    ctx,
-    set.removeEccMaterialization === true && deps.removeMaterialization === undefined,
-    deps.frameworks,
-  );
+  const removeEcc =
+    deps.removeMaterialization === undefined
+      ? await prepareFrameworkUninstallV1(ctx, deps.frameworks)
+      : await prepareEccUninstallV1(ctx, false, deps.frameworks);
   const result = await executePlan(prepared, ctx);
-  if (!ctx.apply || !set.removeEccMaterialization || (result.report && !result.report.ok))
-    return result;
+  if (!ctx.apply || removeEcc === undefined || (result.report && !result.report.ok)) return result;
   try {
     const outcome =
       deps.removeMaterialization !== undefined
         ? await deps.removeMaterialization(ctx.root)
         : await (removeEcc as () => Promise<EccMaterializationRemovalOutcome>)();
-    const receiptRetained = exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH);
-    const actual = withMaterializationOutcome(set, outcome, receiptRetained);
+    const receiptRetained =
+      set.removeEccMaterialization === true && exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH);
+    const actual =
+      set.removeEccMaterialization === true
+        ? withMaterializationOutcome(set, outcome, receiptRetained)
+        : set;
     const report = result.report ?? new VerificationReport();
     if (receiptRetained)
       report.fail(
@@ -1033,24 +1036,38 @@ export async function executeUninstallCommand(
           effect: "delete" as const,
         })),
       ],
-      digests: result.digests.map((entry) =>
-        entry.describe === "core install footprint"
-          ? {
-              ...entry,
-              text: body(actual),
-              data: {
-                ...actual,
-                eccCleanup: { state: receiptRetained ? "partial" : "complete" },
-              },
-            }
-          : entry,
-      ),
+      digests: result.digests
+        .map((entry) =>
+          entry.describe === "core install footprint"
+            ? {
+                ...entry,
+                text: body(actual),
+                data: {
+                  ...actual,
+                  eccCleanup: { state: receiptRetained ? "partial" : "complete" },
+                },
+              }
+            : entry,
+        )
+        .concat(
+          outcome.advisories.length === 0
+            ? []
+            : [
+                {
+                  describe: "legacy framework cleanup review",
+                  text: outcome.advisories
+                    .map((entry) => `${entry.path}: ${entry.detail}`)
+                    .join("\n"),
+                  data: outcome.advisories,
+                },
+              ],
+        ),
     };
-  } catch {
+  } catch (error) {
     const report = result.report ?? new VerificationReport();
     report.fail(
       "ECC uninstall incomplete",
-      "Project cleanup completed, but ECC cleanup did not complete. Remaining ownership receipts are retained. Inspect the retained ECC files and rerun uninstall after repairing the reported ownership state.",
+      `Project cleanup completed, but ECC cleanup did not complete: ${(error as Error).message}. Remaining ownership receipts are retained. Inspect the retained ECC files and rerun uninstall after repairing the reported ownership state.`,
     );
     return {
       ...result,

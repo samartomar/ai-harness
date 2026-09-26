@@ -6,10 +6,10 @@ import type {
 import { planEccComponentSubtraction } from "./ecc/materialization-plan.js";
 import {
   explicitEccMcpRenderPlan,
-  planExplicitEccMcpRemove,
   readExplicitEccMcpReceiptStates,
 } from "./ecc/mcp-explicit-add.js";
 import { withEccInvocation } from "./invocation.js";
+import { legacyMcpRemoveRecord } from "./legacy-cleanup/mcp-command.js";
 
 /**
  * ECC's planning for `aih capability package`: receipt-proven subtraction of
@@ -40,7 +40,7 @@ export const capabilityPackages: FrameworkCapabilityPackagesHookV1 = Object.free
           explicitEccMcpRenderPlan(policy, id, target);
         }),
       planExplicitMcpRemove: (input) =>
-        withEccInvocation(ctx, () => ({ actions: planExplicitEccMcpRemove(input).actions })),
+        withEccInvocation(ctx, () => ({ actions: legacyMcpRemoveRecord(input).actions })),
       explicitMcpReceiptStates: (root) =>
         withEccInvocation(ctx, () =>
           readExplicitEccMcpReceiptStates({ root }).map((state) => ({

@@ -12,6 +12,10 @@ import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import type { Action, PlanContext } from "../internals/plan.js";
 import {
+  FRAMEWORK_HOOK_CONTROLS_RECEIPT_PATH,
+  LEGACY_ECC_HOOK_CONTROLS_RECEIPT_PATH,
+} from "../org-policy/framework-hook-controls-projection.js";
+import {
   FRAMEWORK_PLUGIN_PACKAGE_NAMES,
   type FrameworkPrunePlanV1,
   type FrameworkUninstallOutcomeV1,
@@ -107,6 +111,8 @@ export function eccStatePathsV1(ctx: PlanContext): string[] {
     [ctx.root, [".aih", "ecc-profile"]],
     [ctx.root, segments(ECC_PROFILE_OWNERSHIP_RECEIPT)],
     [ctx.root, segments(NATIVE_ECC_REGISTRATION_RECEIPT)],
+    [ctx.root, segments(FRAMEWORK_HOOK_CONTROLS_RECEIPT_PATH)],
+    [ctx.root, segments(LEGACY_ECC_HOOK_CONTROLS_RECEIPT_PATH)],
     ...homes.flatMap(
       (home): Array<[string, string[]]> => [
         [home, [".aih", "ecc"]],
@@ -220,9 +226,9 @@ export async function prepareEccUninstallV1(
       detail: refusalDetail(ctx, loaded.refusal.detail, "aih ECC state found", state),
     });
   }
-  if (!removeMaterialization) return undefined;
+  // Other legacy receipts may need cleanup even when direct materialization is absent.
   const hook = loaded.plugin.uninstall ?? incompatible(loaded, "uninstall", "removing ECC content");
-  const context = await selfContainedFrameworkContextV1(
+  await selfContainedFrameworkContextV1(
     loaded,
     ctx,
     "removing receipt-proven ECC content",
@@ -230,7 +236,19 @@ export async function prepareEccUninstallV1(
     deps,
   );
   return async () => {
-    const parsed = OutcomeSchema.safeParse(await hook.remove(context));
+    const outcome = await withFrameworkInvocationV1(
+      loaded,
+      "uninstall cleanup",
+      {
+        ctx: { ...ctx, targets: ctx.targets ?? [] },
+        policy: undefined,
+        transactionPins: {},
+        options: {},
+      },
+      deps,
+      async (runtimeContext) => hook.remove(runtimeContext),
+    );
+    const parsed = OutcomeSchema.safeParse(outcome);
     if (!parsed.success) {
       throw new AihError(
         `${loaded.packageName} ${loaded.version} returned a malformed uninstall outcome`,

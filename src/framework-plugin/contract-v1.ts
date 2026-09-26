@@ -42,6 +42,8 @@ import type { cleanupQuarantine, resolveTrustSource } from "../trust/fetch.js";
  */
 
 export const FRAMEWORK_PLUGIN_CONTRACT_VERSION = 1;
+/** Generic cleanup hook contract for every bundled framework plugin. */
+export const FRAMEWORK_PLUGIN_CLEANUP_VERSION = 1;
 
 /**
  * The closed set of framework plugins Core loads. Literal by design: nothing
@@ -67,7 +69,7 @@ export const FRAMEWORK_IDS_V1: readonly FrameworkIdV1[] = Object.freeze(["ecc", 
  * dispatches to is incompatible.
  */
 export const FRAMEWORK_PLUGIN_COMMANDS = Object.freeze({
-  ecc: Object.freeze(["ecc", "ecc mcp add", "ecc mcp remove"] as const),
+  ecc: Object.freeze(["ecc", "ecc mcp remove"] as const),
   superpowers: Object.freeze(["superpowers"] as const),
 } as const);
 
@@ -439,7 +441,11 @@ export interface FrameworkPrunePlanV1 {
 
 /** Framework reconciliation for targets `aih prune` drops; Core executes the actions in its prune plan. */
 export interface FrameworkPruneHookV1 {
-  plan(ctx: FrameworkOperationContextV1, dropped: readonly Cli[]): Promise<FrameworkPrunePlanV1>;
+  plan(
+    ctx: FrameworkOperationContextV1,
+    dropped: readonly Cli[],
+    kept?: readonly Cli[],
+  ): Promise<FrameworkPrunePlanV1>;
 }
 
 /** Framework-owned read-only checks for `aih doctor`. */
@@ -649,6 +655,7 @@ export interface FrameworkReceiptV1 {
  */
 export interface FrameworkPluginV1 {
   readonly contractVersion: typeof FRAMEWORK_PLUGIN_CONTRACT_VERSION;
+  readonly cleanupVersion: typeof FRAMEWORK_PLUGIN_CLEANUP_VERSION;
   /** `FRAMEWORK_HOST_API_VERSION` of the `@aihq/core/framework-host` the plugin was built against. */
   readonly hostApiVersion: number;
   readonly frameworkId: FrameworkIdV1;
@@ -657,9 +664,9 @@ export interface FrameworkPluginV1 {
   /** Must equal the installed package's own `package.json` version. */
   readonly packageVersion: string;
   describe(): FrameworkPluginDescriptionV1;
-  identifyComponents(ctx: FrameworkOperationContextV1): FrameworkComponentsV1;
-  hookInventory(ctx: FrameworkOperationContextV1): FrameworkHookInventoryV1;
-  planHookControls(
+  identifyComponents?(ctx: FrameworkOperationContextV1): FrameworkComponentsV1;
+  hookInventory?(ctx: FrameworkOperationContextV1): FrameworkHookInventoryV1;
+  planHookControls?(
     ctx: FrameworkOperationContextV1,
     request: FrameworkHookControlRequestV1,
   ): FrameworkHookControlPlanV1;
@@ -668,8 +675,8 @@ export interface FrameworkPluginV1 {
   readonly receipts?: readonly FrameworkReceiptV1[];
   readonly policyDelivery?: FrameworkPolicyDeliveryHookV1;
   readonly capabilityPackages?: FrameworkCapabilityPackagesHookV1;
-  readonly uninstall?: FrameworkUninstallHookV1;
-  readonly prune?: FrameworkPruneHookV1;
+  readonly uninstall: FrameworkUninstallHookV1;
+  readonly prune: FrameworkPruneHookV1;
   readonly doctor?: FrameworkDoctorHookV1;
   readonly report?: FrameworkReportHookV1;
 }

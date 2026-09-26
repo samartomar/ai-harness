@@ -157,7 +157,7 @@ describe("ECC state preflight inspects every path and ancestor", () => {
     symlinkSync(target, join(home, ".aih", "ecc"), "dir");
     expect(eccStatePathsV1(ctx())).toEqual([join(home, ".aih", "ecc")]);
     await expect(prepareEccUninstallV1(ctx(), false)).rejects.toThrow(unavailable);
-    await expect(prepareEccUninstallV1(ctx(), false, withPlugin)).resolves.toBeUndefined();
+    await expect(prepareEccUninstallV1(ctx(), false, withPlugin)).resolves.toBeTypeOf("function");
   });
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(

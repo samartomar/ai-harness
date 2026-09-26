@@ -39,6 +39,7 @@ afterEach(() => {
 function pluginExport(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     contractVersion: 1,
+    cleanupVersion: 1,
     hostApiVersion: FRAMEWORK_HOST_API_VERSION,
     frameworkId: "superpowers",
     packageName: "@aihq/framework-superpowers",
@@ -57,6 +58,8 @@ function pluginExport(over: Record<string, unknown> = {}): Record<string, unknow
     hookInventory: () => ({}),
     planHookControls: () => ({}),
     commands: { superpowers: { execute: async () => ({}) } },
+    uninstall: { remove: async () => ({ removed: [], advisories: [] }) },
+    prune: { plan: async () => ({ actions: [], subtracted: 0 }) },
     ...over,
   };
 }
@@ -143,7 +146,7 @@ async function refusalOf(fake: FakeInstall, timeoutMs?: number) {
 }
 
 describe("loadFrameworkPluginV1 — success", () => {
-  it("loads a contract-1 plugin and records that Catalog is not installed", async () => {
+  it("loads a plugin with the versioned cleanup hooks and records that Catalog is not installed", async () => {
     const fake = access();
     const loaded = await loadFrameworkPluginV1("superpowers", { access: fake });
     expect(loaded.ok).toBe(true);
@@ -409,6 +412,7 @@ describe("bundledFrameworkPluginAccessV1 — the plugins shipped inside @aihq/co
     "const noop = () => ({});",
     "export const aihFrameworkPluginV1 = {",
     "  contractVersion: 1,",
+    "  cleanupVersion: 1,",
     `  hostApiVersion: ${FRAMEWORK_HOST_API_VERSION},`,
     '  frameworkId: "superpowers",',
     '  packageName: "@aihq/framework-superpowers",',
@@ -418,6 +422,8 @@ describe("bundledFrameworkPluginAccessV1 — the plugins shipped inside @aihq/co
     "  hookInventory: noop,",
     "  planHookControls: noop,",
     "  commands: { superpowers: { execute: async () => ({}) } },",
+    "  uninstall: { remove: async () => ({ removed: [], advisories: [] }) },",
+    "  prune: { plan: async () => ({ actions: [], subtracted: 0 }) },",
     "};",
     "",
   ].join("\n");

@@ -132,7 +132,7 @@ function uniqueSorted<T extends string>(values: readonly T[]): T[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
-function defaultProjectStatus(root: string): EccProjectStatus {
+export function defaultProjectStatus(root: string): EccProjectStatus {
   try {
     const stats = lstatSync(root);
     if (stats.isSymbolicLink()) {

@@ -6,13 +6,11 @@ import type {
   FrameworkPluginV1,
   PlanResult,
 } from "@aihq/core/framework-host";
-import { AihError, doc, plan } from "@aihq/core/framework-host";
+import { AihError, doc, FRAMEWORK_PLUGIN_CLEANUP_VERSION, plan } from "@aihq/core/framework-host";
 import { capabilityPackages } from "./capability-packages.js";
 import { executePlan } from "./core-runtime.js";
 import { ECC_DESCRIPTOR_SECTIONS } from "./descriptor.js";
 import { doctor } from "./doctor.js";
-import { eccMcpRemoveCommand } from "./ecc/index.js";
-import { executeEccCommand } from "./ecc/pipeline.js";
 import { eccGuidance, eccStatus } from "./guidance.js";
 import { hookInventory, planHookControls } from "./hooks.js";
 import { identifyComponents } from "./identify.js";
@@ -26,6 +24,7 @@ import {
   UPSTREAM,
 } from "./identity.js";
 import { currentCoreRuntime, withEccInvocation } from "./invocation.js";
+import { legacyMcpRemovePlan } from "./legacy-cleanup/mcp-command.js";
 import { prune, uninstall } from "./lifecycle-hooks.js";
 import { eccPolicyDelivery } from "./policy-delivery.js";
 
@@ -62,6 +61,7 @@ function commandOf(spec: CommandSpec): FrameworkCommandV1 {
 /** The framework plugin export `@aihq/core` loads (contract 1, C3). */
 export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
   contractVersion: CONTRACT_VERSION,
+  cleanupVersion: FRAMEWORK_PLUGIN_CLEANUP_VERSION,
   hostApiVersion: HOST_API_VERSION,
   frameworkId: "ecc",
   packageName: PACKAGE_NAME,
@@ -77,7 +77,33 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
           const runtime = currentCoreRuntime();
           const context = runtime.planContext;
           const lifecycle = context.options.lifecycle;
-          if (lifecycle === "uninstall") return executeEccCommand(context);
+          if (lifecycle === "uninstall") {
+            if (!context.apply)
+              return runtime.executePlan(
+                plan(
+                  "ecc: legacy uninstall preview",
+                  doc(
+                    "ECC cleanup",
+                    "Pass --apply to remove unchanged receipt-owned ECC content. Modified and ambiguous items are preserved and reported.",
+                  ),
+                ),
+                context,
+              );
+            const outcome = await uninstall.remove(ctx);
+            return runtime.executePlan(
+              plan(
+                "ecc: legacy uninstall",
+                doc(
+                  "ECC cleanup",
+                  [
+                    ...outcome.removed.map((path) => `Removed: ${path}`),
+                    ...outcome.advisories.map((entry) => `Manual: ${entry.path}: ${entry.detail}`),
+                  ].join("\n") || "No receipt-owned ECC content remained.",
+                ),
+              ),
+              context,
+            );
+          }
           const retired =
             context.apply && context.options.allTools === true
               ? "--all-tools --apply"
@@ -111,15 +137,11 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
           );
         }),
     }),
-    "ecc mcp add": Object.freeze({
-      execute: async (): Promise<PlanResult> => {
-        throw new AihError(
-          "aih ecc mcp add was retired: aih no longer installs ECC MCP content. Run aih ecc for guidance.",
-          "AIH_CONFIG",
-        );
-      },
+    "ecc mcp remove": commandOf({
+      name: "remove",
+      summary: "Remove receipt-owned ECC MCP",
+      plan: legacyMcpRemovePlan,
     }),
-    "ecc mcp remove": commandOf(eccMcpRemoveCommand),
   }),
   policyDelivery: eccPolicyDelivery(),
   capabilityPackages,

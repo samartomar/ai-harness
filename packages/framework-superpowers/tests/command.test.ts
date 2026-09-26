@@ -98,7 +98,22 @@ describe("the superpowers command", () => {
       authorizations,
       held: [],
     });
-    expect(built).toEqual(golden.verifiedAllClis);
+    const actual = JSON.parse(JSON.stringify(built)) as Plan;
+    const expected = {
+      ...golden.verifiedAllClis,
+      actions: golden.verifiedAllClis.actions.map((action) =>
+        action.kind === "doc" && action.describe === "Superpowers overview (obra/Superpowers)"
+          ? {
+              ...action,
+              text: action.text.replace(
+                "It pairs with ECC (`aih ecc`):",
+                "ECC installation guidance is in `aih ecc`:",
+              ),
+            }
+          : action,
+      ),
+    };
+    expect(actual).toEqual(expected);
   });
 
   it("emits receipts and manual guidance without mutable remote execs", async () => {

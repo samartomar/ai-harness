@@ -14,6 +14,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { command as pruneCommand } from "../../src/prune/index.js";
 import { executeUninstallCommand, command as uninstallCommand } from "../../src/uninstall/index.js";
 
 // The ECC removal runs through @aihq/framework-ecc: read it from this repository's package source.
@@ -328,5 +329,23 @@ describe("F6 — `aih uninstall` removes governed ECC materialization receipt-bo
       expect(row).toMatch(/already absent/);
       expect(row).not.toMatch(/was kept/);
     }
+  });
+
+  it("prune subtracts unchanged receipt-owned Claude files after Claude is dropped", async () => {
+    materialize();
+    writeTree(root, {
+      ".aih-config.json": JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["kiro"],
+      }),
+      "ai-coding/adapters/claude.md": "stale Claude adapter\n",
+    });
+    const ctx = context(true);
+    const result = await executePlan(await pruneCommand.plan(ctx), ctx);
+    expect(result.report?.ok).not.toBe(false);
+    for (const path of MATERIALIZED) expect(existsSync(join(root, path))).toBe(false);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+    expect(readFileSync(join(root, "notes/OPERATOR.md"), "utf8")).toBe("# keep me\n");
   });
 });
