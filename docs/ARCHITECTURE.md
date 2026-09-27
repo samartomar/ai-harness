@@ -40,16 +40,15 @@ and the executor is the only layer that performs filesystem or process effects.
   normalized projection separately from the caller-asserted source-store digest,
   and reports divergence without selecting a winner. It performs no I/O and is
   metadata, never approval or evidence. Source-specific adapters hash the exact
-  bytes they parse for the shipped baseline lock, ECC materialization receipts,
+  bytes they parse for the shipped baseline lock, read-only ECC Catalog claims,
   and strict GitHub skill lock/pack artifacts; the separate residue classifier
   never promotes discovery into an authority claim.
 - **Capability package reconciliation** (`src/capability/package-manager/`) projects effective
   org-policy roots through exact approval, evidence, catalog, Package Graph, intent, ownership,
-  custody, and domain receipts. Read commands and previews are local and side-effect-free. Apply
-  coordinates already-promoted GitHub skill packs and historical receipt-owned ECC agent/rule
-  and explicit HTTPS MCP cleanup state. Mixed closures publish
-  ownership last through one ordered compensating transaction and conservatively retain drift or
-  shared files; this layer is not an acquisition, approval, or general dependency-management
+  custody, and skill domain receipts. Read commands and previews are local and side-effect-free.
+  ECC Catalog packages remain visible as developer-managed, with `aih ecc` as their next route.
+  Apply coordinates already-promoted GitHub skill packs, publishes ownership last through an
+  ordered compensating transaction, and conservatively retains drift or shared files; this layer is not an acquisition, approval, or general dependency-management
   authority and does not claim crash atomicity.
 - **Evidence and release verification** (`src/evidence/`, `src/bundle/`,
   `src/release/`) package local audit material and verify published releases.

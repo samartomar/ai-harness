@@ -256,16 +256,13 @@ closed rather than launching several complete scans on one host. Joined SARIF is
 then filtered to each component's declared paths and evaluated in that
 component's native context; raw scanner evidence is retained.
 
-## Current ECC guidance and historical cleanup
+## Current ECC guidance
 
 `aih ecc` prints exact developer-managed installation guidance and
-`aih ecc --status` reports observed ownership and external or unknown state.
-It does not execute ECC installers, materialize components, or register MCPs.
-The evidence and component records below remain useful for provenance and
-diagnostics. Scan findings inform selection and never block third-party
-inventory or delivery. Earlier aih versions' receipts authorize removal only
-of unchanged paths aih provably wrote; modified, external, and ambiguous
-content remains and is reported.
+`aih ecc --status` reports presence of ECC's own install-state files only.
+It does not execute ECC installers, materialize components, register MCPs,
+or remove ECC content. Catalog evidence remains useful for provenance and
+inventory. Scan findings inform selection and never block third-party inventory.
 
 ## Historical installer posture behavior
 

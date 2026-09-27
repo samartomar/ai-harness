@@ -121,7 +121,7 @@ suite. Required contexts fail closed if a mandatory lane is skipped.
 Provider ownership covers reviewed entry modules and explicitly enrolled data
 snapshots. Matt snapshot changes run Matt provider and consumer checks; the
 shared skill compiler retains broader backend coverage.
-ECC metadata and skill-catalog snapshots still feed legacy aggregate consumers,
+ECC metadata and skill-catalog snapshots still feed current Catalog consumers,
 so their changes retain broader checks. Baseline inventory providers used by
 installers retain a full-suite fallback. Unknown provider paths and selector or
 shared-lock changes also broaden coverage. This isolates semantic checks where
@@ -368,14 +368,6 @@ packaged data. If that matching snapshot is expired or incompatible, Core stops
 instead of falling back to older packaged evidence. A different source revision
 does not replace the saved policy's revision. The former ECC materialization
 path checked source bytes at both baseline evidence gates; that path is retired.
-
-Historical ECC materialization receipts use version 2 to record separate
-descriptor, original-report, Core-derived evaluation, and projection digests,
-plus the original report component references for the materialized selection.
-The original report remains in the verified descriptor. The derived evaluation
-is an internal input to Core's existing checks, not a new Scanner report;
-mapped failed findings remain failures. Existing version 1 receipts remain
-readable. Neither receipt version grants organization approval.
 
 Large publications may be retained as digest-addressed proof files beside the
 signed snapshot and supplied with `--proof-root` during import. Verification

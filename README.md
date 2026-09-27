@@ -116,8 +116,8 @@ npm install -g @aihq/core @aihq/scan @aihq/catalog   # global
 npm install @aihq/core @aihq/scan @aihq/catalog      # in a project
 ```
 
-Core can read a Catalog ECC runtime descriptor for historical policy and cleanup
-records. Current `aih ecc` guidance and status do not consume its install fields. Core resolves it in a fixed order and prints which
+Core can read an authenticated Catalog ECC runtime descriptor for current policy inventory.
+`aih ecc` guidance and presence-only status do not consume its install fields. Core resolves it in a fixed order and prints which
 source it used on stderr:
 
 1. a machine-local, trust-verified Workbench source-data receipt, as before;
@@ -235,7 +235,7 @@ existing V3 decision-authority payload; no approval workflow or second policy st
 Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
 a regular single-link file reached without symlinked parents, and exact byte re-observation before
 effects. Authority-dependent mutating transactions pin those same external bytes. ECC and Superpowers evidence and standalone Usage ownership decisions reuse one verified
-policy observation. Historical ECC receipts remain available for ownership-checked cleanup. Init retains each nested phase's file assertions, deadline, and lock and refuses
+policy observation. Init retains each nested phase's file assertions, deadline, and lock and refuses
 a conflicting observation before effects. Child-process effects retain a renewable cooperative
 lease and revalidate authority before and after execution; if the latter fails, Core blocks later
 effects without claiming it rolled back the already-run child.
@@ -475,7 +475,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | Command | What it does |
 | --- | --- |
 | [`aih certs`](docs/commands.md#aih-certs) | Extract the corporate root CA from the OS trust store and propagate trust to npm/pip/cargo/conda. |
-| [`aih cleanup`](docs/commands.md#aih-cleanup) | Preview and remove framework-contaminated Claude user-scope surfaces with backup and rollback. |
+| [`aih cleanup`](docs/commands.md#aih-cleanup) | Preview Claude user-scope contamination and remove non-ECC surfaces with backup and rollback; ECC stays read-only. |
 | [`aih heal`](docs/commands.md#aih-heal) | Diagnose and repair the broken runtime behind any TLS-intercepting proxy — corporate trust, npm, PATH, MCP pre-flight. |
 | [`aih tools`](docs/commands.md#aih-tools) | Install the agent shell tools the harness leans on (`rg`/`fd`/`jq`, `ast-grep`, `gh`, …) through the platform package manager. |
 | [`aih ready`](docs/commands.md#aih-ready) | Check host and selected-client configuration prerequisites, with blockers and unverified MCP capabilities visible. |
@@ -507,9 +507,9 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih contract`](docs/commands.md#aih-contract) | Synthesize the machine-readable repo contract (`project.json`) from the detected stack. |
 | [`aih capability`](docs/commands.md#aih-capability) | Resolve repo capability needs; inspect or preview policy-driven packages; explicitly reconcile already-promoted, approved GitHub skill packs. |
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
-| [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and only unchanged ECC paths earlier aih versions provably wrote; report ambiguous records. <!-- aih:claim CM-22 --> |
+| [`aih prune`](docs/commands.md#aih-prune) | Remove stale aih-owned per-CLI artifacts; ECC remains developer-managed. |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Show exact developer-managed ECC guidance and `--status`; legacy `--lifecycle uninstall` and `mcp remove` remove only unchanged, receipt-owned aih writes. <!-- aih:claim CM-20 --> <!-- aih:claim CM-21 --> <!-- aih:claim CM-41 --> |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Show exact developer-managed ECC guidance and presence-only `--status`. <!-- aih:claim CM-20 --> <!-- aih:claim CM-41 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
@@ -705,13 +705,8 @@ aih init --context-dir .ai-context  # → hidden, the old default
 ```
 
 `aih ecc` prints exact, copyable ECC installation guidance; `aih ecc --status`
-reports aih-owned exact or modified bytes, external observed content, absence in
-inspected roots, and unknown state. Full ECC is developer-managed. The retired
-`--apply`, `--lifecycle install|update|repair|rollback`, `--profile`, `--with`,
-and `aih ecc mcp add` routes do not install content. Earlier aih versions' receipts
-are used by `aih uninstall`, `aih prune`, `aih ecc --lifecycle uninstall`, and
-`aih ecc mcp remove` only to remove unchanged files or entries they prove aih
-wrote. Modified, external, and ambiguous content is reported and preserved.
+reports only the presence of ECC's own install-state files. Full ECC is
+developer-managed. aih does not configure, install, or remove ECC.
 Third-party inventory remains selectable; scan findings are information.
 
 ### Layered AI canon (`bootstrap-ai`)

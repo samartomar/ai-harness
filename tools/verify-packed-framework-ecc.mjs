@@ -51,9 +51,9 @@ try {
   check("retired installer helper is absent from files lists", [core, plugin].every((value) => value.files.every((entry) => !entry.includes("chrome-devtools-opt-out"))));
   const bundle = readFileSync(join(pluginRoot, "dist", "index.js"), "utf8");
   check("packed plugin exports the ECC contract", /\baihFrameworkPluginV1\b/.test(bundle) && /cleanupVersion/.test(bundle));
-  check("plugin exposes guidance and legacy MCP removal", bundle.includes("ecc mcp remove") && bundle.includes("ecc: guidance"));
-  check("plugin excludes retired MCP Add and materialization writers", !bundle.includes("planExplicitEccMcpAdd") && !bundle.includes("applyEccMaterialization"));
-  check("plugin retains receipt cleanup and status readers", bundle.includes("legacy ECC receipt cleanup") && bundle.includes("explicit-ecc-mcp:"));
+  check("plugin exposes guidance and presence-only status", bundle.includes("ecc: guidance") && bundle.includes("ecc: status"));
+  check("plugin excludes ECC mutation and old cleanup", !bundle.includes("planExplicitEccMcpAdd") && !bundle.includes("applyEccMaterialization") && !bundle.includes("legacy ECC receipt cleanup") && !bundle.includes("ecc mcp remove"));
+
 } catch (error) {
   check("packed ECC plugin verification", false, error instanceof Error ? error.message : String(error));
 }

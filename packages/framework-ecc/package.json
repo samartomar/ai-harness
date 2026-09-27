@@ -2,7 +2,7 @@
   "name": "@aihq/framework-ecc",
   "version": "0.1.0",
   "private": true,
-  "description": "affaan-m/ECC framework plugin for @aihq/core: developer-managed guidance, status, and receipt-bound legacy cleanup",
+  "description": "affaan-m/ECC framework plugin for @aihq/core: developer-managed guidance and presence-only status",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/samartomar/ai-harness.git",
