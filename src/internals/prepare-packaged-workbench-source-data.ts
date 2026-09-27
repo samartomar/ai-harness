@@ -295,6 +295,7 @@ export async function preparePackagedWorkbenchSourceDataCommandV1(
     const now = new Date().toISOString();
     const proof = {
       version: "source-data-scanner-proof/v1",
+      ...(options.overlap === "compiler-catalog" ? { definitionOverlap: options.overlap } : {}),
       compilerInput: {
         version: "source-compiler-input-blob/v1",
         ...blob(proofRoot, canonicalStrictJsonBytesV1(compilerInput)),

@@ -60,6 +60,7 @@ import { mintPreparedEccRuntimeDescriptorV1 } from "./source-data-runtime-descri
 export const SourceDataScannerProofV1Schema = z
   .object({
     version: z.literal("source-data-scanner-proof/v1"),
+    definitionOverlap: z.enum(["disjoint", "compiler-catalog"]).optional(),
     compilerInput: z.unknown(),
     /** Original published component inventory, when broader than compiler closures. */
     publishedCatalog: BaselineCatalogSchema.refine(
@@ -297,6 +298,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
 ): Promise<AuthoringCatalogBundleV1["evidence"]> {
   assertStrictJsonValueV1(input, "Scanner source proof");
   const proof = SourceDataScannerProofV1Schema.parse(input);
+  const resolvedOverlap = proof.definitionOverlap ?? overlap;
   const compilerBlob =
     (proof.compilerInput as { version?: unknown })?.version === "source-compiler-input-blob/v1"
       ? SourceDataCompilerBlobV1Schema.parse(proof.compilerInput)
@@ -444,7 +446,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
         requests,
         consumed,
         preparedAt: proof.preparedAt,
-        overlap,
+        overlap: resolvedOverlap,
       });
       if (compilerInput.version === "pinned-baseline/v1") {
         const runtime = preparedEccRuntimeDescriptorV1(
@@ -454,7 +456,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
           requests.flatMap((request) => request.components),
           consumed,
           now,
-          overlap,
+          resolvedOverlap,
         );
         if (runtime !== undefined && runtimeCollector !== undefined)
           runtimeCollector.value = runtime;
