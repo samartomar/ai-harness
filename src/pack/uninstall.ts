@@ -8,7 +8,6 @@ import {
   type Plan,
   type PlanContext,
   plan,
-  writeJson,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { skillInventory } from "../skill/inventory.js";
@@ -171,7 +170,6 @@ function packUninstallPlan(ctx: PlanContext): Plan {
   let lock = readSkillsLockStrictForWrite(ctx.root);
 
   const actions: Action[] = [];
-  let lockChanged = false;
   const members: PackMemberRow[] = [];
   for (const name of [...new Set(pack.skills.map((ref) => ref.name))]) {
     if (approvalByName.get(name) === "missing-approval") {
@@ -187,13 +185,7 @@ function packUninstallPlan(ctx: PlanContext): Plan {
     try {
       const removal = skillRemovalActions(ctx, name, hardDelete, lock);
       lock = removal.lock;
-      for (const action of removal.actions) {
-        if (action.kind === "write" && action.path === AIH_SKILLS_LOCK_FILE) {
-          lockChanged = true;
-          continue;
-        }
-        actions.push(action);
-      }
+      actions.push(...removal.actions);
       members.push({
         name,
         outcome: removal.summary.kind === "orphaned-approval" ? "orphaned-approval" : "removed",
@@ -213,8 +205,6 @@ function packUninstallPlan(ctx: PlanContext): Plan {
       throw err;
     }
   }
-
-  if (lockChanged) actions.push(writeJson(AIH_SKILLS_LOCK_FILE, lock, "drop pack approvals"));
 
   const advisories = members.flatMap((row) =>
     row.outcome === "not-installed" ? [] : row.summary.advisories,
