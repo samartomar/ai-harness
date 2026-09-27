@@ -56,6 +56,8 @@ export interface WriteAction {
   sensitive?: ActionSensitivity;
   /** Raw file contents (for text files). */
   contents?: string;
+  /** Subtract one receipt-verified managed text block from the evolving destination. */
+  removeManagedTextBlockScope?: string;
   /** Closed opt-in for trusted source assets whose exact bytes are contractual. */
   exactContents?: true;
   /** Structured value (for JSON files); enables `merge`. */
@@ -110,6 +112,8 @@ export interface WriteAction {
   trustedBase?: string;
   /** Commit this file only after every non-allowed exec in the plan has succeeded. */
   requiresPriorExecSuccess?: boolean;
+  /** Commit a reduced ownership receipt only after staged removals have completed. */
+  afterRemovals?: true;
 }
 
 export interface DocAction {

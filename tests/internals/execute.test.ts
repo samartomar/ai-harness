@@ -14,7 +14,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../../src/errors.js";
-import { executePlan, summarizeResult, writeArtifact } from "../../src/internals/execute.js";
+import { upsertManagedBlock } from "../../src/internals/envfile.js";
+import {
+  executePlan,
+  resolveContents,
+  summarizeResult,
+  writeArtifact,
+} from "../../src/internals/execute.js";
 import { FsTransaction } from "../../src/internals/fsxn.js";
 import {
   digest,
@@ -2007,6 +2013,75 @@ describe("FsTransaction — conditional write pins", () => {
 describe("executePlan — envblock folding", () => {
   const profile = "profile.ps1";
 
+  it.each(["text-first", "block-first"] as const)(
+    "refuses a whole text and environment block collision in %s order",
+    async (order) => {
+      const text = writeText(profile, "export OPERATOR=keep\n", "operator text");
+      const block = envBlock(profile, "certs", "posix", [{ key: "A", value: "1" }], "certs env");
+      const actions = order === "text-first" ? [text, block] : [block, text];
+      await expect(
+        executePlan(plan("mixed", ...actions), ctx({ apply: true })),
+      ).rejects.toMatchObject({ code: "AIH_CONFIG" });
+      expect(existsSync(join(dir, profile))).toBe(false);
+    },
+  );
+
+  it("composes a JSON merge and environment block in plan order", async () => {
+    const path = "settings.json";
+    const actions = [
+      writeJson(path, { operator: true }, "merge JSON", { merge: true }),
+      envBlock(path, "certs", "posix", [{ key: "A", value: "1" }], "certs env"),
+    ];
+    await executePlan(plan("mixed", ...actions), ctx({ apply: true }));
+    expect(readFileSync(join(dir, path), "utf8")).toBe(
+      '{\n  "operator": true\n}\n\n# >>> aih managed (certs) >>>\nexport A=1\n# <<< aih managed (certs) <<<\n',
+    );
+  });
+
+  it("refuses a whole text JSON seed followed by a differing merge", async () => {
+    const path = "settings.json";
+    await expect(
+      executePlan(
+        plan(
+          "mixed",
+          writeExactText(path, '{"operator":true}\n', "seed JSON"),
+          writeJson(path, { managed: true }, "merge JSON", { merge: true }),
+        ),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_CONFIG" });
+    expect(existsSync(join(dir, path))).toBe(false);
+  });
+
+  it("rejects conflicting whole-text writes before any filesystem effect", async () => {
+    const path = "profile.ps1";
+    await expect(
+      executePlan(
+        plan("collision", writeText(path, "first", "first"), writeText(path, "second", "second")),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_CONFIG" });
+    expect(existsSync(join(dir, path))).toBe(false);
+  });
+
+  it("rejects a differing text write marked merge before any filesystem effect", async () => {
+    const path = "profile.ps1";
+    const target = join(dir, path);
+    writeFileSync(target, "operator bytes\r\n");
+    const before = readFileSync(target);
+    await expect(
+      executePlan(
+        plan(
+          "collision",
+          writeText(path, "first", "first"),
+          writeText(path, "second", "second", { merge: true }),
+        ),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_CONFIG" });
+    expect(readFileSync(target)).toEqual(before);
+  });
+
   it("renders a single managed block with markers (dry-run writes nothing)", async () => {
     const p = plan(
       "t",
@@ -2057,6 +2132,143 @@ describe("executePlan — envblock folding", () => {
     expect(second).toBe(first); // byte-identical re-apply
     expect(second).toContain("export USER_VAR=keep");
   });
+});
+
+describe("executePlan — same-destination ordered pairs", () => {
+  const path = "shared.txt";
+  it.each(["text-first", "document-first"] as const)(
+    "permits identical text and document bytes in %s order",
+    async (order) => {
+      const text = writeText(path, "same\n", "text");
+      const document = doc("document", "same", path);
+      const actions = order === "text-first" ? [text, document] : [document, text];
+      const preview = await executePlan(plan("identical", ...actions), ctx());
+      expect(preview.applied).toBe(false);
+      expect(existsSync(join(dir, path))).toBe(false);
+      await executePlan(plan("identical", ...actions), ctx({ apply: true }));
+      expect(readFileSync(join(dir, path))).toEqual(Buffer.from("same\n"));
+    },
+  );
+  const action = (kind: string) => {
+    switch (kind) {
+      case "text":
+        return writeText(path, "A", "text");
+      case "document":
+        return doc("document", "B", path);
+      case "json":
+        return writeJson(path, { managed: true }, "JSON merge", { merge: true });
+      case "environment":
+        return envBlock(path, "matrix", "posix", [{ key: "KEY", value: "value" }], "environment");
+      case "subtraction":
+        return { ...writeText(path, "", "subtract block"), removeManagedTextBlockScope: "matrix" };
+      case "removal":
+        return remove(path, "remove");
+      default:
+        throw new Error(`unknown matrix action ${kind}`);
+    }
+  };
+  const kinds = ["text", "document", "json", "environment", "subtraction", "removal"] as const;
+  it.each(kinds.flatMap((first) => kinds.map((second) => [first, second] as const)))(
+    "%s then %s has one previewed and committed outcome for absent and existing destinations",
+    async (first, second) => {
+      for (const exists of [false, true]) {
+        const target = join(dir, path);
+        const base = '{"base":true}\n';
+        const initial =
+          first === "subtraction"
+            ? upsertManagedBlock(base, "matrix", [{ key: "KEY", value: "value" }], "posix")
+            : base;
+        if (exists) writeFileSync(target, initial);
+        const before = exists ? readFileSync(target) : undefined;
+        let planned = exists ? initial : undefined;
+        let previous: "whole" | "composable" | "removal" | undefined;
+        let subtracted = false;
+        let refusal: string | undefined;
+        try {
+          for (const kind of [first, second]) {
+            const nextAction = action(kind);
+            const category =
+              kind === "removal"
+                ? "removal"
+                : kind === "text" || kind === "document"
+                  ? "whole"
+                  : "composable";
+            if (category === "removal") {
+              if (previous) throw new AihError("colliding removal", "AIH_CONFIG");
+              previous = category;
+              continue;
+            }
+            if (previous === "removal") throw new AihError("colliding removal", "AIH_CONFIG");
+            const next =
+              nextAction.kind === "doc"
+                ? `${nextAction.text.replace(/\n*$/, "")}\n`
+                : nextAction.kind === "envblock"
+                  ? upsertManagedBlock(
+                      planned ?? "",
+                      nextAction.scope,
+                      nextAction.vars,
+                      nextAction.shell,
+                      nextAction.unsetKeys,
+                    )
+                  : resolveContents(
+                      nextAction as Extract<typeof nextAction, { kind: "write" }>,
+                      target,
+                      planned,
+                    );
+            if (previous && (category === "whole" || previous === "whole") && next !== planned)
+              throw new AihError("colliding whole write", "AIH_CONFIG");
+            planned = next;
+            if (kind === "subtraction") subtracted = true;
+            previous = category === "whole" ? category : previous === "whole" ? previous : category;
+          }
+          if (subtracted && planned?.includes("# >>> aih managed (matrix) >>>"))
+            throw new AihError("subtracted block returned", "AIH_TRUST");
+        } catch (error) {
+          if (!(error instanceof AihError)) throw error;
+          refusal = error.code;
+        }
+        const pair = plan("matrix", action(first), action(second));
+        for (const apply of [false, true]) {
+          if (refusal) {
+            await expect(executePlan(pair, ctx({ apply }))).rejects.toMatchObject({
+              code: refusal,
+            });
+            expect(existsSync(target)).toBe(exists);
+            if (before) expect(readFileSync(target)).toEqual(before);
+          } else {
+            const result = await executePlan(pair, ctx({ apply }));
+            expect(result.applied).toBe(apply);
+            expect(result.writes.length + result.docs.filter((entry) => entry.path).length).toBe(2);
+            if (apply) expect(readFileSync(target)).toEqual(Buffer.from(planned ?? "", "utf8"));
+            else {
+              expect(existsSync(target)).toBe(exists);
+              if (before) expect(readFileSync(target)).toEqual(before);
+            }
+          }
+          expect(existsSync(join(dir, ".aih/legacy/shared.txt"))).toBe(false);
+        }
+        if (exists) rmSync(target);
+      }
+    },
+  );
+});
+
+it("keeps the interruption callback unreachable from production callers", () => {
+  const referenced: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(join(process.cwd(), directory), { withFileTypes: true })) {
+      const path = `${directory}/${entry.name}`;
+      if (entry.isDirectory()) visit(path);
+      else if (
+        entry.name.endsWith(".ts") &&
+        readFileSync(join(process.cwd(), path), "utf8").includes("onEffectCommitted")
+      )
+        referenced.push(path);
+    }
+  };
+  visit("src");
+  visit("packages");
+  expect(referenced.sort()).toEqual(["src/internals/execute.ts", "src/internals/fsxn.ts"]);
 });
 
 describe("writeArtifact", () => {
