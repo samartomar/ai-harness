@@ -5,7 +5,7 @@
 
 Core prepares one offline `authoring-catalog-bundle/v1` from a
 fixed registry of build-time providers. The packaged registry currently enrolls `ecc`,
-`superpowers`, `aih`, `organization`, `mattpocock`, and `ponytail`. A provider prepares explicit
+`superpowers`, `aih`, `organization`, and `mattpocock`. A provider prepares explicit
 typed inputs for a registered compiler.
 The registry is fixed in the package; it does not load arbitrary executable plugins.
 
@@ -170,7 +170,7 @@ approval remain separate from scan provenance and results.
 The catalog digest and bundled report-lock digest identify the data in this
 artifact even when a development build retains the published package version.
 
-Matt and Ponytail request preparation verifies every packaged file against the
+Matt request preparation verifies every packaged file against the
 exact upstream checkout, hashes the complete materialized source tree, and maps
 the selected component file sets to their distinct compiler asset digests. The
 `coverage-map.json` companion is non-authoritative. Core must recompute it from
@@ -178,7 +178,7 @@ its pinned provider input when consuming a publication; merely uploading the
 companion does not establish custody. AIH MCP declarations do not constitute
 scans of external packages or private hosted-service implementations.
 
-For ECC, Superpowers, Matt and Ponytail, the internal preparation command accepts a local directory
+For ECC, Superpowers and Matt, the internal preparation command accepts a local directory
 of `batch-001`, `batch-002`, and subsequent published four-file release sets:
 
 ```bash
@@ -306,12 +306,8 @@ source-data refreshes use compiler formats already supported by Core. Accepted
 data snapshots and local verification receipts persist across processes;
 process-local compilation caches remain implementation details.
 Matt validates its packaged snapshot on first use and reuses a sealed compilation
-with detached outputs. Ponytail lazily validates its private packaged snapshot,
-rejects malformed or accessor-bearing values before cloning, and caches the
-complete sealed provider compilation while returning detached copies. Explicit
-caller inputs are always revalidated and are not admitted through that cache.
-A local recurring-preparation measurement fell from 23.205 ms to 0.059 ms; it
-does not establish a total Workbench-lane improvement.
+with detached outputs. Explicit caller inputs are always revalidated and are not
+admitted through that cache.
 
 Adding an ordinary provider requires a reviewed provider module, static
 registry enrollment, declared ownership and dependencies, and a mandatory
@@ -390,41 +386,3 @@ For independently added updates, another PC must import the required snapshot ch
 local verifier key. Copying a public cache does not
 establish verification on that PC. See [the command reference](commands.md) for
 import paths and requirements.
-
-## Ponytail collection
-
-The Ponytail provider packages six skills, three hook declarations, and one MCP
-declaration from commit `974d940a1c5344210874150b98ff0d2c861fab6a` (v4.9.0). Its
-56-file source inventory includes the exact MIT license and referenced support
-files. A literal reviewed digest binds the complete snapshot, including component
-metadata and file references. Snapshot validation happens on first preparation.
-
-Ponytail has no user-facing source picker; the browser was removed. Its packaged
-records remain available to preserve existing saved
-policy pins and Core consumption. The main Ponytail skill and optional
-methodology profile share one methodology key; the five auxiliary skills are
-additive. Existing methodology selections retain their pinned skill closure.
-Hook and MCP requests must be recorded explicitly and have separate counts from
-selected controls. They never become implicit template dependencies.
-
-Hook details preserve the upstream command, event, matcher where present, status
-message, five-second timeout, and declared Claude Code/Codex hosts. MCP details
-record its stdio launch, prompt and tool names, modes, and declared dependency
-ranges. These fields describe upstream source; they do not establish Core runtime
-support, a locked dependency closure, organization approval, or scanner evidence.
-
-The root upstream npm package does not include the private MCP subtree, which has
-no dependency lock. A future Core runtime adapter would need an exact acquisition
-source, independently locked dependencies, and its own reviewed installation and
-activation contracts. Historical Workbench hook and MCP records remain pinned
-requests only.
-
-File references identify covered source bytes. In particular, the gain skill's
-benchmark files are supporting material, not an installation or execution list.
-Any future materialization must define a separate Core-owned file allow-list.
-
-The neutral `pinned-component-collection/v1` format stores shared files once and
-expresses primary paths, component metadata, relations, profiles, and templates
-as data. It uses a tiny synthetic fixture for automatic contracts. Source-local
-Ponytail changes use the provider lane and existing packed smoke; changes to the
-shared format use broader backend coverage.

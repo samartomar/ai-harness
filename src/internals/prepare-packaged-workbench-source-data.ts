@@ -107,10 +107,9 @@ export function preparePackagedWorkbenchSourceDataV1(input: {
   };
 }
 
-/** The four Scanner-published sources whose Catalog record carries packaged source data. */
+/** The Scanner-published sources whose Catalog record carries packaged source data. */
 const PROVIDERS = {
   "anthropics-skills": "anthropics/skills",
-  ponytail: "DietrichGebert/ponytail",
   ecc: "affaan-m/ECC",
   superpowers: "obra/Superpowers",
 } as const;
@@ -126,7 +125,7 @@ const FLAGS = [
   "--output",
 ] as const;
 const USAGE =
-  "Usage: prepare-packaged-workbench-source-data --provider <anthropics-skills|ponytail|ecc|superpowers> --source-root <pinned-checkout> --publication-root <batch-NNN/{discovery.json,publication.json,attestation.jsonl}> --source-bundle <catalog-compiled-single-source-bundle> --compiler-input <compiler-input> --published-catalog <requested-baseline-catalog> --output <new-json-file> [--definition-overlap <disjoint|compiler-catalog>] [--update-kind evidence-only] [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
+  "Usage: prepare-packaged-workbench-source-data --provider <anthropics-skills|ecc|superpowers> --source-root <pinned-checkout> --publication-root <batch-NNN/{discovery.json,publication.json,attestation.jsonl}> --source-bundle <catalog-compiled-single-source-bundle> --compiler-input <compiler-input> --published-catalog <requested-baseline-catalog> --output <new-json-file> [--definition-overlap <disjoint|compiler-catalog>] [--update-kind evidence-only] [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
 const BATCH_FILES = ["attestation.jsonl", "discovery.json", "publication.json"];
 const LIMITS = { discovery: 8_192, publication: 12_000_000, attestation: 512_000 };
 

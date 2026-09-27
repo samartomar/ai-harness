@@ -3,7 +3,7 @@ import { packagedWorkbenchSourceDataRecordsV1 } from "../../../../src/org-policy
 import { packagedWorkbenchSourceDataInputV1 } from "../../../../src/org-policy/workbench/core/packaged-source-data-data.js";
 import identities from "../../../fixtures/workbench-initial-source-identities.json";
 
-it("preserves initial source identities so compatible Core releases do not replace saved policy material", () => {
+it("preserves retained source identities across compatible Core releases", () => {
   const actual = packagedWorkbenchSourceDataRecordsV1()
     .map((record) => {
       const source = Object.values(record.sourceBundle.sources)[0];
@@ -18,7 +18,8 @@ it("preserves initial source identities so compatible Core releases do not repla
     })
     .sort((a, b) => a.id.localeCompare(b.id));
   expect(identities.compatibility).toBe("core-workbench-data/v1");
-  expect(actual).toEqual(identities.identities);
+  const retainedIds = new Set(identities.identities.map((source) => source.id));
+  expect(actual.filter((source) => retainedIds.has(source.id))).toEqual(identities.identities);
 });
 
 it("keeps the authenticated ECC runtime descriptor within package and receipt bounds", () => {

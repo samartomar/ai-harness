@@ -34,22 +34,6 @@
       }
     },
     {
-      "id": "source:ponytail",
-      "inputFormat": "pinned-component-collection/v1",
-      "compiler": {
-        "id": "pinned-component-collection",
-        "version": "1"
-      },
-      "upstreamOrigin": {
-        "kind": "git",
-        "locator": "https://github.com/DietrichGebert/ponytail"
-      },
-      "revision": {
-        "id": "1d95ff7d39de12d87014ea40d4e22201bddc501b",
-        "contentDigest": "sha256:c6f02b0fe42ce4861c54eb4df1ea0fa77207b57868f6864720f609aee1b7164e"
-      }
-    },
-    {
       "id": "source:superpowers",
       "inputFormat": "pinned-baseline/v1",
       "compiler": {

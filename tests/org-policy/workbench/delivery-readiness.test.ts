@@ -138,7 +138,7 @@ function fullyReportedCompositionFixture() {
   bundle.templates = {};
   bundle.groups = {};
   bundle.relations = [];
-  for (const provider of ["ecc", "superpowers", "ponytail"]) {
+  for (const provider of ["ecc", "superpowers"]) {
     const sourceId = `source:${provider}`;
     const profileId = `${provider}/profile:methodology`;
     const skillId = `${provider}/skill:${provider}`;
@@ -194,10 +194,6 @@ describe("Core-derived methodology composition evidence", () => {
           assetId: "superpowers/profile:methodology",
           problem: "composition-missing",
         }),
-        expect.objectContaining({
-          assetId: "ponytail/profile:methodology",
-          problem: "composition-missing",
-        }),
       ]),
     );
     expect(
@@ -223,16 +219,16 @@ describe("Core-derived methodology composition evidence", () => {
     const releaseCompositions = prepareWorkbenchEvidenceCompositionsForReleaseV1(bundle);
     const now = "2026-09-07T00:00:00Z";
     const constituent = Object.values(bundle.assets).find(
-      (asset) => asset.sourceId === "source:ponytail" && asset.derivation === "upstream",
+      (asset) => asset.sourceId === "source:superpowers" && asset.derivation === "upstream",
     );
-    if (constituent === undefined) throw new Error("expected Ponytail constituent");
+    if (constituent === undefined) throw new Error("expected Superpowers constituent");
     const report = bundle.evidence[`evidence:${constituent.id}`];
-    if (report === undefined) throw new Error("expected Ponytail evidence");
+    if (report === undefined) throw new Error("expected Superpowers evidence");
     report.scan.outcome = "has-findings";
 
     const composed = inspectWorkbenchEvidenceCoverageV1(bundle, now, releaseCompositions);
     expect(
-      composed.assets.find((asset) => asset.assetId === "ponytail/profile:methodology")?.problem,
+      composed.assets.find((asset) => asset.assetId === "superpowers/profile:methodology")?.problem,
     ).toBeUndefined();
     expect(composed.assets.find((asset) => asset.assetId === constituent.id)?.reportedOutcome).toBe(
       "has-findings",
@@ -240,7 +236,7 @@ describe("Core-derived methodology composition evidence", () => {
 
     const withoutCompositions = inspectWorkbenchEvidenceCoverageV1(bundle, now);
     const missing = withoutCompositions.assets.find(
-      (asset) => asset.assetId === "ponytail/profile:methodology",
+      (asset) => asset.assetId === "superpowers/profile:methodology",
     );
     expect(missing?.problem).toBe("composition-missing");
     expect(missing?.reportedOutcome).toBeUndefined();
@@ -249,14 +245,14 @@ describe("Core-derived methodology composition evidence", () => {
   it("fails closed for invalid composition material, including cyclic relationships", () => {
     const bundle = fullyReportedCompositionFixture();
     bundle.relations.push({
-      fromAssetId: "ponytail/skill:ponytail",
-      toAssetId: "ponytail/profile:methodology",
+      fromAssetId: "superpowers/skill:superpowers",
+      toAssetId: "superpowers/profile:methodology",
       kind: "requires",
     });
     const compositions = prepareWorkbenchEvidenceCompositionsForReleaseV1(bundle);
     expect(
       inspectWorkbenchEvidenceCoverageV1(bundle, "2026-09-07T00:00:00Z", compositions).assets.find(
-        (asset) => asset.assetId === "ponytail/profile:methodology",
+        (asset) => asset.assetId === "superpowers/profile:methodology",
       )?.problem,
     ).toBe("composition-invalid");
   });

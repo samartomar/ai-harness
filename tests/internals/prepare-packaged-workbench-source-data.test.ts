@@ -40,7 +40,11 @@ const sha = (bytes: Buffer | string) => createHash("sha256").update(bytes).diges
 const skill = "---\nname: tdd\n---\n";
 const compilerInput = {
   version: "pinned-component-collection/v1",
-  source: { id: "ponytail", repository: "https://github.com/DietrichGebert/ponytail", commit: PIN },
+  source: {
+    id: "anthropics-skills",
+    repository: "https://github.com/anthropics/skills",
+    commit: PIN,
+  },
   files: [
     {
       path: "skills/tdd/SKILL.md",
@@ -50,9 +54,9 @@ const compilerInput = {
   ],
 };
 const publishedCatalog = {
-  id: "ponytail",
-  owner: "DietrichGebert",
-  repo: "ponytail",
+  id: "anthropics-skills",
+  owner: "anthropics",
+  repo: "skills",
   pinnedSha: PIN,
   components: [{ id: "tdd", paths: ["skills/tdd/SKILL.md"], skillContent: true }],
 };
@@ -89,13 +93,13 @@ beforeEach(() => {
   mocks.facts.mockResolvedValue({ evidence: {} });
   args = [
     "--provider",
-    "ponytail",
+    "anthropics-skills",
     "--source-root",
     join(root, "source"),
     "--publication-root",
     publications,
     "--source-bundle",
-    json("bundle.json", sealedSingleSourceBundle("ponytail", PIN, ["tdd"])),
+    json("bundle.json", sealedSingleSourceBundle("anthropics-skills", PIN, ["tdd"])),
     "--compiler-input",
     json("compiler-input.json", compilerInput),
     "--published-catalog",
@@ -114,12 +118,14 @@ afterEach(() => {
 describe("prepare-packaged-workbench-source-data", () => {
   it("verifies the publications against the source and writes one sealed record", async () => {
     const message = await preparePackagedWorkbenchSourceDataCommandV1(args);
-    expect(message).toMatch(/^Prepared packaged source data ponytail@c{40} sha256:[0-9a-f]{64}\./);
+    expect(message).toMatch(
+      /^Prepared packaged source data anthropics-skills@c{40} sha256:[0-9a-f]{64}\./,
+    );
     expect(mocks.facts).toHaveBeenCalledTimes(1);
     expect(mocks.facts.mock.calls[0]?.at(-1)).toBe("disjoint");
     const [bundle, proof, sourceRoot, issuedAt, authorized, now, proofRoot] =
       mocks.facts.mock.calls[0] ?? [];
-    expect(bundle).toEqual(sealedSingleSourceBundle("ponytail", PIN, ["tdd"]));
+    expect(bundle).toEqual(sealedSingleSourceBundle("anthropics-skills", PIN, ["tdd"]));
     expect(sourceRoot).toBe(join(root, "source"));
     expect(authorized).toBeUndefined();
     expect(now).toBe(issuedAt);
@@ -147,7 +153,7 @@ describe("prepare-packaged-workbench-source-data", () => {
     expect(existsSync(proofRoot as string)).toBe(false);
 
     const record = PackagedSourceDataRecordV1Schema.parse(JSON.parse(readFileSync(output, "utf8")));
-    expect(record.source).toEqual({ repository: "DietrichGebert/ponytail", commit: PIN });
+    expect(record.source).toEqual({ repository: "anthropics/skills", commit: PIN });
     expect(record.scannerProof).toEqual(proof);
     expect(record.updateKind).toBeUndefined();
     expect(record.runtimeDescriptor).toBeUndefined();
@@ -200,7 +206,7 @@ describe("prepare-packaged-workbench-source-data", () => {
   it("refuses a checkout that is not at the bundle's admitted revision", async () => {
     mocks.gitHead.mockReturnValue("d".repeat(40));
     await expect(preparePackagedWorkbenchSourceDataCommandV1(args)).rejects.toThrow(
-      `ponytail checkout is ${"d".repeat(40)}, the source bundle admits ${PIN}`,
+      `anthropics-skills checkout is ${"d".repeat(40)}, the source bundle admits ${PIN}`,
     );
     expect(mocks.facts).not.toHaveBeenCalled();
   });
@@ -208,14 +214,14 @@ describe("prepare-packaged-workbench-source-data", () => {
   it("refuses a source bundle for another provider", async () => {
     args[7] = json("other.json", sealedSingleSourceBundle("superpowers", PIN, ["tdd"]));
     await expect(preparePackagedWorkbenchSourceDataCommandV1(args)).rejects.toThrow(
-      "candidate source bundle must carry exactly source:ponytail, not source:superpowers",
+      "candidate source bundle must carry exactly source:anthropics-skills, not source:superpowers",
     );
   });
 
   it("refuses a published catalog pinned elsewhere", async () => {
     args[11] = json("published-other.json", { ...publishedCatalog, pinnedSha: "d".repeat(40) });
     await expect(preparePackagedWorkbenchSourceDataCommandV1(args)).rejects.toThrow(
-      /published catalog must be DietrichGebert\/ponytail@c{40}/,
+      /published catalog must be anthropics\/skills@c{40}/,
     );
   });
 
@@ -276,7 +282,8 @@ describe("prepare-packaged-workbench-source-data", () => {
     ["a missing flag", (a: string[]) => a.splice(10, 2)],
     [
       "flags out of order",
-      (a: string[]) => a.splice(0, 4, "--source-root", a[3] as string, "--provider", "ponytail"),
+      (a: string[]) =>
+        a.splice(0, 4, "--source-root", a[3] as string, "--provider", "anthropics-skills"),
     ],
     ["an unknown update kind", (a: string[]) => a.push("--update-kind", "full")],
     ["an unknown overlap mode", (a: string[]) => a.push("--definition-overlap", "any")],

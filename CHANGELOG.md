@@ -290,7 +290,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   descriptors (component definitions, module and profile graphs, install preview, MCP, skill and
   hook inventories, vendor lock), the Policy Workbench authoring bundle and source inputs, the
   public baseline, Core qualification material, scanner evidence and scanner-provider inputs
-  (including the Matt Pocock and Ponytail snapshots) are read only from the installed
+  (including the Matt Pocock snapshot) are read only from the installed
   `@aihq/catalog` 0.3.x. Operations that need them (ECC install preview and lifecycle, baseline
   vetting and analysis, framework plug-ins, policy authoring and policy-data preparation or
   import) report `catalog-package-unavailable` without Catalog and `catalog-package-incompatible`
@@ -307,7 +307,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   being stripped or replaced with U+FFFD.
 - **Breaking:** Core no longer compiles Catalog-owned content. The `built-in/v1`,
   `pinned-baseline/v1`, `pinned-skill-collection/v1` and `pinned-component-collection/v1`
-  producers, the Matt Pocock and Ponytail scanner providers and the embedded Workbench
+  producers, the Matt Pocock scanner provider and the embedded Workbench
   preassembly moved to Catalog; Core keeps those format identities only to validate what Catalog
   admits. Compiling a replacement Catalog-owned baseline is refused. Organization-authored
   manifests and witnessed organization evidence still compile. Migration: regenerate

@@ -851,9 +851,9 @@ describe("baseline Scanner bridge CLI", () => {
       const definition = join(root, "carried-collection.definition.json");
       writeFileSync(definition, "{}");
       const registeredCatalog = {
-        id: "ponytail",
-        owner: "DietrichGebert",
-        repo: "ponytail",
+        id: "mattpocock",
+        owner: "mattpocock",
+        repo: "skills",
         pinnedSha: NEW_PIN,
         components: [{ id: "skill:x", paths: ["skills/x/SKILL.md"] }],
       };
@@ -866,7 +866,7 @@ describe("baseline Scanner bridge CLI", () => {
         runScannerBridge([
           "request",
           "--catalog",
-          "ponytail",
+          "mattpocock",
           "--source",
           source,
           "--definition",
@@ -877,7 +877,7 @@ describe("baseline Scanner bridge CLI", () => {
       ).rejects.toThrow("Scanner source differs from reviewed snapshot bytes: skills/x/SKILL.md");
       // D79's bypass belongs to framework definition resolution: a carried COLLECTION keeps
       // its registered route, whose snapshot-byte check refuses even though HEAD is unchanged.
-      expect(mocks.prepareCatalog).toHaveBeenCalledWith(source, "ponytail");
+      expect(mocks.prepareCatalog).toHaveBeenCalledWith(source, "mattpocock");
       expect(mocks.createRequests).not.toHaveBeenCalled();
     });
 
@@ -887,9 +887,9 @@ describe("baseline Scanner bridge CLI", () => {
       writeFileSync(definition, "{}");
       const output = join(root, "carried-collection-coverage-requests");
       const registeredCatalog = {
-        id: "ponytail",
-        owner: "DietrichGebert",
-        repo: "ponytail",
+        id: "mattpocock",
+        owner: "mattpocock",
+        repo: "skills",
         pinnedSha: NEW_PIN,
         components: [{ id: "skill:x", paths: ["skills/x/SKILL.md"] }],
       };
@@ -904,7 +904,7 @@ describe("baseline Scanner bridge CLI", () => {
       await runScannerBridge([
         "request",
         "--catalog",
-        "ponytail",
+        "mattpocock",
         "--source",
         source,
         "--definition",

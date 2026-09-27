@@ -420,8 +420,8 @@ the protected branch. A finding label is not an ECC installation verdict.
 
 Core's repository-only `tools/prepare-candidate-baseline-requests.mjs` authors
 requests from a `CandidateBaselineInventoryV1` under
-`.github/baseline-candidates/`. The six reviewed inventories cover Core,
-Anthropic skills, ECC, Matt Pocock skills, Ponytail, and Superpowers. Each binds
+`.github/baseline-candidates/`. The five reviewed inventories cover Core,
+Anthropic skills, ECC, Matt Pocock skills, and Superpowers. Each binds
 an exact repository, commit, source tree digest, component paths, and explicit
 source symlink exclusions. Preparation rejects source drift and requires every
 regular source file to belong to exactly one component before writing canonical

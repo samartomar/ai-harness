@@ -186,7 +186,7 @@ describe("collection preparation with definition-route coverage", () => {
     await expect(
       prepareScannerCollectionPublicationsV1({
         sourceRoot: root,
-        catalogId: "ponytail",
+        catalogId: "ecc",
         batches: [batch],
         now: "2026-09-24T00:00:00.000Z",
         run: head,

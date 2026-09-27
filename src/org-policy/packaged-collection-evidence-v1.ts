@@ -24,7 +24,7 @@ import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "./workbe
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 const commit = z.string().regex(/^[a-f0-9]{40}$/);
-const catalogId = z.enum(["aih", "mattpocock", "ponytail", "ecc", "superpowers"]);
+const catalogId = z.enum(["aih", "mattpocock", "ecc", "superpowers"]);
 const safePath = z
   .string()
   .min(1)

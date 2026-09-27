@@ -158,8 +158,8 @@ describe("definition-route Scanner coverage", () => {
     });
 
     it("refuses a candidate bundle that carries another source", () => {
-      expect(() => prepare(sealedSingleSourceBundle("ponytail", PIN, ["tdd"]))).toThrow(
-        "candidate source bundle must carry exactly source:mattpocock, not source:ponytail",
+      expect(() => prepare(sealedSingleSourceBundle("superpowers", PIN, ["tdd"]))).toThrow(
+        "candidate source bundle must carry exactly source:mattpocock, not source:superpowers",
       );
     });
 
@@ -366,9 +366,7 @@ describe("definition-route Scanner coverage", () => {
     it.each([
       // The installed Catalog's own compiled bundle at its own (new) pin, and the same
       // compiled partition re-pinned to the previous-pin inventories.
-      ["ponytail-1d95ff7d", false, "https://github.com/DietrichGebert/ponytail", 28],
       ["mattpocock-c55ee460", false, "https://github.com/mattpocock/skills", 22],
-      ["ponytail-356918eb", true, "https://github.com/DietrichGebert/ponytail", 28],
       ["mattpocock-3cca18b3", true, "https://github.com/mattpocock/skills", 21],
     ] as const)(
       "binds %s's real compiled assets zero-to-many and keeps every component's scan (re-pinned: %s)",
@@ -444,40 +442,6 @@ describe("definition-route Scanner coverage", () => {
         );
       },
     );
-
-    it("binds several compiled assets to one component: the five ponytail hooks", () => {
-      const catalog = inventory("ponytail-1d95ff7d");
-      const bundle = installedSingleSourceBundle(catalog.id, catalog.pinnedSha);
-      const hooks = prepareInventory(
-        catalog,
-        checkoutFor(catalog, bundle),
-        bundle,
-      ).coverage.components.find((component) => component.paths.join() === "hooks");
-      expect(subjectsOf(hooks ?? {}).map((subject) => subject.assetId)).toEqual([
-        "ponytail/hook:cursor-before-submit-prompt",
-        "ponytail/hook:cursor-session-start",
-        "ponytail/hook:session-start",
-        "ponytail/hook:subagent-start",
-        "ponytail/hook:user-prompt-submit",
-      ]);
-    });
-
-    it("refuses a compiled upstream asset that no inventory component scans", () => {
-      const catalog = inventory("ponytail-1d95ff7d");
-      const source = checkoutFor(
-        catalog,
-        installedSingleSourceBundle(catalog.id, catalog.pinnedSha),
-      );
-      // Outside every component, and inside a component directory but not a scanned file.
-      for (const originalPath of ["absent/x.md", "hooks/unscanned.js"]) {
-        const bundle = installedSingleSourceBundle(catalog.id, catalog.pinnedSha, [
-          { id: "ponytail/hook:extra", originalPath },
-        ]);
-        expect(() => prepareInventory(catalog, source, bundle)).toThrow(
-          `Scanner provider coverage: admitted upstream asset ponytail/hook:extra names ${originalPath}, which no inventory component scans`,
-        );
-      }
-    });
 
     it("leaves a derived asset unmapped instead of binding it to a component", () => {
       const catalog = inventory("mattpocock-c55ee460");

@@ -43,11 +43,6 @@ export const SCANNER_DEFINITION_SOURCES_V1 = {
     kind: "collection",
     version: "pinned-skill-collection/v1",
   },
-  ponytail: {
-    repository: "DietrichGebert/ponytail",
-    kind: "collection",
-    version: "pinned-component-collection/v1",
-  },
 } as const;
 type DefinitionSourceId = keyof typeof SCANNER_DEFINITION_SOURCES_V1;
 
@@ -95,30 +90,6 @@ const skillCollectionSchema = z
       .min(1),
   })
   .strict();
-const componentCollectionSchema = z
-  .object({
-    version: z.literal("pinned-component-collection/v1"),
-    source: collectionSourceSchema,
-    files: z.array(pinnedFileSchema).min(1),
-    components: z
-      .array(
-        z
-          .object({
-            id: z.string(),
-            kind: z.string().min(1).max(100),
-            label: z.string().optional(),
-            description: z.string().optional(),
-            primaryPath: BaselineComponentPathSchema.optional(),
-            fileRefs: z.array(BaselineComponentPathSchema).min(1),
-          })
-          .strict(),
-      )
-      .min(1),
-    profile: z.unknown().optional(),
-    template: z.unknown().optional(),
-  })
-  .strict();
-
 export interface ScannerDefinitionDepsV1 {
   /** The installed Catalog's catalog for an id; it throws when the Catalog is unusable. */
   readonly carriedCatalog?: (id: DefinitionSourceId) => BaselineCatalog | undefined;
@@ -154,10 +125,7 @@ function parsed<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
 function collectionCatalog(value: Record<string, unknown>, id: DefinitionSourceId) {
   const expected = SCANNER_DEFINITION_SOURCES_V1[id];
   if (expected.kind !== "collection") return fail(`${id} is not a collection`);
-  const input: CollectionInput =
-    expected.version === "pinned-skill-collection/v1"
-      ? parsed(skillCollectionSchema, value, `${id} collection`)
-      : parsed(componentCollectionSchema, value, `${id} collection`);
+  const input: CollectionInput = parsed(skillCollectionSchema, value, `${id} collection`);
   const carried = new Set<string>();
   for (const file of collectionFilesV1(input) as readonly z.infer<typeof pinnedFileSchema>[]) {
     assertPortablePath(file.path);
@@ -172,10 +140,6 @@ function collectionCatalog(value: Record<string, unknown>, id: DefinitionSourceI
     if (file.size !== undefined && file.size !== bytes.length)
       fail(`${id} collection file ${file.path} size disagrees with its bytes`);
   }
-  for (const component of input.components ?? [])
-    for (const ref of component.fileRefs)
-      if (!carried.has(ref))
-        fail(`${id} collection component ${component.id} names uncarried ${ref}`);
   if (input.source.repository !== `https://github.com/${expected.repository}`)
     fail(`${id} collection must name https://github.com/${expected.repository}`);
   try {

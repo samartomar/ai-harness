@@ -14,12 +14,6 @@ const COMPOSITION_PROFILES = [
     templateId: "template:superpowers/methodology",
     methodologyKey: "superpowers",
   },
-  {
-    profileAssetId: "ponytail/profile:methodology",
-    sourceId: "source:ponytail",
-    templateId: "template:ponytail/methodology",
-    methodologyKey: "ponytail",
-  },
 ] as const;
 
 type ProfileSpec = (typeof COMPOSITION_PROFILES)[number];

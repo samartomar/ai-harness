@@ -36,14 +36,14 @@ import type { BaselineSourceEvidence } from "./schema.js";
 
 const DISCOVERY_MAX_BYTES = 8 * 1024;
 const PUBLICATION_MAX_BYTES = 96 * 1024 * 1024;
-// Matt and Ponytail currently fit one Scanner batch; this remains a hard input bound.
+// The collection input remains bounded to 128 MiB.
 export const SCANNER_COLLECTION_TOTAL_INPUT_MAX_BYTES_V1 = 128 * 1024 * 1024;
 const GH_ATTESTATION_MAX_BYTES = 256 * 1024;
 const GH_ATTESTATION_TIMEOUT_MS = 30_000;
 const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
 const SLSA_PROVENANCE_V1 = "https://slsa.dev/provenance/v1";
 
-export type ScannerCollectionCatalogIdV1 = "mattpocock" | "ponytail" | "ecc" | "superpowers";
+export type ScannerCollectionCatalogIdV1 = "mattpocock" | "ecc" | "superpowers";
 export type ScannerCollectionCoverageV1 = NonNullable<
   ScannerCollectionPreparedCoverageV1["coverage"]
 >;
@@ -190,10 +190,7 @@ function assertInput(
   if (
     typeof sourceRoot !== "string" ||
     sourceRoot.length === 0 ||
-    (catalogId !== "mattpocock" &&
-      catalogId !== "ponytail" &&
-      catalogId !== "ecc" &&
-      catalogId !== "superpowers") ||
+    (catalogId !== "mattpocock" && catalogId !== "ecc" && catalogId !== "superpowers") ||
     !Array.isArray(suppliedBatches) ||
     typeof now !== "string" ||
     (run !== undefined && typeof run !== "function") ||

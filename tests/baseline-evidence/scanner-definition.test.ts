@@ -79,11 +79,6 @@ describe("definition-driven Scanner catalog resolution", () => {
         kind: "collection",
         version: "pinned-skill-collection/v1",
       },
-      ponytail: {
-        repository: "DietrichGebert/ponytail",
-        kind: "collection",
-        version: "pinned-component-collection/v1",
-      },
     });
   });
 
@@ -418,102 +413,8 @@ describe("definition-driven Scanner catalog resolution", () => {
     const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
     const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-    function ponytail(overrides: Record<string, unknown> = {}) {
-      return {
-        version: "pinned-component-collection/v1",
-        source: {
-          id: "ponytail",
-          repository: "https://github.com/DietrichGebert/ponytail",
-          commit: PIN,
-          version: "4.10.0",
-          licenseFileRef: "LICENSE",
-        },
-        files: [
-          { path: "LICENSE", bytesBase64: base64("MIT\n"), sha256: sha("MIT\n"), size: 4 },
-          {
-            path: "skills/ponytail/SKILL.md",
-            bytesBase64: base64("# P\n"),
-            sha256: sha("# P\n"),
-            size: 4,
-          },
-        ],
-        components: [
-          {
-            id: "skill:ponytail",
-            kind: "skill",
-            label: "Ponytail",
-            fileRefs: ["skills/ponytail/SKILL.md"],
-            description: "Main skill.",
-            primaryPath: "skills/ponytail/SKILL.md",
-          },
-        ],
-        profile: { id: "ponytail" },
-        template: { kind: "opaque" },
-        ...overrides,
-      };
-    }
-
-    function resolvePonytail(value: unknown) {
-      return resolveScannerDefinitionV1(
-        {
-          sourceRoot: source,
-          catalogId: "ponytail",
-          definitionPath: definitionFile(value, "ponytail.json"),
-          head: PIN,
-        },
-        notCarried,
-      );
-    }
-
-    beforeEach(() => {
-      write("LICENSE", "MIT\n");
-      write("skills/ponytail/SKILL.md", "# P\n");
-    });
-
-    it("derives the Scanner catalog from a pinned component collection", () => {
-      const resolved = resolvePonytail(ponytail());
-      expect(resolved).toEqual({
-        route: "definition",
-        catalog: {
-          id: "ponytail",
-          owner: "DietrichGebert",
-          repo: "ponytail",
-          pinnedSha: PIN,
-          components: [
-            { id: "skill:ponytail", paths: ["skills/ponytail/SKILL.md"], skillContent: true },
-          ],
-        },
-      });
-    });
-
-    it("accepts the Catalog's prefixed file digests and checks them against the bytes", () => {
-      // Catalog's registered collections and its emitter spell file digests `sha256:<hex>`.
-      const prefixed = (text: string) => `sha256:${sha(text)}`;
-      const files = [
-        { path: "LICENSE", bytesBase64: base64("MIT\n"), sha256: prefixed("MIT\n"), size: 4 },
-        {
-          path: "skills/ponytail/SKILL.md",
-          bytesBase64: base64("# P\n"),
-          sha256: prefixed("# P\n"),
-          size: 4,
-        },
-      ];
-      expect(resolvePonytail(ponytail({ files })).catalog).toEqual(
-        resolvePonytail(ponytail()).catalog,
-      );
-      expect(() =>
-        resolvePonytail(
-          ponytail({
-            files: [{ ...files[0], sha256: `sha256:${"0".repeat(64)}` }, files[1]],
-          }),
-        ),
-      ).toThrow("ponytail collection file LICENSE sha256 disagrees with its bytes");
-      expect(() =>
-        resolvePonytail(ponytail({ files: [{ ...files[0], sha256: "sha256:ABC" }, files[1]] })),
-      ).toThrow("ponytail collection is malformed");
-    });
-
     it("derives the Scanner catalog from a pinned skill collection", () => {
+      write("LICENSE", "MIT\n");
       write("skills/tdd/SKILL.md", "# T\n");
       const resolved = resolveScannerDefinitionV1(
         {
@@ -543,102 +444,6 @@ describe("definition-driven Scanner catalog resolution", () => {
       expect(resolved.catalog.components).toEqual([
         { id: "skill:tdd", paths: ["skills/tdd/SKILL.md"], skillContent: true },
       ]);
-    });
-
-    it("accepts a whole-repository inventory for a collection subject", () => {
-      const inventory: BaselineCatalog = {
-        components: [
-          { id: "runtime:root-4813494d137e", paths: ["LICENSE"] },
-          {
-            id: "skill:skills-ponytail-000000000000",
-            paths: ["skills/ponytail"],
-            skillContent: true,
-          },
-        ],
-        id: "ponytail",
-        owner: "DietrichGebert",
-        pinnedSha: PIN,
-        repo: "ponytail",
-      };
-      expect(resolvePonytail(inventory)).toEqual({ route: "definition", catalog: inventory });
-      // The inventory route keeps every other definition check.
-      expect(() => resolvePonytail({ ...inventory, repo: "other" })).toThrow(
-        "ponytail must name DietrichGebert/ponytail, not DietrichGebert/other",
-      );
-      expect(() =>
-        resolvePonytail({
-          ...inventory,
-          components: [...inventory.components, { id: "runtime:skills-1", paths: ["skills"] }],
-        }),
-      ).toThrow("overlap: skills, skills/ponytail");
-      // A carried pin with a different catalog is refused, never replaced by the inventory.
-      expect(() =>
-        resolveScannerDefinitionV1(
-          {
-            sourceRoot: source,
-            catalogId: "ponytail",
-            definitionPath: definitionFile(inventory, "carried.json"),
-            head: PIN,
-          },
-          {
-            carriedCatalog: () => ({ ...inventory, components: inventory.components.slice(0, 1) }),
-          },
-        ),
-      ).toThrow(/installed Catalog carries ponytail@/);
-    });
-
-    it("parses a collection-shaped definition only as a collection", () => {
-      // A definition that declares a collection version is never re-read as an inventory.
-      expect(() => resolvePonytail({ ...ponytail(), components: undefined })).toThrow(
-        /ponytail collection is malformed/,
-      );
-    });
-
-    it("refuses a carried file outside the portable path set before reading the checkout", () => {
-      const files = [
-        ...ponytail().files,
-        { path: "NUL.md", bytesBase64: base64("x\n"), sha256: sha("x\n"), size: 2 },
-      ];
-      expect(() => resolvePonytail(ponytail({ files }))).toThrow(
-        'baseline definition: non-portable path "NUL.md": a Windows-reserved name',
-      );
-    });
-
-    it("refuses snapshot bytes that differ from the checkout", () => {
-      write("skills/ponytail/SKILL.md", "# changed\n");
-      expect(() => resolvePonytail(ponytail())).toThrow(
-        "Scanner source differs from reviewed snapshot bytes: skills/ponytail/SKILL.md",
-      );
-    });
-
-    it.each([
-      ["a wrong version", { version: "pinned-skill-collection/v1" }],
-      [
-        "a declared sha256 that disagrees with the bytes",
-        {
-          files: [{ path: "LICENSE", bytesBase64: base64("MIT\n"), sha256: "0".repeat(64) }],
-          components: [],
-        },
-      ],
-      [
-        "a component naming a file it does not carry",
-        {
-          components: [{ id: "skill:x", kind: "skill", fileRefs: ["skills/x/SKILL.md"] }],
-        },
-      ],
-      [
-        "a non-GitHub repository",
-        {
-          source: {
-            id: "ponytail",
-            repository: "https://example.com/DietrichGebert/ponytail",
-            commit: PIN,
-          },
-        },
-      ],
-      ["an unknown field", { extra: 1 }],
-    ])("rejects a collection definition with %s", (_label, overrides) => {
-      expect(() => resolvePonytail(ponytail(overrides))).toThrow(/baseline definition/);
     });
   });
 });
