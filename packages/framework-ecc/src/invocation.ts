@@ -5,12 +5,7 @@ import {
   type FrameworkDescriptorBytesV1,
   type FrameworkOperationContextV1,
 } from "@aihq/core/framework-host";
-import {
-  type EccDescriptor,
-  type EccDescriptorSection,
-  eccDescriptorSectionOf,
-  readEccDescriptor,
-} from "./descriptor.js";
+import { type EccDescriptor, readEccDescriptor } from "./descriptor.js";
 
 /**
  * One Core invocation of this plugin: the validated ECC descriptor Core loaded
@@ -89,9 +84,6 @@ export function setEccTestInvocation(invocation: EccInvocation | undefined): voi
  * One section of the current invocation's descriptor, as a private copy. The
  * caller validates its shape with its own schema.
  */
-export function eccDescriptorSection<T = unknown>(section: EccDescriptorSection): T {
-  return structuredClone(eccDescriptorSectionOf(currentEccInvocation().descriptor, section)) as T;
-}
 
 const memos = new Map<string, { readonly digest: string; readonly value: unknown }>();
 

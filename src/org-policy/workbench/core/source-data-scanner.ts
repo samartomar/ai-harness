@@ -70,21 +70,7 @@ export const SourceDataScannerProofV1Schema = z
     ).optional(),
     preparedAt: z.string().datetime(),
     publisherCommit: z.string().regex(/^[a-f0-9]{40}$/),
-    batches: z
-      .array(
-        z.union([
-          z
-            .object({
-              discoveryBytesBase64: z.string().min(1).max(12_000),
-              publicationBytesBase64: z.string().min(1).max(16_000_000),
-              attestation: z.string().min(1).max(512_000),
-            })
-            .strict(),
-          SourceDataScannerBlobBatchV1Schema,
-        ]),
-      )
-      .min(1)
-      .max(16),
+    batches: z.array(SourceDataScannerBlobBatchV1Schema).min(1).max(16),
   })
   .strict();
 
@@ -95,11 +81,6 @@ function fail(): never {
 }
 function codePointOrder(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-function decode(value: string): Buffer {
-  const bytes = Buffer.from(value, "base64");
-  if (bytes.toString("base64") !== value) fail();
-  return bytes;
 }
 
 export { sealPreparedEccRuntimeDescriptorV1 } from "./source-data-runtime-descriptor-custody.js";
@@ -307,12 +288,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
     (compilerBlob?.bytes ?? canonicalStrictJsonBytesV1(proof.compilerInput).length) +
     proof.batches.reduce(
       (sum, batch) =>
-        sum +
-        ("version" in batch
-          ? batch.discovery.bytes + batch.publication.bytes + batch.attestation.bytes
-          : Math.ceil(
-              ((batch.discoveryBytesBase64.length + batch.publicationBytesBase64.length) * 3) / 4,
-            ) + Buffer.byteLength(batch.attestation)),
+        sum + batch.discovery.bytes + batch.publication.bytes + batch.attestation.bytes,
       0,
     );
   if (declaredProofBytes > SOURCE_DATA_RAW_PROOF_BUDGET_V1) fail();
@@ -383,18 +359,11 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
   const directory = mkdtempSync(join(tmpdir(), "aih-source-scanner-proof-"));
   try {
     const batches = proof.batches.map((batch, index) => {
-      const publicationBytes =
-        "version" in batch
-          ? readSourceDataProofBlobV1(batch.publication, proofRoot, 12_000_000)
-          : decode(batch.publicationBytesBase64);
-      const discoveryBytes =
-        "version" in batch
-          ? readSourceDataProofBlobV1(batch.discovery, proofRoot, 8_192)
-          : decode(batch.discoveryBytesBase64);
-      const attestation =
-        "version" in batch
-          ? readSourceDataProofBlobV1(batch.attestation, proofRoot, 512_000).toString("utf8")
-          : batch.attestation;
+      const publicationBytes = readSourceDataProofBlobV1(batch.publication, proofRoot, 12_000_000);
+      const discoveryBytes = readSourceDataProofBlobV1(batch.discovery, proofRoot, 8_192);
+      const attestation = readSourceDataProofBlobV1(batch.attestation, proofRoot, 512_000).toString(
+        "utf8",
+      );
       const request = requests[index];
       if (!request) fail();
       // Decode only to reject malformed transport before launching the verifier.

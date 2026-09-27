@@ -131,12 +131,12 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ["src/framework-host/index.ts", 17, "export const FRAMEWORK_HOST_API_VERSION = 1;"],
   [
     "src/framework-plugin/contract-v1.ts",
-    44,
+    29,
     "export const FRAMEWORK_PLUGIN_CONTRACT_VERSION = 1;",
   ],
   [
     "src/framework-plugin/contract-v1.ts",
-    55,
+    40,
     "export const FRAMEWORK_PLUGIN_PACKAGE_NAMES = Object.freeze({",
   ],
   [
@@ -156,7 +156,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/org-policy/workbench/core/source-data-scanner.ts",
-    600,
+    569,
     "export async function prepareSourceDataScannerRuntimeDescriptorV1(",
   ],
   [

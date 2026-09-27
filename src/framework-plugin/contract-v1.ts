@@ -1,30 +1,15 @@
-import type { baselineCatalogById } from "../baseline-evidence/catalogs.js";
-import type { executeBaselineEvidencePipeline } from "../baseline-evidence/pipeline.js";
 import type {
   BaselineAuthorization,
   BaselineComponentLabels,
   BaselineHeldComponent,
 } from "../baseline-evidence/verify.js";
-import type { loadCatalogPackageV1 } from "../catalog-package/load-catalog-package.js";
 import type { Posture } from "../config/posture.js";
 import type { Cli } from "../internals/clis.js";
 import type { executePlan, PlanResult } from "../internals/execute.js";
 import type { OwnedFileExpectation } from "../internals/owned-file-transaction.js";
 import type { Action, FileAssertion, Plan, PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import type {
-  assertPolicyBindingCurrent,
-  policyBindingFileAssertion,
-} from "../org-policy/binding.js";
-import type { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
-import type { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import type { readOrgPolicy } from "../org-policy/schema.js";
-import type {
-  historicalEccRuntimeDescriptorsFromSourceDataV1,
-  workbenchSourceDataRootV1,
-} from "../org-policy/workbench/core/source-data.js";
-import type { consumeWorkbenchPolicy } from "../org-policy/workbench/policy-consumption.js";
-import type { cleanupQuarantine, resolveTrustSource } from "../trust/fetch.js";
 
 /**
  * Framework plugin contract, version 1 (C3).
@@ -344,31 +329,13 @@ export interface FrameworkEvidenceGatedInstallRequestV1 {
 /**
  * Core's effectful and policy-bound operations, bound by Core to ONE framework
  * invocation. Each member has the signature of the Core function it names; the
- * bound member runs Core's own implementation under the invocation's decisions:
- * `executePlan` and the evidence pipeline carry the invocation's policy
- * transaction pins and refuse a plan context for another root, policy readers
- * read the invocation's own environment, and every member refuses once the
- * invocation has ended. A framework implementation reaches executors, source
- * acquisition, policy and Catalog reads ONLY through this runtime; the
- * `@aihq/core/framework-host` imports carry no effect of their own.
+ * bound executor carries the invocation's policy transaction pins, refuses a
+ * plan context for another root, and is revoked when the invocation ends.
  */
 export interface FrameworkCoreRuntimeV1 {
   /** The invocation's plan context, with `targets` resolved and the policy decided. */
   readonly planContext: PlanContext;
   readonly executePlan: typeof executePlan;
-  readonly executeBaselineEvidencePipeline: typeof executeBaselineEvidencePipeline;
-  readonly resolveTrustSource: typeof resolveTrustSource;
-  readonly cleanupQuarantine: typeof cleanupQuarantine;
-  readonly verifiedOrgPolicyTargets: typeof verifiedOrgPolicyTargets;
-  readonly assertPolicyBindingCurrent: typeof assertPolicyBindingCurrent;
-  readonly policyBindingFileAssertion: typeof policyBindingFileAssertion;
-  readonly assertOrgPolicyMutationSource: typeof assertOrgPolicyMutationSource;
-  readonly readOrgPolicy: typeof readOrgPolicy;
-  readonly baselineCatalogById: typeof baselineCatalogById;
-  readonly loadCatalogPackageV1: typeof loadCatalogPackageV1;
-  readonly historicalEccRuntimeDescriptorsFromSourceDataV1: typeof historicalEccRuntimeDescriptorsFromSourceDataV1;
-  readonly workbenchSourceDataRootV1: typeof workbenchSourceDataRootV1;
-  readonly consumeWorkbenchPolicy: typeof consumeWorkbenchPolicy;
 }
 
 /** Effectful services Core binds to one invocation. */

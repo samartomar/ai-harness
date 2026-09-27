@@ -1,7 +1,3 @@
-import { createHash } from "node:crypto";
-import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
-import { eccContentMetadata } from "./ecc-content-metadata.js";
-
 /** Exact source tree whose top-level skills inventory is represented below. */
 export const ECC_SKILL_CATALOG_PROVENANCE = {
   repository: "affaan-m/ECC",
@@ -20,45 +16,4 @@ export interface EccSkillCatalogEntry {
   summary: string;
   usageContext: string;
   sourceSha256: string;
-}
-
-function fail(message: string): never {
-  throw new Error(`invalid source-locked ECC skills inventory: ${message}`);
-}
-
-function inventory(value: unknown): readonly EccSkillCatalogEntry[] {
-  if (!Array.isArray(value) || value.length !== 286) fail("count mismatch");
-  const names: string[] = [];
-  for (const [index, name] of value.entries()) {
-    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-      fail(`invalid name at ${index}`);
-    }
-    if (names.includes(name)) fail(`duplicate name ${name}`);
-    names.push(name);
-  }
-  const canonicalNames = [...names].sort();
-  const digest = createHash("sha256").update(canonicalNames.join("\n"), "utf8").digest("hex");
-  if (digest !== ECC_SKILL_CATALOG_PROVENANCE.namesSha256) fail("canonical names digest mismatch");
-  return Object.freeze(
-    canonicalNames.map((id) => {
-      const metadata = eccContentMetadata("skill", id);
-      if (metadata === undefined) fail(`skill ${id} has no source-authored metadata`);
-      return Object.freeze({
-        id,
-        path: `skills/${id}/SKILL.md`,
-        governable: true,
-        title: metadata.title,
-        summary: metadata.summary,
-        usageContext: metadata.usageContext,
-        sourceSha256: metadata.sourceSha256,
-      });
-    }),
-  );
-}
-
-let loadedInventory: readonly EccSkillCatalogEntry[] | undefined;
-/** Complete source-locked ECC Skill inventory selectable as evidence-owed intent. */
-export function eccSkillCatalogInventoryV1(): readonly EccSkillCatalogEntry[] {
-  loadedInventory ??= inventory(loadFrameworkDescriptorSectionV1("ecc", "skillCatalog"));
-  return loadedInventory;
 }

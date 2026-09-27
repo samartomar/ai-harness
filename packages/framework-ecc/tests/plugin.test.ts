@@ -64,14 +64,7 @@ describe("aihFrameworkPluginV1", () => {
       commit: "5064474d4d762dc9640234a41617cccb79185cec",
     });
     expect(description.catalogSubpath).toBe("./catalog-framework-ecc.json");
-    expect(description.descriptorSections).toEqual([
-      "vendorLock",
-      "hookControlInventory",
-      "moduleGraph",
-      "profileGraph",
-      "installPreview",
-      "profileEvidence",
-    ]);
+    expect(description.descriptorSections).toEqual(["vendorLock", "hookControlInventory"]);
     expect(description.environment).toContain("AIH_ECC_REF");
   });
 

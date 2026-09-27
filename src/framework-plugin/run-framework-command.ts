@@ -7,15 +7,14 @@ import { CatalogPackageRefusalError } from "../catalog-package/load-catalog-pack
 import { postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import type { PlanResult } from "../internals/execute.js";
-import type { FileAssertion, PlanContext } from "../internals/plan.js";
+import type { PlanContext } from "../internals/plan.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
-import {
-  FRAMEWORK_PLUGIN_PACKAGE_NAMES,
-  type FrameworkCleanupContextV1,
-  type FrameworkCommandPathV1,
-  type FrameworkHostServicesV1,
-  type FrameworkIdV1,
-  type FrameworkOperationContextV1,
+import type {
+  FrameworkCleanupContextV1,
+  FrameworkCommandPathV1,
+  FrameworkHostServicesV1,
+  FrameworkIdV1,
+  FrameworkOperationContextV1,
 } from "./contract-v1.js";
 import {
   type BoundFrameworkCoreRuntimeV1,
@@ -280,106 +279,5 @@ export async function executeFrameworkCommandV1(
     );
   } finally {
     opened.bound?.revoke();
-  }
-}
-
-/**
- * Run one plugin operation that is part of a Core command but returns no plan
- * result (prune planning): the same invocation, runtime binding and
- * revocation as a command; `body` validates what the plugin returns.
- */
-export async function withFrameworkInvocationV1<T>(
-  loaded: LoadedFrameworkPluginV1,
-  operation: string,
-  invocation: FrameworkInvocationV1,
-  deps: FrameworkCommandDepsV1,
-  body: (context: FrameworkOperationContextV1) => Promise<T>,
-): Promise<T> {
-  const opened = await openFrameworkInvocationV1(loaded, operation, invocation, deps);
-  try {
-    return await body(opened.context);
-  } finally {
-    opened.bound?.revoke();
-  }
-}
-
-/** A policy delivery Core prepared through a plugin, held open until Core ends it. */
-export interface FrameworkPolicyDeliveryV1 {
-  /** The prepared delivery: the preview when not applying. */
-  readonly result: PlanResult;
-  /**
-   * Commit the prepared delivery, at most once. Present only when the plugin
-   * retained a delivery to commit. `policyBinding` is the binding assertion
-   * Core re-read after its projection; it replaces the invocation's pin on the
-   * same path, for Core's runtime and for the plugin's prepared transaction.
-   */
-  readonly commit?: (policyBinding: FileAssertion | undefined) => Promise<PlanResult>;
-  /** End the invocation. Core calls it once, whatever happened. */
-  end(): void;
-}
-
-function samePath(a: string, b: string): boolean {
-  const normal = (path: string) => path.replace(/\\/g, "/").replace(/^\.\//, "");
-  return normal(a) === normal(b);
-}
-
-/**
- * Prepare the framework delivery the organization policy requires. Unlike a
- * command, the invocation stays open across Core's own policy projection:
- * Core commits the prepared delivery (or not) and then ends it.
- */
-export async function prepareFrameworkPolicyDeliveryV1(
-  loaded: LoadedFrameworkPluginV1,
-  invocation: FrameworkInvocationV1,
-  deps: FrameworkCommandDepsV1 = {},
-): Promise<FrameworkPolicyDeliveryV1> {
-  const hook = loaded.plugin.policyDelivery;
-  if (hook === undefined) {
-    throw new FrameworkPluginRefusalError({
-      reason: "framework-plugin-incompatible",
-      frameworkId: loaded.frameworkId,
-      packageName: FRAMEWORK_PLUGIN_PACKAGE_NAMES[loaded.frameworkId],
-      detail: `${loaded.packageName} ${loaded.version} provides no policy delivery, which organization policy selecting ${loaded.frameworkId} components requires`,
-    });
-  }
-  const opened = await openFrameworkInvocationV1(loaded, "policy delivery", invocation, deps);
-  const end = () => opened.bound?.revoke();
-  try {
-    const prepared = await hook.prepare(opened.context);
-    const result = acceptProduced(loaded, "policy delivery", prepared?.result, opened.produced);
-    const commitPrepared = prepared.commit;
-    if (commitPrepared === undefined) return Object.freeze({ result, end });
-    let committed = false;
-    const commit = async (policyBinding: FileAssertion | undefined): Promise<PlanResult> => {
-      if (committed) {
-        throw new AihError(
-          `the ${loaded.frameworkId} policy delivery was already committed`,
-          "AIH_FRAMEWORK_PLUGIN",
-        );
-      }
-      committed = true;
-      if (policyBinding !== undefined) {
-        const pins = invocation.transactionPins;
-        opened.bound?.repin({
-          ...pins,
-          fileAssertions: [
-            ...(pins.fileAssertions ?? []).filter(
-              (assertion) => !samePath(assertion.path, policyBinding.path),
-            ),
-            policyBinding,
-          ],
-        });
-      }
-      return acceptProduced(
-        loaded,
-        "policy delivery commit",
-        await commitPrepared(Object.freeze(policyBinding === undefined ? {} : { policyBinding })),
-        opened.produced,
-      );
-    };
-    return Object.freeze({ result, commit, end });
-  } catch (error) {
-    end();
-    throw error;
   }
 }

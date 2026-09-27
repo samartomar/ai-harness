@@ -237,6 +237,38 @@ describe("runDeepScanTier — cache hit means NO re-scan", () => {
     expect(second.deepScanKey).toBe(first.deepScanKey);
   });
 
+  it("preserves a deep finding and its path across a warm cache read", async () => {
+    const { runner } = countingRunner();
+    const finding = {
+      code: "trust.fixture-finding",
+      severity: "high" as const,
+      detail: "fixture finding",
+      coverage: "complete" as const,
+      path: "skills/example/SKILL.md",
+    };
+    const input = tierInput(runner, {
+      inspectors: [
+        {
+          dimension: "fixture-deep-finding",
+          async run() {
+            return {
+              dimension: "fixture-deep-finding",
+              status: "produced" as const,
+              findings: [finding],
+            };
+          },
+        },
+      ],
+    });
+    const first = await runDeepScanTier(input);
+    const second = await runDeepScanTier(input);
+    expect(first.cacheHit).toBe(false);
+    expect(second.cacheHit).toBe(true);
+    expect(second.dimensionReports).toEqual([
+      { dimension: "fixture-deep-finding", status: "produced", findings: [finding] },
+    ]);
+  });
+
   it("MISSES (recomputes) when the scanner or policy version bumps", async () => {
     const { runner } = countingRunner();
     await runDeepScanTier(tierInput(runner));

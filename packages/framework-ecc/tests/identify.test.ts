@@ -6,12 +6,10 @@ import { identifyComponents } from "../src/identify.js";
 import {
   descriptorOf,
   fixtureDescriptorBytes,
-  fixtureDescriptorDocument,
   operationContext,
   PINNED_COMMIT,
 } from "./context.js";
 
-/** Component identification reads the vendor lock's components: Catalog's full descriptor. */
 const catalogDescriptor = () => descriptorOf(fixtureDescriptorBytes());
 
 let root: string;
@@ -31,17 +29,8 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function vendorLockPaths(): Map<string, string[]> {
-  const sections = fixtureDescriptorDocument().sections as {
-    vendorLock: { components: { id: string; paths: string[] }[] };
-  };
-  return new Map(
-    sections.vendorLock.components.map((component) => [component.id, component.paths]),
-  );
-}
-
 describe("identifyComponents", () => {
-  it("reports the stack's language packs and each host's components with pinned source paths", () => {
+  it("reports pinned language packs without offering ECC installation components", () => {
     const identified = identifyComponents(
       operationContext({
         root,
@@ -51,24 +40,14 @@ describe("identifyComponents", () => {
     );
     expect(identified.upstream).toEqual({ repository: "affaan-m/ECC", commit: PINNED_COMMIT });
     expect(identified.languagePacks).toContain("typescript");
-    const paths = vendorLockPaths();
-    expect(identified.components.length).toBeGreaterThan(0);
-    for (const component of identified.components) {
-      expect(component.paths).toEqual(paths.get(component.id));
-      expect(component.hosts).not.toContain("windsurf");
-    }
-    const kiro = identified.components.filter((component) => component.hosts.includes("kiro"));
-    expect(kiro.map((component) => component.id)).toEqual(["runtime:ecc-kiro"]);
-    expect(identified.components.some((component) => component.hosts.includes("claude"))).toBe(
-      true,
-    );
-    expect(identified.components.some((component) => component.hosts.includes("codex"))).toBe(true);
+    expect(identified.components).toEqual([]);
   });
 
-  it("reports no components for a host with no ECC install route", () => {
+  it("keeps language pack reporting independent of the selected host", () => {
     const identified = identifyComponents(
       operationContext({ root, targets: ["windsurf"], descriptor: catalogDescriptor() }),
     );
     expect(identified.components).toEqual([]);
+    expect(identified.languagePacks).toContain("typescript");
   });
 });

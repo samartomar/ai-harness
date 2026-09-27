@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,6 +15,7 @@ import {
   collectionCoverageV1,
 } from "../../src/baseline-evidence/scanner-catalog-consumer.js";
 import { prepareScannerCollectionPublicationsV1 } from "../../src/baseline-evidence/scanner-collection-preparation.js";
+import { SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 } from "../../src/baseline-evidence/scanner-publication-policy.js";
 import type { Runner } from "../../src/internals/proc.js";
 import { sealedSingleSourceBundle } from "./candidate-bundle-fixture.js";
 
@@ -47,6 +56,38 @@ const coverage = () =>
   );
 
 describe("collection preparation with definition-route coverage", () => {
+  it("passes exact publication bytes to verification and removes staging after refusal", async () => {
+    const stagingRoot = mkdtempSync(join(realpathSync(tmpdir()), "aih-attestation-staging-"));
+    const publicationBytes = Buffer.from('{"publication":"fixture"}');
+    const locator = `https://github.com/${SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.repository}/releases/download/baseline-v1-${SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.commit}-${"a".repeat(64)}/publication.json`;
+    const discoveryBytes = Buffer.from(JSON.stringify({ locator }));
+    let verified = 0;
+    const run: Runner = async (argv) => {
+      if (argv[0] === "git") return { code: 0, stdout: `${PIN}\n`, stderr: "" };
+      expect(argv.slice(0, 3)).toEqual(["gh", "attestation", "verify"]);
+      expect(readFileSync(argv[3] ?? "")).toEqual(publicationBytes);
+      verified += 1;
+      return { code: 1, stdout: "", stderr: "verification refused" };
+    };
+    try {
+      await expect(
+        prepareScannerCollectionPublicationsV1({
+          sourceRoot: root,
+          catalogId: "mattpocock",
+          batches: [{ discoveryBytes, publicationBytes }],
+          now: "2026-09-24T00:00:00.000Z",
+          run,
+          tempRoot: stagingRoot,
+          coverage: coverage(),
+        }),
+      ).rejects.toThrow("Scanner collection preparation: attestation rejected");
+      expect(verified).toBe(1);
+      expect(readdirSync(stagingRoot)).toEqual([]);
+    } finally {
+      rmSync(stagingRoot, { recursive: true, force: true });
+    }
+  });
+
   it("uses the supplied coverage instead of the installed Catalog's registration", async () => {
     // One component means one Core request; two batches can only fail the batch count,
     // which proves the supplied catalog (not the installed 3cca18b3 one) drove the requests.
