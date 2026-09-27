@@ -387,6 +387,11 @@ The generated launcher uses a headless, isolated browser session. Setup checks t
 and a browser operation on a blank page before reporting the tool as verified. It requires npm
 alongside the current Node runtime and a browser supported by that Playwright release.
 
+Governed policy treats Playwright differently. It is not yet an AIH control because AIH has no
+current protected Scanner evidence record for its runtime. In the Workbench and the Catalog it is
+listed and selectable, and selecting it records a request with that reason. Ordinary setup, as
+described above, is unaffected.
+
 On `--apply`, each selected tool checks its own prerequisites. Code Review Graph, Serena and MarkItDown require
 an external `uv`; Token Optimizer requires external Python, Git, and curl. Codebase Memory selects a
 native payload for the current platform and architecture. An unavailable prerequisite or payload is
