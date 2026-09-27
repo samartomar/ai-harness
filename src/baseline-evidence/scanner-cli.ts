@@ -105,7 +105,11 @@ function definitionOverlap(
   const overlap = optionalFlag(args, flagName);
   if (overlap === undefined) return undefined;
   if (definitionPath === undefined)
-    fail(flagName === "--definition-overlap" ? "--definition-overlap requires --definition" : `${flagName} requires --superpowers-definition`);
+    fail(
+      flagName === "--definition-overlap"
+        ? "--definition-overlap requires --definition"
+        : `${flagName} requires --superpowers-definition`,
+    );
   if (overlap !== "disjoint" && overlap !== "compiler-catalog")
     fail("--definition-overlap must be disjoint|compiler-catalog");
   return overlap;
@@ -348,9 +352,16 @@ function assemble(args: readonly string[]): void {
   const superpowersRoot = optionalFlag(args, "--superpowers-root");
   if ((superpowersDefinition === undefined) !== (superpowersRoot === undefined))
     fail("--superpowers-definition and --superpowers-root must be supplied together");
-  const superpowersCatalog = superpowersRoot === undefined
-    ? baselineCatalogById("superpowers")
-    : assertCheckout(superpowersRoot, "superpowers", args, "--superpowers-definition", "--superpowers-definition-overlap").catalog;
+  const superpowersCatalog =
+    superpowersRoot === undefined
+      ? baselineCatalogById("superpowers")
+      : assertCheckout(
+          superpowersRoot,
+          "superpowers",
+          args,
+          "--superpowers-definition",
+          "--superpowers-definition-overlap",
+        ).catalog;
   assertAssembledInventoryV1(lock, (sourceId) => {
     if (sourceId === "ecc") return eccCatalog;
     if (sourceId === "superpowers") return superpowersCatalog;

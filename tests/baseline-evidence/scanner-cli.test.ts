@@ -493,11 +493,17 @@ describe("baseline Scanner bridge CLI", () => {
     const superpowersEvidence = join(root, "superpowers-definition-evidence.json");
     const output = join(root, "superpowers-definition-lock.json");
     const eccCatalog: EvidenceCatalog = {
-      id: "ecc", owner: "samartomar", repo: "ECC", pinnedSha: PIN,
+      id: "ecc",
+      owner: "samartomar",
+      repo: "ECC",
+      pinnedSha: PIN,
       components: [{ id: "runtime:ecc-installer", paths: ["package.json"] }],
     };
     const superpowersCatalog: EvidenceCatalog = {
-      id: "superpowers", owner: "obra", repo: "Superpowers", pinnedSha: PIN,
+      id: "superpowers",
+      owner: "obra",
+      repo: "Superpowers",
+      pinnedSha: PIN,
       components: [{ id: "runtime:superpowers-plugin", paths: ["index.js"] }],
     };
     mocks.prepareCatalog.mockReturnValue({ catalog: eccCatalog });
@@ -507,15 +513,30 @@ describe("baseline Scanner bridge CLI", () => {
     writeFileSync(superpowersEvidence, JSON.stringify(evidenceFor(superpowersCatalog)));
 
     await runScannerBridge([
-      "assemble", "--ecc-root", eccRoot, "--ecc-evidence", eccEvidence,
-      "--superpowers-root", superpowersRoot, "--superpowers-definition", definition,
-      "--superpowers-evidence", superpowersEvidence, "--out", output,
+      "assemble",
+      "--ecc-root",
+      eccRoot,
+      "--ecc-evidence",
+      eccEvidence,
+      "--superpowers-root",
+      superpowersRoot,
+      "--superpowers-definition",
+      definition,
+      "--superpowers-evidence",
+      superpowersEvidence,
+      "--out",
+      output,
     ]);
     expect(mocks.resolveDefinition).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceRoot: superpowersRoot, catalogId: "superpowers", definitionPath: definition }),
+      expect.objectContaining({
+        sourceRoot: superpowersRoot,
+        catalogId: "superpowers",
+        definitionPath: definition,
+      }),
     );
     expect(JSON.parse(readFileSync(output, "utf8"))).toEqual({
-      schemaVersion: 2, sources: [evidenceFor(eccCatalog), evidenceFor(superpowersCatalog)],
+      schemaVersion: 2,
+      sources: [evidenceFor(eccCatalog), evidenceFor(superpowersCatalog)],
     });
   });
 

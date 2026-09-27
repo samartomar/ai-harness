@@ -177,7 +177,9 @@ describe("prepare-packaged-workbench-source-data", () => {
     ]);
     expect(mocks.facts.mock.calls[0]?.at(-1)).toBe("compiler-catalog");
     const record = PackagedSourceDataRecordV1Schema.parse(JSON.parse(readFileSync(output, "utf8")));
-    expect((record.scannerProof as { definitionOverlap?: string }).definitionOverlap).toBe("compiler-catalog");
+    expect((record.scannerProof as { definitionOverlap?: string }).definitionOverlap).toBe(
+      "compiler-catalog",
+    );
   });
 
   it("never overwrites an output and reads nothing when it already exists", async () => {

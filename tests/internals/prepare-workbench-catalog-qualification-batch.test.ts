@@ -189,8 +189,10 @@ describe("prepare-workbench-catalog-qualification batch mode", () => {
     await expect(
       prepareWorkbenchCatalogQualificationCommandV1([
         ...batch(source, artifacts, output),
-        "--candidate-catalog", join(work, "catalog.tgz"),
-        "--candidate-catalog-sha256", "a".repeat(64),
+        "--candidate-catalog",
+        join(work, "catalog.tgz"),
+        "--candidate-catalog-sha256",
+        "a".repeat(64),
       ]),
     ).rejects.toThrow("candidate provenance write failed");
     expect(existsSync(output)).toBe(false);
