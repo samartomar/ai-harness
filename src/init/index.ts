@@ -586,12 +586,6 @@ export async function executeInitCommand(
   ctx: PlanContext,
   deps: InitCommandDeps = {},
 ): Promise<PlanResult> {
-  if (ctx.options.eccPath !== undefined) {
-    throw new AihError(
-      "aih init --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
-      "AIH_CONFIG",
-    );
-  }
   const initial = await composeInit(ctx);
   if (!readPolicyBinding(ctx.root)) {
     const initialized = await executePlan(initial.plan, ctx);
@@ -625,10 +619,6 @@ export const command: CommandSpec = {
   summary:
     "Initialize a target repo: profile + selected baseline + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage",
   options: [
-    {
-      flags: "--ecc-path <path>",
-      description: "retired ECC source option; use aih ecc for guidance",
-    },
     {
       flags: "--sidecar",
       description: "create an external sibling truth sidecar and bind it to the current commit",

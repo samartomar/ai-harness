@@ -74,7 +74,7 @@ function present(path: string): string {
   }
 }
 
-/** Presence-only legacy inventory. Never opens a receipt or configuration file. */
+/** Presence-only inventory of ECC's own installer state files. */
 export function eccStatus(root: string, home: string): string {
   if (!isAbsolute(root) || !isAbsolute(home)) throw new Error("ECC status roots must be absolute");
   const project = [
@@ -82,27 +82,17 @@ export function eccStatus(root: string, home: string): string {
     ".agent/ecc-install-state.json",
     ".gemini/ecc-install-state.json",
     ".zed/ecc-install-state.json",
-    ".aih/ecc/materialization-v1.json",
-    ".aih/ecc-profile/ownership-v1.json",
-    ".aih/ecc-profile/native-registration-v1.json",
-    ".aih/ecc/codex-role-registration-v1.json",
-    ".aih/ecc-mcp-explicit-add-v1.json",
-    ".codex/config.toml",
   ];
   const user = [
     ".claude/ecc/install-state.json",
     ".codex/ecc-install-state.json",
     ".config/opencode/ecc-install-state.json",
     ".opencode/ecc-install-state.json",
-    ".aih/ecc/registration-ledger.json",
-    ".codex/AGENTS.md",
-    ".codex/config.toml",
   ];
   return [
-    "ECC installed state and earlier aih records (file presence only):",
+    "ECC installed state (file presence only):",
     ...project.map((path) => `project ${path}: ${present(join(root, path))}`),
     ...user.map((path) => `home ${path}: ${present(join(home, path))}`),
-    "Codex footprint: the listed Codex files are candidates; their contents and ownership are not inspected.",
     "Not inspected: file contents, unlisted roots, marketplace payloads, active processes, credentials, MCP values, or server reachability.",
   ].join("\n");
 }

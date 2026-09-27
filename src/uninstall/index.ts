@@ -9,7 +9,6 @@ import {
   readPolicyBinding,
 } from "../config/marker.js";
 import { prepareFrameworkUninstallV1 } from "../framework-plugin/cleanup-v1.js";
-import { eccStatePathsV1, prepareEccUninstallV1 } from "../framework-plugin/ecc-lifecycle.js";
 import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
@@ -27,7 +26,6 @@ import {
   writeJson,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { VerificationReport } from "../internals/verify.js";
 import {
   KIRO_MCP_SETTINGS_PATH,
   type KiroMcpProjectionResidue,
@@ -64,11 +62,6 @@ import {
 import { parseOrgPolicy } from "../org-policy/schema.js";
 import { projectPromotedSkillArtifacts } from "../skill/promoted-artifacts.js";
 import { parseTrustLockSource, TRUST_LOCK_FILE } from "../trust/lock.js";
-import {
-  ECC_MATERIALIZATION_RECEIPT_PATH,
-  type EccMaterializationRemovalOutcome,
-  eccMaterializationUninstallState,
-} from "./ecc-materialization.js";
 
 type UninstallDisposition = "backup" | "subtract" | "advisory";
 
@@ -85,8 +78,7 @@ interface UninstallArtifact {
     | "managed-settings"
     | "kiro-managed-mcp"
     | "native-managed-mcp"
-    | "hook-registrar"
-    | "ecc-materialization";
+    | "hook-registrar";
   disposition: UninstallDisposition;
   reason: string;
 }
@@ -110,13 +102,6 @@ interface UninstallSet {
    * never a replay of prior bytes.
    */
   hookRegistrarActions?: Action[];
-  /**
-   * Receipt-proven governed ECC materialization. Its owned bytes live on the
-   * client surfaces while the receipt lives under `.aih`, so removal must run
-   * BEFORE the ownership record leaves — the same issue #567 ordering the
-   * managed-MCP residue above obeys.
-   */
-  removeEccMaterialization?: true;
 }
 
 function cleanRel(path: string): string {
@@ -696,28 +681,6 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     }
   }
 
-  // Governed ECC materialization, on the same receipt-proven terms: the receipt
-  // is the only record of which bytes on the client surfaces AIH wrote, so an
-  // unprovable one is reported and nothing is touched.
-  const materialization = eccMaterializationUninstallState(ctx.root);
-  let removeMaterialization: true | undefined;
-  if (materialization.state === "owned") {
-    removeMaterialization = true;
-    artifacts.push({
-      path: ECC_MATERIALIZATION_RECEIPT_PATH,
-      kind: "ecc-materialization",
-      disposition: "subtract",
-      reason: `${materialization.detail}; operator content on the same surfaces is preserved`,
-    });
-  } else if (materialization.state === "unprovable") {
-    artifacts.push({
-      path: ECC_MATERIALIZATION_RECEIPT_PATH,
-      kind: "ecc-materialization",
-      disposition: "advisory",
-      reason: `aih ECC materialization receipt cannot prove clean ownership — ${materialization.detail}; remediate manually, then uninstall`,
-    });
-  }
-
   if (exists(ctx, AIH_CONFIG_FILE)) {
     artifacts.push({
       path: AIH_CONFIG_FILE,
@@ -735,20 +698,12 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     ),
   );
 
-  if (exists(ctx, ".aih") && ownsContextDir && eccStatePathsV1(ctx).length === 0) {
+  if (exists(ctx, ".aih") && ownsContextDir) {
     artifacts.push({
       path: ".aih",
       kind: "cache",
       disposition: "backup",
       reason: "aih cache/output directory with marker-backed ownership evidence",
-    });
-  } else if (exists(ctx, ".aih")) {
-    artifacts.push({
-      path: ".aih",
-      kind: "cache",
-      disposition: "advisory",
-      reason:
-        "aih state is retained when legacy framework ownership records may still be needed for cleanup or a retry",
     });
   }
 
@@ -758,49 +713,6 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     ...(kiroMcp === undefined ? {} : { kiroMcp }),
     ...(nativeMcp.length === 0 ? {} : { nativeMcp }),
     ...(hookRegistrarActions === undefined ? {} : { hookRegistrarActions }),
-    ...(removeMaterialization === undefined
-      ? {}
-      : { removeEccMaterialization: removeMaterialization }),
-  };
-}
-
-/**
- * Re-render the materialization member from what the engine ACTUALLY did.
- * The artifact was derived from the receipt BEFORE removal ran, so on its own it
- * reports intent: the engine keeps a drifted destination rather than removing it
- * (`src/ecc/materialization-plan.ts:385-388`, `:403-406`), and a report built
- * from intent would claim that file was subtracted and operator content
- * preserved while the opposite happened to it.
- */
-function withMaterializationOutcome(
-  set: UninstallSet,
-  outcome: EccMaterializationRemovalOutcome,
-  receiptRetained: boolean,
-): UninstallSet {
-  return {
-    ...set,
-    artifacts: set.artifacts.flatMap((artifact): UninstallArtifact[] =>
-      artifact.kind === "ecc-materialization" && artifact.disposition === "subtract"
-        ? [
-            {
-              ...artifact,
-              disposition: receiptRetained ? "advisory" : "subtract",
-              reason: `receipt-proven aih ECC materialization: removed ${outcome.removed.length} owned file(s); ${receiptRetained ? "receipt retained for retry; " : ""}operator content on the same surfaces is preserved`,
-            },
-            ...outcome.advisories.map(
-              (advisory): UninstallArtifact => ({
-                path: advisory.path,
-                kind: "ecc-materialization",
-                disposition: "advisory",
-                reason:
-                  advisory.reason === "missing"
-                    ? `aih ECC materialization destination was already absent — ${advisory.detail}`
-                    : `aih ECC materialization destination ${advisory.reason} and was kept, not removed — ${advisory.detail}`,
-              }),
-            ),
-          ]
-        : [artifact],
-    ),
   };
 }
 
@@ -814,10 +726,6 @@ function withMaterializationOutcome(
 function subtractFooter(set: UninstallSet): string[] {
   const subtracted = set.artifacts.filter((a) => a.disposition === "subtract");
   if (subtracted.length === 0) return [];
-  if (subtracted.some((artifact) => artifact.kind === "ecc-materialization"))
-    return [
-      "Entries marked [subtract] remove receipt-proven content, including owned files and completed receipts. Unrelated content is preserved.",
-    ];
   const removedPaths = new Set(
     (set.hookRegistrarActions ?? []).flatMap((action) =>
       action.kind === "remove" ? [action.path] : [],
@@ -862,10 +770,7 @@ function uninstallPlan(ctx: PlanContext): Plan {
   // A receipt may survive subtraction because its destination was edited. Never
   // erase the remaining ownership record through the enclosing cache cleanup.
   const retainsGovernanceState =
-    binding !== undefined ||
-    exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH) ||
-    exists(ctx, COMMAND_PERMISSION_RECEIPT) ||
-    guidance.state !== "absent";
+    binding !== undefined || exists(ctx, COMMAND_PERMISSION_RECEIPT) || guidance.state !== "absent";
   for (const artifact of planned.artifacts) {
     if (
       (artifact.kind === "marker" && binding !== undefined) ||
@@ -882,12 +787,8 @@ function uninstallPlan(ctx: PlanContext): Plan {
     }
   }
   const actions: Action[] = [];
-  // Owned content whose ownership only the marker proves is subtracted FIRST — the
-  // established owned-content -> ownership-state -> ledger-last order
-  // (`src/ecc/reconcile-driver.ts:485`, `:511`, `:514`). The executor stages this
-  // write and the removals below in one transaction. Governed bindings remain
-  // revoked, and ECC's independent receipt-backed cleanup runs only after this
-  // transaction succeeds; its outcome and any incomplete phase are reported.
+  // Subtract marker-owned content before removing its ownership marker. The executor
+  // stages this write and the removals below in one transaction.
   if (planned.managedMcp?.matches === true) {
     actions.push(
       managedMcpSubtractionAction(
@@ -977,111 +878,26 @@ function uninstallPlan(ctx: PlanContext): Plan {
   return plan("uninstall", ...actions);
 }
 
-/** Execute receipt-only cleanup in explicit, independently recoverable phases. */
+/** Execute the ordinary uninstall plan, then dispatch generic plugin cleanup. */
 export async function executeUninstallCommand(
   ctx: PlanContext,
-  deps: {
-    /** Test seam for the ECC removal; production runs it through @aihq/framework-ecc. */
-    removeMaterialization?: (
-      root: string,
-    ) => EccMaterializationRemovalOutcome | Promise<EccMaterializationRemovalOutcome>;
-    frameworks?: FrameworkCommandDepsV1;
-  } = {},
+  deps: { frameworks?: FrameworkCommandDepsV1 } = {},
 ): Promise<PlanResult> {
-  const prepared = uninstallPlan(ctx);
-  const set = prepared.actions.find((action) => action.kind === "digest")?.data as UninstallSet;
-  // Any aih ECC state needs the ECC plugin: preflight it before any cleanup
-  // runs, so a missing or broken plugin refuses by name, naming the state, with
-  // nothing touched. Receipt-proven ECC content is then removed by the plugin.
-  const removeEcc =
-    deps.removeMaterialization === undefined
-      ? await prepareFrameworkUninstallV1(ctx, deps.frameworks)
-      : await prepareEccUninstallV1(ctx, false, deps.frameworks);
-  const result = await executePlan(prepared, ctx);
-  if (!ctx.apply || removeEcc === undefined || (result.report && !result.report.ok)) return result;
-  try {
-    const outcome =
-      deps.removeMaterialization !== undefined
-        ? await deps.removeMaterialization(ctx.root)
-        : await (removeEcc as () => Promise<EccMaterializationRemovalOutcome>)();
-    const receiptRetained =
-      set.removeEccMaterialization === true && exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH);
-    const actual =
-      set.removeEccMaterialization === true
-        ? withMaterializationOutcome(set, outcome, receiptRetained)
-        : set;
-    const report = result.report ?? new VerificationReport();
-    if (receiptRetained)
-      report.fail(
-        "ECC cleanup retained owned files",
-        "Some owned destinations require review and remain with their receipts. The digest identifies each retained path. Restore reviewed ownership before retrying cleanup.",
-      );
-    return {
-      ...result,
-      ...(receiptRetained ? { report } : {}),
-      removed: [
-        ...result.removed,
-        ...(!receiptRetained
-          ? [
-              {
-                path: ECC_MATERIALIZATION_RECEIPT_PATH,
-                describe: "completed ECC ownership receipt",
-                effect: "delete" as const,
-              },
-            ]
-          : []),
-        ...outcome.removed.map((path) => ({
-          path,
-          describe: "receipt-proven ECC content",
-          effect: "delete" as const,
-        })),
-      ],
-      digests: result.digests
-        .map((entry) =>
-          entry.describe === "core install footprint"
-            ? {
-                ...entry,
-                text: body(actual),
-                data: {
-                  ...actual,
-                  eccCleanup: { state: receiptRetained ? "partial" : "complete" },
-                },
-              }
-            : entry,
-        )
-        .concat(
-          outcome.advisories.length === 0
-            ? []
-            : [
-                {
-                  describe: "legacy framework cleanup review",
-                  text: outcome.advisories
-                    .map((entry) => `${entry.path}: ${entry.detail}`)
-                    .join("\n"),
-                  data: outcome.advisories,
-                },
-              ],
-        ),
-    };
-  } catch (error) {
-    const report = result.report ?? new VerificationReport();
-    report.fail(
-      "ECC uninstall incomplete",
-      `Project cleanup completed, but ECC cleanup did not complete: ${(error as Error).message}. Remaining ownership receipts are retained. Inspect the retained ECC files and rerun uninstall after repairing the reported ownership state.`,
-    );
-    return {
-      ...result,
-      report,
-      digests: [
-        ...result.digests,
-        {
-          describe: "incomplete ECC cleanup",
-          text: "Project cleanup completed; ECC removal failed. Remaining ownership receipts are retained for recovery. Rerun uninstall to finish receipt-proven cleanup.",
-          data: { state: "partial", completed: "project-cleanup", pending: "ecc-cleanup" },
-        },
-      ],
-    };
-  }
+  const removeFrameworks = await prepareFrameworkUninstallV1(ctx, deps.frameworks);
+  const result = await executePlan(uninstallPlan(ctx), ctx);
+  if (!ctx.apply || (result.report && !result.report.ok)) return result;
+  const outcome = await removeFrameworks();
+  return {
+    ...result,
+    removed: [
+      ...result.removed,
+      ...outcome.removed.map((path) => ({
+        path,
+        describe: "framework cleanup",
+        effect: "delete" as const,
+      })),
+    ],
+  };
 }
 
 export const command: CommandSpec = {

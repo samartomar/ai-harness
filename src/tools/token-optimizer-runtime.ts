@@ -17,10 +17,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { windowsCommandArg } from "../ecc-profile/native-registration.js";
 import { readBoundedFileDescriptor } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
+import { windowsCommandArg } from "../internals/windows-command-arg.js";
 import { findOnPath } from "../live/runner.js";
 
 /** The two root-scoped profiles supported by the ordinary adopter flow. */

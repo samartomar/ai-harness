@@ -11,12 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
-import { projectBaselinePackageGraphAuthority } from "../../src/capability/package-graph/adapters/baseline.js";
-import { projectEccCapabilityPackageAuthority } from "../../src/capability/package-graph/adapters/ecc-domains.js";
 import { inspectCapabilityPackageContext } from "../../src/capability/package-manager/live-context.js";
-import { serializeEccMaterializationReceipt } from "../../src/ecc/materialization-receipt.js";
 
 const SHA = "a".repeat(40);
 let root: string;
@@ -102,7 +97,7 @@ function seed(): void {
 }
 
 describe("capability package live context", () => {
-  it("lists and previews receipt-backed ECC agent, rule, and MCP packages without skill-pack files", () => {
+  it("keeps ECC Catalog packages visible as developer-managed", () => {
     write("aih-org-policy.json", {
       schemaVersion: 2,
       minimumPosture: "vibe",
@@ -112,78 +107,64 @@ describe("capability package live context", () => {
         roots: ["package:ecc-agent/code-reviewer"],
       },
     });
-    const baseline = projectBaselinePackageGraphAuthority({
-      authorityId: "lock:baseline-evidence",
-      catalog: baselineCatalogById("ecc"),
-      lockBytes: vendorBaselineLockBytes(),
-    });
-    const packages = projectEccCapabilityPackageAuthority({
-      authorityId: "lock:ecc-capability-packages",
-      baseline,
-    });
-    const surface = packages.graph.surfaces.find(({ id }) => id === "agent:code-reviewer");
-    const packageClaim = packages.graph.packages.find(
-      ({ id }) => id === "package:ecc-agent/code-reviewer",
-    );
-    if (surface === undefined || packageClaim === undefined)
-      throw new Error("missing fixture claim");
-    const receiptText = serializeEccMaterializationReceipt({
-      format: "aih-ecc-materialization-receipt",
-      schemaVersion: 1,
-      components: [
-        {
-          id: "agent:code-reviewer",
-          authorization: {
-            componentId: "agent:code-reviewer",
-            source: packageClaim.source.repository,
-            pinnedSha: packageClaim.sourceDigest.value,
-            treeSha256: surface.sourceDigest.value,
-            tier: "vendor",
-            issuer: "@aihq/core release",
-            evidenceSha256: baseline.authority.sourceDigest.value,
-          },
-          provenance: {
-            repository: packageClaim.source.repository,
-            commit: packageClaim.sourceDigest.value,
-            componentPath: "agents/code-reviewer.md",
-          },
-          files: [
-            {
-              path: ".claude/agents/code-reviewer.md",
-              operation: "copy-file",
-              contentSha256: "1".repeat(64),
-            },
-          ],
-        },
-      ],
-    });
-    const receiptPath = join(root, ".aih/ecc/materialization-v1.json");
-    mkdirSync(dirname(receiptPath), { recursive: true });
-    writeFileSync(receiptPath, receiptText, "utf8");
-
     const report = inspectCapabilityPackageContext({
       root,
       contextDir: "ai-coding",
       operation: "list",
     });
-
     expect(report.refusals).toEqual([]);
     expect(report.packages).toContainEqual(
       expect.objectContaining({
         id: "package:ecc-agent/code-reviewer",
         requested: true,
-        members: ["agent:code-reviewer"],
-        lifecycle: "add",
+        management: "developer-managed",
+        nextRoute: "run aih ecc for the exact ECC commands",
       }),
     );
     expect(report.packages).toContainEqual(
-      expect.objectContaining({ id: "package:ecc-rule/rules", members: ["rule:ecc/rules"] }),
+      expect.objectContaining({ id: "package:ecc-rule/rules", management: "developer-managed" }),
     );
     expect(report.packages).toContainEqual(
-      expect.objectContaining({ id: "package:ecc-mcp/memxus", members: ["mcp:memxus"] }),
+      expect.objectContaining({ id: "package:ecc-mcp/memxus", management: "developer-managed" }),
     );
-    expect(report.sources.approval.state).toBe("valid");
-    expect(report.sources.evidence.state).toBe("valid");
+  });
+  it("shows ECC Catalog status without reading earlier aih ownership records", () => {
+    seed();
+    writeFileSync(join(root, "aih-capability-packages.json"), "{", "utf8");
+    mkdirSync(join(root, ".aih", "capability-packages"), { recursive: true });
+    writeFileSync(join(root, ".aih", "capability-packages", "ownership-v1.json"), "{");
+    const report = inspectCapabilityPackageContext({
+      root,
+      contextDir: "ai-coding",
+      operation: "show",
+      packageId: "package:ecc-agent/code-reviewer",
+    });
+    expect(report.refusals).toEqual([]);
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        id: "package:ecc-agent/code-reviewer",
+        management: "developer-managed",
+      }),
+    ]);
+    const status = inspectCapabilityPackageContext({
+      root,
+      contextDir: "ai-coding",
+      operation: "status",
+      packageId: "package:ecc-agent/code-reviewer",
+    });
+    expect(status.refusals).toEqual([]);
+    expect(status.packages).toEqual(report.packages);
+    const list = inspectCapabilityPackageContext({
+      root,
+      contextDir: "ai-coding",
+      operation: "list",
+    });
+    expect(list.packages).toContainEqual(
+      expect.objectContaining({
+        id: "package:ecc-agent/code-reviewer",
+        management: "developer-managed",
+      }),
+    );
   });
   it("derives requested package closure from policy and exact live authorities", () => {
     seed();
@@ -334,7 +315,10 @@ describe("capability package live context", () => {
         operation: "update",
         packageId: "package:ecc-agent/security-reviewer",
       }).refusals,
-    ).toContainEqual({ stage: "policy", reason: "package-not-requested" });
+    ).toContainEqual({
+      stage: "domain",
+      reason: "developer-managed: run aih ecc for the exact ECC commands",
+    });
 
     writeFileSync(join(root, "aih-capability-packages.json"), "{", "utf8");
     expect(

@@ -1,16 +1,5 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { readAihConfig, readPolicyBinding } from "../config/marker.js";
-import { inspectDestination, materializationRoot } from "../ecc/materialization-fs.js";
-import {
-  type EccOwnedFile,
-  ownedFileSha256,
-  ownedFragmentDigest,
-  parseJsonObject,
-  readEccMaterializationReceipt,
-} from "../ecc/materialization-receipt.js";
 import type {
-  FrameworkCodexRoleRegistrationV1,
   FrameworkGovernedSelectionV1,
   FrameworkPolicyDeliveryInspectorV1,
 } from "../framework-plugin/contract-v1.js";
@@ -27,8 +16,6 @@ import {
   inspectCommandPermissions,
 } from "./command-permissions.js";
 import {
-  expectedPolicyRequiredGuidance,
-  hasRequiredGuidanceComponents,
   inspectPolicyRequiredGuidance,
   type PolicyRequiredGuidanceInspection,
 } from "./required-guidance.js";
@@ -38,7 +25,7 @@ import { governanceOwnsAihSurfaces, type OrgPolicy, readOrgPolicy } from "./sche
 export interface PolicyDeliveryComponent {
   id: string;
   source: { repository: string; commit: string; path: string };
-  state: "missing-receipt" | "source-mismatch" | "drifted" | "receipt-current";
+  state: "developer-managed";
   files: Array<{ path: string; state: "current" | "missing" | "drifted" | "unreadable" }>;
   nativeLoading: "unverified";
   practiceEffect: "guidance" | "component-specific";
@@ -68,7 +55,6 @@ export interface PolicyDeliveryReport {
   binding?: { state: "unbound" | "current" | "blocked"; projectId?: string; detail: string };
   startupGuidance?: Pick<PolicyRequiredGuidanceInspection, "state" | "path" | "detail">;
   commandPermissions?: CommandPermissionInspection;
-  codexRoles?: FrameworkCodexRoleRegistrationV1;
   selection?: FrameworkGovernedSelectionV1;
   /** Present when the delivery needed ECC's knowledge and the ECC plugin could not supply it. */
   eccChecks?: { state: "not-run"; detail: string };
@@ -87,17 +73,14 @@ function hasEccSelection(policy: OrgPolicy | undefined): boolean {
 
 /**
  * Whether the delivery report needs ECC's knowledge: the policy selects ECC
- * content, or a Codex target has ECC state aih wrote at the root (the Codex
- * role registration receipt lives under it).
+ * content from the current Catalog.
  */
 export function policyDeliveryConsultsEcc(
-  root: string,
-  targets: readonly string[],
+  _root: string,
+  _targets: readonly string[],
   policy: OrgPolicy | undefined,
 ): boolean {
-  return (
-    hasEccSelection(policy) || (targets.includes("codex") && existsSync(join(root, ".aih", "ecc")))
-  );
+  return hasEccSelection(policy);
 }
 
 /** Load ECC's inspector through the plugin when the report needs it. */
@@ -142,21 +125,6 @@ function inspectBinding(
   }
 }
 
-function inspectFile(root: string, file: EccOwnedFile): PolicyDeliveryComponent["files"][number] {
-  const live = inspectDestination(root, file.path);
-  if (live.state === "absent") return { path: file.path, state: "missing" };
-  if (live.state === "unreadable") return { path: file.path, state: "unreadable" };
-  const document =
-    file.operation === "merge-json" ? parseJsonObject(live.bytes.toString("utf8")) : undefined;
-  const digest =
-    file.operation === "copy-file"
-      ? ownedFileSha256(live.bytes)
-      : document === undefined
-        ? undefined
-        : ownedFragmentDigest(document, file.ownedKeys);
-  return { path: file.path, state: digest === file.contentSha256 ? "current" : "drifted" };
-}
-
 /** Shared source/receipt comparison; the caller supplies the already-resolved policy blocker. */
 export function summarizePolicyDelivery(
   root: string,
@@ -176,50 +144,22 @@ export function summarizePolicyDelivery(
   const governance = policy && governanceOwnsAihSurfaces(policy) ? policy.governance : undefined;
   const requested =
     governance?.externalSelections.find((selection) => selection.framework === "ecc")?.items ?? [];
-  const receipt = readEccMaterializationReceipt(root);
-  const owned = receipt.state === "valid" ? receipt.receipt.components : [];
-  const rootReal = owned.length > 0 ? materializationRoot(root) : root;
   const components = requested
     .map<PolicyDeliveryComponent>((item) => {
-      const component = owned.find((candidate) => candidate.id === item.id);
-      const files = component?.files.map((file) => inspectFile(rootReal, file)) ?? [];
-      const recordedTargets = component?.targets ?? [];
-      const missingTargets = targets
-        .filter((target) => !recordedTargets.includes(target as Cli))
-        .sort();
-      const unselectedTargets = recordedTargets
-        .filter((target) => !targets.includes(target))
-        .sort();
-      const targetCoverage: NonNullable<PolicyDeliveryComponent["targetCoverage"]> = {
-        state:
-          component?.targets === undefined
-            ? "unverified"
-            : missingTargets.length || unselectedTargets.length
-              ? "mismatch"
-              : "matches",
-        recordedTargets,
-        missingTargets: component?.targets === undefined ? [] : missingTargets,
-        unselectedTargets,
-      };
-      const state =
-        component === undefined
-          ? "missing-receipt"
-          : component.provenance.repository !== item.source.repository ||
-              component.provenance.commit !== item.source.commit ||
-              component.provenance.componentPath !== item.source.path
-            ? "source-mismatch"
-            : files.some((file) => file.state !== "current")
-              ? "drifted"
-              : "receipt-current";
       return {
         id: item.id,
         source: item.source,
-        state,
-        files,
+        state: "developer-managed",
+        files: [],
         nativeLoading: "unverified",
         practiceEffect: item.kind === "skill" ? "guidance" : "component-specific",
-        authorization: component ? "recorded-unverified" : "not-recorded",
-        targetCoverage,
+        authorization: "not-recorded",
+        targetCoverage: {
+          state: "unverified",
+          recordedTargets: [],
+          missingTargets: [],
+          unselectedTargets: [],
+        },
       };
     })
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -228,55 +168,12 @@ export function summarizePolicyDelivery(
     requested.length === 0 || inspector === undefined
       ? []
       : targets.filter((target) => !governedTargets.includes(target)).sort();
-  const selectedIds = new Set(requested.map((item) => item.id));
-  const unrequestedOwnedComponents = owned
-    .filter((item) => !selectedIds.has(item.id))
-    .map((item) => item.id)
-    .sort();
-  const selectedSource = requested[0]?.source;
-  const expectedGuidance =
-    selectedSource && governance?.policyVersion
-      ? expectedPolicyRequiredGuidance(
-          contextDir,
-          owned.filter((item) => selectedIds.has(item.id)),
-          {
-            policyVersion: governance.policyVersion,
-            source: { repository: selectedSource.repository, commit: selectedSource.commit },
-            targets: targets as Cli[],
-          },
-        )
-      : undefined;
-  const startupGuidance = inspectPolicyRequiredGuidance(root, contextDir, expectedGuidance);
-  const needsGuidance = hasRequiredGuidanceComponents(
-    owned.filter((item) => selectedIds.has(item.id)),
-  );
+  const startupGuidance = inspectPolicyRequiredGuidance(root, contextDir);
   const commandPermissions = inspectCommandPermissions(root, policy, targets);
-  const codexRoles =
-    targets.includes("codex") && inspector !== undefined
-      ? inspector.inspectCodexRoles(
-          components
-            .filter((component) => component.state === "receipt-current")
-            .flatMap((component) =>
-              component.files.flatMap((file) => {
-                const id = /^\.codex\/agents\/([a-z0-9][a-z0-9_-]*)\.toml$/.exec(file.path)?.[1];
-                return id ? [{ id, configFile: file.path }] : [];
-              }),
-            ),
-        )
-      : undefined;
   const blocking =
     policyBlocked ||
-    eccNotRun !== undefined ||
     binding.state === "blocked" ||
-    receipt.state === "malformed" ||
-    unsupportedTargets.length > 0 ||
-    components.some((component) => component.state !== "receipt-current") ||
-    components.some((component) => component.targetCoverage?.state === "mismatch") ||
-    (needsGuidance && startupGuidance.state !== "current") ||
-    (!needsGuidance && startupGuidance.state !== "absent") ||
-    !["not-requested", "current"].includes(commandPermissions.state) ||
-    (codexRoles !== undefined && codexRoles.state !== "current") ||
-    unrequestedOwnedComponents.length > 0;
+    !["not-requested", "current"].includes(commandPermissions.state);
   return {
     ...(governance?.policyVersion === undefined ? {} : { policyVersion: governance.policyVersion }),
     blocking,
@@ -284,13 +181,12 @@ export function summarizePolicyDelivery(
     binding,
     startupGuidance,
     commandPermissions,
-    ...(codexRoles === undefined ? {} : { codexRoles }),
     ...(eccNotRun === undefined
       ? {}
       : { eccChecks: { state: "not-run" as const, detail: eccNotRun } }),
     targets: [...targets].sort(),
     unsupportedTargets,
-    receipt: receipt.state,
+    receipt: "absent",
     components,
     ...(policy && inspector && hasEccSelection(policy)
       ? {
@@ -304,14 +200,8 @@ export function summarizePolicyDelivery(
                 commit: component.source.commit,
                 componentPath: component.source.path,
               },
-              ownership:
-                component.state === "missing-receipt" || component.state === "source-mismatch"
-                  ? component.state
-                  : "receipt-recorded",
-              files:
-                component.state === "missing-receipt" || component.state === "source-mismatch"
-                  ? []
-                  : component.files,
+              ownership: "planned",
+              files: [],
             })),
           }),
         }
@@ -320,14 +210,14 @@ export function summarizePolicyDelivery(
       policy?.schemaVersion === 3
         ? [...new Set(policy.authoringSelections.exclusions.map((item) => item.assetId))].sort()
         : [],
-    unrequestedOwnedComponents,
+    unrequestedOwnedComponents: [],
     nativeLoading:
       components.length > 0 || commandPermissions.state !== "not-requested"
         ? "unverified"
         : "not-requested",
     detail:
-      "Receipt-current means the recorded component source and owned bytes match. Receipt authorization is recorded, not freshly reverified by this read-only comparison. It does not establish target startup, native loading, or practice enforcement. Required selections come only from the selected policy; exclusions affect optional content.",
-    nextStep: "aih policy evaluate --json",
+      "ECC Catalog selections are developer-managed. aih does not install or verify ECC files.",
+    nextStep: "run aih ecc for the exact ECC commands",
   };
 }
 
@@ -337,12 +227,10 @@ export async function inspectPolicyDelivery(
 ): Promise<PolicyDeliveryReport | undefined> {
   try {
     const policy = readOrgPolicy(ctx.root, ctx.env);
-    const receipt = readEccMaterializationReceipt(ctx.root);
     const contextDir = readAihConfig(ctx.root)?.contextDir ?? ctx.contextDir;
     const guidance = inspectPolicyRequiredGuidance(ctx.root, contextDir);
     if (
       !policy &&
-      receipt.state === "absent" &&
       guidance.state === "absent" &&
       !readPolicyBinding(ctx.root) &&
       !hasCommandPermissionOwnership(ctx.root)
@@ -371,7 +259,7 @@ export async function inspectPolicyDelivery(
       unrequestedOwnedComponents: [],
       nativeLoading: "unverified",
       detail:
-        "Policy delivery could not be verified. Inspect the selected policy, project binding and ownership receipts before applying changes.",
+        "Policy delivery could not be verified. Inspect the selected policy and project binding before applying changes.",
       nextStep: "aih policy evaluate --json",
     };
   }
@@ -397,11 +285,6 @@ export function renderPolicyDelivery(report: PolicyDeliveryReport): string {
         ]
       : []),
     ...(report.eccChecks ? [`  ECC checks were not run: ${report.eccChecks.detail}`] : []),
-    ...(report.codexRoles
-      ? [
-          `  Codex role registration: ${report.codexRoles.state}; expected roles=${report.codexRoles.expectedRoleIds.join(", ") || "none"}; native loading=unverified${report.codexRoles.detail ? `; ${report.codexRoles.detail}` : ""}`,
-        ]
-      : []),
     ...report.components.map(
       (component) =>
         `  ${component.id}@${component.source.commit}: ${component.state}; target coverage=${component.targetCoverage?.state ?? "unverified"}; recorded targets=${component.targetCoverage?.recordedTargets.join(", ") || "unverified"}; native loading=${component.nativeLoading}; effect=${component.practiceEffect}`,

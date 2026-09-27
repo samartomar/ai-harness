@@ -21,9 +21,7 @@ import type { FrameworkTransactionPinsV1 } from "./host-services.js";
 /**
  * The frameworks whose command operations get Core's runtime. Superpowers
  * gets none: all of its effects go through the evidence-gated install service.
- * ECC's moved implementation drives Core's executors itself (install,
- * materialization, the governed profile, explicit MCP add/remove), so it runs
- * against this runtime instead.
+ * ECC's guidance operation uses this runtime for Catalog and policy reads.
  */
 export const FRAMEWORK_CORE_RUNTIME_FRAMEWORKS: ReadonlySet<FrameworkIdV1> = new Set(["ecc"]);
 

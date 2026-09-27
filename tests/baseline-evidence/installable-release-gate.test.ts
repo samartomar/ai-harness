@@ -200,7 +200,7 @@ describe("ledger comparison logic (samePaths as used for ledger-vs-authorized-id
   // `authorizations` array it derives `installedComponentIds` from, so a real end-to-end
   // ledger/authorization mismatch is unreachable through the public API without adding a new
   // production test-only seam (see report). This pins the comparison primitive itself
-  // (`ledgerMatches = samePaths(ledgerIds, installedComponentIds)`) directly.
+  // (`catalogMatches = samePaths(ledgerIds, installedComponentIds)`) directly.
   it("matches when the ledger's component ids equal the authorized/installed ids", () => {
     const installedComponentIds = ["skill:brainstorming", "skill:writing-plans"].sort();
     const ledgerIds = ["skill:writing-plans", "skill:brainstorming"].sort();
@@ -229,7 +229,7 @@ describe("postureOkForCatalog preview-escape gating for non-installer catalogs (
     catalogId: "superpowers" as const,
     authorizations: [],
     held: [{ componentId: "skill:brainstorming", codes: ["trust.hidden-unicode"] }],
-    ledgerMatches: true,
+    catalogMatches: true,
   };
 
   it("stays green for a non-installer catalog with zero preview escapes", () => {

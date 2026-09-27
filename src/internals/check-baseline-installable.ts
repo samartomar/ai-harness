@@ -32,16 +32,9 @@ import {
 } from "../baseline-evidence/verify.js";
 import type { Posture } from "../config/posture.js";
 import { readEccInstallPreview } from "../ecc/install-preview.js";
-import {
-  type RegistrationLedger,
-  readRegistrationLedger,
-  registrationLedgerPath,
-  writeRegistrationLedgerAtomic,
-} from "../ecc/registration.js";
 import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 
 const POSTURES: readonly Posture[] = ["vibe", "enterprise"];
-const DEFAULT_CLI = "claude";
 const VENDOR_ISSUER = "@aihq/core release";
 
 /**
@@ -72,7 +65,7 @@ export interface InstallablePostureResult {
   labels: BaselineComponentLabels[];
   /** Components no signed evidence covers or matches (missing or mismatched evidence). */
   held: Array<{ componentId: string; codes: string[] }>;
-  ledgerPath: string;
+  catalogMatches: boolean;
   previewEscapes: string[];
   previewSkippedReason?: string;
 }
@@ -95,8 +88,6 @@ export interface CheckInstallableBaselineInput {
   lock: BaselineEvidenceLock;
   /** Restrict every install to throwaway fixture HOMEs/projects; never the real dev seat. */
   fixtureOnly?: boolean;
-  /** Target CLI to record in the fixture registration ledger. */
-  cli?: string;
   /** Signed organization decisions about findings; defaults to the shipped artifact. */
   acceptanceDecisions?: readonly AcceptanceDecision[];
 }
@@ -234,38 +225,6 @@ function evaluateCatalog(
   return { authorizations, labels, held };
 }
 
-function buildLedger(
-  authorizations: readonly BaselineAuthorization[],
-  projectRoot: string,
-  cli: string,
-): RegistrationLedger {
-  return {
-    schemaVersion: 1,
-    projects: [
-      {
-        root: projectRoot,
-        scope: "scoped",
-        components: authorizations.map((authorization) => authorization.componentId),
-        mcps: [],
-      },
-    ],
-    targets: [
-      {
-        target: cli,
-        components: authorizations.map((authorization) => ({
-          id: authorization.componentId,
-          authorization,
-        })),
-        mcps: [],
-      },
-    ],
-  } as RegistrationLedger;
-}
-
-function ledgerComponentIds(ledger: RegistrationLedger): string[] {
-  return ledger.targets.flatMap((target) => target.components.map((component) => component.id));
-}
-
 function withinFixture(fixtureRoot: string, candidate: string): boolean {
   const rel = relative(fixtureRoot, candidate);
   return rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel);
@@ -323,11 +282,11 @@ function previewPlanForCatalog(catalogId: BaselineCatalogId): CatalogPreviewPlan
  * Per-catalog, per-posture pass criteria (issue #438; each branch is pinned with tests).
  *
  * - Catalogs with an installer runtime (ECC today): byte-for-byte the original ECC criterion — at
- *   least one authorized component, the installer runtime itself authorized, the fixture ledger
- *   matches the authorized set, every held component is named with codes, and no install-preview
+ *   least one authorized component, the installer runtime itself authorized, the authenticated
+ *   Catalog matches the authorized set, every held component is named with codes, and no install-preview
  *   destination escapes the fixture.
  * - Catalogs without an installer runtime (Superpowers today): zero authorized components is a
- *   LEGAL, GREEN state. The check only turns red when the fixture ledger disagrees with what evidence authorized, a held
+ *   LEGAL, GREEN state. The check only turns red when the authenticated Catalog disagrees with what evidence authorized, a held
  *   component is missing its codes, or a held component's code names missing/drifted evidence
  *   (`baseline.evidence-missing` / `baseline.evidence-mismatch`). Preview-escape findings gate
  *   every catalog that ships a preview artifact, independent of the installer requirement.
@@ -336,10 +295,10 @@ export function postureOkForCatalog(input: {
   catalogId: BaselineCatalogId;
   authorizations: readonly BaselineAuthorization[];
   held: ReadonlyArray<{ componentId: string; codes: string[] }>;
-  ledgerMatches: boolean;
+  catalogMatches: boolean;
   previewEscapeCount: number;
 }): boolean {
-  const { catalogId, authorizations, held, ledgerMatches, previewEscapeCount } = input;
+  const { catalogId, authorizations, held, catalogMatches, previewEscapeCount } = input;
   const heldAllCoded = held.every((entry) => entry.codes.length > 0);
   const installerComponentId = INSTALLER_RUNTIME_COMPONENT_ID_BY_CATALOG[catalogId];
 
@@ -351,7 +310,7 @@ export function postureOkForCatalog(input: {
       authorizations.length > 0 &&
       installerAuthorized &&
       held.length === 0 &&
-      ledgerMatches &&
+      catalogMatches &&
       heldAllCoded &&
       previewEscapeCount === 0
     );
@@ -362,13 +321,13 @@ export function postureOkForCatalog(input: {
       !entry.codes.includes("baseline.evidence-missing") &&
       !entry.codes.includes("baseline.evidence-mismatch"),
   );
-  return ledgerMatches && heldAllCoded && noMissingOrDriftedEvidence && previewEscapeCount === 0;
+  return catalogMatches && heldAllCoded && noMissingOrDriftedEvidence && previewEscapeCount === 0;
 }
 
 /**
  * Run the shipped baseline evidence through a real fixture-HOME install gate, for every catalog in
  * `BASELINE_CATALOG_IDS` and every posture, and report per-catalog whether the pinned lock installs
- * a useful, ledger-backed component set (issue #438: every catalog is evaluated, not just ECC).
+ * a useful, Catalog-backed component set (issue #438: every catalog is evaluated, not just ECC).
  * Overall `ok` is true only when every catalog's `ok` is true; see `postureOkForCatalog` for the
  * per-catalog pass criteria.
  */
@@ -377,7 +336,6 @@ export async function checkInstallableBaseline(
 ): Promise<InstallableBaselineReport> {
   const lock = parseBaselineEvidenceLock(input.lock);
   const lockSha256 = canonicalLockSha256(lock);
-  const cli = input.cli ?? DEFAULT_CLI;
 
   const catalogs = {} as Record<BaselineCatalogId, InstallableCatalogReport>;
   let ok = true;
@@ -420,12 +378,13 @@ export async function checkInstallableBaseline(
         );
         const installedComponentIds = authorizations.map((a) => a.componentId).sort();
 
-        if (authorizations.length > 0) {
-          writeRegistrationLedgerAtomic(home, buildLedger(authorizations, resolve(project), cli));
-        }
-        const ledger = readRegistrationLedger(home);
-        const ledgerIds = ledgerComponentIds(ledger).sort();
-        const ledgerMatches = samePaths(ledgerIds, installedComponentIds);
+        const catalogIds = activeProfile.selectedComponentIds;
+        const catalogMatches =
+          samePaths(
+            [...installedComponentIds, ...held.map((entry) => entry.componentId)].sort(),
+            [...catalogIds].sort(),
+          ) &&
+          catalogIds.every((id) => catalog.components.some((component) => component.id === id));
 
         const escapes =
           preview.skippedReason === undefined
@@ -436,7 +395,7 @@ export async function checkInstallableBaseline(
           catalogId,
           authorizations,
           held,
-          ledgerMatches,
+          catalogMatches,
           previewEscapeCount: escapes.length,
         });
         const allProfilesStructurallyCovered = qualifiedProfiles.every((profile) => {
@@ -465,7 +424,7 @@ export async function checkInstallableBaseline(
           installedComponentIds,
           labels,
           held,
-          ledgerPath: registrationLedgerPath(home),
+          catalogMatches,
           previewEscapes: escapes,
           ...(preview.skippedReason !== undefined
             ? { previewSkippedReason: preview.skippedReason }
@@ -500,7 +459,7 @@ function catalogSummaryLine(
 ): string {
   const requiresInstaller = INSTALLER_RUNTIME_COMPONENT_ID_BY_CATALOG[catalogId] !== undefined;
   const verdict = requiresInstaller
-    ? `${catalogReport.ok ? "installable" : "not installable: evidence missing or mismatched, ledger mismatch, or preview escape"} from its own evidence`
+    ? `${catalogReport.ok ? "installable" : "not installable: evidence missing or mismatched, Catalog mismatch, or preview escape"} from its own evidence`
     : `evidence ${catalogReport.ok ? "consistent" : "INCONSISTENT"} from its own lock`;
   return `${catalogId}/${catalogReport.profile}: ${verdict} (pin ${catalogReport.pin})`;
 }

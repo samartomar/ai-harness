@@ -37,6 +37,7 @@ import {
   capabilityPackageManifestBytes,
   capabilityPackageManifestFor,
   inspectCapabilityPackageContext,
+  isEccCapabilityPackage,
   readCapabilityPackageExactFile,
 } from "../live-context.js";
 import { planCapabilityPackageOwnedFiles } from "../owned-files.js";
@@ -230,7 +231,7 @@ function assemble(input: Input): Assembled {
       report,
       index,
       diagnostics: adapted.diagnostics,
-      roots: [...report.requestedRoots],
+      roots: report.requestedRoots.filter((id) => !isEccCapabilityPackage(id)),
     };
   } catch {
     return { report } as const;

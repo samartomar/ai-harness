@@ -1,9 +1,8 @@
-import type { InstalledComponentRegistration } from "@aihq/core/framework-host";
 import { AihError, type BaselineAuthorization, type Cli, z } from "@aihq/core/framework-host";
 import { EccDescriptorError } from "../descriptor.js";
 import { eccDescriptorMemo, eccDescriptorSection } from "../invocation.js";
+import { eccComponentInstallDescriptor } from "./component-descriptor.js";
 import type { EccComponentId, EccComponentSelection } from "./components.js";
-import { eccComponentInstallDescriptor } from "./materialize.js";
 import type { EccLanguagePack } from "./select.js";
 
 const ModulesSnapshotSchema = z
@@ -231,43 +230,4 @@ export function eccEvidenceComponentIdsForSelection(
     selected.add(descriptor.evidenceComponentId);
   }
   return [...selected];
-}
-
-export function installedEccComponentRegistrations(
-  target: Cli,
-  selection: EccComponentSelection,
-  authorizations: readonly BaselineAuthorization[],
-): InstalledComponentRegistration[] {
-  const authorizationById = new Map(
-    authorizations.map((authorization) => [authorization.componentId, authorization]),
-  );
-  const installed: InstalledComponentRegistration[] = [];
-  if (selection.scope === "full" || (selection.moduleIds?.length ?? 0) > 0) {
-    installed.push(
-      ...eccEvidenceComponentIdsForSelection(target, selection)
-        .filter((componentId) => componentId.startsWith("module:"))
-        .map((componentId) => {
-          const authorization = authorizationById.get(componentId);
-          if (authorization === undefined) {
-            throw new Error(`missing ECC evidence authorization for ${componentId}`);
-          }
-          return { id: componentId as EccComponentId, authorization };
-        }),
-    );
-  }
-  for (const componentId of scopedComponentIds(selection)) {
-    const descriptor = eccComponentInstallDescriptor(componentId);
-    if (!moduleSupportsTarget(descriptor.containingModuleId, target)) continue;
-    const exact = authorizationById.get(descriptor.evidenceComponentId);
-    const containing =
-      selection.scope === "full"
-        ? authorizationById.get(`module:${descriptor.containingModuleId}`)
-        : undefined;
-    const authorization = exact ?? containing;
-    if (authorization === undefined) {
-      throw new Error(`missing ECC evidence authorization for ${componentId}`);
-    }
-    installed.push({ id: componentId, authorization });
-  }
-  return installed;
 }

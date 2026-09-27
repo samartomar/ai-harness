@@ -7,13 +7,11 @@ import {
   executeFrameworkCommandV1,
   type FrameworkCommandDepsV1,
   type FrameworkInvocationV1,
-  type FrameworkPolicyDeliveryV1,
-  prepareFrameworkPolicyDeliveryV1,
   requireFrameworkPluginV1,
 } from "./run-framework-command.js";
 
 /**
- * `aih ecc` and `aih ecc mcp add|remove` — Core keeps the command surface
+ * `aih ecc` — Core keeps the command surface
  * (names, summaries, options) and the invocation's decisions: the policy
  * targets and the policy custody pins its runtime forces into every
  * transaction. Everything ECC-specific runs in `@aihq/framework-ecc`, against
@@ -60,20 +58,6 @@ async function executeEccPath(
   return executeFrameworkCommandV1(loaded, path, await eccInvocation(ctx), deps);
 }
 
-/**
- * Prepare the ECC delivery organization policy requires (`aih policy project`,
- * `aih init` on a bound project) as an ECC install. The caller commits it after
- * its own projection, or not, and always ends it.
- */
-export async function prepareEccPolicyDelivery(
-  ctx: PlanContext,
-  deps: FrameworkCommandDepsV1 = {},
-): Promise<FrameworkPolicyDeliveryV1> {
-  const loaded = await requireFrameworkPluginV1("ecc", deps);
-  const install = { ...ctx, options: { ...ctx.options, lifecycle: "install" } };
-  return prepareFrameworkPolicyDeliveryV1(loaded, await eccInvocation(install), deps);
-}
-
 export function executeEccCommand(
   ctx: PlanContext,
   deps: FrameworkCommandDepsV1 = {},
@@ -81,70 +65,17 @@ export function executeEccCommand(
   return executeEccPath("ecc", ctx, deps);
 }
 
-export async function executeEccMcpAddCommand(
-  _ctx: PlanContext,
-  _deps: FrameworkCommandDepsV1 = {},
-): Promise<PlanResult> {
-  throw new AihError(
-    "aih ecc mcp add was retired: aih no longer installs ECC MCP content. Run aih ecc for guidance.",
-    "AIH_CONFIG",
-  );
-}
-
-export function executeEccMcpRemoveCommand(
-  ctx: PlanContext,
-  deps: FrameworkCommandDepsV1 = {},
-): Promise<PlanResult> {
-  return executeEccPath("ecc mcp remove", ctx, deps);
-}
-
-export const eccMcpAddCommand: CommandSpec = {
-  name: "add",
-  summary: "Retired ECC MCP add route; use aih ecc for guidance",
-  positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
-  options: [{ flags: "--cli <list>", description: "retired ECC MCP target" }],
-  plan: () => {
-    throw new AihError(
-      "aih ecc mcp add was retired: aih no longer installs ECC MCP content. Run aih ecc for guidance.",
-      "AIH_CONFIG",
-    );
-  },
-  zeroWrite: true,
-};
-
-export const eccMcpRemoveCommand: CommandSpec = {
-  name: "remove",
-  summary: "Remove one receipt-owned ECC HTTPS MCP from one selected CLI configuration",
-  positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
-  plan: runsThroughPlugin("ecc mcp remove"),
-};
-
 export const command: CommandSpec = {
   name: "ecc",
   summary: "Show developer-managed ECC installation guidance or read-only status",
   options: [
     {
       flags: "--status",
-      description: "report known ECC install-state and earlier aih record presence",
+      description: "report ECC install-state file presence",
     },
     { flags: "--cli <list>", description: "CLI targets for developer guidance" },
-    { flags: "--all-tools", description: "retired with --apply" },
-    { flags: "--profile <profile>", description: "retired ECC install profile" },
-    {
-      flags: "--with <component>",
-      description: "retired ECC component declaration (repeatable)",
-      repeatable: true,
-    },
-    {
-      flags: "--ecc-path <dir>",
-      description: "retired ECC source option",
-    },
-    {
-      flags: "--lifecycle <operation>",
-      description:
-        "uninstall earlier aih-owned ECC profile; install|update|repair|rollback are retired",
-    },
   ],
   plan: runsThroughPlugin("ecc"),
   zeroWrite: true,
+  readOnly: true,
 };

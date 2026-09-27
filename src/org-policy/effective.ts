@@ -1693,9 +1693,9 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.aihMcpRequests.*", AIH_MCP_REQUEST_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.eccMcpApprovals.*", ECC_MCP_APPROVAL_LEAF_CONSUMERS),
   "governance.frameworkHookControls.ecc.profile":
-    "the ecc framework plugin validates the profile against its hook inventory; the receipt-backed projection writes only the Claude settings env keys its plan owns",
+    "the ecc framework plugin validates the profile against its hook inventory; ECC manages its own host settings",
   "governance.frameworkHookControls.ecc.disabledHookIds.*":
-    "the ecc framework plugin validates each id against its hook inventory and returns the hook-control plan; Core applies it through the receipt-backed hook registrar",
+    "the ecc framework plugin validates each id against its hook inventory and reports the developer-managed next route",
   "governance.frameworkHookControls.superpowers.profile":
     "the superpowers framework plugin validates the profile against its hook inventory; the receipt-backed projection writes only the Claude settings env keys its plan owns",
   "governance.frameworkHookControls.superpowers.disabledHookIds.*":

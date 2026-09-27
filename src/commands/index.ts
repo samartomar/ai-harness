@@ -19,14 +19,7 @@ import { command as crispy } from "../crispy/index.js";
 import { command as docsLint } from "../docs-lint/index.js";
 import { command as doctor } from "../doctor.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
-import {
-  command as ecc,
-  eccMcpAddCommand,
-  eccMcpRemoveCommand,
-  executeEccCommand,
-  executeEccMcpAddCommand,
-  executeEccMcpRemoveCommand,
-} from "../framework-plugin/ecc-command.js";
+import { command as ecc, executeEccCommand } from "../framework-plugin/ecc-command.js";
 import {
   executeSuperpowersCommand,
   command as superpowers,
@@ -273,8 +266,6 @@ export const GROUPED_COMMAND_SPECS = {
 export const ALL_COMMAND_SPECS: CommandSpec[] = [
   ...ALL_COMMANDS,
   mcpApproveCommand,
-  eccMcpAddCommand,
-  eccMcpRemoveCommand,
   ...Object.values(GROUPED_COMMAND_SPECS).flat(),
   policySupportedAcceptCommandV2,
   policySupportedInspectCommandV2,
@@ -289,8 +280,6 @@ export const ALL_COMMAND_SPECS: CommandSpec[] = [
 export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ...ALL_COMMANDS.map((spec) => [spec.name] as const),
   ["mcp", mcpApproveCommand.name] as const,
-  ["ecc", "mcp", eccMcpAddCommand.name] as const,
-  ["ecc", "mcp", eccMcpRemoveCommand.name] as const,
   ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
     specs.map((spec) =>
       spec === npmPackageObserveCommand || spec === upstreamArtifactObserveCommand
@@ -633,27 +622,6 @@ function registerSpec(program: Command, spec: CommandSpec): void {
         optionOverrides: { server },
       });
     });
-  }
-  if (spec.name === "ecc") {
-    const mcp = cmd.command("mcp").description("Earlier aih-owned ECC MCP removal; add is retired");
-    for (const [mcpCommand, execute] of [
-      [eccMcpAddCommand, executeEccMcpAddCommand],
-      [eccMcpRemoveCommand, executeEccMcpRemoveCommand],
-    ] as const) {
-      const child = mcp
-        .command(mcpCommand.name)
-        .description(mcpCommand.summary)
-        .argument("<id>", "ECC MCP id");
-      addFlagsForSpec(child, mcpCommand);
-      addOptionsForSpec(child, mcpCommand);
-      child.action(async (id: string, _options: Record<string, unknown>, command: Command) => {
-        process.exitCode = await runCapability(mcpCommand, command, {
-          positionalRoot: false,
-          optionOverrides: { id },
-          execute,
-        });
-      });
-    }
   }
   program.addCommand(cmd);
 }

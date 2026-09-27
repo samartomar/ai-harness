@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-import { parseExplicitAddReceipt } from "../../../ecc/mcp-explicit-add-receipt.js";
 import {
   ECC_MCP_CATALOG_PROVENANCE,
   eccExternalMcpCatalogV1,
@@ -40,57 +38,6 @@ function packageFor(
 
 export interface EccMcpCapabilityPackageAuthorityInput {
   authorityId: string;
-}
-
-export type EccMcpReceiptAuthorityOutcome =
-  | { state: "ready"; document: PackageGraphAuthorityDocument }
-  | { state: "invalid"; code: "receipt-boundary" | "catalog-boundary" | "missing-surface" };
-
-export interface EccMcpReceiptAuthorityInput {
-  authorityId: string;
-  receiptBytes: Buffer;
-  catalog: PackageGraphAuthorityDocument;
-}
-
-/** Copy exact pinned catalog surface claims for MCP entries owned by the domain receipt. */
-export function projectEccMcpReceiptAuthority(
-  input: EccMcpReceiptAuthorityInput,
-): EccMcpReceiptAuthorityOutcome {
-  const parsedCatalog = PackageGraphAuthorityDocumentSchema.safeParse(input.catalog);
-  if (!parsedCatalog.success || parsedCatalog.data.authority.kind !== "catalog") {
-    return { state: "invalid", code: "catalog-boundary" };
-  }
-  let records: ReturnType<typeof parseExplicitAddReceipt>["records"];
-  let sourceSha256: string;
-  try {
-    if (!Buffer.isBuffer(input.receiptBytes)) throw new Error("invalid bytes");
-    const bytes = Buffer.from(input.receiptBytes);
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    records = parseExplicitAddReceipt(JSON.parse(text)).records;
-    sourceSha256 = createHash("sha256").update(bytes).digest("hex");
-  } catch {
-    return { state: "invalid", code: "receipt-boundary" };
-  }
-  const byId = new Map(parsedCatalog.data.graph.surfaces.map((surface) => [surface.id, surface]));
-  const surfaces: PackageGraphSurface[] = [];
-  for (const id of [...new Set(records.map((record) => `mcp:${record.id}`))].sort(
-    codeUnitCompare,
-  )) {
-    const surface = byId.get(id);
-    if (surface === undefined) return { state: "invalid", code: "missing-surface" };
-    surfaces.push(structuredClone(surface));
-  }
-  const document = PackageGraphAuthorityDocumentSchema.safeParse({
-    authority: {
-      id: input.authorityId,
-      kind: "receipt",
-      sourceDigest: { algorithm: "sha256", value: sourceSha256 },
-    },
-    graph: { schemaVersion: 1, surfaces, packages: [] },
-  });
-  return document.success
-    ? { state: "ready", document: document.data }
-    : { state: "invalid", code: "receipt-boundary" };
 }
 
 /** Project the existing pinned HTTPS-configurable ECC MCP catalog into packages. */

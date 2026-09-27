@@ -16,20 +16,6 @@
 /** The version of this host API. A plugin built against another version is incompatible. */
 export const FRAMEWORK_HOST_API_VERSION = 1;
 
-import { planInstalledNativeEccRegistration } from "../ecc-profile/native-registration.js";
-import { AihError } from "../errors.js";
-
-/** Historical receipt cleanup only; retired lifecycle operations refuse with a typed error. */
-export function planNativeEccCleanup(root: string, operation: "uninstall") {
-  if (operation !== "uninstall") {
-    throw new AihError(
-      "native ECC installation, update, repair and rollback were retired; run aih ecc for guidance",
-      "AIH_CONFIG",
-    );
-  }
-  return planInstalledNativeEccRegistration(root, "uninstall");
-}
-
 // ---- contract ---------------------------------------------------------------
 
 /**
@@ -45,7 +31,6 @@ export {
   FRAMEWORK_PLUGIN_PACKAGE_NAMES,
   type FrameworkCapabilityPackageDomainV1,
   type FrameworkCapabilityPackagesHookV1,
-  type FrameworkCodexRoleRegistrationV1,
   type FrameworkCommandPathV1,
   type FrameworkCommandV1,
   type FrameworkComponentSubtractionV1,
@@ -175,8 +160,7 @@ export { z } from "zod";
  * The Core modules a framework implementation builds on: plan builders and
  * types, deterministic rendering, contained-path and file helpers, the CLI and
  * MCP registries, policy grammar parsing and types, baseline-evidence types and
- * tree hashing, Core-owned receipts (the materialization receipt, the install
- * manifest drift engine) and the runtime-descriptor schema, plus the parsing
+ * tree hashing, and the runtime-descriptor schema, plus the parsing
  * libraries Core ships (zod, yaml, jsonc-parser, smol-toml) so a plugin never
  * bundles a second copy.
  *
@@ -221,97 +205,12 @@ export {
   canonicalStrictJsonSha256V1,
 } from "../contract/strict-json-v1.js";
 export {
-  type EccInstallMechanism,
-  eccInstallDriftForRoot,
-  eccInstallManifestPath,
-  readEccInstallManifest,
-  walkManagedRoot,
-} from "../ecc/install-manifest.js";
-export {
-  commitMaterializationSteps,
-  type DestinationExpectation,
-  type DestinationRead,
-  inspectDestination,
-  MATERIALIZATION_RECEIPT_MODE,
-  MATERIALIZED_CONTENT_MODE,
-  MAX_MATERIALIZED_FILE_BYTES,
-  materializationRoot,
-} from "../ecc/materialization-fs.js";
-export {
-  AuthorizationSchema,
-  assertComponentSourcePath,
-  assertEccMaterializationEvidenceBinding,
-  assertMaterializedComponentId,
-  assertOwnedJsonKey,
-  assertOwnedRelativePath,
-  destinationIdentity,
-  displaySafe,
-  ECC_KIRO_RUNTIME_COMPONENT_ID,
-  ECC_MATERIALIZATION_RECEIPT_FORMAT,
-  ECC_MATERIALIZATION_RECEIPT_PATH,
-  type EccComponentProvenance,
-  type EccCoreDerivedEvidenceReferenceV1,
-  type EccCoreDerivedEvidenceV2,
-  type EccMaterializationOperation,
-  type EccMaterializationReceipt,
-  EccMaterializationTargetsSchema,
-  type EccMaterializedComponent,
-  type EccOwnedFile,
-  eccMaterializationAuthorizationSchema,
-  eccMaterializationReceiptPath,
-  exceedsJsonDepth,
-  MAX_MATERIALIZATION_RECEIPT_BYTES,
-  MAX_MATERIALIZED_COMPONENTS,
-  MAX_MATERIALIZED_FILES_PER_COMPONENT,
-  ownedFileSha256,
-  ownedFragment,
-  ownedFragmentDigest,
-  ownedFragmentSha256,
-  parseJsonObject,
-  readEccMaterializationReceipt,
-  serializeEccMaterializationReceipt,
-} from "../ecc/materialization-receipt.js";
-export {
-  ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
-  type EccMcpExplicitAddReceipt,
-  type EccMcpExplicitAddRecord,
-  emptyExplicitAddReceipt,
-  explicitAddDigest,
-  parseExplicitAddReceipt,
-  receiptJson,
-} from "../ecc/mcp-explicit-add-receipt.js";
-export {
-  type InstalledComponentRegistration,
-  machineRegistrationUnion,
-  mergeRegistrationLedger,
-  type ProjectRegistration,
-  parseRegistrationLedger,
-  type RegistrationLedger,
-  type RegistrationUnion,
-  readRegistrationLedger,
-  readRegistrationLedgerSnapshot,
-  serializeRegistrationLedger,
-} from "../ecc/registration.js";
-export {
   assertEccRuntimeDescriptorCustodyV1,
   type EccRuntimeDescriptorV1,
   inspectEccRuntimeDescriptorSealV1,
 } from "../ecc/runtime-descriptor.js";
 export { deriveEccRuntimeDeclaredEvaluationV1 } from "../ecc/runtime-descriptor-evaluation.js";
 /** Core's append-only ECC profile recovery anchors; the plugin ships none of its own. */
-export {
-  ECC_PROFILE_INSTALLATION_TRUST_V1,
-  type EccProfileInstallationTrustV1,
-} from "../ecc-profile/installation-trust.js";
-export {
-  type EccNativeStateRootV1,
-  eccNativeStateRootCandidatesV1,
-  NATIVE_ECC_REGISTRATION_RECEIPT,
-  NATIVE_ECC_REGISTRATION_SCOPE,
-  type NativeEccRegistration,
-  nativeRegistrationFiles,
-  resolveEccNativeStateRootV1,
-} from "../ecc-profile/native-registration.js";
 export { SettingsError } from "../errors.js";
 export {
   detectFallbackNotice,
@@ -396,7 +295,6 @@ export {
 } from "../org-policy/effective.js";
 export {
   FRAMEWORK_HOOK_CONTROLS_RECEIPT_PATH,
-  LEGACY_ECC_HOOK_CONTROLS_RECEIPT_PATH,
   planFrameworkHookControlsProjection,
   readFrameworkHookControlsReceipt,
 } from "../org-policy/framework-hook-controls-projection.js";

@@ -1,5 +1,4 @@
 import { readAihConfig } from "../config/marker.js";
-import { readEccMaterializationReceipt } from "../ecc/materialization-receipt.js";
 import { hasCommandPermissionOwnership } from "./command-permissions.js";
 import { inspectPolicyRequiredGuidance } from "./required-guidance.js";
 
@@ -16,10 +15,6 @@ export interface GovernedOwnershipProbe {
  * closed instead of treating damaged state as absent.
  */
 export const GOVERNED_OWNERSHIP_PROBES: readonly GovernedOwnershipProbe[] = Object.freeze([
-  {
-    id: "framework-materialization-receipt",
-    owned: (root: string) => readEccMaterializationReceipt(root).state !== "absent",
-  },
   {
     id: "policy-required-guidance",
     owned: (root: string) =>

@@ -256,7 +256,6 @@ describe("aih init — command surface", () => {
   it("keeps the init name, the --mcp-mode option, and a real plan", async () => {
     expect(command.name).toBe("init");
     expect(command.options?.map((o) => o.flags)).toEqual([
-      "--ecc-path <path>",
       "--sidecar",
       "--sidecar-path <dir>",
       "--mcp-mode <mode>",

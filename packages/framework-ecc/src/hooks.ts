@@ -18,7 +18,7 @@ import {
   eccHostControl,
   readEccHookControlInventory,
 } from "./descriptor.js";
-import { ECC_DISABLED_HOOKS_KEY, ECC_HOOK_PROFILE_KEY, UPSTREAM } from "./identity.js";
+import { ECC_DISABLED_HOOKS_KEY, UPSTREAM } from "./identity.js";
 import { currentEccInvocation, withEccInvocation } from "./invocation.js";
 
 function inventoryOfCurrentInvocation(): FrameworkHookInventoryV1 {
@@ -71,10 +71,8 @@ function refuse(message: string): never {
 /**
  * Decide ECC's hook controls for the targeted hosts. ECC reads two switches from
  * the Claude settings environment after each hook process starts —
- * `ECC_HOOK_PROFILE` and the comma-separated `ECC_DISABLED_HOOKS` — so every
- * hook whose control is that switch can be turned off without editing ECC
- * files. The plan returns those two values; Core writes them through its hook
- * registrar and records a receipt that owns exactly those keys.
+ * `ECC_HOOK_PROFILE` and the comma-separated `ECC_DISABLED_HOOKS`. The plan
+ * labels those upstream switches for the developer; aih writes no ECC settings.
  *
  * A disabled hook ECC has no switch for (control `none`, for example its
  * OpenCode plugin) is still planned: on each host that declares it the decision
@@ -119,7 +117,6 @@ export function planHookControls(
     }
     const decisions: FrameworkHookControlDecisionV1[] = [];
     const actions: Action[] = [];
-    const switched: string[] = [];
     for (const hook of rows.hooks) {
       const requests = request.disabled.filter((entry) => entry.hookId === hook.id);
       if (requests.length === 0) {
@@ -127,7 +124,6 @@ export function planHookControls(
         continue;
       }
       const control = eccHookControl(hook).kind;
-      if (control === "claude-settings-env") switched.push(hook.id);
       const declarations = eccHookDeclarations(hook);
       const authority: FrameworkHookControlAuthorityV1 = requests.some(
         (entry) => entry.authority === "enterprise",
@@ -143,17 +139,13 @@ export function planHookControls(
             detail: `${hook.id} is not declared for ${host} in affaan-m/ECC@${short}; it does not run there.`,
           };
         }
-        if (control === "claude-settings-env" && host === "claude") {
-          return {
-            host,
-            enforcement: "upstream-switch",
-            detail: `ECC skips ${hook.id} when ${ECC_DISABLED_HOOKS_KEY} in .claude/settings.json env lists it; aih writes that key and ECC's hook runtime enforces it.`,
-          };
-        }
         return {
           host,
           enforcement: "unenforced",
-          detail: `aih cannot turn ${hook.id} off on ${host}: affaan-m/ECC@${short} has no switch for it in ${declaration.sourcePath}. Next route: do not install ECC's ${declaration.sourcePath} on ${host}, or turn it off with ${host}'s own plugin controls.`,
+          detail:
+            control === "claude-settings-env" && host === "claude"
+              ? `ECC reads ${ECC_DISABLED_HOOKS_KEY} in .claude/settings.json env; set it with ECC's own instructions. aih writes no ECC settings.`
+              : `aih cannot turn ${hook.id} off on ${host}: affaan-m/ECC@${short} has no switch for it in ${declaration.sourcePath}. Next route: do not install ECC's ${declaration.sourcePath} on ${host}, or turn it off with ${host}'s own plugin controls.`,
         };
       });
       decisions.push({ hookId: hook.id, state: "disabled", authority, hosts });
@@ -178,22 +170,10 @@ export function planHookControls(
         );
       }
     }
-    const set: Record<string, string> = {};
-    if (profile !== undefined) set[ECC_HOOK_PROFILE_KEY] = profile;
-    if (switched.length > 0) set[ECC_DISABLED_HOOKS_KEY] = switched.join(",");
     return {
       frameworkId: "ecc",
       decisions,
       actions,
-      ...(Object.keys(set).length === 0
-        ? {}
-        : {
-            environment: {
-              host: "claude" as const,
-              keys: [ECC_HOOK_PROFILE_KEY, ECC_DISABLED_HOOKS_KEY],
-              set,
-            },
-          }),
     };
   });
 }

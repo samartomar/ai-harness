@@ -15,7 +15,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { commitMaterializationSteps } from "../../src/ecc/materialization-fs.js";
 import {
   type OwnedFilePolicy,
   OwnedFileTransaction,
@@ -336,38 +335,6 @@ describe("OwnedFileTransaction", () => {
       ]),
     ).toThrow(/unreadable|unambiguous/i);
     expect(readFileSync(join(root, "original.txt"), "utf8")).toBe("original");
-  });
-
-  it("keeps the ECC wrapper's omitted-priorMode rollback fallback", () => {
-    const original = Buffer.from("original\n");
-    const generated = Buffer.from("generated\n");
-    writeFileSync(join(root, "managed.txt"), original, { mode: 0o600 });
-
-    expect(() =>
-      commitMaterializationSteps(root, [
-        {
-          path: "managed.txt",
-          mode: 0o640,
-          contents: generated,
-          expect: { sha256: sha256(original) },
-          prior: original,
-        },
-        {
-          path: "later.txt",
-          mode: 0o644,
-          contents: Buffer.from("later"),
-          expect: { absent: true },
-          announce: () => {
-            throw new Error("injected wrapper failure");
-          },
-        },
-      ]),
-    ).toThrow("injected wrapper failure");
-
-    expect(readFileSync(join(root, "managed.txt"))).toEqual(original);
-    if (process.platform !== "win32") {
-      expect(lstatSync(join(root, "managed.txt")).mode & 0o777).toBe(0o640);
-    }
   });
 
   it("uses state/content directory modes and refuses static symlink targets", () => {

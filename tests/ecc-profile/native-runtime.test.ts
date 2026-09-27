@@ -15,7 +15,6 @@ import { delimiter, join, win32 } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../../src/ecc-profile/native-registration.js";
 import { executeNativeEccHook } from "../../src/ecc-profile/native-runtime.js";
 import {
   runNativeEccRuntime,
@@ -25,6 +24,7 @@ import {
   assertHardenedSerenaRuntimeConfig,
   renderSerenaRuntimeConfig,
 } from "../../src/ecc-profile/serena-runtime-config.js";
+import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../../src/mcp/serena-runtime-identity.js";
 import { buildProgram } from "../../src/program.js";
 
 const roots: string[] = [];

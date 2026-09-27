@@ -1055,12 +1055,6 @@
       ],
       "options": [
         {
-          "flags": "--all-tools"
-        },
-        {
-          "flags": "--apply"
-        },
-        {
           "flags": "--cli <list>"
         },
         {
@@ -1068,13 +1062,7 @@
           "defaultValue": "ai-coding"
         },
         {
-          "flags": "--ecc-path <dir>"
-        },
-        {
           "flags": "--json"
-        },
-        {
-          "flags": "--lifecycle <operation>"
         },
         {
           "flags": "--policy <file>"
@@ -1084,121 +1072,13 @@
           "defaultValue": "vibe"
         },
         {
-          "flags": "--profile <profile>"
-        },
-        {
           "flags": "--root <dir>"
         },
         {
           "flags": "--status"
-        },
-        {
-          "flags": "--with <component>"
         }
       ],
-      "commands": [
-        {
-          "name": "mcp",
-          "hasDescription": true,
-          "arguments": [],
-          "options": [],
-          "commands": [
-            {
-              "name": "add",
-              "hasDescription": true,
-              "arguments": [
-                {
-                  "name": "id",
-                  "required": true
-                }
-              ],
-              "options": [
-                {
-                  "flags": "--apply"
-                },
-                {
-                  "flags": "--cli <list>"
-                },
-                {
-                  "flags": "--context-dir <dir>",
-                  "defaultValue": "ai-coding"
-                },
-                {
-                  "flags": "--json"
-                },
-                {
-                  "flags": "--policy <file>"
-                },
-                {
-                  "flags": "--posture <posture>",
-                  "defaultValue": "vibe"
-                },
-                {
-                  "flags": "--root <dir>"
-                }
-              ],
-              "commands": []
-            },
-            {
-              "name": "remove",
-              "hasDescription": true,
-              "arguments": [
-                {
-                  "name": "id",
-                  "required": true
-                }
-              ],
-              "options": [
-                {
-                  "flags": "--all-tools"
-                },
-                {
-                  "flags": "--apply"
-                },
-                {
-                  "flags": "--cli <list>"
-                },
-                {
-                  "flags": "--context-dir <dir>",
-                  "defaultValue": "ai-coding"
-                },
-                {
-                  "flags": "--detect"
-                },
-                {
-                  "flags": "--force"
-                },
-                {
-                  "flags": "--json"
-                },
-                {
-                  "flags": "--no-log"
-                },
-                {
-                  "flags": "--policy <file>"
-                },
-                {
-                  "flags": "--posture <posture>",
-                  "defaultValue": "vibe"
-                },
-                {
-                  "flags": "--root <dir>"
-                },
-                {
-                  "flags": "--support-out <dir>"
-                },
-                {
-                  "flags": "--verify"
-                },
-                {
-                  "flags": "--yes"
-                }
-              ],
-              "commands": []
-            }
-          ]
-        }
-      ]
+      "commands": []
     },
     {
       "name": "evidence",
@@ -1610,9 +1490,6 @@
         },
         {
           "flags": "--detect"
-        },
-        {
-          "flags": "--ecc-path <path>"
         },
         {
           "flags": "--force"
@@ -3099,9 +2976,6 @@
             },
             {
               "flags": "--detect"
-            },
-            {
-              "flags": "--ecc-path <path>"
             },
             {
               "flags": "--force"

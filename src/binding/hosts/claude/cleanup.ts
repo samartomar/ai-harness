@@ -31,7 +31,7 @@ import { assertSafeKey, isSafeRelPosixPath } from "./surfaces.js";
  *
  *   1. {@link planClaudeCleanup} — a pure, JSON-serializable PREVIEW derived from a
  *      contamination report. It plans the migration/disable of FRAMEWORK-ATTRIBUTED
- *      surfaces only (unknown surfaces are opt-in via `includeUnknown`). It NEVER
+ *      surfaces except ECC (unknown surfaces are opt-in via `includeUnknown`). It NEVER
  *      deletes a whole shared JSON file — only targeted key/hook removals mirroring
  *      D18 field-level discipline — and never touches anything outside `~/.claude/**`
  *      or `~/.mcp.json`.
@@ -84,7 +84,7 @@ export interface ClaudeCleanupPlan {
   includeUnknown: boolean;
   /** The steps to apply (the PREVIEW shown to the user). */
   steps: ClaudeCleanupStep[];
-  /** Surfaces present in the report but left alone (unknown attribution, when not opted in). */
+  /** Surfaces present in the report but left alone (ECC or unknown attribution). */
   skipped: ClaudeCleanupStep[];
 }
 
@@ -126,8 +126,9 @@ function assertDisableFile(rel: string): void {
 
 /**
  * Build the cleanup PREVIEW from a contamination report. Framework-attributed
- * surfaces are planned; `unknown`-attribution surfaces are set aside in `skipped`
- * unless `includeUnknown` is set. Every step's target is validated here (and again
+ * surfaces except ECC are planned; `unknown`-attribution surfaces are set aside in
+ * `skipped` unless `includeUnknown` is set. ECC always remains in `skipped`.
+ * Every step's target is validated here (and again
  * at apply) so a malformed report can never produce an out-of-scope write.
  */
 export function planClaudeCleanup(
@@ -139,7 +140,8 @@ export function planClaudeCleanup(
   const skipped: ClaudeCleanupStep[] = [];
   for (const entry of report.entries) {
     const step = stepForEntry(entry);
-    if (entry.attribution === "unknown" && !includeUnknown) skipped.push(step);
+    if (entry.attribution === "ecc" || (entry.attribution === "unknown" && !includeUnknown))
+      skipped.push(step);
     else steps.push(step);
   }
   return { schemaVersion: 1, includeUnknown, steps, skipped };
@@ -151,7 +153,13 @@ function stepForEntry(entry: ContaminationEntry): ClaudeCleanupStep {
     case "skill":
     case "agent":
     case "rule":
-      assertRemovableTarget(entry.path);
+      if (entry.attribution === "ecc") {
+        if (!isSafeRelPosixPath(entry.path)) {
+          throw new ClaudeCleanupError("refusing unsafe ECC report path");
+        }
+      } else {
+        assertRemovableTarget(entry.path);
+      }
       return { action: "backup-then-remove", ...common, path: entry.path };
     case "plugin":
       assertDisableFile(entry.path);
@@ -204,7 +212,7 @@ const CleanupManifestEntrySchema = z
   .object({
     action: z.enum(["backup-then-remove", "backup-then-disable"]),
     surface: z.enum(["skill", "agent", "hook", "rule", "plugin", "mcpServer"]),
-    attribution: z.enum(["ecc", "superpowers", "gsd", "unknown"]),
+    attribution: z.enum(["superpowers", "gsd", "unknown"]),
     path: z.string().min(1),
     edit: CleanupEditSchema.optional(),
     /** Whether the target existed at apply time (absent -> nothing backed up/removed). */
@@ -232,7 +240,7 @@ const CleanupManifestSchema = z
  * GStack-attributed receipt after the framework removal.
  */
 const CleanupRollbackManifestEntrySchema = CleanupManifestEntrySchema.extend({
-  attribution: z.enum(["ecc", "superpowers", "gsd", "unknown", LEGACY_GSTACK_ID]),
+  attribution: z.enum(["superpowers", "gsd", "unknown", LEGACY_GSTACK_ID]),
 });
 
 const CleanupRollbackManifestSchema = CleanupManifestSchema.extend({
@@ -292,6 +300,12 @@ export function applyClaudeCleanup(
   // 1. Resolve each step's backup set (re-validating every target defensively).
   const entries: CleanupManifestEntry[] = [];
   const uniqueBackups = new Map<string, string>(); // home-rel path -> digest
+
+  if (plan.steps.some((step) => step.attribution === "ecc")) {
+    throw new ClaudeCleanupError(
+      "ECC surfaces are developer-managed; run aih ecc for the exact ECC commands",
+    );
+  }
   for (const step of plan.steps) {
     if (step.action === "backup-then-remove") {
       assertRemovableTarget(step.path);
@@ -382,6 +396,11 @@ function manifestEntry(
   present: boolean,
   backup: { path: string; digest: string }[],
 ): CleanupManifestEntry {
+  if (step.attribution === "ecc") {
+    throw new ClaudeCleanupError(
+      "ECC surfaces are developer-managed; run aih ecc for the exact ECC commands",
+    );
+  }
   const base = {
     action: step.action,
     surface: step.surface,

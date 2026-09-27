@@ -1,15 +1,13 @@
 import { AihError } from "../../errors.js";
-import { eccCapabilityPackageDomainV1 } from "../../framework-plugin/ecc-read.js";
 import { executePlan, type PlanResult } from "../../internals/execute.js";
 import { type CommandSpec, digest, type PlanContext, plan } from "../../internals/plan.js";
-import { reconcileMixedCapabilityPackages } from "./domains/mixed-coordinator.js";
 import { reconcileSkillPackCapabilityPackage } from "./domains/skill-pack-coordinator.js";
 import {
   type CapabilityPackageContextOperation,
   type CapabilityPackageContextReport,
   inspectCapabilityPackageContext,
+  isEccCapabilityPackage,
 } from "./live-context.js";
-import { readCapabilityPackageOwnershipReceipt } from "./receipt.js";
 
 function packageId(ctx: PlanContext): string | undefined {
   const value = ctx.options.packageId;
@@ -20,7 +18,8 @@ function reportText(report: CapabilityPackageContextReport): string {
   const rows = report.packages.map(
     (pkg) =>
       `${pkg.id}  [${pkg.lifecycle}] [${pkg.requested ? "requested" : "available"}] ` +
-      `[${pkg.owned ? "owned" : "unowned"}]  ${pkg.members.length} members`,
+      `[${pkg.management ?? (pkg.owned ? "owned" : "unowned")}]  ${pkg.members.length} members` +
+      (pkg.nextRoute === undefined ? "" : `; ${pkg.nextRoute}`),
   );
   const refusals = report.refusals.map(({ stage, reason }) => `refused at ${stage}: ${reason}`);
   const preview =
@@ -63,33 +62,22 @@ export async function executeCapabilityPackageCommand(
   if (!ctx.apply) return executePlan(commandPlan(operation, ctx), ctx);
   const id = packageId(ctx);
   if (id === undefined) throw new AihError("capability package id is required", "AIH_CONFIG");
-  const currentOwnership = readCapabilityPackageOwnershipReceipt(ctx.root);
-  const reconcile =
-    operation === "remove" &&
-    id.startsWith("package:skill-pack/") &&
-    (currentOwnership.state !== "valid" || currentOwnership.receipt.packages.length <= 1)
-      ? reconcileSkillPackCapabilityPackage
-      : reconcileMixedCapabilityPackages;
-  // ECC agent/rule packages and explicit ECC MCP packages are planned by
-  // @aihq/framework-ecc; without it the coordinator refuses when it needs them.
-  const ecc = await eccCapabilityPackageDomainV1(ctx);
-  const mutation = reconcile(
-    {
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation,
-      packageId: id,
-      apply: true,
-    },
-    ecc.state === "ran" ? { ecc: ecc.value } : {},
-  );
-  if (mutation.status === "refused") {
-    const unavailable =
-      mutation.reason === "framework-plugin-unavailable" && ecc.state === "not-run"
-        ? ` — ${ecc.detail}`
-        : "";
+  if (isEccCapabilityPackage(id)) {
     throw new AihError(
-      `capability package reconciliation refused at ${mutation.stage}: ${mutation.reason}${unavailable}`,
+      "ECC capability packages are developer-managed; run aih ecc for the exact ECC commands",
+      "AIH_CONFIG",
+    );
+  }
+  const mutation = reconcileSkillPackCapabilityPackage({
+    root: ctx.root,
+    contextDir: ctx.contextDir,
+    operation,
+    packageId: id,
+    apply: true,
+  });
+  if (mutation.status === "refused") {
+    throw new AihError(
+      `capability package reconciliation refused at ${mutation.stage}: ${mutation.reason}`,
       "AIH_TRUST",
     );
   }

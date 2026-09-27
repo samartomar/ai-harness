@@ -341,9 +341,7 @@ export const command: CommandSpec = {
       // vs THIS build's catalog is reported offline; the registry latest-release
       // comparison is opt-in (network) via --check-pin-currency.
       probe("MCP pin currency", (probeCtx) => mcpPinCurrencyProbe(probeCtx)),
-      // ECC's own checks (explicit ECC MCP receipt state) run in @aihq/framework-ecc;
-      // without it this row states that they were not run and why.
-      probeMany("explicit ECC MCP receipt state", (probeCtx) => eccDoctorChecksV1(probeCtx)),
+      probeMany("ECC plugin checks", (probeCtx) => eccDoctorChecksV1(probeCtx)),
       structuredChecksProbe("trust-lock local drift", (probeCtx) =>
         trustLockLocalDriftChecks(probeCtx),
       ),

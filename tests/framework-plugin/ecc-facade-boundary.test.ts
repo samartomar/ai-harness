@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AihError } from "../../src/errors.js";
 import * as frameworkHost from "../../src/framework-host/index.js";
 import { moduleSpecifiers, sourceFiles } from "./module-specifiers.js";
 
@@ -31,10 +30,6 @@ const D91_CONTROL_ALLOWLIST = new Map([
     "src/baseline-evidence/profiles.ts",
     "Registry identity data; no install action. Remove with Cut 2 (U6) Catalog shape.",
   ],
-  [
-    "src/framework-plugin/ecc-lifecycle.ts",
-    "Generic cleanup dispatch for earlier aih writes; SP2 lifecycle hooks.",
-  ],
   ["src/init/phases.ts", "Superpowers init and guidance in Core; SP2 (owner topic 3)."],
   ["src/init/index.ts", "Superpowers init and guidance in Core; SP2 (owner topic 3)."],
   ["src/uninstall/index.ts", "Superpowers init/cleanup guidance in Core; SP2 (owner topic 3)."],
@@ -46,14 +41,6 @@ const D91_CONTROL_ALLOWLIST = new Map([
   [
     "src/internals/check-baseline-installable.ts",
     "Catalog-build check of dormant preview; Cut 2 (U6).",
-  ],
-  [
-    "src/ecc/materialization-receipt.ts",
-    "Legacy receipt reader, including .kiro/agents; Cut 2 (U8) compact legacy bridge.",
-  ],
-  [
-    "src/framework-plugin/ecc-command.ts",
-    "Retired Core flags parse for diagnostic; SP2 plugin command surface.",
   ],
   [
     "src/org-policy/ecc-hook-controls.ts",
@@ -244,6 +231,7 @@ describe("ECC framework boundary (phase 2)", () => {
     // Each remaining module is reached from Core's entry points or the W1
     // Catalog producer tooling; everything else lives only in @aihq/framework-ecc.
     expect(eccFrameworkModules()).toEqual([
+      "src/ecc/destination-path.ts",
       "src/ecc/install-preview.ts",
       "src/ecc/materialization-target.ts",
       "src/ecc/runtime-adapter-compatibility.ts",
@@ -282,21 +270,11 @@ describe("D91 Core framework install controls", () => {
       ),
     ).not.toEqual([]);
   });
-  it("exports only typed native ECC cleanup from the framework host", () => {
+  it("exports no native ECC mutation path from the framework host", () => {
     expect(frameworkHost).not.toHaveProperty("buildNativeEccRegistration");
     expect(frameworkHost).not.toHaveProperty("planNativeEccRegistration");
     expect(frameworkHost).not.toHaveProperty("planInstalledNativeEccRegistration");
-    const cleanup = (
-      frameworkHost as typeof frameworkHost & {
-        planNativeEccCleanup: (root: string, operation: string) => unknown;
-      }
-    ).planNativeEccCleanup;
-    expect(() => cleanup(process.cwd(), "install")).toThrow(AihError);
-    try {
-      cleanup(process.cwd(), "repair");
-    } catch (error) {
-      expect((error as AihError).code).toBe("AIH_CONFIG");
-    }
+    expect(frameworkHost).not.toHaveProperty("planNativeEccCleanup");
   });
   it("keeps every source-scanned control on the dated D99 allowlist", () => {
     const found = d91SourceControls();

@@ -21,8 +21,7 @@ import { OrgPolicyError } from "./schema.js";
  * Framework hook controls projected into Claude's settings environment.
  *
  * Each framework plugin's hook-control plan names the environment keys it
- * owns and the values it wants set (ECC: `ECC_HOOK_PROFILE`,
- * `ECC_DISABLED_HOOKS`). Core writes exactly those keys, through the hook
+ * owns and the values it wants set. Core writes exactly those keys, through the hook
  * registrar's guarded destination write, and records them in one receipt so a
  * later projection can update or revoke them — and refuses when an owned key
  * drifted or a key it would take over already exists without a receipt.
@@ -34,9 +33,6 @@ export const FRAMEWORK_HOOK_CONTROLS_RECEIPT_PATH =
   ".aih/org-policy-framework-hook-controls-receipt.json";
 export const FRAMEWORK_HOOK_CONTROLS_RECEIPT_FORMAT =
   "aih-org-policy-framework-hook-controls-receipt";
-/** The ECC-only receipt Core 0.6 wrote for `governance.eccHookControls`. */
-export const LEGACY_ECC_HOOK_CONTROLS_RECEIPT_PATH =
-  ".aih/org-policy-ecc-hook-controls-receipt.json";
 const MAX_RECEIPT_BYTES = 64 * 1024;
 
 /** The settings-environment change the registrar applies with its destination write. */
@@ -79,7 +75,6 @@ const ReceiptSchema = z
     destination: z.literal(HOOK_REGISTRAR_DESTINATION),
     frameworks: z
       .object({
-        ecc: OwnedEnvironmentSchema.optional(),
         superpowers: OwnedEnvironmentSchema.optional(),
       })
       .strict(),
@@ -133,21 +128,6 @@ export function readFrameworkHookControlsReceipt(
   }
   if (read.state === "absent") return undefined;
   return { receipt: parseReceipt(read.contents), raw: read.contents };
-}
-
-function refuseLegacyReceipt(root: string): void {
-  const legacy = readGuardedFile(root, LEGACY_ECC_HOOK_CONTROLS_RECEIPT_PATH, {
-    maxBytes: MAX_RECEIPT_BYTES,
-  });
-  if (legacy.state === "absent") return;
-  if (legacy.state === "unreadable") {
-    throw new OrgPolicyError(`refusing framework hook-control projection: ${legacy.reason}`);
-  }
-  throw new OrgPolicyError(
-    `refusing framework hook-control projection: ${LEGACY_ECC_HOOK_CONTROLS_RECEIPT_PATH} is from the removed governance.eccHookControls. ` +
-      `Move the controls to governance.frameworkHookControls.ecc (schemaVersion 3, minimumCoreVersion 0.7.0), ` +
-      `then remove ECC_HOOK_PROFILE and ECC_DISABLED_HOOKS from ${HOOK_REGISTRAR_DESTINATION} env and delete that receipt before projecting`,
-  );
 }
 
 function destinationEnv(raw: string | undefined): Record<string, unknown> {
@@ -213,7 +193,11 @@ export function planFrameworkHookControlsProjection(
   ctx: PlanContext,
   plans: FrameworkHookEnvironmentPlansV1,
 ): FrameworkHookControlsProjectionPlan {
-  refuseLegacyReceipt(ctx.root);
+  if (plans.has("ecc")) {
+    throw new OrgPolicyError(
+      "ECC hook settings are developer-managed; run aih ecc for the exact ECC commands",
+    );
+  }
   const validated = new Map(
     [...plans].map(([frameworkId, planned]) => [
       frameworkId,

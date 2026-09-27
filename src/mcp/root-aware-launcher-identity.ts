@@ -5,8 +5,8 @@ import {
   DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
 } from "../ecc-profile/default-mcp-runtime-lock.js";
 import { SERENA_RUNTIME_PIN } from "../ecc-profile/mcp-profile.js";
-import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../ecc-profile/native-registration.js";
 import { stableJson } from "../org-policy/policy-identity.js";
+import { SERENA_DEPENDENCY_LOCK_SHA256 } from "./serena-runtime-identity.js";
 
 /**
  * The portable identity of Core's root-aware MCP launchers (`defaultNativeMcpServers`).

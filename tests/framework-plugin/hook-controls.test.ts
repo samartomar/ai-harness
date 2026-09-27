@@ -205,26 +205,16 @@ describe("mergeFrameworkHookControlRequestV1", () => {
 });
 
 describe("frameworkHookControlPlansV1", () => {
-  it("asks the ECC plugin for its plan and returns the Claude env patch", async () => {
+  it("asks the ECC plugin for guidance without a Claude env patch", async () => {
     userList({ ecc: { disabledHookIds: ["pre:write:doc-file-warning"] } });
     const policy = parseOrgPolicy(
       v3Policy({
         frameworkHookControls: { ecc: { profile: "standard", disabledHookIds: ["session:start"] } },
       }),
     );
-    const plans = (await frameworkHookControlPlansV1(ctx(), policy, deps)).environments;
-    expect(plans.get("ecc")).toEqual({
-      host: "claude",
-      keys: ["ECC_HOOK_PROFILE", "ECC_DISABLED_HOOKS"],
-      set: {
-        ECC_HOOK_PROFILE: "standard",
-        ECC_DISABLED_HOOKS: expect.stringContaining("session:start"),
-      },
-    });
-    expect(plans.get("ecc")?.set.ECC_DISABLED_HOOKS?.split(",").sort()).toEqual([
-      "pre:write:doc-file-warning",
-      "session:start",
-    ]);
+    const plans = await frameworkHookControlPlansV1(ctx(), policy, deps);
+    expect(plans.environments.has("ecc")).toBe(false);
+    expect(plans.actions.some((action) => action.kind === "doc")).toBe(true);
   });
 
   it("loads no plugin when no authority declares controls", async () => {
@@ -290,7 +280,7 @@ describe("frameworkHookControlPlansV1", () => {
     const plans = await frameworkHookControlPlansV1(mixed, policy, withOpenCode);
     // ECC has no switch for its OpenCode plugin: it is planned, labelled
     // unenforced with a next route, and only switchable hooks reach the env.
-    expect(plans.environments.get("ecc")?.set).toEqual({ ECC_DISABLED_HOOKS: "session:start" });
+    expect(plans.environments.has("ecc")).toBe(false);
     const labels = plans.actions.filter((action) => action.kind === "doc");
     expect(labels.map((action) => action.describe)).toEqual(["ecc hook controls"]);
     const text = labels[0]?.kind === "doc" ? labels[0].text : "";
@@ -299,7 +289,7 @@ describe("frameworkHookControlPlansV1", () => {
       /opencode: unenforced — aih cannot turn opencode:ecc-hooks off on opencode.*Next route: /,
     );
     expect(text).toContain("session:start: disabled (enterprise)");
-    expect(text).toMatch(/claude: upstream-switch — ECC skips session:start/);
+    expect(text).toMatch(/claude: unenforced — ECC reads ECC_DISABLED_HOOKS/);
 
     // An OpenCode-only target still plans (and validates) the controls; the
     // plan carries its labels and owns no Claude environment write.

@@ -225,7 +225,7 @@ describe("G4 — the registrar is reachable end to end through the verified proj
     ).resolves.toBeDefined();
   });
 
-  it("refuses usage-hook and controls-only writes into the same destination", async () => {
+  it("leaves ECC settings to developers beside usage-hook projection", async () => {
     writeFileSync(
       join(dir, ".aih-config.json"),
       `${JSON.stringify({
@@ -237,7 +237,7 @@ describe("G4 — the registrar is reachable end to end through the verified proj
     );
     await expect(
       verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy([], "active")),
-    ).rejects.toThrow(/usage-hook projector and framework hook controls cannot both own it/);
+    ).resolves.toBeDefined();
     rmSync(join(dir, ".aih-config.json"));
     await expect(
       verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy([], "active")),
@@ -374,7 +374,7 @@ describe("registrar-owned PostToolUse vs the usage projector's legacy scan (6.0.
 });
 
 describe("framework hook controls through the verified projector", () => {
-  it("composes enterprise frameworkHookControls and registrations into one guarded write", async () => {
+  it("keeps ECC hook controls advisory while projecting registrations", async () => {
     const policy = parseOrgPolicy({
       schemaVersion: 3,
       minimumCoreVersion: "0.7.0",
@@ -405,13 +405,10 @@ describe("framework hook controls through the verified projector", () => {
       skipWorktreeGate: true,
     });
     const settings = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
-    expect(settings.env).toEqual({
-      ECC_HOOK_PROFILE: "strict",
-      ECC_DISABLED_HOOKS: "pre:bash:tmux-reminder",
-    });
+    expect(settings.env).toBeUndefined();
     expect(JSON.stringify(settings)).toContain("run-with-flags.js");
     expect(existsSync(join(dir, ".aih", "org-policy-framework-hook-controls-receipt.json"))).toBe(
-      true,
+      false,
     );
   });
 
@@ -458,7 +455,7 @@ describe("framework hook controls through the verified projector", () => {
     ).toBe(false);
   });
 
-  it("carries every host decision next to the Claude environment write for mixed targets", async () => {
+  it("carries every host decision without an ECC settings write for mixed targets", async () => {
     const mixed = ctx({ targets: ["claude", "opencode"] });
     const actions = await verifiedOrgPolicyProjectionActions(
       mixed,
@@ -468,10 +465,10 @@ describe("framework hook controls through the verified projector", () => {
       (action) => action.kind === "doc" && action.describe === "ecc hook controls",
     );
     const text = label?.kind === "doc" ? label.text : "";
-    expect(text).toContain("  claude: upstream-switch");
+    expect(text).toContain("  claude: unenforced");
     expect(text).toContain("  opencode: ");
     expect(
       actions.filter((action) => "path" in action && action.path === ".claude/settings.json"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 });

@@ -261,9 +261,7 @@ export async function runCapability(
     positionalRoot ?? (opts.root as string | undefined) ?? baseEnv.AIH_ROOT ?? process.cwd(),
   );
   // `--no-log` is a commander NEGATABLE flag → it sets `opts.log = false`.
-  const retiredEccDelivery =
-    opts.eccPath !== undefined && (spec.name === "init" || spec.name === "project");
-  const noLog = spec.zeroWrite === true || opts.log === false || retiredEccDelivery;
+  const noLog = spec.zeroWrite === true || opts.log === false;
   const logRun = (entry: RunEntryInput): void => {
     if (isLoggingEnabled(resolvedRoot, env, { noLog }))
       appendRunLog(resolvedRoot, buildRunEntry(entry), startedAt);

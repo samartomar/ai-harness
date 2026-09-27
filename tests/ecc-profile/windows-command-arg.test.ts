@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { windowsCommandArg } from "../../src/ecc-profile/native-registration.js";
+import { windowsCommandArg } from "../../src/internals/windows-command-arg.js";
 
 /** The previous regular-expression form (CodeQL js/polynomial-redos), kept as the reference. */
 function reference(value: string): string {

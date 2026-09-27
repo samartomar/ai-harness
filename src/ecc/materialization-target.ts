@@ -1,11 +1,9 @@
-import { assertOwnedRelativePath, displaySafe } from "./materialization-receipt.js";
+import { assertOwnedRelativePath, displaySafe } from "./destination-path.js";
 import { eccContentDestinationMapping } from "./runtime-adapter-destination.js";
 
 /**
- * Where a governed ECC target places one pinned source file. Core keeps only
- * the destination inspection that sealed historical runtime descriptors are
- * checked against (`runtime-adapter-compatibility.ts`); governed
- * materialization itself lives in `@aihq/framework-ecc`.
+ * Where a pinned ECC source file would land for one target. Catalog runtime
+ * descriptors use this read-only destination inspection.
  *
  * `eccContentDestinationMapping` is the one answer to where a source path
  * lands for a target, so this inspection reuses it rather than restating it. A
@@ -72,8 +70,7 @@ function targetDestination(source: string, target: EccMaterializationTarget): st
 }
 
 /**
- * Pure adapter inspection for sealed historical descriptors. It uses the same
- * destination resolver as materialization and reads no source bytes.
+ * Pure adapter inspection for Catalog descriptors. It reads no source bytes.
  */
 export function inspectEccTargetDestinationV1(
   source: string,

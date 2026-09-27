@@ -50,25 +50,13 @@ afterEach(() => {
 });
 
 describe("registered ECC command", () => {
-  it("keeps retired options registered for explicit diagnostics", () => {
+  it("treats removed ECC options as unknown", () => {
     const program = buildProgram();
     const ecc = program.commands.find((candidate) => candidate.name() === "ecc");
     expect(ecc).toBeDefined();
-
-    const parsed = ecc?.parseOptions([
-      "--profile",
-      "core",
-      "--with",
-      "tdd-workflow",
-      "--with",
-      "security-review",
-    ]);
-
-    expect(parsed?.unknown).toEqual([]);
-    expect(ecc?.opts()).toMatchObject({
-      profile: "core",
-      with: ["tdd-workflow", "security-review"],
-    });
+    const parsed = ecc?.parseOptions(["--profile", "core"]);
+    expect(parsed?.unknown).toEqual(["--profile", "core"]);
+    expect(ecc?.options.map((option) => option.long)).not.toContain("--profile");
   });
 
   it("offers a read-only status option", () => {

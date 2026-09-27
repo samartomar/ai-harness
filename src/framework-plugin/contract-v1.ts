@@ -69,7 +69,7 @@ export const FRAMEWORK_IDS_V1: readonly FrameworkIdV1[] = Object.freeze(["ecc", 
  * dispatches to is incompatible.
  */
 export const FRAMEWORK_PLUGIN_COMMANDS = Object.freeze({
-  ecc: Object.freeze(["ecc", "ecc mcp remove"] as const),
+  ecc: Object.freeze(["ecc"] as const),
   superpowers: Object.freeze(["superpowers"] as const),
 } as const);
 
@@ -493,8 +493,8 @@ export interface FrameworkPolicyDeliveryHookV1 {
   prepare(ctx: FrameworkOperationContextV1): Promise<FrameworkPreparedPolicyDeliveryV1>;
   /**
    * Read-only delivery inspection for Core's policy-delivery report (Core call
-   * sites: `aih policy evaluate`, `aih doctor`, `aih report`). Core compares
-   * its own receipt; the plugin supplies only what is framework knowledge.
+   * sites: `aih policy evaluate`, `aih doctor`, `aih report`). The plugin
+   * supplies framework knowledge without claiming installation.
    */
   inspect(ctx: FrameworkOperationContextV1): FrameworkPolicyDeliveryInspectorV1;
 }
@@ -509,14 +509,6 @@ export interface FrameworkDeliveryComponentInputV1 {
   };
   readonly files: readonly { readonly path: string }[];
   readonly ownership: "planned" | "receipt-recorded" | "missing-receipt" | "source-mismatch";
-}
-
-/** Native registration of the framework's Codex agent roles, as the plugin read it. */
-export interface FrameworkCodexRoleRegistrationV1 {
-  readonly state: "current" | "missing" | "drifted" | "conflict" | "malformed";
-  readonly expectedRoleIds: readonly string[];
-  readonly receiptRoleIds: readonly string[];
-  readonly detail?: string;
 }
 
 /** The policy's selection joined to the observed components; installation and loading stay unverified. */
@@ -536,7 +528,7 @@ export interface FrameworkGovernedSelectionV1 {
       readonly commit: string;
       readonly componentPath: string;
     };
-    readonly owner: "aih-materialization";
+    readonly owner: "developer-managed";
     readonly ownership: FrameworkDeliveryComponentInputV1["ownership"];
     readonly destinations: readonly {
       readonly path: string;
@@ -579,10 +571,6 @@ export interface FrameworkGovernedSelectionV1 {
 export interface FrameworkPolicyDeliveryInspectorV1 {
   /** The targets the framework can deliver governed content to. */
   readonly governedTargets: readonly Cli[];
-  /** The Codex role registration the receipt-current components expect at the target root. */
-  inspectCodexRoles(
-    roles: readonly { readonly id: string; readonly configFile: string }[],
-  ): FrameworkCodexRoleRegistrationV1;
   describeSelection(input: {
     readonly policy: NonNullable<ReturnType<typeof readOrgPolicy>>;
     readonly targets: readonly Cli[];

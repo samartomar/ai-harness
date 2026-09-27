@@ -323,9 +323,7 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     actions.push(...nativeMcpProjectionActions(ctx, residue.target, {}));
     if (residue.matches) subtracted += 1;
   }
-  // ECC's share (unreceipted-footprint preservation, the Codex footprint, the
-  // ledger-coordinated reconciliation) is planned by @aihq/framework-ecc.
-  // Without it, prune refuses when aih ECC state exists and adds nothing otherwise.
+  // Framework cleanup dispatch remains generic. ECC reports nothing to remove.
   const frameworks = await frameworkPrunePlanV1(
     ctx,
     set.dropped,

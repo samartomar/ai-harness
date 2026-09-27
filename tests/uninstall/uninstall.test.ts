@@ -574,10 +574,7 @@ describe("aih uninstall", () => {
     expect(result.removed.map((r) => r.path)).not.toContain(".aih");
     expect(result.removed.map((r) => r.path)).toContain(".aih-config.json");
     expect(artifacts?.artifacts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: "docs", disposition: "advisory" }),
-        expect.objectContaining({ path: ".aih", disposition: "advisory" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ path: "docs", disposition: "advisory" })]),
     );
   });
 

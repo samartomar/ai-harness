@@ -16,7 +16,6 @@ import {
   SERENA_ALLOWED_TOOLS,
   SERENA_REQUIRED_TOOLS,
 } from "../ecc-profile/mcp-profile.js";
-import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../ecc-profile/native-registration.js";
 import { prepareOwnedStateDirectory } from "../ecc-profile/native-runtime.js";
 import {
   authenticatedSerenaRuntimeRoot,
@@ -32,6 +31,7 @@ import {
   defaultNativeMcpServers,
   managedCodeReviewGraphCliInvocation,
 } from "../mcp/default-native-runtime.js";
+import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../mcp/serena-runtime-identity.js";
 import { playwrightMcpServer } from "../mcp/servers.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import type { DeveloperToolId } from "./default-tool-selection.js";

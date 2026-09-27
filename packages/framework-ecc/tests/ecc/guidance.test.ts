@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -80,7 +80,7 @@ describe("ECC basic guidance", () => {
     writeFileSync(join(home, ".claude", "ecc", "install-state.json"), "SECRET_SENTINEL");
     const before = readFileSync(receipt, "utf8");
     const text = eccStatus(root, home);
-    expect(text).toContain("materialization-v1.json");
+    expect(text).not.toContain("materialization-v1.json");
     expect(text).toContain("install-state.json");
     expect(text).not.toContain("SECRET_SENTINEL");
     expect(text).toContain("Not inspected:");
@@ -97,63 +97,17 @@ describe("ECC basic guidance", () => {
     ["--with", "tdd-workflow"],
     ["--ecc-path", "unused"],
     ["--all-tools", "--apply"],
-  ])("refuses retired route %s without writing", async (...route) => {
-    const root = mkdtempSync(join(tmpdir(), "aih-ecc-retired-"));
-    roots.push(root);
-    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      const program = buildProgram();
-      await program.parseAsync(["node", "aih", "ecc", ...route, "--json", "--root", root]);
-      const result = JSON.parse(output.mock.calls.map((call) => String(call[0])).join("")) as {
-        error: { code: string; message: string };
-      };
-      expect(result.error.code).toBe("AIH_CONFIG");
-      expect(result.error.message).toContain(`aih ecc ${route[0]}`);
-      expect(result.error.message).toContain("Run aih ecc");
-      expect(process.exitCode).toBe(1);
-      expect(readdirSync(root)).toEqual([]);
-    } finally {
-      output.mockRestore();
-      process.exitCode = undefined;
-    }
+  ])("has no retired route %s", (...route) => {
+    const ecc = buildProgram().commands.find((command) => command.name() === "ecc");
+    expect(ecc?.options.some((option) => option.flags.includes(route[0] ?? ""))).toBe(false);
   });
 
-  it("refuses mcp add and preserves removal command registrations", async () => {
-    const root = mkdtempSync(join(tmpdir(), "aih-ecc-mcp-retired-"));
-    roots.push(root);
-    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      const program = buildProgram();
-      const ecc = program.commands.find((command) => command.name() === "ecc");
-      expect(
-        ecc?.commands
-          .find((command) => command.name() === "mcp")
-          ?.commands.map((command) => command.name()),
-      ).toContain("remove");
-      expect(program.commands.map((command) => command.name())).toEqual(
-        expect.arrayContaining(["uninstall", "prune"]),
-      );
-      await program.parseAsync([
-        "node",
-        "aih",
-        "ecc",
-        "mcp",
-        "add",
-        "test-server",
-        "--json",
-        "--root",
-        root,
-      ]);
-      const result = JSON.parse(output.mock.calls.map((call) => String(call[0])).join("")) as {
-        error: { code: string; message: string };
-      };
-      expect(result.error.code).toBe("AIH_CONFIG");
-      expect(result.error.message).toContain("aih ecc mcp add was retired");
-      expect(process.exitCode).toBe(1);
-      expect(readdirSync(root)).toEqual([]);
-    } finally {
-      output.mockRestore();
-      process.exitCode = undefined;
-    }
+  it("has no MCP mutation subcommands and leaves generic removal commands registered", () => {
+    const program = buildProgram();
+    const ecc = program.commands.find((command) => command.name() === "ecc");
+    expect(ecc?.commands).toEqual([]);
+    expect(program.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["uninstall", "prune"]),
+    );
   });
 });

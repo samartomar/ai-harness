@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SERENA_RUNTIME_PIN } from "../../src/ecc-profile/mcp-profile.js";
-import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../../src/ecc-profile/native-registration.js";
+import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../../src/mcp/serena-runtime-identity.js";
 
 // #611: the native runtime is executed from wherever it was projected, which is
 // outside the installed package and therefore has no dependency closure beside

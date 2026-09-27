@@ -77,7 +77,7 @@ function previewText(report: ClaudeContaminationReport, cleanupPlan: ClaudeClean
   if (cleanupPlan.skipped.length > 0) {
     lines.push(
       "",
-      "Skipped (unknown attribution — pass --include-unknown to widen):",
+      "Skipped (ECC is developer-managed; unknown attribution requires --include-unknown):",
       ...stepLines(cleanupPlan.skipped),
     );
   }

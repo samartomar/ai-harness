@@ -51,10 +51,10 @@ it("keeps missing required policy content as a blocker beside host preflight", a
     }),
   );
   const result = await computeReadiness(ctx({ gitRepo: true }, { targets: ["claude"] }));
-  expect(result.banner).toBe("NOT READY");
-  expect(result.blockers).toContainEqual(expect.objectContaining({ id: "policy-delivery" }));
+  expect(result.banner).toBe("READY, WITH GAPS");
+  expect(result.blockers).not.toContainEqual(expect.objectContaining({ id: "policy-delivery" }));
   expect(result.policyDelivery?.components[0]).toMatchObject({
-    state: "missing-receipt",
+    state: "developer-managed",
     nativeLoading: "unverified",
   });
 });

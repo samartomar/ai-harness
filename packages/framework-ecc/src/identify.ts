@@ -17,7 +17,6 @@ import {
   eccDescriptorSection,
   withEccInvocation,
 } from "./invocation.js";
-import { isAihDirectEccInstallTarget } from "./legacy-cleanup/direct-targets.js";
 
 const VendorLockComponentsSchema = z.object({
   components: z
@@ -55,7 +54,7 @@ function componentPaths(): ReadonlyMap<string, readonly string[]> {
 
 /** The evidence components `aih ecc` would verify for one host, in selection order. */
 function componentIdsFor(cli: Cli, selection: ReturnType<typeof selectEccComponents>): string[] {
-  if (isAihDirectEccInstallTarget(cli) || cli === "codex") {
+  if (["claude", "codex", "cursor", "gemini", "opencode", "zed", "antigravity"].includes(cli)) {
     return eccEvidenceComponentIdsForSelection(cli, selection);
   }
   return cli === "kiro" ? ["runtime:ecc-kiro"] : [];

@@ -67,10 +67,10 @@ describe("CLI program", () => {
     expect(mcp?.commands.map((c) => c.name()).sort()).toEqual(["approve"]);
   });
 
-  it("registers explicit ECC MCP add and remove as nested commands", () => {
+  it("keeps ECC as a guidance command without mutation subcommands", () => {
     const ecc = buildProgram().commands.find((c) => c.name() === "ecc");
-    const mcp = ecc?.commands.find((c) => c.name() === "mcp");
-    expect(mcp?.commands.map((c) => c.name()).sort()).toEqual(["add", "remove"]);
+    expect(ecc).toBeDefined();
+    expect(ecc?.commands).toEqual([]);
   });
 
   it("registers trust scan as a nested command", () => {
@@ -237,7 +237,6 @@ describe("CLI program", () => {
     const bareParentPaths = new Set<string>([
       ...PARENT_GROUPS.filter((name) => name !== "workspace"),
       "capability package",
-      "ecc mcp",
       "policy observe",
       "policy lifecycle",
       "policy supported",

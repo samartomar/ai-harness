@@ -101,10 +101,10 @@ describe("source-locked ECC hook controls", () => {
       },
     });
     expect(POLICY_ENGINE_FIELD_CONSUMERS["governance.frameworkHookControls.ecc.profile"]).toContain(
-      "receipt-backed",
+      "ECC manages its own host settings",
     );
     expect(
       POLICY_ENGINE_FIELD_CONSUMERS["governance.frameworkHookControls.ecc.disabledHookIds.*"],
-    ).toContain("hook-control plan");
+    ).toContain("developer-managed next route");
   });
 });

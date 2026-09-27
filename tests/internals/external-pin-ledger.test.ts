@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { coreOwnedEccCodexMcpServers } from "../../packages/framework-ecc/src/ecc/codex.js";
 import {
   CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_VERSION,
@@ -231,12 +230,6 @@ describe("active external-pin ledger", () => {
     expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
       /CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1.*CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1.*client name/i,
     );
-    const chromeDevtools = coreOwnedEccCodexMcpServers()["chrome-devtools"];
-    if (chromeDevtools?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP");
-    expect(entry("ecc-codex-chrome-devtools-mcp").version).toBe(
-      versionFromSpec(chromeDevtools.args[1] ?? ""),
-    );
-    expect(chromeDevtools.args).toContain("--no-performance-crux");
     expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
       /emits --no-performance-crux.*performanceCrux.*CrUX/i,
     );

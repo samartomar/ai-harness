@@ -81,9 +81,9 @@ describe("aihFrameworkPluginV1", () => {
     );
   });
 
-  it("exposes guidance and legacy removal", () => {
+  it("exposes guidance and generic no-op cleanup hooks", () => {
     expect(aihFrameworkPluginV1.commands.ecc).toBeDefined();
-    expect(aihFrameworkPluginV1.commands["ecc mcp remove"]).toBeDefined();
+    expect(Object.keys(aihFrameworkPluginV1.commands)).toEqual(["ecc"]);
     expect(aihFrameworkPluginV1.uninstall?.remove).toBeTypeOf("function");
     expect(aihFrameworkPluginV1.prune?.plan).toBeTypeOf("function");
   });

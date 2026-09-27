@@ -5,17 +5,11 @@ import { SUPPORTED_CLIS } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import type {
-  FrameworkCapabilityPackageDomainV1,
-  FrameworkCodexRoleRegistrationV1,
   FrameworkGovernedSelectionV1,
   FrameworkOperationContextV1,
   FrameworkPolicyDeliveryInspectorV1,
 } from "./contract-v1.js";
-import {
-  FrameworkPluginRefusalError,
-  frameworkPluginRefusalMessage,
-  loadFrameworkPluginV1,
-} from "./load-framework-plugin.js";
+import { frameworkPluginRefusalMessage, loadFrameworkPluginV1 } from "./load-framework-plugin.js";
 import {
   type FrameworkCommandDepsV1,
   type LoadedFrameworkPluginV1,
@@ -123,7 +117,7 @@ export async function eccLanguagePacksV1(
     const identify = loaded.plugin.identifyComponents;
     if (identify === undefined)
       throw new AihError(
-        "ECC plugin has no component identification for this retired install view",
+        "ECC plugin has no component identification for this Catalog view",
         "AIH_FRAMEWORK_PLUGIN",
       );
     const packs: unknown = identify(context).languagePacks ?? [];
@@ -141,53 +135,12 @@ export async function eccLanguagePacksV1(
   });
 }
 
-/**
- * ECC's planning for `aih capability package`, bound to one invocation, or
- * the reason it is not available (the coordinator refuses when it needs it).
- * A plugin that is present but broken, or lacks the hook, is refused here.
- */
-export async function eccCapabilityPackageDomainV1(
-  ctx: PlanContext,
-  deps: Pick<FrameworkCommandDepsV1, "loadPlugin" | "loadDescriptor"> = {},
-): Promise<EccReadOutcomeV1<FrameworkCapabilityPackageDomainV1>> {
-  const outcome = await withEccRead(
-    ctx,
-    "planning capability packages",
-    deps,
-    async (loaded, context) => {
-      const hook = loaded.plugin.capabilityPackages;
-      if (hook === undefined) {
-        throw new FrameworkPluginRefusalError({
-          reason: "framework-plugin-incompatible",
-          frameworkId: "ecc",
-          packageName: "@aihq/framework-ecc",
-          detail: `${loaded.packageName} ${loaded.version} provides no capabilityPackages hook`,
-        });
-      }
-      return hook.domain(context);
-    },
-  );
-  if (outcome.state === "not-run" && outcome.broken) {
-    throw new AihError(outcome.detail, "AIH_FRAMEWORK_PLUGIN");
-  }
-  return outcome;
-}
-
 const Text = z.string().max(4096);
 const Id = z.string().min(1).max(512);
 const Target = z.enum(SUPPORTED_CLIS);
 const Source = z.object({ repository: Text, commit: Text, componentPath: Text }).strict();
 
 const GovernedTargetsSchema = z.array(Target).max(SUPPORTED_CLIS.length);
-
-const CodexRoleRegistrationSchema = z
-  .object({
-    state: z.enum(["current", "missing", "drifted", "conflict", "malformed"]),
-    expectedRoleIds: z.array(Id).max(4096),
-    receiptRoleIds: z.array(Id).max(4096),
-    detail: Text.optional(),
-  })
-  .strict();
 
 const GovernedSelectionSchema = z
   .object({
@@ -206,7 +159,7 @@ const GovernedSelectionSchema = z
             ]),
             retainedBy: z.array(Id).max(4096),
             source: Source,
-            owner: z.literal("aih-materialization"),
+            owner: z.literal("developer-managed"),
             ownership: z.enum([
               "planned",
               "receipt-recorded",
@@ -310,13 +263,6 @@ export async function eccPolicyDeliveryInspectorV1(
     );
     const checked: FrameworkPolicyDeliveryInspectorV1 = {
       governedTargets,
-      inspectCodexRoles: (roles): FrameworkCodexRoleRegistrationV1 =>
-        validated(
-          CodexRoleRegistrationSchema,
-          inspector.inspectCodexRoles(roles),
-          loaded,
-          "Codex role registration",
-        ),
       describeSelection: (input): FrameworkGovernedSelectionV1 =>
         validated(
           GovernedSelectionSchema,

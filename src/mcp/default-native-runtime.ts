@@ -12,7 +12,6 @@ import {
   DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
 } from "../ecc-profile/default-mcp-runtime-lock.js";
 import { SERENA_RUNTIME_PIN } from "../ecc-profile/mcp-profile.js";
-import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../ecc-profile/native-registration.js";
 import { prepareOwnedStateDirectory } from "../ecc-profile/native-runtime.js";
 import type { PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
@@ -23,6 +22,7 @@ import {
   rootAwareLauncherSpecV1,
   rootAwareLauncherSubjectV1,
 } from "./root-aware-launcher-identity.js";
+import { SERENA_DEPENDENCY_LOCK_SHA256 } from "./serena-runtime-identity.js";
 import type { McpServer } from "./servers.js";
 
 export interface DefaultNativeRuntimeLayout {

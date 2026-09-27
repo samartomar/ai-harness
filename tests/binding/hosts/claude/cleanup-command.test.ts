@@ -53,10 +53,10 @@ function settingsBytes(): Buffer {
   return readFileSync(join(home, ".claude", "settings.json"));
 }
 
-/** The exact polluted fixture named by the task: an ecc rule, an ecc-* skill, a superpowers plugin entry. */
+/** The exact polluted fixture named by the task: an gsd rule, an gsd-* skill, a superpowers plugin entry. */
 function seedPollutedHome(): void {
-  seed(".claude/rules/ecc/RULES.md", "# ecc rules\n");
-  seed(".claude/skills/ecc-review/SKILL.md", "# ecc review\n");
+  seed(".claude/rules/gsd/RULES.md", "# gsd rules\n");
+  seed(".claude/skills/gsd-review/SKILL.md", "# gsd review\n");
   seedJson(".claude/settings.json", {
     enabledPlugins: { "superpowers@obra": true },
     unrelatedSetting: "keep-me",
@@ -100,8 +100,8 @@ describe("aih cleanup — default preview (read-only)", () => {
     expect(text).toContain(
       "Leakage: 1 skills, 0 agents, 0 hooks, 1 rules, 1 plugins, 0 mcpServers",
     );
-    expect(text).toContain("backup-then-remove skill [ecc] .claude/skills/ecc-review");
-    expect(text).toContain("backup-then-remove rule [ecc] .claude/rules/ecc");
+    expect(text).toContain("backup-then-remove skill [gsd] .claude/skills/gsd-review");
+    expect(text).toContain("backup-then-remove rule [gsd] .claude/rules/gsd");
     expect(text).toContain("backup-then-disable plugin [superpowers] .claude/settings.json");
     expect(text).toContain("Nothing was changed");
 
@@ -138,7 +138,7 @@ describe("aih cleanup — default preview (read-only)", () => {
 
     const previewResult = await executeClaudeCleanupCommand(ctx());
     expect(previewResult.digests[0]?.text).toContain(
-      "Skipped (unknown attribution — pass --include-unknown to widen)",
+      "Skipped (ECC is developer-managed; unknown attribution requires --include-unknown)",
     );
 
     const widened = digestData<{ plan: ClaudeCleanupPlan }>(
@@ -174,8 +174,8 @@ describe("aih cleanup --apply", () => {
     expect(() => JSON.parse(JSON.stringify(result))).not.toThrow();
 
     // Pollution removed.
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(false);
-    expect(existsSync(join(home, ".claude", "rules", "ecc"))).toBe(false);
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(false);
+    expect(existsSync(join(home, ".claude", "rules", "gsd"))).toBe(false);
 
     // Unrelated settings key survives; the framework plugin key is gone.
     const settings = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
@@ -192,7 +192,7 @@ describe("aih cleanup --apply then --rollback", () => {
     const applied = await executeClaudeCleanupCommand(ctx({ apply: true }));
     const applyData = digestData<ClaudeCleanupApplyResult>(applied);
     expect(applyData.status).toBe("applied");
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(false);
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(false);
 
     const rolledBack = await executeClaudeCleanupCommand(
       ctx({ options: { rollback: applyData.backupRoot } }),
@@ -204,8 +204,8 @@ describe("aih cleanup --apply then --rollback", () => {
     expect(rolledBack.digests[0]?.text).toContain("Restored:");
     expect(() => JSON.parse(JSON.stringify(rolledBack))).not.toThrow();
 
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(true);
-    expect(existsSync(join(home, ".claude", "rules", "ecc"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "rules", "gsd"))).toBe(true);
     expect(settingsBytes().equals(beforeApply)).toBe(true);
   });
 });

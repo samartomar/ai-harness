@@ -44,10 +44,9 @@ describe("CI impact classifier", () => {
 
   it("includes ECC callers when the shared MCP renderer changes", () => {
     const consumers = [
-      "tests/ecc/mcp-explicit-add.test.ts",
       "tests/ecc-profile/mcp-profile.test.ts",
-      "tests/ecc-profile/native-registration.test.ts",
-      "tests/ecc-profile/parity-receipt.test.ts",
+      "tests/ecc-profile/default-mcp-native-runtime.test.ts",
+      "tests/ecc-profile/native-runtime.test.ts",
       "tests/mcp/render.test.ts",
     ];
     const receipt = classifyCiImpact({

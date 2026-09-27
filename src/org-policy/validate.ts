@@ -321,12 +321,6 @@ async function policyEvaluatePlan(ctx: PlanContext): Promise<Plan> {
 }
 
 async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
-  if (ctx.options.eccPath !== undefined) {
-    throw new AihError(
-      "aih policy project --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
-      "AIH_CONFIG",
-    );
-  }
   const bindingAssertion = policyBindingFileAssertion(ctx.root);
   const policyTargets = await verifiedOrgPolicyTargets(ctx);
   const { clis } = policyTargets.resolution;
@@ -377,12 +371,7 @@ export const policyProjectCommand: CommandSpec = {
   name: "project",
   summary:
     "Project the active verified org policy into its generated settings without running full initialization",
-  options: [
-    {
-      flags: "--ecc-path <path>",
-      description: "retired ECC source option; use aih ecc for guidance",
-    },
-  ],
+  options: [],
   plan: policyProjectPlan,
 };
 
@@ -417,12 +406,6 @@ export async function executePolicyProjectCommand(
   ctx: PlanContext,
   _deps: FrameworkCommandDepsV1 = {},
 ): Promise<PlanResult> {
-  if (ctx.options.eccPath !== undefined) {
-    throw new AihError(
-      "aih policy project --ecc-path was retired: aih no longer installs ECC. Run aih ecc for guidance.",
-      "AIH_CONFIG",
-    );
-  }
   return executePlan(await policyProjectPlan(ctx), ctx);
 }
 
