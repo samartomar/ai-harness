@@ -180,6 +180,23 @@ export async function runContractChecks({ core, scan, catalog, readSubpath }) {
       });
       if (presentation?.format !== catalog.CATALOG_PRESENTATION_FORMAT_V1)
         fail("catalog presentation refused");
+      const playwright = presentation.entries.find(
+        (entry) => entry.entryId === "mcp.aih.playwright.core-0-7-0",
+      );
+      if (
+        playwright?.availability !== "request-only" ||
+        playwright.management !== "aih-owned-unavailable" ||
+        typeof playwright.availabilityReason !== "string" ||
+        !playwright.availabilityReason.includes("protected Scanner evidence")
+      )
+        fail("Playwright must be request-only with Core's protected evidence reason");
+      for (const name of ["github", "context7"]) {
+        const hosted = presentation.entries.find(
+          (entry) => entry.entryId === `mcp.aih.${name}.core-0-7-0`,
+        );
+        if (hosted?.management !== "developer-managed")
+          fail(`${name} must remain developer-managed`);
+      }
       return true;
     }),
   );

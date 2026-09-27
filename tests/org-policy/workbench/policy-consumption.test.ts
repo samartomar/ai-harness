@@ -11,7 +11,7 @@ import {
 } from "../../../src/org-policy/workbench/selection-engine.js";
 
 describe("schema-v3 policy consumption", () => {
-  it("advises on the five exact declared AIH and ECC MCP registration-name pairs", () => {
+  it("keeps the five declared AIH MCP controls and requests after duplicate ECC curation", () => {
     const prepared = defaultPreparedWorkbenchCatalog();
     for (const id of [
       "code-review-graph",
@@ -22,10 +22,9 @@ describe("schema-v3 policy consumption", () => {
     ]) {
       const aih = prepared.bundle.assets[`aih/${id}`];
       const ecc = prepared.bundle.assets[`ecc/mcp:${id}`];
-      if (aih === undefined || ecc === undefined)
-        throw new Error(`expected AIH and ECC ${id} MCP records`);
+      if (aih === undefined) throw new Error(`expected AIH ${id} MCP record`);
       expect(aih.runtimeIdentity).toBe(`mcp:${id}`);
-      expect(ecc.runtimeIdentity).toBe(`mcp:${id}`);
+      expect(ecc).toBeUndefined();
       const action =
         aih.authoring.action === "record-request"
           ? {
@@ -83,18 +82,13 @@ describe("schema-v3 policy consumption", () => {
       expect.objectContaining({ code: "authoring-selection-invalid" }),
     );
   });
-  it("restores package-sealed ECC compiler bindings and rejects forged legacy mirrors", () => {
+  it("retains ECC compiler bindings and rejects forged legacy mirrors", () => {
     const prepared = defaultPreparedWorkbenchCatalog();
-    // The Catalog vendor lock carries evidence for the ECC GitHub MCP binding.
-    const asset = prepared.bundle.assets["ecc/mcp:github"];
-    const binding = prepared.bindings["ecc/mcp:github"];
+    const asset = prepared.bundle.assets["ecc/mcp:exa-web-search"];
+    const binding = prepared.bindings["ecc/mcp:exa-web-search"];
     if (asset === undefined || binding?.kind !== "external-selection" || !binding.external)
       throw new Error("expected package-sealed ECC MCP binding");
-    expect(
-      Object.values(prepared.bundle.evidence).some((report) =>
-        report.subjects.some((subject) => subject.assetId === asset.id),
-      ),
-    ).toBe(true);
+    expect(prepared.bundle.sources[asset.sourceId]?.inputFormat).toBe("pinned-baseline/v1");
 
     const state = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
       type: "select-root",

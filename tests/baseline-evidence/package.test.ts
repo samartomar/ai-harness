@@ -80,7 +80,7 @@ describe("baseline evidence release payload", () => {
     expect(manifest.peerDependenciesMeta?.["@aihq/catalog"]).toEqual({ optional: true });
     // Core's tests use the exact compatible Catalog tarball committed beside them.
     expect(manifest.devDependencies["@aihq/catalog"]).toBe(
-      "file:tests/fixtures/packages/aihq-catalog-0.3.0-b748b55c.tgz",
+      "file:tests/fixtures/packages/aihq-catalog-0.3.0-068f5ec8.tgz",
     );
     const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
     expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/catalog"[^\]]*\]/u);

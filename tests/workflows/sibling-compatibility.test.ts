@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
@@ -619,6 +620,20 @@ describe("core-sibling-compatibility.json version 2", () => {
 });
 
 describe("the contract checks, run against this Core and the installed Scan", () => {
+  it("accepts K2 prime's request-only Playwright presentation", async () => {
+    const requireFromTest = createRequire(import.meta.url);
+    const results = await runContractChecks({
+      core: core as unknown as Record<string, unknown>,
+      scan: (await import("@aihq/scan")) as unknown as Record<string, unknown>,
+      catalog: (await import("@aihq/catalog")) as unknown as Record<string, unknown>,
+      readSubpath: (specifier) => readFileSync(requireFromTest.resolve(specifier)),
+    });
+    expect(results.find((result) => result.id === "catalog-readers")).toEqual({
+      id: "catalog-readers",
+      status: "passed",
+    });
+  });
+
   it("passes Core's own checks and reports every absent sibling surface as unavailable", async () => {
     const scan = (await import("@aihq/scan")) as unknown as Record<string, unknown>;
     const results = await runContractChecks({

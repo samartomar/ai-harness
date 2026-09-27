@@ -66,6 +66,26 @@ describe("loadCatalogAuthoringBundleV1", () => {
     }
   });
 
+  it("excludes curated duplicate ECC MCPs from the final authoring bundle", () => {
+    const { bundle } = loadCatalogAuthoringBundleV1(fixture(installedDocument)).prepared;
+    const removed = [
+      "ecc/mcp:code-review-graph",
+      "ecc/mcp:codebase-memory-mcp",
+      "ecc/mcp:context7",
+      "ecc/mcp:exa",
+      "ecc/mcp:github",
+      "ecc/mcp:sequential-thinking",
+    ];
+    for (const id of removed) {
+      expect(bundle.assets[id], id).toBeUndefined();
+      expect(bundle.evidence[`evidence:${id}`], id).toBeUndefined();
+      for (const group of Object.values(bundle.groups)) {
+        expect(group.assetIds, `${id} remains in ${group.id}`).not.toContain(id);
+      }
+    }
+    expect(bundle.assets["ecc/mcp:exa-web-search"]).toBeDefined();
+  });
+
   it("ignores Catalog-supplied bindings and derives them from admitted declarations", () => {
     const changed = structuredClone(installedDocument) as {
       prepared: {
