@@ -181,8 +181,6 @@ interface SingleLinkLockFile {
 interface FsTransactionOptions {
   commitNotAfter?: number;
   commitLock?: CommitLock;
-  /** Test seam: observe each completed filesystem effect, including scratch and backup effects. */
-  onEffectCommitted?: (kind: "backup" | "temp" | "write" | "remove", path: string) => void;
 }
 
 export interface FsTxnResult {
@@ -1032,26 +1030,18 @@ export class FsTransaction {
         // like a symlinked target. Reject a planted link and clear any stale scratch so
         // the exclusive create below can't be tricked into following one.
         const clearExpectedScratch = (): void =>
-          clearScratch(
-            tmpPath,
-            () => {
-              this.guardParents(w.path, w.root, false);
-              this.assertCommitDeadline();
-              validateScratchExpectation(tmpPath, w.expectScratch, w.contents);
-            },
-            () => this.options.onEffectCommitted?.("remove", tmpPath),
-          );
+          clearScratch(tmpPath, () => {
+            this.guardParents(w.path, w.root, false);
+            this.assertCommitDeadline();
+            validateScratchExpectation(tmpPath, w.expectScratch, w.contents);
+          });
         // Recheck again in the same clearScratch call immediately before the
         // unlink. The earlier check guarantees no prior transaction mutation.
         if (w.expectScratch !== undefined) clearExpectedScratch();
-        clearScratch(
-          backupPath,
-          () => {
-            this.guardParents(w.path, w.root, false);
-            this.assertCommitDeadline();
-          },
-          () => this.options.onEffectCommitted?.("remove", backupPath),
-        );
+        clearScratch(backupPath, () => {
+          this.guardParents(w.path, w.root, false);
+          this.assertCommitDeadline();
+        });
         if (w.expectScratch === undefined) clearExpectedScratch();
         let backup: string | undefined;
         let backupSha256: string | undefined;
@@ -1067,7 +1057,6 @@ export class FsTransaction {
             this.assertCommitDeadline();
             return copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
           });
-          this.options.onEffectCommitted?.("backup", backupPath);
           const saved = readRegularFile(backupPath);
           if (
             saved === undefined ||
@@ -1082,7 +1071,6 @@ export class FsTransaction {
           this.assertCommitDeadline();
           return writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" });
         });
-        this.options.onEffectCommitted?.("temp", tmpPath);
         if (w.mode !== undefined) {
           this.guardParents(w.path, w.root, false);
           this.assertCommitDeadline();
@@ -1108,7 +1096,6 @@ export class FsTransaction {
         });
         this.guardParents(w.path, w.root, false);
         if (w.durable) this.syncDurableWrite(w.path, w.root);
-        this.options.onEffectCommitted?.("write", w.path);
       }
       // Removals commit AFTER writes so a partial failure rolls both back in order.
       for (const r of removals) {
@@ -1157,7 +1144,6 @@ export class FsTransaction {
             throw new FsTxnError(`removal target changed before commit: ${r.path}`);
           }
         }
-        this.options.onEffectCommitted?.("remove", r.path);
       }
       this.assertCommitDeadline();
       for (const assertion of assertions) this.guardAssertionParents(assertion);
@@ -1460,7 +1446,7 @@ function lstatSafe(path: string): Stats | undefined {
  * the repo), and remove a stale REGULAR leftover from a prior aborted run so the
  * exclusive create doesn't `EEXIST`. Never follows or deletes through a link.
  */
-function clearScratch(path: string, assertCommitDeadline: () => void, onRemoved: () => void): void {
+function clearScratch(path: string, assertCommitDeadline: () => void): void {
   const st = lstatSafe(path);
   if (st === undefined) return;
   if (st.isSymbolicLink()) {
@@ -1468,7 +1454,6 @@ function clearScratch(path: string, assertCommitDeadline: () => void, onRemoved:
   }
   assertCommitDeadline();
   rmSync(path, { force: true });
-  onRemoved();
 }
 
 /** Validate a write-local scratch precondition at the consume boundary. */
