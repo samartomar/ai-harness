@@ -281,21 +281,20 @@ describe("Core Catalog qualification preparation", () => {
     const records = packagedCatalogQualificationRecordsV1();
     const bindings = packagedCatalogQualificationBindingsV1();
     const projections = packagedCatalogQualificationProjectionsV1();
-    expect(records).toHaveLength(436);
-    expect(bindings).toHaveLength(436);
+    expect(records).toHaveLength(429);
+    expect(bindings).toHaveLength(429);
     expect(projections).toHaveLength(1);
     const summaries = CatalogQualificationSummariesV1Schema.parse(projections[0]?.summary);
     const summaryValues = Object.values(summaries);
     const sourceCounts = new Map<string, number>();
     for (const summary of summaryValues)
       sourceCounts.set(summary.sourceId, (sourceCounts.get(summary.sourceId) ?? 0) + 1);
-    expect(summaryValues).toHaveLength(436);
+    expect(summaryValues).toHaveLength(429);
     expect(Object.fromEntries(sourceCounts)).toEqual({
       "source:aih-core": 9,
       "source:anthropics-skills": 14,
       "source:ecc": 367,
       "source:mattpocock": 25,
-      "source:ponytail": 7,
       "source:superpowers": 14,
     });
     expect(new Set(summaryValues.map((summary) => summary.state))).toEqual(new Set(["qualified"]));
@@ -308,7 +307,7 @@ describe("Core Catalog qualification preparation", () => {
       records.filter(
         (record) => record.publisher.commit === "b019b4e9d6260915a49d177bcc22b58518305dd4",
       ),
-    ).toHaveLength(427);
+    ).toHaveLength(420);
     expect(
       records.filter(
         (record) => record.publisher.commit === "36f269266208661430fc37f167c86e534dabf893",

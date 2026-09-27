@@ -94,7 +94,7 @@ const ECC_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
 /** SYNTHETIC: not an ECC commit; any pin other than the current one takes the sealed-descriptor route. */
 const SYNTHETIC_HISTORICAL_ECC_COMMIT = "5e1f00000000000000000000000000000000c0de";
 const FRAMEWORK_DESCRIPTOR_PATH = "defaults/catalog-framework-ecc-v1.json";
-const PINNED_SHA256 = "52e67554115b2300932fc3976e190364c4c3cd037cdb7877b388a95f74a1df02";
+const PINNED_SHA256 = "ca007dbe7910425ccece63e57bc74c2029a8016532c5222002cae2de90ad2f49";
 const DESCRIPTOR_PATH = `defaults/runtime-descriptors/github.com/${ECC_REPOSITORY}/${ECC_COMMIT}/ecc-runtime-descriptor-v1.json`;
 /** String literals that exist only inside Catalog's implementation, never in Core's source. */
 const CATALOG_IMPLEMENTATION_MARKERS = [

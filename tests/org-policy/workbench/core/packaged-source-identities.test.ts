@@ -20,6 +20,7 @@ it("preserves retained source identities across compatible Core releases", () =>
   expect(identities.compatibility).toBe("core-workbench-data/v1");
   const retainedIds = new Set(identities.identities.map((source) => source.id));
   expect(actual.filter((source) => retainedIds.has(source.id))).toEqual(identities.identities);
+  expect(actual.map((source) => source.id)).not.toContain("source:ponytail");
 });
 
 it("keeps the authenticated ECC runtime descriptor within package and receipt bounds", () => {
@@ -38,12 +39,12 @@ it("keeps the authenticated ECC runtime descriptor within package and receipt bo
   };
   const descriptor = parsed.runtimeDescriptor;
   if (!descriptor) throw new Error("Missing packaged ECC runtime descriptor");
-  expect(record.sha256).toBe("785d733ffbd09de31ecc9c46da01e6b698dd62919f5f42d311d316681b9fe7a8");
-  expect(Buffer.byteLength(record.bytes)).toBe(8_780_269);
+  expect(record.sha256).toBe("d286c6e2dc716ad5fa615b5fd86841ef8d6b210faf2279c785fa934d41e26a51");
+  expect(Buffer.byteLength(record.bytes)).toBe(8_107_477);
   expect(Buffer.byteLength(record.bytes)).toBeLessThanOrEqual(16 * 1024 * 1024);
   expect(descriptor.sha256).toBe(
-    "sha256:52e67554115b2300932fc3976e190364c4c3cd037cdb7877b388a95f74a1df02",
+    "sha256:ca007dbe7910425ccece63e57bc74c2029a8016532c5222002cae2de90ad2f49",
   );
-  expect(Buffer.byteLength(descriptor.bytesBase64)).toBe(6_519_944);
+  expect(Buffer.byteLength(descriptor.bytesBase64)).toBe(6_047_004);
   expect(Buffer.byteLength(descriptor.bytesBase64)).toBeLessThanOrEqual(16 * 1024 * 1024);
 });

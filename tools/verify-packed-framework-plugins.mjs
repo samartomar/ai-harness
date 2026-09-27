@@ -388,7 +388,7 @@ try {
 
   // The real Catalog 0.3.0 this repository pins carries both framework
   // descriptors and the plugin identity records the loader checks.
-  const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-c8e2c03.tgz");
+  const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-b748b55c.tgz");
   npmInstall([pinnedCatalog], consumer, "Catalog 0.3.0 install");
   npmInstall(["--global", "--prefix", globalPrefix, pinnedCatalog], work, "Catalog 0.3.0 global install");
 

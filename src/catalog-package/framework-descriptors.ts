@@ -12,7 +12,7 @@ import {
 export type CatalogFrameworkIdV1 = "ecc" | "superpowers";
 
 export const ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1 = Object.freeze({
-  ecc: "db4bb0b87e3fc5c9370ea6cb48cd4935a93f333c9ed927aab9fdd8eb8afcde84",
+  ecc: "b105d1d2f287d775580996a1d6ca8647a67379167df9a6bcd39c149b54cce349",
   superpowers: "2cc5fb6688e08aa25a7b271ae4b32b86c9e9e07df8a148f2b1805b50cdfc1b34",
 } as const);
 

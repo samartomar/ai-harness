@@ -49,6 +49,12 @@ describe("ECC basic guidance", () => {
     );
   });
 
+  it("includes the home-removal header for a home target", () => {
+    expect(eccGuidance(["claude"], "linux")).toContain(
+      "From the ECC checkout, preview home-scoped removals:",
+    );
+  });
+
   it("runs project targets from the project and names home target scope", () => {
     const text = eccGuidance(
       ["claude", "codex", "opencode", "cursor", "gemini", "zed", "antigravity", "kimi"],

@@ -12,17 +12,17 @@ const MATERIALS = {
   qualification: {
     format: "aih-catalog-core-qualification",
     subpath: "./catalog-core-qualification.json",
-    sha256: "9b03b38f75c4ee7fbf462a491894aa4020c1aeaa5625a91e24f5e11ca2807913",
+    sha256: "d66c8b6e2698245d331fc23cbb4f6b6974403a0040b6cb47a82c5a1840e874f0",
   },
   scanner: {
     format: "aih-catalog-scanner-evidence",
     subpath: "./catalog-scanner-evidence.json",
-    sha256: "a8c7a79550f0f322fe7289c4642cdfc23cf7a4c57ca69b1914b0994e74885e3e",
+    sha256: "9f158fc4ea1ee9bc5c7c5c567215d068ceffad723446efb9a7676ea2e9b364f5",
   },
   scannerProviders: {
     format: "aih-catalog-scanner-providers",
     subpath: "./catalog-scanner-providers.json",
-    sha256: "1cf62de4482b1151ab691d919ca8980199e7b6c1173f0986e4052b5c52b73a0b",
+    sha256: "7d0e9de9b73c5b1e29eeffe79886c1d2375b7aec2eb1678b69e6ac51e9aa53ca",
   },
   publicBaseline: {
     format: "aih-catalog-public-baseline",

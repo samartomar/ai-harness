@@ -9,7 +9,7 @@ interface VendorLockDocumentV1 {
 }
 
 export const ACCEPTED_CATALOG_VENDOR_LOCK_SHA256_V1 =
-  "1ac23531115992deea9e1f78e7e42ef130d6f33ed6f9ec1d46765c6aac47f79e";
+  "55de8b519a79cbe0564e9f0a827f451fbca7ae87fcc802acd45ec420a93c6d90";
 
 export function admitCatalogVendorLockDocumentV1(carried: VendorLockDocumentV1): Buffer {
   if (

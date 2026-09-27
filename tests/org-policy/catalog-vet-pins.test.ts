@@ -30,14 +30,26 @@ describe("pinned Catalog vet verdicts", () => {
     }
   });
 
-  it("labels exactly the components the vet found findings in", () => {
-    const blocked = allAssets().filter((asset) => asset.vet?.verdict === "has-findings");
+  it("labels exactly the selectable components the vet found findings in", () => {
+    const assets = allAssets();
+    const assetIds = new Set(assets.map((asset) => asset.id));
+    const blocked = assets.filter((asset) => asset.vet?.verdict === "has-findings");
     const expected = readVendorBaselineLock()
       .sources.flatMap((source) => source.components)
-      .filter((component) => component.verdict === "has-findings")
+      .filter((component) => component.verdict === "has-findings" && assetIds.has(component.id))
       .map((component) => component.id);
     expect(blocked.map((asset) => asset.id).sort()).toStrictEqual([...expected].sort());
     expect(blocked.length).toBeGreaterThan(0);
+    for (const id of [
+      "mcp:code-review-graph",
+      "mcp:codebase-memory-mcp",
+      "mcp:context7",
+      "mcp:exa",
+      "mcp:github",
+      "mcp:sequential-thinking",
+    ]) {
+      expect(assetIds.has(id)).toBe(false);
+    }
   });
 
   it("retains a finding for every has-findings component", () => {

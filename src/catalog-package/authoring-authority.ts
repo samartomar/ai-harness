@@ -55,7 +55,7 @@ export const WorkbenchSourceInputsCarrierV1Schema = z
 
 /** Exact producer output reviewed with Core 0.7; Catalog is only its carrier. */
 export const ACCEPTED_CATALOG_AUTHORING_AUTHORITY_V1 = Object.freeze([
-  "0732a7a3feb29590f479f29055ca43fd10f8cd41461215af549b415958b89218",
+  "6234e7217172f7596c479858bf85a0f9a838cfc5b2d2945778c1dd87f58a9f8c",
 ] as const);
 
 export function catalogAuthoringAuthorityDigestV1(input: {

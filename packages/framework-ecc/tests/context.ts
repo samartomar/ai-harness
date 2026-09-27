@@ -16,7 +16,7 @@ export const PINNED_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
  * descriptor loader accepts exactly these bytes, built at {@link PINNED_COMMIT}.
  */
 export const CATALOG_DESCRIPTOR_SHA256 =
-  "db4bb0b87e3fc5c9370ea6cb48cd4935a93f333c9ed927aab9fdd8eb8afcde84";
+  "b105d1d2f287d775580996a1d6ca8647a67379167df9a6bcd39c149b54cce349";
 
 let cached: Uint8Array | undefined;
 
