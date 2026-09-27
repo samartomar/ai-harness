@@ -156,7 +156,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/org-policy/workbench/core/source-data-scanner.ts",
-    598,
+    600,
     "export async function prepareSourceDataScannerRuntimeDescriptorV1(",
   ],
   [
