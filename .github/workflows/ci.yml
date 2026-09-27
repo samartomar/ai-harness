@@ -106,7 +106,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Lint and format check
-        run: npx biome ci src tests
+        run: npm run lint:ci
       - name: Documentation lint
         run: npm run docs:lint
       - name: Packed documentation links
