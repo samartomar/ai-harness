@@ -99,6 +99,17 @@ describe("trust report exit code (D66 option B)", () => {
     expect(await exit([passed, finding], "evidence-problems")).toBe(0);
   });
 
+  it("honors --fail-on findings for warning-level findings graded pass", async () => {
+    const warning: Check = {
+      name: "trust detector cisco finding",
+      verdict: "pass",
+      code: "trust.cisco-finding",
+      detail: "warning-only (standard posture): reported finding",
+    };
+    expect(await exit([warning])).toBe(0);
+    expect(await exit([warning], "findings")).toBe(1);
+  });
+
   it("exits 0 on evidence problems, and 1 only with --fail-on evidence-problems", async () => {
     expect(await exit([evidenceProblem])).toBe(0);
     expect(await exit([evidenceProblem], "evidence-problems")).toBe(1);

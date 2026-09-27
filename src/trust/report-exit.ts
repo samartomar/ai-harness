@@ -73,8 +73,12 @@ export function labelledReportExitCodeV1(
 ): 0 | 1 {
   let code: 0 | 1 = 0;
   for (const check of checks) {
-    if (check.verdict !== "fail") continue;
+    if (check.verdict === "skip") continue;
     const kind = failedCheckKindV1(check);
+    if (check.verdict === "pass") {
+      if (kind === "finding" && failOn.has("findings")) code = 1;
+      continue;
+    }
     if (
       kind === "stop" ||
       (kind === "finding" && failOn.has("findings")) ||
