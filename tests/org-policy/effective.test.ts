@@ -8,8 +8,10 @@ import {
   approvalAttestationDigest,
   candidateIdentityDigest,
   DISPOSITIONABLE_POLICY_FINDING_CODES,
+  EVIDENCE_PROBLEM_POLICY_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
   isDispositionableFinding,
+  isEvidenceProblemCode,
   isFencedPrerequisite,
   lifecycleStateBlocksProjection,
   POLICY_ENGINE_FIELD_CONSUMERS,
@@ -124,7 +126,8 @@ describe("headless effective org policy", () => {
       requested: true,
       effective: false,
       evidence: "missing",
-      blockingCodes: expect.arrayContaining(["authority-receipt-unverified", "evidence-missing"]),
+      blockingCodes: ["authority-receipt-unverified"],
+      evidenceProblems: ["evidence-missing"],
     });
   });
 
@@ -644,16 +647,16 @@ describe("headless effective org policy", () => {
   });
 
   // The finding model is a partition, not a new taxonomy: the same 14 codes,
-  // separated where they already differ in kind. Locked 2026-08-05.
-  it("partitions every danger code into exactly one half", () => {
-    const union = [...DISPOSITIONABLE_POLICY_FINDING_CODES, ...FENCED_POLICY_PREREQUISITE_CODES];
+  // separated where they already differ in kind. Locked 2026-08-05; the
+  // evidence-problem third split out of the fence by D50 (2026-09-24).
+  it("partitions every danger code into exactly one of three parts", () => {
+    const union = [
+      ...DISPOSITIONABLE_POLICY_FINDING_CODES,
+      ...EVIDENCE_PROBLEM_POLICY_CODES,
+      ...FENCED_POLICY_PREREQUISITE_CODES,
+    ];
     expect([...union].sort()).toStrictEqual([...UNWAIVABLE_POLICY_DANGER_CODES].sort());
     expect(new Set(union).size).toBe(union.length);
-    expect(
-      DISPOSITIONABLE_POLICY_FINDING_CODES.filter((code) =>
-        (FENCED_POLICY_PREREQUISITE_CODES as readonly string[]).includes(code),
-      ),
-    ).toStrictEqual([]);
   });
 
   // schema.ts repeats the code list for its enum. Drift between the two would
@@ -664,7 +667,7 @@ describe("headless effective org policy", () => {
     );
   });
 
-  it("pins which codes an administrator may dispose of and which stay fenced", () => {
+  it("pins which codes are findings, which are evidence problems and which stay fenced", () => {
     expect([...DISPOSITIONABLE_POLICY_FINDING_CODES].sort()).toStrictEqual([
       "auto-executing-hook",
       "dependency-confusion",
@@ -675,9 +678,9 @@ describe("headless effective org policy", () => {
       "unpinned-source",
       "unsafe-path",
     ]);
+    expect([...EVIDENCE_PROBLEM_POLICY_CODES]).toStrictEqual(["mandatory-detector-failed"]);
     expect([...FENCED_POLICY_PREREQUISITE_CODES].sort()).toStrictEqual([
       "evidence-identity-drift",
-      "mandatory-detector-failed",
       "missing-projector",
       "normalized-collision",
       "ownership-conflict",
@@ -685,15 +688,22 @@ describe("headless effective org policy", () => {
     ]);
   });
 
-  it("answers both guards for every code, and neither for a code it does not know", () => {
+  it("answers exactly one guard for every code, and none for a code it does not know", () => {
     for (const code of UNWAIVABLE_POLICY_DANGER_CODES) {
-      expect(isDispositionableFinding(code)).toBe(!isFencedPrerequisite(code));
+      expect(
+        [
+          isDispositionableFinding(code),
+          isEvidenceProblemCode(code),
+          isFencedPrerequisite(code),
+        ].filter(Boolean).length,
+      ).toBe(1);
     }
     expect(isDispositionableFinding("not-a-code")).toBe(false);
+    expect(isEvidenceProblemCode("not-a-code")).toBe(false);
     expect(isFencedPrerequisite("not-a-code")).toBe(false);
   });
 
-  it.each(UNWAIVABLE_POLICY_DANGER_CODES)("keeps authored danger code %s blocking", (danger) => {
+  it.each(FENCED_POLICY_PREREQUISITE_CODES)("keeps fenced prerequisite %s blocking", (danger) => {
     const effective = resolveEffectiveOrgPolicy(
       policy({
         governance: {
@@ -712,6 +722,40 @@ describe("headless effective org policy", () => {
     expect(effective.candidates[0]?.dangerCodes).toContain(danger);
     expect(effective.candidates[0]?.effective).toBe(false);
   });
+
+  it.each([...DISPOSITIONABLE_POLICY_FINDING_CODES, ...EVIDENCE_PROBLEM_POLICY_CODES])(
+    "labels authored code %s and keeps the requested control effective",
+    (code) => {
+      const effective = resolveEffectiveOrgPolicy(
+        policy({
+          governance: {
+            supportedClis: ["claude"],
+            policyVersion: "2026.08.0",
+            catalog: { reviewed: [candidate({ findings: [code] })], custom: [] },
+            activations: [{ candidate: "catalog-mcp", state: "active", targets: ["claude"] }],
+            authority: { approvals: [] },
+          },
+        }),
+        {
+          targets: ["claude"],
+          aihReviewedControls: reviewedControls(),
+          mcpIdentities: { "catalog-mcp": { subject: SUBJECT, projectable: true } },
+        },
+      );
+      const resolved = effective.candidates[0];
+      expect(resolved).toMatchObject({ effective: true, blockingCodes: [], decisionBlockers: [] });
+      expect(resolved?.dangerCodes).toContain(code);
+      if (isEvidenceProblemCode(code)) {
+        expect(resolved?.evidenceProblems).toEqual([code]);
+        expect(resolved?.findings).toEqual([]);
+      } else {
+        expect(resolved?.findings).toEqual([code]);
+        expect(resolved?.evidenceProblems).toEqual([]);
+      }
+      expect(effective.blocking).toBe(false);
+      expect(effective.activeMcpServerIds).toEqual(["catalog-mcp"]);
+    },
+  );
 
   it("does not claim an unimplemented framework contract as effective", () => {
     const source = {

@@ -18,9 +18,12 @@ import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
 import { command as docsLint } from "../docs-lint/index.js";
 import { command as doctor } from "../doctor.js";
-import { command as ecc, eccMcpAddCommand, eccMcpRemoveCommand } from "../ecc/index.js";
-import { executeEccCommand } from "../ecc/pipeline.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
+import { command as ecc, executeEccCommand } from "../framework-plugin/ecc-command.js";
+import {
+  executeSuperpowersCommand,
+  command as superpowers,
+} from "../framework-plugin/superpowers-command.js";
 import { command as governanceDoctor } from "../governance-doctor/command-v1.js";
 import {
   executeGovernanceDoctorRepairCommandV1,
@@ -47,7 +50,6 @@ import {
   policyRebindCommand,
   policyRevokeCommand,
 } from "../org-policy/binding.js";
-import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
 import { npmPackageLifecycleCommand } from "../org-policy/npm-package-lifecycle-v1.js";
 import { npmPackageObserveCommand } from "../org-policy/npm-package-observer-v1.js";
@@ -102,8 +104,6 @@ import {
   skillVetCommand,
 } from "../skill/index.js";
 import { command as status } from "../status.js";
-import { command as superpowers } from "../superpowers/index.js";
-import { executeSuperpowersCommand } from "../superpowers/pipeline.js";
 import { command as telemetry } from "../telemetry/index.js";
 import {
   developerToolsCommand,
@@ -244,7 +244,6 @@ export const GROUPED_COMMAND_SPECS = {
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [
-    policyGenerateCommand,
     policyBindCommand,
     policyRebindCommand,
     policyRevokeCommand,
@@ -267,8 +266,6 @@ export const GROUPED_COMMAND_SPECS = {
 export const ALL_COMMAND_SPECS: CommandSpec[] = [
   ...ALL_COMMANDS,
   mcpApproveCommand,
-  eccMcpAddCommand,
-  eccMcpRemoveCommand,
   ...Object.values(GROUPED_COMMAND_SPECS).flat(),
   policySupportedAcceptCommandV2,
   policySupportedInspectCommandV2,
@@ -283,8 +280,6 @@ export const ALL_COMMAND_SPECS: CommandSpec[] = [
 export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ...ALL_COMMANDS.map((spec) => [spec.name] as const),
   ["mcp", mcpApproveCommand.name] as const,
-  ["ecc", "mcp", eccMcpAddCommand.name] as const,
-  ["ecc", "mcp", eccMcpRemoveCommand.name] as const,
   ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
     specs.map((spec) =>
       spec === npmPackageObserveCommand || spec === upstreamArtifactObserveCommand
@@ -628,23 +623,6 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       });
     });
   }
-  if (spec.name === "ecc") {
-    const mcp = cmd.command("mcp").description("Explicit policy-approved ECC HTTPS MCP lifecycle");
-    for (const mcpCommand of [eccMcpAddCommand, eccMcpRemoveCommand]) {
-      const child = mcp
-        .command(mcpCommand.name)
-        .description(mcpCommand.summary)
-        .argument("<id>", "ECC MCP id");
-      addFlagsForSpec(child, mcpCommand);
-      addOptionsForSpec(child, mcpCommand);
-      child.action(async (id: string, _options: Record<string, unknown>, command: Command) => {
-        process.exitCode = await runCapability(mcpCommand, command, {
-          positionalRoot: false,
-          optionOverrides: { id },
-        });
-      });
-    }
-  }
   program.addCommand(cmd);
 }
 
@@ -678,7 +656,9 @@ export function registerCommands(
       );
     }
   }
-  const trust = program.command("trust").description("Trust-gate operations for external sources");
+  const trust = program
+    .command("trust")
+    .description("Trust scans and source records for external sources");
   const allow = trust
     .command(trustAllowCommand.name)
     .description(trustAllowCommand.summary)
@@ -911,34 +891,11 @@ export function registerCommands(
     });
   }
 
-  // `policy generate` is deliberately rootless: it writes only an operator-named
-  // portable authoring artifact and does not inspect a target repo. The remaining
-  // policy subcommands are repo-scoped and keep the conventional optional root.
   const policy = program
     .command("policy")
     .description(
-      "Generate, seed, resolve, evaluate, project, validate + verify the org policy and its generated settings",
+      "Seed, resolve, evaluate, project, validate + verify the org policy and its generated settings",
     );
-  // The optional `[admin-root]` positional is the ONLY switch that turns on
-  // administrator catalog consumption; omitting it keeps the rootless portable
-  // artifact, which performs no acquisition, process, or cache work.
-  const policyGenerate = policy
-    .command(policyGenerateCommand.name)
-    .description(policyGenerateCommand.summary)
-    .argument(
-      "[admin-root]",
-      "administrator root that consumes the signed supported catalog (omit for the portable artifact)",
-    );
-  addFlagsForSpec(policyGenerate, policyGenerateCommand);
-  addOptionsForSpec(policyGenerate, policyGenerateCommand);
-  policyGenerate.action(
-    async (adminRoot: string | undefined, _options: Record<string, unknown>, command: Command) => {
-      process.exitCode = await runPolicyGenerate(
-        command,
-        adminRoot === undefined ? {} : { adminRoot },
-      );
-    },
-  );
   registerWorkbenchDataCommandsV1(policy);
   for (const spec of [
     policyBindCommand,

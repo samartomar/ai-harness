@@ -1,0 +1,475 @@
+import { createHash } from "node:crypto";
+import type { ScanExecutionAdapterV1 } from "../../../src/org-policy/governance-input-v1.js";
+import { SKILLSPECTOR_IMAGE_DIGEST } from "../../../src/trust/images.js";
+import { buildTrustFileInventory } from "../../../src/trust/inventory.js";
+import {
+  ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1,
+  acceptedScanAnalyzerIdentityV1,
+  observedScanAnalyzerVersionV1,
+  SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1,
+} from "../../../src/trust/scan-analyzer-identity.js";
+import { SCAN_COMPLETION_PROPERTY_V1 } from "../../../src/trust/scan-sarif.js";
+import {
+  baselineVetAnnexSubjectFilesV1,
+  scanDetectorSubjectFilesV1,
+  scanSubjectDigestV1,
+  sealedScanSubjectFilesV1,
+} from "../../../src/trust/scan-subject-files.js";
+
+/**
+ * TEST FAKE. An in-memory stand-in for the installed `@aihq/scan` public
+ * `listDetectorCapabilitiesV1` / `runDetectorV1`, answering from data the test
+ * supplies. It is not Scan and runs nothing. It returns what contract C2 says
+ * Scan returns for a findings-producing run: a `baseline-analyzer-observation-v1`
+ * observation whose bytes are SARIF 2.1.0 with source-relative URIs, bound by the
+ * annex digest, under the execution profile the request named. Its analyzer
+ * identities are the ones Core accepts (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`)
+ * unless a test overrides them; a profile Core pins none for gets a fake lock.
+ *
+ * Two adapters. `createVerbatimFakeScanAdapterForTests` returns every SARIF
+ * answer byte for byte: completion-boundary tests use it with independent
+ * vectors. `createSelfCompletingFakeScanAdapterForTests` REPAIRS what it is
+ * given, as a convenience for tests about something else (profiles,
+ * cancellation, identity, mapping): a run gets a tool driver and a successful
+ * invocation when it has none, and completion evidence v1 SELF-DERIVED with
+ * Core's own subject code, so it can never catch a subject-selection defect.
+ * One of its answers can opt out with `verbatim: true`.
+ *
+ * Shapes follow Scan's own `DetectorCapabilityV1` and `RunDetectorV1Result`
+ * (`aih-scan src/capability/detector-capability-v1.ts`, `src/runner/run-detector-v1.ts`).
+ */
+
+export type FakeScanAnswerV1 =
+  | {
+      readonly kind: "sarif";
+      readonly sarif: string;
+      readonly executionProfileId?: string;
+      /** The analyzer version the observation states, instead of the accepted one. */
+      readonly observedAnalyzerVersion?: string;
+      /** Self-completing adapter only: return these bytes exactly as given, nothing added. */
+      readonly verbatim?: true;
+      /** SkillSpector's `observation.image`, instead of the pinned image; `undefined` states none. */
+      readonly image?: unknown;
+    }
+  /** SARIF computed from the request, e.g. for Core's selected paths. */
+  | {
+      readonly kind: "sarif-for";
+      readonly sarif: (request: Record<string, unknown>) => string;
+      readonly image?: unknown;
+    }
+  | { readonly kind: "refused"; readonly reason: string; readonly detail: string }
+  | { readonly kind: "failed"; readonly stage: string; readonly detail: string }
+  /** Holds the run open until the request's signal aborts, as a long analyzer run would. */
+  | { readonly kind: "block-until-aborted" };
+
+const EVERY_PLATFORM = [
+  { os: "darwin", architecture: "amd64" },
+  { os: "darwin", architecture: "arm64" },
+  { os: "linux", architecture: "amd64" },
+  { os: "linux", architecture: "arm64" },
+  { os: "windows", architecture: "amd64" },
+  { os: "windows", architecture: "arm64" },
+] as const;
+const LINUX_ONLY = [
+  { os: "linux", architecture: "amd64" },
+  { os: "linux", architecture: "arm64" },
+] as const;
+
+interface FakeProfile {
+  readonly id: string;
+  /** `accepted`: the lock Core pins for the detector under this profile. */
+  readonly analyzerLock?: { readonly path: string; readonly sha256: string } | "accepted";
+  readonly isolation: "container" | "linux-namespace" | "none";
+  readonly network: "none" | "acquisition-only" | "unenforced";
+  readonly supportedPlatforms: readonly { readonly os: string; readonly architecture: string }[];
+}
+
+/** The uv.lock digest a fake uv profile publishes when Core pins no lock for it. */
+export const FAKE_UV_LOCK_SHA256 = "f".repeat(64);
+
+const HOST_UV: FakeProfile = {
+  id: "host-process-uv-v1",
+  analyzerLock: "accepted",
+  isolation: "none",
+  network: "unenforced",
+  supportedPlatforms: EVERY_PLATFORM,
+};
+const NAMESPACE_UV: FakeProfile = {
+  id: "linux-namespace-uv-v1",
+  analyzerLock: "accepted",
+  isolation: "linux-namespace",
+  network: "acquisition-only",
+  supportedPlatforms: LINUX_ONLY,
+};
+const HOST_DOCKER: FakeProfile = {
+  id: "docker-host-local-skillspector-v1",
+  isolation: "container",
+  network: "none",
+  supportedPlatforms: EVERY_PLATFORM,
+};
+const TRUST_LINT: FakeProfile = {
+  id: "in-process-trust-lint-v1",
+  isolation: "none",
+  network: "none",
+  supportedPlatforms: EVERY_PLATFORM,
+};
+const BINDING_GATE: FakeProfile = {
+  id: "in-process-binding-gate-v1",
+  isolation: "none",
+  network: "none",
+  supportedPlatforms: EVERY_PLATFORM,
+};
+
+/** The profiles each detector declares in this fake, default first (as in C2). */
+export const FAKE_SCAN_PROFILES: Readonly<Record<string, readonly FakeProfile[]>> = {
+  "detector.aih-trust-lint": [TRUST_LINT],
+  "detector.aih-binding-gate": [BINDING_GATE],
+  "detector.skillspector": [HOST_DOCKER],
+  "detector.cisco": [HOST_UV, NAMESPACE_UV],
+  "detector.cisco-mcp-scanner": [HOST_UV, NAMESPACE_UV],
+  "detector.semgrep": [HOST_UV, NAMESPACE_UV],
+  "detector.snyk-agent-scan": [HOST_UV, NAMESPACE_UV],
+};
+
+function profileDocument(detectorId: string, profile: FakeProfile) {
+  const { analyzerLock, ...rest } = profile;
+  const accepted = acceptedScanAnalyzerIdentityV1(detectorId, profile.id)?.lockSha256;
+  const lock =
+    analyzerLock === "accepted"
+      ? { path: "uv.lock", sha256: accepted ?? FAKE_UV_LOCK_SHA256 }
+      : analyzerLock;
+  return {
+    ...rest,
+    ...(lock === undefined ? {} : { analyzerLock: lock }),
+    sha256: createHash("sha256").update(profile.id).digest("hex"),
+    evidence: "BaselineAnalyzerObservationV1",
+    prerequisites: [],
+  };
+}
+
+export function fakeCapability(detectorId: string, profiles?: readonly FakeProfile[]) {
+  const declared = profiles ?? FAKE_SCAN_PROFILES[detectorId] ?? [HOST_UV];
+  const [first] = declared;
+  if (first === undefined) throw new Error(`fake capability ${detectorId} declares no profile`);
+  return {
+    protocol: "DetectorCapabilityV1",
+    detectorId,
+    analyzerIdentity: null,
+    analyzerVersion:
+      acceptedScanAnalyzerIdentityV1(detectorId, first.id)?.analyzerVersion ?? "fake",
+    executionProfile: profileDocument(detectorId, first),
+    executionProfiles: declared.map((profile) => profileDocument(detectorId, profile)),
+    subjectKinds: ["source-tree"],
+    subjectRequirements: [],
+    supportedPlatforms: first.supportedPlatforms,
+    prerequisites: [],
+    outputs: ["sarif-2.1.0"],
+  };
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * SELF-DERIVED completion evidence v1 for this request, computed with Core's
+ * OWN subject code (so it agrees with Core by construction): the subject files
+ * of `subject.sourceRoot` under the detector's rule, and the analyzer.
+ * Undefined when the subject cannot be read (Core then refuses the run).
+ */
+export function selfDerivedFakeScanCompletionEvidence(
+  detectorId: string,
+  request: Record<string, unknown>,
+  analyzer: { readonly version: string; readonly lockSha256: string | null },
+): Record<string, unknown> | undefined {
+  const subject = asObject(request.subject);
+  const sourceRoot = subject?.sourceRoot;
+  const selected = subject?.selectedClosurePaths;
+  if (typeof sourceRoot !== "string" || !Array.isArray(selected)) return undefined;
+  const mcpConfigPaths = asObject(request.detectorOptions)?.mcpConfigPaths;
+  try {
+    const digest = scanSubjectDigestV1(
+      scanDetectorSubjectFilesV1(detectorId, sourceRoot, {
+        selectedClosurePaths: selected as string[],
+        ...(Array.isArray(mcpConfigPaths) ? { mcpConfigPaths: mcpConfigPaths as string[] } : {}),
+        sealed: () => sealedScanSubjectFilesV1(sourceRoot),
+      }),
+    );
+    return { detectorId, ...digest, analyzer: { ...analyzer } };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * REPAIRING: the SARIF text with every run completed as Scan completes it: a tool driver
+ * and a successful first invocation when the run has none, and `evidence` in
+ * `invocations[0].properties` unless the run already states some. Text that is
+ * not a SARIF log with runs comes back unchanged.
+ */
+export function withSelfDerivedFakeScanCompletion(
+  text: string,
+  detectorId: string,
+  evidence: Record<string, unknown> | undefined,
+): string {
+  let log: unknown;
+  try {
+    log = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  const runs = asObject(log)?.runs;
+  if (!Array.isArray(runs)) return text;
+  for (const run of runs) {
+    const record = asObject(run);
+    if (record === undefined) continue;
+    record.tool ??= { driver: { name: `${detectorId.replace(/^detector\./, "")} (test fake)` } };
+    record.invocations ??= [{ executionSuccessful: true }];
+    const first = Array.isArray(record.invocations) ? asObject(record.invocations[0]) : undefined;
+    if (first === undefined || evidence === undefined) continue;
+    const properties = asObject(first.properties) ?? {};
+    if (!Object.hasOwn(properties, SCAN_COMPLETION_PROPERTY_V1))
+      first.properties = { ...properties, [SCAN_COMPLETION_PROPERTY_V1]: evidence };
+  }
+  return JSON.stringify(log);
+}
+
+/**
+ * SELF-DERIVED, NOT A BOUNDARY VECTOR. The SARIF log `log` (text or parsed)
+ * with completion evidence v1 added to every run's first invocation, derived
+ * with Core's OWN subject code over `sourceRoot` and the analyzer identity Core
+ * pins for the detector under `executionProfileId` (by default Core's default
+ * uv profile, `host-process-uv-v1`, where the detector has one; otherwise its
+ * first pinned identity). With `origin: "scanner-baseline-vet"` it is a Scanner
+ * publication's annex: the baseline subject (no top-level .git) and the profile
+ * Scan's batch runs for the detector. Nothing else is repaired: a run with no
+ * invocation stays without one. Only for tests about something other than the
+ * completion boundary (custody, signatures, SARIF mapping) that need
+ * precomputed SARIF Core counts complete; boundary tests use the independent
+ * vectors in `scan-completion-vectors.test.ts`. Returns the same kind it got.
+ */
+export function selfDerivedPrecomputedCompletionForTests<T extends string | object>(
+  log: T,
+  detectorId: string,
+  sourceRoot: string,
+  options: {
+    readonly selectedClosurePaths?: readonly string[];
+    readonly mcpConfigPaths?: readonly string[];
+    /** The profile whose pinned identity the evidence names (the profile that produced the annex). */
+    readonly executionProfileId?: string;
+    /** A Scanner publication's (baseline-vet) annex rather than inline SARIF. */
+    readonly origin?: "scanner-baseline-vet";
+  } = {},
+): T {
+  const baselineProfile =
+    options.origin === "scanner-baseline-vet"
+      ? SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1[detectorId]
+      : undefined;
+  const profile = options.executionProfileId ?? baselineProfile;
+  const identity =
+    profile !== undefined && detectorId !== "detector.skillspector"
+      ? acceptedScanAnalyzerIdentityV1(detectorId, profile)
+      : (acceptedScanAnalyzerIdentityV1(detectorId, "host-process-uv-v1") ??
+        ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.find((entry) => entry.detectorId === detectorId));
+  if (identity === undefined)
+    throw new Error(
+      `Core pins no analyzer for ${detectorId}${profile === undefined ? "" : ` under ${profile}`}`,
+    );
+  const selected =
+    options.selectedClosurePaths ??
+    buildTrustFileInventory(sourceRoot).files.map((entry) => entry.relativePath);
+  const evidence = {
+    detectorId,
+    ...scanSubjectDigestV1(
+      options.origin === "scanner-baseline-vet"
+        ? baselineVetAnnexSubjectFilesV1(detectorId, sourceRoot)
+        : scanDetectorSubjectFilesV1(detectorId, sourceRoot, {
+            selectedClosurePaths: selected,
+            ...(options.mcpConfigPaths === undefined
+              ? {}
+              : { mcpConfigPaths: options.mcpConfigPaths }),
+            sealed: () => sealedScanSubjectFilesV1(sourceRoot),
+          }),
+    ),
+    analyzer: {
+      version: observedScanAnalyzerVersionV1(identity),
+      lockSha256: identity.lockSha256,
+    },
+  };
+  const parsed: unknown = typeof log === "string" ? JSON.parse(log) : structuredClone(log);
+  const runs = asObject(parsed)?.runs;
+  for (const run of Array.isArray(runs) ? runs : []) {
+    const invocations = asObject(run)?.invocations;
+    const first = Array.isArray(invocations) ? asObject(invocations[0]) : undefined;
+    if (first === undefined) continue;
+    first.properties = {
+      ...(asObject(first.properties) ?? {}),
+      [SCAN_COMPLETION_PROPERTY_V1]: evidence,
+    };
+  }
+  return (typeof log === "string" ? JSON.stringify(parsed) : parsed) as T;
+}
+
+export interface FakeScanAdapterForTests extends ScanExecutionAdapterV1 {
+  /** Every request, exactly as Core sent it. */
+  readonly requests: Record<string, unknown>[];
+  /** Detector ids whose run the fake ended because the request's signal aborted. */
+  readonly aborted: string[];
+}
+
+/** The image Scan states for a SkillSpector run of its own pinned image. */
+export const FAKE_PINNED_SKILLSPECTOR_IMAGE = Object.freeze({
+  digest: SKILLSPECTOR_IMAGE_DIGEST,
+  reference: SKILLSPECTOR_IMAGE_DIGEST,
+  acceptance: "scan-pinned",
+});
+
+/**
+ * A SELF-COMPLETING fake Scan answering `answers[detectorId]` (see the module
+ * comment: it repairs and self-derives, so it is not for boundary tests). A
+ * detector with no answer is not declared at all, so Core never sees a
+ * capability the fake cannot honour.
+ */
+export function createSelfCompletingFakeScanAdapterForTests(
+  answers: Readonly<Record<string, FakeScanAnswerV1>>,
+  options: { readonly profiles?: Readonly<Record<string, readonly FakeProfile[]>> } = {},
+): FakeScanAdapterForTests {
+  return fakeScanAdapter(answers, { ...options, complete: true });
+}
+
+/**
+ * A fake Scan that returns every SARIF answer BYTE FOR BYTE as the test wrote
+ * it: no driver, invocation or completion evidence is added and nothing is
+ * repaired. For completion-boundary tests, whose evidence comes from
+ * independent vectors, never from Core's own subject code.
+ */
+export function createVerbatimFakeScanAdapterForTests(
+  answers: Readonly<Record<string, FakeScanAnswerV1>>,
+  options: { readonly profiles?: Readonly<Record<string, readonly FakeProfile[]>> } = {},
+): FakeScanAdapterForTests {
+  return fakeScanAdapter(answers, { ...options, complete: false });
+}
+
+function fakeScanAdapter(
+  answers: Readonly<Record<string, FakeScanAnswerV1>>,
+  options: {
+    readonly profiles?: Readonly<Record<string, readonly FakeProfile[]>>;
+    readonly complete: boolean;
+  },
+): FakeScanAdapterForTests {
+  const requests: Record<string, unknown>[] = [];
+  const aborted: string[] = [];
+  const capabilities = Object.keys(answers).map((id) => fakeCapability(id, options.profiles?.[id]));
+  return {
+    requests,
+    aborted,
+    listDetectorCapabilitiesV1: () => capabilities,
+    async runDetectorV1(request) {
+      const record = request as Record<string, unknown>;
+      requests.push(record);
+      const detectorId = String(record.detectorId);
+      const capability = capabilities.find((entry) => entry.detectorId === detectorId);
+      const answer = answers[detectorId];
+      if (capability === undefined || answer === undefined)
+        return {
+          outcome: "refused",
+          reason: "unknown-detector",
+          detail: `fake has no ${detectorId}`,
+        };
+      const profile = capability.executionProfiles.find(
+        (entry) => entry.id === record.executionProfileId,
+      );
+      if (profile === undefined)
+        return {
+          outcome: "refused",
+          reason: "execution-profile-unavailable",
+          detail: `fake ${detectorId} has no profile ${String(record.executionProfileId)}`,
+          capability,
+        };
+      const signal = record.signal as AbortSignal | undefined;
+      const failed = (stage: string, detail: string) => ({
+        outcome: "failed",
+        failure: { stage, detail },
+        capability,
+        executionProfile: profile,
+        prerequisites: [],
+        seams: { runner: "scan-owned-default", prerequisiteProbe: "scan-owned-default" },
+        producer: { name: "@aihq/scan", version: "0.5.0-test-fake" },
+        coverage: { kind: "source-tree", complete: true },
+      });
+      if (signal?.aborted === true) {
+        aborted.push(detectorId);
+        return failed("execution", "cancelled before the analyzer started");
+      }
+      if (answer.kind === "block-until-aborted") {
+        if (signal === undefined) return failed("execution", "fake needs a signal to block on");
+        await new Promise<void>((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        );
+        aborted.push(detectorId);
+        return failed("execution", "cancelled: the analyzer process tree was killed");
+      }
+      if (answer.kind === "refused")
+        return { outcome: "refused", reason: answer.reason, detail: answer.detail, capability };
+      if (answer.kind === "failed") return failed(answer.stage, answer.detail);
+      const given = answer.kind === "sarif-for" ? answer.sarif(record) : answer.sarif;
+      const ran = (answer.kind === "sarif" ? answer.executionProfileId : undefined) ?? profile.id;
+      const accepted = acceptedScanAnalyzerIdentityV1(detectorId, ran);
+      const analyzerVersion =
+        (answer.kind === "sarif" ? answer.observedAnalyzerVersion : undefined) ??
+        (accepted === undefined ? "fake" : observedScanAnalyzerVersionV1(accepted));
+      const lock = asObject((profile as Record<string, unknown>).analyzerLock)?.sha256;
+      const text =
+        !options.complete || (answer.kind === "sarif" && answer.verbatim === true)
+          ? given
+          : withSelfDerivedFakeScanCompletion(
+              given,
+              detectorId,
+              selfDerivedFakeScanCompletionEvidence(detectorId, record, {
+                version: analyzerVersion,
+                lockSha256: typeof lock === "string" ? lock : null,
+              }),
+            );
+      const bytes = Buffer.from(text, "utf8");
+      const image =
+        "image" in answer
+          ? answer.image
+          : detectorId === "detector.skillspector"
+            ? FAKE_PINNED_SKILLSPECTOR_IMAGE
+            : undefined;
+      return {
+        outcome: "succeeded",
+        capability,
+        executionProfile: { ...profile, id: ran },
+        prerequisites: [],
+        seams: { runner: "scan-owned-default", prerequisiteProbe: "scan-owned-default" },
+        producer: { name: "@aihq/scan", version: "0.5.0-test-fake" },
+        evidence: {
+          kind: "baseline-analyzer-observation-v1",
+          observation: {
+            protocol: "BaselineAnalyzerObservationV1",
+            analyzer: detectorId.replace(/^detector\./, ""),
+            analyzerVersion,
+            ...(image === undefined ? {} : { image }),
+            mediaType: "application/sarif+json",
+            annex: {
+              path: `annex/${detectorId}.json`,
+              sha256: sha256(bytes),
+              byteLength: bytes.byteLength,
+            },
+            bytes,
+          },
+        },
+        findings: { protocol: "ScanFindingsV1", findings: [], gaps: [] },
+        coverage: { kind: "source-tree", complete: true },
+        sourceSeal: { before: {}, after: {} },
+      };
+    },
+  };
+}

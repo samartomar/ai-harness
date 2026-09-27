@@ -12,6 +12,19 @@ function timestamp(value: string): number {
   return parsed;
 }
 
+/**
+ * The one spelling evidence timestamps take, exactly what the producers emit:
+ * `YYYY-MM-DDTHH:MM:SSZ` or `YYYY-MM-DDTHH:MM:SS.sssZ`, naming a real instant.
+ */
+export function isExactUtcTimestampV1(value: string): boolean {
+  try {
+    timestamp(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The original date owns the clock. Re-verification cannot extend signed expiry. */
 export function evidenceExpiryV1(originalDate: string, signedExpiry?: string): string {
   const original = timestamp(originalDate);

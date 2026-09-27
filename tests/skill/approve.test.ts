@@ -2,15 +2,22 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { EVIDENCE_DIR, skillApproveCommand, skillCardCommand } from "../../src/skill/approve.js";
-import { readSkillCard, type SkillCard } from "../../src/skill/card.js";
+import { buildCard, readSkillCard, type SkillCard } from "../../src/skill/card.js";
 import type { SkillsLock } from "../../src/skill/lockfile.js";
 import { type SkillVetEvidence, skillVetCommand } from "../../src/skill/vet.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
 
 const PIN = "a".repeat(40);
 const EVIDENCE_REL = `${EVIDENCE_DIR}/owner-repo-${PIN.slice(0, 8)}.json`;
@@ -127,7 +134,7 @@ describe("skillApproveCommand", () => {
     expect(result.report?.ok).toBe(true);
     const card = readJson<SkillCard>(CARD_REL);
     expect(card).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       name: "clean",
       source: `owner/repo@${PIN}`,
       commit: PIN,
@@ -147,7 +154,7 @@ describe("skillApproveCommand", () => {
     expect(card.firstParty).toBeUndefined(); // a GitHub source is not first-party
 
     const lock = readJson<SkillsLock>("aih-skills.lock.json");
-    expect(lock.schemaVersion).toBe(1);
+    expect(lock.schemaVersion).toBe(2);
     expect(lock.skills).toHaveLength(1);
     expect(lock.skills[0]).toMatchObject({
       name: "clean",
@@ -212,22 +219,38 @@ describe("skillApproveCommand", () => {
     expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.verdict).toBe("YELLOW");
   });
 
-  it("refuses a RED verdict as blocked", () => {
+  it("records a RED verdict and its reasons, and approves", async () => {
     writeEvidence(
       evidence({
         verdict: "RED",
         reasons: ["proven-dangerous finding trust.prompt-injection: exfil prompt"],
       }),
     );
+    const c = ctx(approveOptions(), true);
 
-    expect(() => skillApproveCommand.plan(ctx(approveOptions()))).toThrow(
-      /RED — blocked[\s\S]*trust\.prompt-injection/,
-    );
+    const result = await executePlan(await skillApproveCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const card = readJson<SkillCard>(CARD_REL);
+    expect(card.riskClass).toBe("red");
+    expect(card.approval?.verdict).toBe("RED");
+    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.verdict).toBe("RED");
+    const summary = JSON.stringify(result);
+    expect(summary).toContain("Verdict: RED → riskClass red");
+    expect(summary).toContain("proven-dangerous finding trust.prompt-injection: exfil prompt");
   });
 
-  it("refuses an UNKNOWN verdict and names the evidence gaps", () => {
+  it("records an UNKNOWN verdict with its evidence gaps and an undetermined license, and approves", async () => {
     writeEvidence(
       evidence({
+        checks: [
+          {
+            name: "skill license",
+            verdict: "fail",
+            code: "trust.license-missing",
+            detail: "no LICENSE file at the source root",
+          },
+        ],
         verdict: "UNKNOWN",
         reasons: [
           "source was not fetched; scan evidence is insufficient",
@@ -235,10 +258,18 @@ describe("skillApproveCommand", () => {
         ],
       }),
     );
+    const c = ctx(approveOptions(), true);
 
-    expect(() => skillApproveCommand.plan(ctx(approveOptions()))).toThrow(
-      /UNKNOWN — evidence insufficient[\s\S]*source was not fetched[\s\S]*no license was found/,
-    );
+    const result = await executePlan(await skillApproveCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const card = readJson<SkillCard>(CARD_REL);
+    expect(card.riskClass).toBe("unknown");
+    expect(card.license).toBe("not determined");
+    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.verdict).toBe("UNKNOWN");
+    const summary = JSON.stringify(result);
+    expect(summary).toContain("source was not fetched; scan evidence is insufficient");
+    expect(summary).toContain("license recorded: not determined");
   });
 
   it("refuses when no evidence artifact exists, pointing at skill vet --apply", () => {
@@ -834,7 +865,7 @@ describe("skillCardCommand", () => {
     expect(() => skillCardCommand.plan(ctx({ source: "owner/repo" }))).toThrow(/--pin <full-sha>/);
   });
 
-  it("refuses evidence whose license is missing", () => {
+  it("records an undetermined license instead of refusing the card", async () => {
     writeEvidence(
       evidence({
         checks: [
@@ -850,9 +881,13 @@ describe("skillCardCommand", () => {
       }),
     );
 
-    expect(() => skillCardCommand.plan(ctx({ source: "owner/repo", pin: PIN }))).toThrow(
-      /no license recorded/,
-    );
+    const c = ctx({ source: "owner/repo", pin: PIN }, true);
+    const result = await executePlan(await skillCardCommand.plan(c), c);
+    expect(result.report?.ok).toBe(true);
+    expect(readJson<SkillCard>(CARD_REL)).toMatchObject({
+      license: "not determined",
+      riskClass: "yellow",
+    });
   });
 });
 
@@ -866,5 +901,48 @@ describe("readSkillCard", () => {
     expect(readSkillCard(workspace, "ai-coding", "missing")).toBeUndefined();
     write("ai-coding/skill-cards/broken.json", "{ nope");
     expect(readSkillCard(workspace, "ai-coding", "broken")).toBeUndefined();
+  });
+});
+
+describe("skill card schema versions (D50 upgrade)", () => {
+  // A 0.6.2-era card: version 1, whose risk class could only be green or yellow.
+  const v1Card = {
+    schemaVersion: 1,
+    name: "legacy",
+    source: `owner/repo@${"a".repeat(40)}`,
+    commit: "a".repeat(40),
+    license: "MIT License",
+    installScope: "repo",
+    riskClass: "yellow",
+    requiresMcp: false,
+    requiresShell: false,
+    scanEvidence: [".aih/skill-reports/legacy.json"],
+    approval: { verdict: "YELLOW" as const, approvedBy: "docs-platform", approvedAt: "2026-07-01" },
+  };
+
+  it("still loads a 0.6.2-era version-1 card and writes new cards as version 2", () => {
+    write("ai-coding/skill-cards/legacy.json", JSON.stringify(v1Card));
+    expect(readSkillCard(workspace, "ai-coding", "legacy")).toMatchObject({
+      schemaVersion: 1,
+      riskClass: "yellow",
+    });
+    expect(
+      buildCard({ ...v1Card, riskClass: "red", scanEvidence: v1Card.scanEvidence }),
+    ).toMatchObject({ schemaVersion: 2, riskClass: "red" });
+  });
+
+  it("refuses a version-1 card carrying a value outside version 1's value set", () => {
+    for (const card of [
+      { ...v1Card, riskClass: "red" },
+      { ...v1Card, approval: { ...v1Card.approval, verdict: "UNKNOWN" } },
+    ]) {
+      write("ai-coding/skill-cards/legacy.json", JSON.stringify(card));
+      expect(readSkillCard(workspace, "ai-coding", "legacy")).toBeUndefined();
+    }
+    write(
+      "ai-coding/skill-cards/legacy.json",
+      JSON.stringify({ ...v1Card, schemaVersion: 2, riskClass: "unknown" }),
+    );
+    expect(readSkillCard(workspace, "ai-coding", "legacy")?.riskClass).toBe("unknown");
   });
 });

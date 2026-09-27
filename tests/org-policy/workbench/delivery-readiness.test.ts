@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { prepareWorkbenchEvidenceCompositionsForReleaseV1 } from "../../../src/org-policy/workbench/core/evidence-compositions.js";
 import { inspectWorkbenchEvidenceCoverageV1 } from "../../../src/org-policy/workbench/delivery-readiness.js";
-import { prepareWorkbenchEvidenceCompositionsForReleaseV1 } from "../../../src/org-policy/workbench/providers/evidence-compositions.js";
-import { tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 
 describe("Workbench release evidence coverage", () => {
   it("requires an exact current report for every bundled asset, including new providers", () => {
-    const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+    const bundle = structuredClone(tinyBackendCatalogFixture().workbenchBundle);
     bundle.evidence = {};
     const now = "2026-09-07T00:00:00Z";
     const initial = inspectWorkbenchEvidenceCoverageV1(bundle, now);
@@ -16,7 +16,7 @@ describe("Workbench release evidence coverage", () => {
       const id = `evidence:${asset.id}`;
       bundle.evidence[id] = {
         id,
-        projectionVersion: "evidence-summary/v1",
+        projectionVersion: "evidence-summary/v2",
         subjects: [
           {
             assetId: asset.id,
@@ -33,14 +33,15 @@ describe("Workbench release evidence coverage", () => {
           validUntil: "2026-09-08T00:00:00Z",
           contextDigest: `sha256:${"b".repeat(64)}`,
         },
-        scan: { outcome: "failed", coverage: "complete" },
+        scan: { outcome: "has-findings", coverage: "complete" },
         qualification: { state: "unqualified" },
         findings: ["A real concern must remain visible; it is not missing scan coverage."],
+        evidenceProblems: [],
       };
     }
     const complete = inspectWorkbenchEvidenceCoverageV1(bundle, now);
     expect(complete.ready).toBe(true);
-    expect(complete.assets.every((asset) => asset.reportedOutcome === "failed")).toBe(true);
+    expect(complete.assets.every((asset) => asset.reportedOutcome === "has-findings")).toBe(true);
     const report = Object.values(bundle.evidence)[0];
     if (report === undefined) throw new Error("expected fixture evidence");
     const verified = report.verification;
@@ -68,7 +69,7 @@ describe("Workbench release evidence coverage", () => {
     expect(inspectWorkbenchEvidenceCoverageV1(bundle, now).assets[0]?.problem).toBe(
       "outcome-unknown",
     );
-    report.scan.outcome = "failed";
+    report.scan.outcome = "has-findings";
     bundle.evidence.duplicate = { ...report, id: "duplicate" };
     expect(inspectWorkbenchEvidenceCoverageV1(bundle, now).assets[0]?.problem).toBe(
       "report-ambiguous",
@@ -103,7 +104,7 @@ function currentVerifiedReport(asset: {
 }) {
   return {
     id: `evidence:${asset.id}`,
-    projectionVersion: "evidence-summary/v1" as const,
+    projectionVersion: "evidence-summary/v2" as const,
     subjects: [
       {
         assetId: asset.id,
@@ -120,14 +121,15 @@ function currentVerifiedReport(asset: {
       validUntil: "2026-09-08T00:00:00Z",
       contextDigest: `sha256:${"b".repeat(64)}`,
     },
-    scan: { outcome: "pass" as const, coverage: "complete" as const },
+    scan: { outcome: "no-findings" as const, coverage: "complete" as const },
     qualification: { state: "unknown" as const },
     findings: [],
+    evidenceProblems: [],
   };
 }
 
 function fullyReportedCompositionFixture() {
-  const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+  const bundle = structuredClone(tinyBackendCatalogFixture().workbenchBundle);
   const asset = Object.values(bundle.assets)[0];
   const source = Object.values(bundle.sources)[0];
   if (!asset || !source) throw new Error("Missing composition fixture seed");
@@ -136,7 +138,7 @@ function fullyReportedCompositionFixture() {
   bundle.templates = {};
   bundle.groups = {};
   bundle.relations = [];
-  for (const provider of ["ecc", "superpowers", "ponytail"]) {
+  for (const provider of ["ecc", "superpowers"]) {
     const sourceId = `source:${provider}`;
     const profileId = `${provider}/profile:methodology`;
     const skillId = `${provider}/skill:${provider}`;
@@ -192,10 +194,6 @@ describe("Core-derived methodology composition evidence", () => {
           assetId: "superpowers/profile:methodology",
           problem: "composition-missing",
         }),
-        expect.objectContaining({
-          assetId: "ponytail/profile:methodology",
-          problem: "composition-missing",
-        }),
       ]),
     );
     expect(
@@ -221,24 +219,24 @@ describe("Core-derived methodology composition evidence", () => {
     const releaseCompositions = prepareWorkbenchEvidenceCompositionsForReleaseV1(bundle);
     const now = "2026-09-07T00:00:00Z";
     const constituent = Object.values(bundle.assets).find(
-      (asset) => asset.sourceId === "source:ponytail" && asset.derivation === "upstream",
+      (asset) => asset.sourceId === "source:superpowers" && asset.derivation === "upstream",
     );
-    if (constituent === undefined) throw new Error("expected Ponytail constituent");
+    if (constituent === undefined) throw new Error("expected Superpowers constituent");
     const report = bundle.evidence[`evidence:${constituent.id}`];
-    if (report === undefined) throw new Error("expected Ponytail evidence");
-    report.scan.outcome = "failed";
+    if (report === undefined) throw new Error("expected Superpowers evidence");
+    report.scan.outcome = "has-findings";
 
     const composed = inspectWorkbenchEvidenceCoverageV1(bundle, now, releaseCompositions);
     expect(
-      composed.assets.find((asset) => asset.assetId === "ponytail/profile:methodology")?.problem,
+      composed.assets.find((asset) => asset.assetId === "superpowers/profile:methodology")?.problem,
     ).toBeUndefined();
     expect(composed.assets.find((asset) => asset.assetId === constituent.id)?.reportedOutcome).toBe(
-      "failed",
+      "has-findings",
     );
 
     const withoutCompositions = inspectWorkbenchEvidenceCoverageV1(bundle, now);
     const missing = withoutCompositions.assets.find(
-      (asset) => asset.assetId === "ponytail/profile:methodology",
+      (asset) => asset.assetId === "superpowers/profile:methodology",
     );
     expect(missing?.problem).toBe("composition-missing");
     expect(missing?.reportedOutcome).toBeUndefined();
@@ -247,14 +245,14 @@ describe("Core-derived methodology composition evidence", () => {
   it("fails closed for invalid composition material, including cyclic relationships", () => {
     const bundle = fullyReportedCompositionFixture();
     bundle.relations.push({
-      fromAssetId: "ponytail/skill:ponytail",
-      toAssetId: "ponytail/profile:methodology",
+      fromAssetId: "superpowers/skill:superpowers",
+      toAssetId: "superpowers/profile:methodology",
       kind: "requires",
     });
     const compositions = prepareWorkbenchEvidenceCompositionsForReleaseV1(bundle);
     expect(
       inspectWorkbenchEvidenceCoverageV1(bundle, "2026-09-07T00:00:00Z", compositions).assets.find(
-        (asset) => asset.assetId === "ponytail/profile:methodology",
+        (asset) => asset.assetId === "superpowers/profile:methodology",
       )?.problem,
     ).toBe("composition-invalid");
   });

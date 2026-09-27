@@ -208,7 +208,7 @@ describe("policy project", () => {
         expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
         "code-review-graph",
         "--package",
-        "code-review-graph==2.3.8",
+        "code-review-graph==2.3.9",
         "--dependency-lock-sha256",
         expect.stringMatching(/^[a-f0-9]{64}$/),
         "--lock-root",
@@ -733,6 +733,28 @@ describe("OrgPolicySchema", () => {
       requiredDetectors: ["skillspector", "cisco", "mcp-scanner", "semgrep", "snyk-agent-scan"],
       internalScopes: [],
     });
+  });
+
+  it("accepts npm scopes Core can normalize and rejects a malformed one at the boundary", () => {
+    expect(
+      parseOrgPolicy(policy({ trust: { internalScopes: ["@acme", " Contoso ", "@a.b_c~d-e"] } }))
+        .trust?.internalScopes,
+    ).toEqual(["@acme", " Contoso ", "@a.b_c~d-e"]);
+    for (const malformed of ["@my team", "@", "", "@acme/pkg", "-acme"]) {
+      expect(() => parseOrgPolicy(policy({ trust: { internalScopes: [malformed] } }))).toThrow(
+        "must be an npm scope such as @acme",
+      );
+    }
+  });
+
+  it("names the uv execution profile Scan runs uv-backed detectors under", () => {
+    expect(
+      parseOrgPolicy(policy({ trust: { uvExecutionProfile: "linux-namespace-uv-v1" } })).trust
+        ?.uvExecutionProfile,
+    ).toBe("linux-namespace-uv-v1");
+    expect(() =>
+      parseOrgPolicy(policy({ trust: { uvExecutionProfile: "oci-hardened-cisco-v1" } })),
+    ).toThrow();
   });
 
   it("parses reviewed SkillSpector local digest approvals", () => {

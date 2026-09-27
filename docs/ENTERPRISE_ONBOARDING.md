@@ -76,7 +76,7 @@ aih verify-release "$CORE_VERSION"
    ```
 
    Treat the trusted policy channel as either the committed `aih-org-policy.json`
-   reviewed in the repo or the Workbench-generated PolicyBundle V2 distributed at
+    reviewed in the repo or an administrator-reviewed PolicyBundle V2 distributed at
    an administrator-controlled read-only path outside the governed target. The
    administrator/MDM launcher should provide that path to each fresh terminal and
    client process; use an explicit absolute `--policy` path for a one-off invocation.
@@ -122,18 +122,16 @@ aih verify-release "$CORE_VERSION"
    `bundle.signature` finding instead of a quiet skip. For cosign, use your key or
    OIDC identity material consistently at signing and verification time.
 
-   Before an Enterprise ECC or Superpowers install, the selected policy must name
-   an exact organization-reviewed `trust.baselineOverrides[]` entry and its
-   GitHub-attested evidence bundle. This is required even when packaged publisher
-   evidence passes. A missing or stale override returns
-   `baseline.org-evidence-required` before installation. The administrator must
-   provide the bundle, signing repository, reason, reviewer and approval time for
-   the selected catalog/source/pin. If new bytes need review, vet the exact commit
-   with `aih evidence vet-baseline` and sign the resulting evidence bundle with
-   the governance repository's GitHub identity. Org evidence can authorize new
-   exact bytes; it cannot waive an exact vendor `blocked` verdict. Follow
-   [Baseline Component Evidence](security/baseline-evidence.md) for the posture
-   matrix, commands, and strict policy example.
+   ECC and Superpowers installation is developer-managed. `aih ecc` gives exact
+   guidance and `aih ecc --status` reports observed state. Baseline evidence
+   diagnostics can record the selected source, pin, findings, and organization
+   review, but scan findings do not block third-party selection or delivery.
+   For a baseline evidence review, provide the bundle, signing repository,
+   reason, reviewer, and approval time for the selected catalog/source/pin.
+   Vet new bytes with `aih evidence vet-baseline` and sign the resulting bundle
+   with the governance repository's GitHub identity. See
+   [Baseline Component Evidence](security/baseline-evidence.md) for the commands
+   and historical policy example.
 
 6. Before a PR is marked ready or merged, run and record the required review
    skills/agents: code review, security review, and the domain reviewer for the
@@ -313,11 +311,12 @@ would write for the same server. This JSON shape passes `aih policy validate`:
 ```
 
 `mcp-scanner` runs by default when an incoming source contains an MCP
-configuration. AIH invokes the exact `cisco-ai-mcp-scanner==4.8.2` committed uv
-project and lock with `--locked --isolated --offline --no-python-downloads
+configuration. `@aihq/scan` runs the exact `cisco-ai-mcp-scanner==4.8.4`
+committed uv project and lock with `--locked --isolated --offline --no-python-downloads
 --no-env-file`, passes only statically extracted tool names/descriptions, and
-uses the static mode's local `yara` analyzer; pinned 4.8.2 does not execute its
-`prompt_defense` or `readiness` analyzers in static mode. Verify the locked
+uses the static mode's local `yara` analyzer. The earlier 4.8.2 pin did not
+execute its `prompt_defense` or `readiness` analyzers in static mode; that has
+not been re-verified at 4.8.4. Verify the locked
 project once online and then offline on each managed workstation. If policy
 lists `mcp-scanner` in `requiredDetectors`, an unavailable runtime fails closed
 at enterprise posture; otherwise it remains an explicit degraded-coverage skip.

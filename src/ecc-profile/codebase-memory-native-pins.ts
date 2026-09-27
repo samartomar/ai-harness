@@ -1,4 +1,4 @@
-export const CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION = "0.10.8";
+export const CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION = "0.11.0";
 
 export type CodebaseMemoryNativePayloadTarget =
   | "darwin-x64"
@@ -18,7 +18,7 @@ function pin(sha256: string, size: number): CodebaseMemoryNativePayloadPin {
 }
 
 /**
- * Root executable identities derived from the manifest-authenticated 0.10.8
+ * Root executable identities derived from the manifest-authenticated 0.11.0
  * release archives. These authenticate the extracted launch payload, rather
  * than trusting archive validation alone.
  */
@@ -26,21 +26,21 @@ export const CODEBASE_MEMORY_NATIVE_PAYLOAD_PINS: Readonly<
   Record<CodebaseMemoryNativePayloadTarget, CodebaseMemoryNativePayloadPin>
 > = Object.freeze({
   "darwin-x64": pin(
-    "1d5b79257d91973809ee70482781db3d1a78f62fc1cd5d18a5ab0608451d16d4",
-    296_064_592,
+    "69ca71b4b62fe233677851bdf54953e2a6660cf5d687b4d64226b2591b14ed39",
+    301_399_520,
   ),
   "darwin-arm64": pin(
-    "2412e017268bef8f847f38d1b0f79f63185b38c27fe6fba637067bfc87c0eedf",
-    297_185_328,
+    "a67b7ccead5d2ca852051f8619458ab96af41393257b56fb36e523a110265d48",
+    302_755_632,
   ),
-  "linux-x64": pin("1175645cb30560e7e47d78611cd1bcb509478eaf6d4e51f72fe18327ee9c1351", 293_213_352),
+  "linux-x64": pin("ce11c141431aeadd788506c3a7e6942db8fd438dec369d0707a39ec9fd8c6510", 299_891_744),
   "linux-arm64": pin(
-    "0bf1b3cf3659f6dcdb01bb6313a93dcbcb53e2cd1a52820f024df7a0cf48f44e",
-    293_797_736,
+    "403d0fab6204e712916701936a3229dd472bad05080c757ea5177318a80fdbfe",
+    299_227_216,
   ),
-  "win32-x64": pin("b4b403b1d7c4def3785f148b93f345ce8427858f4f5489ce28580c4387a336a6", 296_140_288),
+  "win32-x64": pin("7edcd3807ebcfd85ec1968985964080f2589748da2fc3c7ce9261eebab31ff04", 301_530_624),
   "win32-arm64": pin(
-    "67b0341ee62f07f850d3954e4f387855f90ea8c6c4b7ed41b8a62d61344373a4",
-    296_138_752,
+    "5615aa31e3cdbe6155e7096c43d07e62e335fe34d28e489b4cc3ce113e81b4e6",
+    301_693_952,
   ),
 });

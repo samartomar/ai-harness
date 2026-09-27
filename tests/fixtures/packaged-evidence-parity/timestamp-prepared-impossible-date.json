@@ -1,0 +1,167 @@
+{
+  "fixture": "timestamp-prepared-impossible-date",
+  "structure": "refused",
+  "coreAdmission": "refused",
+  "record": {
+    "version": "packaged-scanner-collection-evidence/v2",
+    "authority": "display-only",
+    "catalog": {
+      "id": "aih",
+      "owner": "samartomar",
+      "repository": "ai-harness",
+      "pinnedCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sourceTreeSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "coverageDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "coverageProjectionDigest": "sha256:e9e2030d9c3d047925c574cbb38d4077c68add9b369f23e088fc3980fde85d42",
+      "source": {
+        "id": "source:fixture",
+        "revisionId": "revision:fixture",
+        "contentDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "inputFormat": "aih-catalog",
+        "upstreamOrigin": {
+          "kind": "git",
+          "locator": "https://github.com/samartomar/ai-harness"
+        }
+      }
+    },
+    "coverage": {
+      "version": "workbench-scanner-coverage/v1",
+      "authority": "none",
+      "scope": "declared-source-files",
+      "components": [
+        {
+          "componentId": "component:first",
+          "componentTreeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "paths": [
+            "catalog.json"
+          ],
+          "files": [
+            {
+              "path": "catalog.json",
+              "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          ],
+          "subject": {
+            "assetId": "asset:a",
+            "sourceId": "source:fixture",
+            "sourceRevisionId": "revision:fixture",
+            "contentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        {
+          "componentId": "component:second",
+          "componentTreeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "paths": [
+            "catalog.json"
+          ],
+          "files": [
+            {
+              "path": "catalog.json",
+              "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          ],
+          "subject": {
+            "assetId": "asset:b",
+            "sourceId": "source:fixture",
+            "sourceRevisionId": "revision:fixture",
+            "contentDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ],
+      "unmappedDerivedAssets": []
+    },
+    "report": {
+      "id": "aih",
+      "owner": "samartomar",
+      "repo": "ai-harness",
+      "pinnedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sourceTreeSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "components": [
+        {
+          "id": "component:first",
+          "paths": [
+            "catalog.json"
+          ],
+          "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "verdict": "no-findings",
+          "analyzers": [
+            {
+              "name": "scanner",
+              "version": "1"
+            }
+          ],
+          "findings": [],
+          "evidenceProblems": []
+        },
+        {
+          "id": "component:second",
+          "paths": [
+            "catalog.json"
+          ],
+          "treeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "verdict": "no-findings",
+          "analyzers": [
+            {
+              "name": "scanner",
+              "version": "1"
+            }
+          ],
+          "findings": [],
+          "evidenceProblems": []
+        }
+      ]
+    },
+    "publications": [
+      {
+        "authority": "none",
+        "repository": "samartomar/aih-scan",
+        "workflow": "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
+        "ref": "refs/heads/main",
+        "sourceCommit": "f6189c0211fe27369fb15672f00da76c2072361c",
+        "publicationSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "requestSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "receiptSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "publicationLocator": "https://github.com/samartomar/aih-scan/releases/download/baseline-v1-f6189c0211fe27369fb15672f00da76c2072361c-2222222222222222222222222222222222222222222222222222222222222222/publication.json",
+        "publishedAt": "2026-06-03T00:00:00.000Z"
+      },
+      {
+        "authority": "none",
+        "repository": "samartomar/aih-scan",
+        "workflow": "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
+        "ref": "refs/heads/main",
+        "sourceCommit": "f6189c0211fe27369fb15672f00da76c2072361c",
+        "publicationSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "requestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "receiptSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "publicationLocator": "https://github.com/samartomar/aih-scan/releases/download/baseline-v1-f6189c0211fe27369fb15672f00da76c2072361c-3333333333333333333333333333333333333333333333333333333333333333/publication.json",
+        "publishedAt": "2026-06-03T00:00:00.000Z"
+      }
+    ],
+    "observations": [
+      {
+        "componentId": "component:first",
+        "reportSignedAt": "2026-06-01T00:00:00.000Z",
+        "reportVerificationExpiresAt": "2026-06-04T00:00:00.000Z",
+        "componentTreeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requestSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "publicationSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "receiptSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "reportComponentDigest": "sha256:d6298ee3bc71472f4ea84e93fcae9585963bf5f06b14fb1813dbde961b0c7e34"
+      },
+      {
+        "componentId": "component:second",
+        "reportSignedAt": "2026-06-01T00:00:00.000Z",
+        "reportVerificationExpiresAt": "2026-06-04T00:00:00.000Z",
+        "componentTreeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "requestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "publicationSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "receiptSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "reportComponentDigest": "sha256:3854321dcfa0c9427bd88f06aff7254529891668b3be6241a6267f10686816c1"
+      }
+    ],
+    "verification": {
+      "method": "gh-attestation-verify",
+      "preparedAt": "2026-06-31T00:00:00Z"
+    }
+  }
+}

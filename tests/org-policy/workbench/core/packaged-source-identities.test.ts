@@ -3,7 +3,7 @@ import { packagedWorkbenchSourceDataRecordsV1 } from "../../../../src/org-policy
 import { packagedWorkbenchSourceDataInputV1 } from "../../../../src/org-policy/workbench/core/packaged-source-data-data.js";
 import identities from "../../../fixtures/workbench-initial-source-identities.json";
 
-it("preserves initial source identities so compatible Core releases do not replace saved policy material", () => {
+it("preserves retained source identities across compatible Core releases", () => {
   const actual = packagedWorkbenchSourceDataRecordsV1()
     .map((record) => {
       const source = Object.values(record.sourceBundle.sources)[0];
@@ -18,7 +18,9 @@ it("preserves initial source identities so compatible Core releases do not repla
     })
     .sort((a, b) => a.id.localeCompare(b.id));
   expect(identities.compatibility).toBe("core-workbench-data/v1");
-  expect(actual).toEqual(identities.identities);
+  const retainedIds = new Set(identities.identities.map((source) => source.id));
+  expect(actual.filter((source) => retainedIds.has(source.id))).toEqual(identities.identities);
+  expect(actual.map((source) => source.id)).not.toContain("source:ponytail");
 });
 
 it("keeps the authenticated ECC runtime descriptor within package and receipt bounds", () => {
@@ -37,12 +39,12 @@ it("keeps the authenticated ECC runtime descriptor within package and receipt bo
   };
   const descriptor = parsed.runtimeDescriptor;
   if (!descriptor) throw new Error("Missing packaged ECC runtime descriptor");
-  expect(record.sha256).toBe("85d3f1c437bf5ba719588ec2aad512b53c89e6ce7562bf491cef6eb00d6fffde");
-  expect(Buffer.byteLength(record.bytes)).toBe(8_709_096);
+  expect(record.sha256).toBe("d286c6e2dc716ad5fa615b5fd86841ef8d6b210faf2279c785fa934d41e26a51");
+  expect(Buffer.byteLength(record.bytes)).toBe(8_107_477);
   expect(Buffer.byteLength(record.bytes)).toBeLessThanOrEqual(16 * 1024 * 1024);
   expect(descriptor.sha256).toBe(
-    "sha256:158f63e265f1ca18a7e65c97e372b1259200d6fb60eab87d70c20600d9d9abf0",
+    "sha256:ca007dbe7910425ccece63e57bc74c2029a8016532c5222002cae2de90ad2f49",
   );
-  expect(Buffer.byteLength(descriptor.bytesBase64)).toBe(6_431_736);
+  expect(Buffer.byteLength(descriptor.bytesBase64)).toBe(6_047_004);
   expect(Buffer.byteLength(descriptor.bytesBase64)).toBeLessThanOrEqual(16 * 1024 * 1024);
 });

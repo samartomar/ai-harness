@@ -9,6 +9,8 @@ import {
   type PlanContext,
   plan,
 } from "../internals/plan.js";
+import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
+import { componentLabelSlotV1 } from "../trust/evidence.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
@@ -43,6 +45,8 @@ const FULL_SHA = /^[a-f0-9]{40}$/;
 
 export interface BaselineVetPlanOptions {
   vetCatalog?: typeof vetBaselineCatalog;
+  /** Test seam for the installed `@aihq/scan` the vet runs its detectors through. */
+  scanPackageImporter?: ScanPackageImporterV1;
   cleanupQuarantine?: boolean;
   profileId?: string;
 }
@@ -149,11 +153,13 @@ export async function baselineVetPlanForSource(
         const sourceRoot = await exactSourceRoot(digestCtx, source, catalog);
         const vet = options.vetCatalog ?? vetBaselineCatalog;
         const scans = new Map<string, TrustScanResult>();
-        const vetOptions = requiredBaselineVetOptions({
-          run: digestCtx.run,
+        const vetOptions = await requiredBaselineVetOptions({
           platform: digestCtx.host.platform,
           env: digestCtx.env,
           progress: (message) => process.stderr.write(`${message}\n`),
+          ...(options.scanPackageImporter === undefined
+            ? {}
+            : { importer: options.scanPackageImporter }),
         });
         vetOptions.onComponentScan = (component, scan) => scans.set(component.id, scan);
         let sourceWideScan: TrustScanResult | undefined;
@@ -161,7 +167,7 @@ export async function baselineVetPlanForSource(
           sourceWideScan = scan;
         };
         const evidence: BaselineSourceEvidence = await vet(sourceRoot, catalog, vetOptions);
-        const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [evidence] });
+        const lock = parseBaselineEvidenceLock({ schemaVersion: 2, sources: [evidence] });
         const rel = reportPath(catalog);
         writeArtifact(digestCtx, rel, `${JSON.stringify(lock, null, 2)}\n`);
         const profileId = options.profileId ?? defaultProfileId(catalog);
@@ -255,7 +261,7 @@ export async function baselineVetPlanForSource(
             occurrenceRel,
             `${JSON.stringify(
               {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 source: {
                   id: catalog.id,
                   owner: catalog.owner,
@@ -281,7 +287,7 @@ export async function baselineVetPlanForSource(
                   "auto-exec-hook: leading boolean negation expressions are not shell auto-run directives",
                   "hidden-unicode: prose typography, mathematical symbols, Chinese punctuation, emoji, and prose/comment variation selectors are not hidden-control blockers",
                 ],
-                acceptanceRecordsStillRequired: qualification.genuineReasons
+                reviewFindingsWithoutDecision: qualification.genuineReasons
                   .filter((reason) => reason.level === "REVIEW")
                   .map((reason) => ({
                     componentId: reason.componentId,
@@ -294,23 +300,42 @@ export async function baselineVetPlanForSource(
                 components: catalog.components.map((component) => {
                   const scan = scans.get(component.id);
                   const dispositions = scan?.policyDispositions ?? [];
-                  const correctedVerdict = dispositions.some(
-                    (disposition) => disposition.level === "BLOCK",
-                  )
-                    ? "BLOCK"
-                    : dispositions.some((disposition) => disposition.level === "REVIEW")
-                      ? "REVIEW"
-                      : "PASS";
+                  // Classify each code before counting, exactly as the lock does: a
+                  // failed evidence-problem code is incomplete evidence, not a finding.
+                  const slots = dispositions.map((disposition) => {
+                    const finding = scan?.normalizedFindings?.find(
+                      (entry) => entry.fingerprint === disposition.findingFingerprint,
+                    );
+                    return {
+                      code: finding?.code ?? "trust.detector-finding",
+                      slot: componentLabelSlotV1(
+                        finding?.code ?? "trust.detector-finding",
+                        finding?.checkVerdict,
+                        disposition.level,
+                      ),
+                    };
+                  });
+                  const correctedVerdict = slots.some((entry) => entry.slot === "finding")
+                    ? "has-findings"
+                    : "no-findings";
+                  const evidenceProblemCodes = [
+                    ...new Set(
+                      slots
+                        .filter((entry) => entry.slot === "evidence-problem")
+                        .map((entry) => entry.code),
+                    ),
+                  ].sort();
                   return {
                     id: component.id,
                     selected: profile.selectedComponentIds.includes(component.id),
                     inventoryStatus: profile.selectedComponentIds.includes(component.id)
                       ? "DISCOVERED / SELECTED / NOT INSTALLED"
-                      : "DISCOVERED / NOT SELECTED / NOT AUTHORIZED / NOT INSTALLED",
+                      : "DISCOVERED / NOT SELECTED / NOT INSTALLED",
                     oldVerdict:
                       previousSource?.components.find((entry) => entry.id === component.id)
                         ?.verdict ?? "not previously reported",
                     correctedVerdict,
+                    evidenceProblemCodes,
                     analyzers:
                       evidence.components.find((entry) => entry.id === component.id)?.analyzers ??
                       [],
@@ -342,9 +367,11 @@ export async function baselineVetPlanForSource(
               `source integrity: EXACT PIN VERIFIED — ${catalog.owner}/${catalog.repo}@${catalog.pinnedSha}`,
               `active profile: ${qualification.profile}`,
               `selected components: ${qualification.selectedComponents.length}/${catalog.components.length}`,
-              `component counts: pass ${qualification.componentCounts.pass}, review ${qualification.componentCounts.review}, block ${qualification.componentCounts.block}`,
+              `component counts: no findings ${qualification.componentCounts.noFindings}, has findings ${qualification.componentCounts.hasFindings}`,
               `finding counts: warn ${qualification.findingCounts.warn}, review ${qualification.findingCounts.review}, block ${qualification.findingCounts.block}`,
               `genuine reasons: ${reasons.length === 0 ? "none" : reasons.join(" | ")}`,
+              `evidence problems: ${qualification.evidenceProblems.length === 0 ? "none" : [...new Set(qualification.evidenceProblems.map((problem) => `${problem.componentId} ${problem.code}`))].join(" | ")}`,
+              `ungrouped review occurrences: ${groupedResidualReviewDecisions.find((decision) => decision.id === "ungrouped")?.occurrences.length ?? 0}`,
               `policy decision: ${qualification.policyDecision}`,
               `runtime restrictions: ${qualification.runtimeRestrictions.join("; ")}`,
               `full occurrence evidence: ${occurrenceRel}`,

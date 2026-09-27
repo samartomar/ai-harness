@@ -5,7 +5,7 @@ import {
   canonicalStrictJsonSha256V1,
 } from "../../../../src/contract/strict-json-v1.js";
 import type { PreparedWorkbenchCatalogV1 } from "../../../../src/org-policy/workbench/prepared-catalog.js";
-import { tinyStudioModel } from "../../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../../backend-catalog-fixture.js";
 
 const fixture = vi.hoisted(() => ({
   records: [] as { bytes: string; sha256: string }[],
@@ -24,7 +24,7 @@ function seal(value: unknown) {
   };
 }
 function record() {
-  const bundle = tinyStudioModel().workbenchBundle;
+  const bundle = tinyBackendCatalogFixture().workbenchBundle;
   const source = Object.values(bundle.sources)[0];
   if (!source) throw new Error("Missing fixture source");
   source.upstreamOrigin = { kind: "git", locator: "https://github.com/example/skills" };
@@ -44,7 +44,7 @@ function record() {
   };
 }
 function frameworkRecord() {
-  const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+  const bundle = structuredClone(tinyBackendCatalogFixture().workbenchBundle);
   const revision = "a".repeat(40);
   const repository = "fixture/ecc";
   const previous = Object.values(bundle.sources)[0];
@@ -106,7 +106,7 @@ function frameworkRecord() {
 }
 function preparedBase(): PreparedWorkbenchCatalogV1 {
   return {
-    bundle: structuredClone(tinyStudioModel().workbenchBundle),
+    bundle: structuredClone(tinyBackendCatalogFixture().workbenchBundle),
     bindings: {},
     sourceInputs: {},
   } as PreparedWorkbenchCatalogV1;

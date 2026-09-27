@@ -51,11 +51,20 @@ export const sourceScopePathSchema = z
     { message: "unsafe source scope path (relative POSIX path only; no .. or absolute paths)" },
   );
 
+/**
+ * The lockfile version aih writes. Version 2 (D50) records every vet verdict as a
+ * label; version 1 (0.6.2 and earlier) could only carry GREEN or YELLOW. Readers
+ * accept both, each with its own value set, and aih rewrites a file as version 2
+ * only when it writes it.
+ */
+export const SKILLS_LOCK_SCHEMA_VERSION = 2;
+
 export const SkillLockEntrySchema = z.object({
   name: skillNameSchema,
   source: z.string().min(1),
   commit: z.string().min(1),
-  verdict: z.enum(["GREEN", "YELLOW"]),
+  /** The vet verdict the approval was recorded against: a label, never a gate. */
+  verdict: z.enum(["GREEN", "YELLOW", "RED", "UNKNOWN"]),
   pack: skillNameSchema.optional(),
   /** True when the approval is a first-party (repo-relative local) skill. */
   firstParty: z.boolean().optional(),
@@ -79,13 +88,19 @@ export const SkillLockEntrySchema = z.object({
 export type SkillLockEntry = z.infer<typeof SkillLockEntrySchema>;
 
 export interface SkillsLock {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   skills: SkillLockEntry[];
 }
 
-const SkillsLockSchema = z
-  .object({ schemaVersion: z.literal(1), skills: z.array(SkillLockEntrySchema) })
-  .strict();
+/** A version-1 entry keeps version 1's value set: a RED or UNKNOWN verdict there is malformed. */
+const SkillLockEntryV1Schema = SkillLockEntrySchema.extend({
+  verdict: z.enum(["GREEN", "YELLOW"]),
+});
+
+const SkillsLockSchema = z.discriminatedUnion("schemaVersion", [
+  z.object({ schemaVersion: z.literal(1), skills: z.array(SkillLockEntryV1Schema) }).strict(),
+  z.object({ schemaVersion: z.literal(2), skills: z.array(SkillLockEntrySchema) }).strict(),
+]);
 
 const StrictSkillLockEntrySchema = SkillLockEntrySchema.extend({
   sourceScope: z
@@ -96,10 +111,16 @@ const StrictSkillLockEntrySchema = SkillLockEntrySchema.extend({
     })
     .optional(),
 }).strict();
-const ExactSkillsLockSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  skills: z.array(StrictSkillLockEntrySchema),
-});
+export const ExactSkillsLockSchema = z.discriminatedUnion("schemaVersion", [
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    skills: z.array(StrictSkillLockEntrySchema.extend({ verdict: z.enum(["GREEN", "YELLOW"]) })),
+  }),
+  z.strictObject({
+    schemaVersion: z.literal(2),
+    skills: z.array(StrictSkillLockEntrySchema),
+  }),
+]);
 
 export const MAX_SKILLS_LOCK_BYTES = 8 * 1024 * 1024;
 
@@ -212,28 +233,31 @@ export function readSkillsLockExact(
  */
 export function readSkillsLock(root: string): SkillsLock {
   const raw = readIfExists(join(root, AIH_SKILLS_LOCK_FILE));
-  if (raw === undefined) return { schemaVersion: 1, skills: [] };
+  if (raw === undefined) return { schemaVersion: SKILLS_LOCK_SCHEMA_VERSION, skills: [] };
   try {
-    const parsed = JSON.parse(raw) as { skills?: unknown };
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; skills?: unknown };
     const skills = Array.isArray(parsed.skills) ? parsed.skills : [];
+    // Anything but version 2 is read with version 1's value set, as before D50.
+    const schemaVersion = parsed.schemaVersion === 2 ? 2 : 1;
+    const entrySchema = schemaVersion === 2 ? SkillLockEntrySchema : SkillLockEntryV1Schema;
     const seen = new Set<string>();
     return {
-      schemaVersion: 1,
+      schemaVersion,
       skills: skills.flatMap((entry) => {
-        const result = SkillLockEntrySchema.safeParse(entry);
+        const result = entrySchema.safeParse(entry);
         if (!result.success || seen.has(result.data.name)) return [];
         seen.add(result.data.name);
         return [result.data];
       }),
     };
   } catch {
-    return { schemaVersion: 1, skills: [] };
+    return { schemaVersion: SKILLS_LOCK_SCHEMA_VERSION, skills: [] };
   }
 }
 
 export function readSkillsLockStrictForWrite(root: string): SkillsLock {
   const raw = readIfExists(join(root, AIH_SKILLS_LOCK_FILE));
-  if (raw === undefined) return { schemaVersion: 1, skills: [] };
+  if (raw === undefined) return { schemaVersion: SKILLS_LOCK_SCHEMA_VERSION, skills: [] };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -266,7 +290,7 @@ export function readSkillsLockStrictForWrite(root: string): SkillsLock {
 /** Replace-or-append `entry` by skill name — immutable, name-sorted for stable committed diffs. */
 export function upsertSkillLockEntry(lock: SkillsLock, entry: SkillLockEntry): SkillsLock {
   return {
-    schemaVersion: 1,
+    schemaVersion: SKILLS_LOCK_SCHEMA_VERSION,
     skills: [...lock.skills.filter((skill) => skill.name !== entry.name), entry].sort((a, b) =>
       a.name.localeCompare(b.name),
     ),
@@ -275,5 +299,8 @@ export function upsertSkillLockEntry(lock: SkillsLock, entry: SkillLockEntry): S
 
 /** Drop the entry for `name` — immutable, sibling order preserved (the mirror of {@link upsertSkillLockEntry}). */
 export function removeSkillLockEntry(lock: SkillsLock, name: string): SkillsLock {
-  return { schemaVersion: 1, skills: lock.skills.filter((skill) => skill.name !== name) };
+  return {
+    schemaVersion: SKILLS_LOCK_SCHEMA_VERSION,
+    skills: lock.skills.filter((skill) => skill.name !== name),
+  };
 }

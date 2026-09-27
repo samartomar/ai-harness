@@ -24,6 +24,8 @@ leakage summary, then remediate it opt-in: a bare run only previews the plan; `-
 executes with a backup-manifest-first discipline (targeted key/hook removals — a shared
 settings file is never replaced); `--rollback <backupRoot>` restores a prior backup with
 per-file digest checks; `--include-unknown` widens past framework-attributed surfaces.
+ECC-attributed surfaces remain visible in the preview but are never changed, including
+with `--include-unknown`; use `aih ecc` for exact developer-managed commands.
 
 ## aih heal
 
@@ -189,29 +191,44 @@ The v3 lane stays offline and never treats `.aih/` or `~/.aih/` as authority.
 
 After its normal phases complete, `aih init` also runs the ordinary developer-tool lifecycle. A
 preview reports the effective selection without reconciling a tool. With `--apply`, it reconciles all
-seven default tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
+seven existing runtime tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
 unchanged receipt-owned integration. During apply, Token Optimizer remains `blocked` until its
-license is explicitly accepted with `--accept-token-optimizer-license`; `--token-optimizer-profile
+license is explicitly accepted with `--accept-token-optimizer-license` (PolyForm Noncommercial 1.0.0;
+since v5.13.21 upstream also permits internal use by organizations with fewer than 5 people and under
+US$20,000 monthly revenue, which aih does not assess for you); `--token-optimizer-profile
 quiet|balanced` selects its setup profile. A blocked prerequisite is reported for that tool while
-independent selected tools continue.
+independent selected tools continue. Headroom is also default-selected, but it stays
+`selected-pending` with a skipped check, with or without `--apply`, until it is explicitly activated.
+`aih init` accepts the same `--activate-headroom --accept-headroom-egress`, `--deactivate-headroom`
+and `--primary-code-graph <id>` flags as `aih developer-tools` and validates them before any phase
+runs. An activation during init projects the Headroom MCP entry in one more MCP pass that uses the
+same `--mcp-mode`; `--mcp-mode none` refuses activation because it projects no MCP servers.
+
+The Superpowers phase (the `ecc` baseline, when governance does not own the aih surfaces) keeps its
+place in the preview but runs last, through `@aihq/framework-superpowers` and the same evidence gate
+as `aih superpowers`: under `--apply` it acquires obra/Superpowers at the exact pin into quarantine and
+verifies it before emitting any guidance. Without the plugin, init reports the phase as refused with
+`framework-plugin-unavailable` (a skipped check naming the install command) and still succeeds.
 
 ## aih developer-tools
 
 Preview or reconcile the policy-selected default developer tools for one repository. Without an
 effective organization policy, the default selection is `code-review-graph`, `codebase-memory-mcp`,
-`serena`, `token-optimizer`, `context7`, `markitdown` (the CLI), and `playwright`. A valid policy can select a subset, explicitly exclude
+`serena`, `token-optimizer`, `context7`, `markitdown` (the CLI), `playwright`, and `headroom`.
+Selecting Headroom records intent only; it runs only after the explicit activation described in
+[Headroom activation](#headroom-activation-mcp-only). A valid policy can select a subset, explicitly exclude
 tools, or select none. A legacy valid policy that omits `selected` preserves the defaults, subject to
 its exclusions; `selected: []` is an explicit empty selection. A malformed selection or an invalid,
 missing, changed, revoked, or conflicting bound policy fails closed before the lifecycle runs, and
 does not fall back to defaults.
 
-The Workbench keeps these choices together in Deployment setup's Developer tool setup section.
-Their AIH and ECC catalog duplicates are omitted from the browsing list. Existing saved catalog
-entries remain available for review; browsing does not rewrite them or change their authority.
-An explicit selection saved before Playwright became a default stays unchanged until edited.
+The policy-selected choices are visible through `aih developer-tools <root>`.
+Existing saved catalog entries remain backend policy data; inspecting selection
+does not rewrite them or change their authority.
+An explicit selection saved before Playwright or Headroom became a default stays unchanged until edited.
 
 Run `aih developer-tools <root>` to inspect the selection. Add `--apply` to acquire, configure, and
-verify selected tools; excluded tools are also reconciled only to remove unchanged receipt-owned
+verify supported selected tools; Headroom remains pending unless it is explicitly activated. Excluded tools are also reconciled only to remove unchanged receipt-owned
 integration. `aih init` already invokes this lifecycle after its ordinary setup, so the standalone
 command is useful for inspection or a later focused reconciliation. During apply, if Token Optimizer
 is selected, pass `--accept-token-optimizer-license`; otherwise its lifecycle result is `blocked`.
@@ -224,13 +241,130 @@ assume another client. When policy marks Token Optimizer unselected, its receipt
 runs and removes only unchanged owned integration when present.
 
 For standalone `aih developer-tools --json`, the normal plan result also includes top-level
-`accepted`, `selection` (`source`, `selected`, `excluded`, and `diagnostics`), `tools` (`id`,
-`state`, `detail`, and `changed`), and `changed`. With `aih init --json`, the same lifecycle data is
-in the digest whose `describe` value is `Developer tool lifecycle`; its `data` contains `accepted`,
-`selection`, and `tools`, while `report.checks` records selected-tool outcomes. Tool states are
-`selected-pending`, `installed`, `configured`, `verified`, `policy-excluded`, and `blocked`.
+`accepted`, `selection` (`source`, `selected`, `excluded`, `diagnostics`, and `primaryCodeGraph`
+when the policy sets one), `tools` (`id`, `state`, `detail`, and `changed`), `primaryCodeGraph`
+(`id` and `source`, when a primary is chosen), and `changed`. With `aih init --json`, the same
+lifecycle data is in the digest whose `describe` value is `Developer tool lifecycle`; its `data`
+contains `accepted`, `selection`, `tools` and `primaryCodeGraph`, while `report.checks` records
+selected-tool outcomes. Tool states are `selected-pending`, `installed`, `configured`, `verified`,
+`policy-excluded`, and `blocked`. A selected Headroom that is not activated is `selected-pending`
+and its verification check is `skip`, not `pass` or `fail`; this is not evidence of installation or
+readiness. A V3 policy that explicitly selects or excludes Headroom, or sets
+`developerTools.primaryCodeGraph`, requires `minimumCoreVersion: "0.7.0"`. Existing V3 policies with
+the `0.6.0` floor and neither reference remain accepted.
 
-MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.7 with the PDF,
+### Headroom activation (MCP-only)
+
+Headroom 0.38.0 (`headroom-ai[mcp]`, Apache-2.0, source tag `v0.38.0`) is integrated in one mode
+only: its MCP server, `headroom mcp serve` over stdio, exposing `headroom_compress`,
+`headroom_retrieve` and `headroom_stats`. Headroom's proxy, `wrap`, `deploy`, `mcp install` and
+`learn --apply` modes are out of scope: they route provider traffic, install Serena, or edit
+user-scope configuration, and AIH never runs them.
+
+Selection and activation are separate. Default or policy selection only records intent; no run ever
+installs, downloads, registers or starts Headroom without these explicit flags:
+
+- `--activate-headroom --accept-headroom-egress --apply` activates. `--activate-headroom` without
+  `--accept-headroom-egress` is refused before anything runs, and so is `--accept-headroom-egress`
+  on its own. Without `--apply` the request is only previewed.
+- Activation runs `uv sync --locked --no-build --compile-bytecode --no-config` for the committed,
+  hash-pinned lock in `src/tools/headroom-runtime/` into AIH-owned state, pre-provisions the two
+  tokenizer vocabularies (below), writes an activation receipt, and proves a real MCP handshake
+  through the generated launcher: `initialize`, a `tools/list` that is exactly the three tools, and
+  a `headroom_stats` call. If the handshake fails the receipt is rolled back, so no host entry is
+  written for an unverified runtime.
+- The generated `headroom` MCP entry is then projected into every selected host through the normal
+  MCP projection (`.mcp.json`, the AIH-managed block of `.codex/config.toml`, and the other native
+  hosts). Its launcher runs `node <core>/dist/ecc-runtime.js headroom ...`, which refuses to start
+  without a current activation receipt for this worktree.
+- The receipt (`activation.json` in the Headroom state root) records both consent flags and the UTC
+  consent time, the package, source commit and platform wheel hash, the pyproject, `uv.lock` and
+  aggregate dependency-lock digests, the vocabulary hashes, the network switches, the hosts, and
+  the exact generated launcher with its digest.
+- Later ordinary `--apply` runs re-verify the handshake offline and never download. A failed check
+  is `blocked`; the activation is kept.
+- `--deactivate-headroom --apply` removes the AIH-owned Headroom MCP entries from every host the
+  activation receipt recorded, even when this run's `--cli` names fewer hosts (only entries
+  byte-identical to the recorded launcher; a user-edited JSON entry is left alone as yours), then
+  the whole Headroom state root including the runtime, caches and receipt. User-authored
+  configuration is not touched.
+- If a recorded host cannot be cleaned (for example a `headroom` table you edited inside AIH's
+  managed block in `~/.codex/config.toml`), deactivation stops before deleting anything: Headroom is
+  reported `blocked`, the runtime and receipt are kept, and the receipt records which host and why.
+  Until you delete or restore that table (or move it outside the managed block) and rerun
+  `--deactivate-headroom`, no run re-registers Headroom or reports it active.
+- An organization policy may exclude Headroom (`developerTools.excluded`, or MCP controls such as
+  `mcp.disabledServers`); activation is then refused and an existing activation is removed on the
+  next `--apply` in the same way. A policy cannot activate Headroom: the policy schema has no
+  activation field. Activation is also refused when governance owns AIH MCP projection.
+
+Activation needs `uv` and an installed CPython 3.11–3.14 (`--no-python-downloads`). The locked
+closure has prebuilt wheels for Windows x64, Linux x64 and arm64 (glibc 2.28 or newer), and macOS
+arm64 only; on other platforms (including Intel macOS and Windows arm64) activation reports
+`blocked` without downloading anything. On Windows without long-path support, keep
+`LOCALAPPDATA` short: the deepest runtime path adds about 160 characters to the state root.
+
+### Headroom privacy and egress
+
+What leaves the machine, and when:
+
+- **Activation only, with consent:** the pinned wheels from `pypi.org` and `files.pythonhosted.org`
+  (every artifact is hash-checked against `uv.lock`), and the tiktoken `o200k_base` and
+  `cl100k_base` vocabularies from `openaipublic.blob.core.windows.net` (tiktoken checks their
+  published SHA-256 and AIH checks it again). Proxy and CA settings (`HTTPS_PROXY`,
+  `SSL_CERT_FILE`, and similar) are honoured for this step only.
+- **At run time, nothing by design.** The launcher starts Headroom offline (`uv run --offline
+  --frozen`) with a credential-free environment (no API keys, proxy variables or
+  `HEADROOM_PROXY_URL` are passed) and these switches: `HEADROOM_BEACON=off` and `DO_NOT_TRACK=1`
+  (upstream's anonymous usage beacon to Headroom Labs is on by default; upstream documents it as
+  compression counters, provider and model ids, OS and architecture), `HEADROOM_UPDATE_CHECK=off`
+  (daily PyPI version check), `HEADROOM_OFFLINE=1` (upstream's master switch, which also disables
+  its license/usage reporter and model downloads), `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`,
+  `LITELLM_LOCAL_MODEL_COST_MAP=True` (LiteLLM otherwise downloads its model price map from GitHub
+  on import), and `LITELLM_MODE=PRODUCTION` (LiteLLM otherwise loads a `.env` file found above its
+  install directory). These are environment switches, not an operating-system network sandbox.
+- **Loopback only:** `headroom_retrieve` and `headroom_stats` also ask a local Headroom proxy at
+  `http://127.0.0.1:8787` (upstream default) for content it compressed. AIH does not install or start
+  that proxy; when nothing listens the tools report it as unreachable.
+
+What is cached locally: everything lives under one AIH-owned root, `<state>/aih/d/p/<project-key>/h`
+on Windows (`%LOCALAPPDATA%`) or `<state>/aih/developer-tools/projects/<project-key>/headroom`
+elsewhere (`$XDG_STATE_HOME`, default `~/.local/state`): the runtime environment (`e`), its uv
+cache (`u`), Headroom's workspace (`w`, `HEADROOM_WORKSPACE_DIR`: the compression store keeps the
+original, uncompressed content for retrieval, plus session statistics and savings events), the
+tokenizer cache (`t`), a Hugging Face home (`f`) and the receipt. Deactivation removes all of it.
+
+Model and ONNX downloads: the MCP extra does not install ONNX Runtime, Transformers or PyTorch, so
+upstream's ONNX Runtime download (`cdn.pyke.io`) and Hugging Face compression models are not used in
+this mode, and the offline switches above block Hugging Face access regardless. The only run-time
+assets are the two tokenizer vocabularies. To pre-provision them on a host that cannot reach
+`openaipublic.blob.core.windows.net`, create the `t` directory under the Headroom state root before
+activating and place the files there under tiktoken's cache names:
+`fb374d419588a4632f3f557e76b4b70aebbca790` (`o200k_base`, SHA-256
+`446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d`) and
+`9b5ad71b2ce5302211f9c61530b329a4922fc6a4` (`cl100k_base`, SHA-256
+`223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`); activation then reuses them.
+PyPI access (directly or through a proxy) is still required to install the locked wheels.
+
+### Primary code graph
+
+Both code-graph tools stay available; the primary is the one agents ask first when a code-graph
+question fits either. The rule: a policy `developerTools.primaryCodeGraph`
+(`code-review-graph` or `codebase-memory-mcp`) binds, and a different `--primary-code-graph` is
+refused; a policy that omits the field leaves the choice to the user, whose
+`--primary-code-graph <id>` (on `aih developer-tools` or `aih init`) applies and is remembered. With
+no choice at all there is no primary and routing stays task-based. Naming a primary the effective
+policy excludes (or does not select) is an error.
+
+On `--apply`, the effective primary and its source (`policy` or `user`) are recorded in the
+developer-tools receipt. `aih bootstrap-ai` and `aih init` add one routing note naming the primary
+to `rules/agent-behavior-core.md`; the shared bootloader block is unchanged. In a shared repository,
+set the policy field so every user's generated guidance agrees. `aih doctor`'s large-repo graph
+readiness follows the primary: with Codebase Memory as primary it checks the exact generated
+registration and makes real MCP calls through it (`list_projects`, `index_status`, indexing an
+unindexed project locally once), and it never downloads the native payload.
+
+MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.8 with the PDF,
 Word, PowerPoint, Excel and Outlook converters into an external runtime keyed by its dependency
 lock using an existing Python 3.10–3.13 interpreter, verifies an actual conversion, and reports the installed CLI command. It does not change
 global PATH or replace a user-installed CLI. Azure services, YouTube and audio-transcription extras
@@ -238,20 +372,25 @@ are not installed by default. Add `markitdown` to `developerTools.excluded` to o
 and worktree changes preserve the policy choice.
 
 MarkItDown MCP is a separate optional integration. Add `markitdown-mcp` to `mcp.allowedServers`
-to select the pinned official adapter (0.0.1a7 with converter 0.1.7); `mcp.disabledServers` overrides
+to select the pinned official adapter (0.0.1a7 with converter 0.1.8); `mcp.disabledServers` overrides
 that selection. This adapter can access user-selected files and URLs with the current user's
 permissions, and its first launch acquires its dependencies. Selecting the default CLI does not
 enable the MCP adapter. GitHub MCP also requires an explicit choice through `mcp.allowedServers`,
 a configured policy GitHub host, `--github-auth token`, or `--self-host`; it is absent from an
 unconfigured project's default MCP set.
 
-Playwright MCP uses the pinned `@playwright/mcp@0.0.81` runtime. It is selected by default for
+Playwright MCP uses the pinned `@playwright/mcp@0.0.82` runtime. It is selected by default for
 all project types. Add `playwright` to `developerTools.excluded` to opt out; an explicit subset or
 empty selection also omits it. MCP policy restrictions still apply. Its browser can access websites
 with the current user's permissions; a local MCP process does not confine browser network access.
 The generated launcher uses a headless, isolated browser session. Setup checks the MCP connection
 and a browser operation on a blank page before reporting the tool as verified. It requires npm
 alongside the current Node runtime and a browser supported by that Playwright release.
+
+Governed policy treats Playwright differently. It is not yet an AIH control because AIH has no
+current protected Scanner evidence record for its runtime. In the Workbench and the Catalog it is
+listed and selectable, and selecting it records a request with that reason. Ordinary setup, as
+described above, is unaffected.
 
 On `--apply`, each selected tool checks its own prerequisites. Code Review Graph, Serena and MarkItDown require
 an external `uv`; Token Optimizer requires external Python, Git, and curl. Codebase Memory selects a
@@ -349,29 +488,8 @@ target refuses without `--force`. `--delete` hard-deletes to a gitignored `*.aih
 (never overwriting a prior backup) instead of archiving; `--unrunnable` also prunes a
 still-targeted CLI whose binary is absent from `PATH` (loud warning; never the default).
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
-ignored by `prune`; the digest says so and keeps the diff anchored to committed intent. When a
-dropped CLI is an ECC-supported target, prune uses the AIH registration ledger and ECC install
-state to identify its owned footprint. Without a registration ledger, it preserves unreceipted ECC
-client files and reports manual cleanup; ordinary AIH-owned adapter cleanup can still proceed.
-When Codex is dropped, prune also subtracts the recorded ECC TOML footprint from
-`~/.codex/config.toml` and the fenced ECC Codex block that `aih ecc` merges into
-`~/.codex/AGENTS.md`, leaving unrelated user config and text outside that block intact.
-
-A bare prune also reads `~/.aih/ecc/registration-ledger.json`, even when no committed CLI target
-changed. Project registrations whose roots are missing retire from the machine union; common or
-shared components and MCPs remain until their last live contributor disappears. The dry-run digest
-names retired roots, orphaned component/MCP IDs, target states, and managed destinations without
-changing bytes. Under `--apply`, prune removes only operations proven by ECC install state (plus
-aih's fenced Codex records). Copied files must match their recorded SHA-256; JSON cleanup subtracts
-only the recorded managed values. Modified files and legacy copies without a recorded digest are
-preserved, and the operation refuses with a manual-cleanup explanation. Apply re-verifies every
-planned input, prepares recovery material, performs owned removals, updates target state, and
-replaces the primary ledger last. It does not run an upstream uninstaller. Missing required target
-state, malformed or drifted state or markers, symlinks, concurrent input changes, or partial writes
-fail closed; failures during the transaction roll back its owned changes. Project-local state that
-never existed is not guessed. When a registration
-ledger predates a Codex target record, prune retains the state-file-based Codex cleanup path instead
-of treating the mere presence of a ledger as proof that Codex cleanup is coordinated.
+ignored by `prune`; the digest says so and keeps the diff anchored to committed intent.
+ECC content is developer-managed. `aih prune` leaves it in place.
 
 ## aih capability
 
@@ -407,9 +525,10 @@ aih capability package remove <package-id> [--apply] [--json]
 `remove` are also local read-only previews unless `--apply` is explicit. Preview emits no
 filesystem action, process, network request, acquisition, or component load.
 
-Apply reconciles only domain state that already exists under an authoritative receipt: GitHub skill
-bytes in the repo promotion store bound by `.aih/trust-lock.json`, ECC agent/rule files bound by the
-ECC materialization receipt, and HTTPS ECC MCP configuration bound by the explicit-add receipt.
+Apply reconciles supported aih-owned GitHub skill packs already in the repo
+promotion store and bound by `.aih/trust-lock.json`. ECC Catalog packages remain
+visible and selectable with a `developer-managed` label. Applying add, update,
+or remove for one returns a typed next route to `aih ecc`.
 Add/update publish derived intent, exact content-addressed custody, and ownership without fetching,
 loading, or executing a component. Remove is permitted only after effective policy deselects the
 package; it subtracts unchanged last-owned files, preserves shared members and unrelated domain
@@ -444,197 +563,16 @@ drift or unsafe paths revoke the claim without mutating `.kiro/settings/mcp.json
 
 ## aih ecc
 
-Register [affaan-m/ECC](https://github.com/affaan-m/ECC) for the selected CLIs. The default is the
-additive union of the locked common baseline, components detected from every registered project,
-repeatable advance declarations (`--with lang:cpp --with framework:react`), posture-selected
-security, and validated MCPs. Use `--profile full` for the full content selection.
-Unknown declarations fail closed. The ordinary native-installer path keeps Kiro and unsupported
-targets consult-only because their installers cannot materialize the scoped union safely. The
-governed lifecycle described below has a separate verified Kiro rules-and-skills adapter.
+`aih ecc [--cli <targets>] [--status]` prints pinned ECC installation
+guidance for the selected CLI. Full ECC remains developer-managed. A pin records
+provenance; an external marketplace install does not prove pinned bytes.
+`--status` reports only presence of ECC's own install-state files in inspected
+roots. Uninspected roots, process state, credentials, and server reachability
+remain unknown. aih does not install, configure, or remove ECC.
 
-Core and Full profiles do not authorize ECC hooks, executable plugins or host runtime.
-Outside policy governance, explicitly declare `--with baseline:hooks` to admit those operations.
-Governed delivery keeps upstream host runtime excluded even with that declaration; AIH retains
-its separate MCP and hook ownership boundaries. Preview, installation and reconciliation apply
-the same consent filter. Consult-only targets provide component advice and cannot authorize
-executable or runtime recommendations.
-
-When a verified upstream plan provides a hook-consent helper, AIH applies its effective
-decision before checking operation kinds. The plan, receipt and selected modules must
-agree; declined consent excludes `hooks-runtime`. Older plans without that helper retain
-their existing behavior. Claude plans that still require `update-claude-settings` are
-refused before installation because that operation's managed-hook ownership lifecycle
-is not supported. This compatibility handling does not change the qualified ECC pin.
-
-Reinstall refuses before changes when a narrower consent selection would leave previously
-installed runtime content behind. It preserves the existing files and ownership state for
-review and cleanup before retrying; reinstall does not silently withdraw that integration.
-
-The AIH-owned Claude/Codex profile has a separate, explicit lifecycle mode on the same command:
-
-```sh
-aih ecc --lifecycle install <project>
-aih ecc --lifecycle update <project> --apply
-aih ecc --lifecycle repair <project> --apply
-aih ecc --lifecycle rollback <project> --apply
-aih ecc --lifecycle uninstall <project> --apply
-```
-
-Lifecycle mode always projects the reviewed Claude and Codex surface together. It authenticates the
-exact ECC pin, the committed review receipt, every manifest, and every projected source byte before
-constructing a target plan. Dry-run is the default and may acquire the exact remote source into a
-disposable quarantine so the preview is based on real rendered bytes; it never writes the target.
-`--ecc-path <dir>` supplies an existing exact checkout to the same boundary. Lifecycle receipts live
-under `.aih/ecc-profile/` and make repeat install, repair, update, rollback, and uninstall fail closed
-on foreign or operator-modified files. Repair, rollback, and uninstall use the receipt's bounded,
-hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
-older managed installation. Legacy selection flags such as `--profile`, `--with`, and `--cli`
-cannot be combined with `--lifecycle`.
-
-In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this
-profile installer: it materializes the policy's evidence-passed component selection AIH-directly, and
-removal lives in `aih uninstall`. That governed install does read `--cli`, because which tools a
-materialization lands for is the ordinary workstation target selection — `--cli`, `--all-tools`, the
-committed `.aih-config.json` targets, else the `claude` default. At Enterprise posture, the active org policy must carry a non-empty `governance.supportedClis` allow-list; omission fails closed with the current registry ids and a paste-all remedy, never a wildcard. At Vibe posture, omission is unrestricted. A present list at either posture is the organization sanction gate and refuses any selected, detected, or marker-derived CLI outside it by name. The materialization capability gate then allows only `claude`, `codex`, `kimi`, `cursor`, `opencode`, and the single `kiro` identity; a sanctioned CLI outside that set is refused as not a governed materialization target. Four of the generic targets carry their own project root —
-`.claude/`, `.codex/`, `.cursor/`, and for Kimi `.kimi-code/`, which is where the framework's own
-Kimi adapter roots a project install. OpenCode materializes only the tool-shared project surfaces
-(`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only framework adapter is
-home-scoped and no evidenced per-tool `.opencode/` content layout exists; every other component
-refuses by name for that target rather than landing in an invented directory. Kiro materializes an
-evidence-passed selected `agent:<name>` with exact pinned Kiro mappings as the selected source
-Markdown at `.kiro/agents/<name>.md` for the IDE representation and the curated
-`.kiro/agents/<name>.json` CLI configuration. It projects a selected `skill:<name>` only as the exact pinned
-`.kiro/skills/<name>/SKILL.md` file, and `baseline:rules` only as top-level pinned
-`.kiro/steering/*.md` files. Those bytes require a separate current, unheld
-`runtime:ecc-kiro` content authorization recorded beside the selected component identity. Current
-[Kiro custom-agent documentation](https://kiro.dev/docs/custom-agents/) (verified 2026-08-13)
-describes JSON and Markdown agent configurations loaded from `.kiro/agents/` by IDE 1.x and CLI
-3.x. AIH projects both exact ECC mappings under one component receipt; it does not synthesize or
-convert either representation. An unmapped agent is refused by name; a pre-existing same-name
-Markdown/JSON or case-folded operator definition is refused without overwrite. Non-empty agent MCP or hook
-configuration, every other Kiro surface, and
-the native installer remain outside this lifecycle. The mapping is source-documented and
-receipt-verified; it is not a live host probe. Several targets in one
-run are one materialization into one root with one receipt: destinations two targets share
-(`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
-component does not stop the targets that own it, and a later `--apply` with a narrower target set
-subtracts the dropped target's files and reports each removal.
-
-Governed Codex skill selection uses the shared project `.agents/skills/` route.
-Reapplication withdraws an older `.codex/skills/` duplicate only when unchanged
-materialization receipts prove ownership; edited and unowned copies are retained
-and reported. It does not replace disabled-skill settings or filter native plugin
-inventory. The governed preview includes exact selection/source and destination
-facts beside exclusions, refusals and ownership advisories. Proposed destinations,
-installed bytes and actual native loading remain different claims. See the
-[selection ownership guide](../guides/portable-policy-delivery.md#inspect-selection-and-discovery-ownership)
-for preview, ordinary reinitialization and migration.
-
-ECC MCP approvals have a separate explicit Add/Remove surface:
-
-```sh
-aih ecc mcp add <ecc-mcp-id> --cli <client> --root <project>
-aih ecc mcp add <ecc-mcp-id> --cli <client> --root <project> --apply
-aih ecc mcp remove <ecc-mcp-id> --cli <client> --root <project> --apply
-```
-
-`add` requires exactly one explicit `--cli` target and a valid target-root `aih-org-policy.json`
-whose `governance.eccMcpApprovals` approves the requested id at the pinned ECC catalog digest. A
-present `governance.supportedClis` list must also sanction the selected client. It renders only the
-approved HTTPS entry for that one client, preserves unrelated client config, writes
-the client entry before `.aih/ecc-mcp-explicit-add-v1.json`, and pins both files against plan-to-apply
-changes. Dry-run is the default. `remove` does not need current approval; it subtracts only an
-unchanged entry whose receipt still proves AIH wrote that exact id/target/config digest. Missing,
-malformed, unsafe, absent, or drifted state is report-only and leaves the client config untouched.
-The write set covers project-local JSON for Claude `.mcp.json`, Cursor `.cursor/mcp.json`, Copilot
-`.vscode/mcp.json`, Kimi `.mcp.json`, and Kiro `.kiro/settings/mcp.json`; global JSON for Antigravity,
-Gemini, Windsurf, OpenCode, and Zed; and Codex TOML. Global writes opt into an execution-time
-trusted-HOME containment and no-symlink-parent guard. Doctor reports clean, absent, altered, revoked,
-malformed, or unsafe receipt/config state from local files only. This command does not contact an endpoint,
-scan remote tools, attest behavior, install all approved MCPs, or treat approval as automatic projection.
-
-The same lifecycle manages project-local Claude and Codex hook/MCP registration without claiming
-either client's whole shared settings file. It adds one AIH composite hook per supported native
-event, registers the reviewed MCP identities, preserves unrelated operator entries, and records
-the exact Node/AIH launcher bytes plus each owned config fragment in
-`.aih/ecc-profile/native-registration-v1.json`. Native state stays outside the project under the
-platform state directory; set `AIH_ECC_STATE_ROOT` to an absolute external directory to override
-that location. Conflicting server identities, linked launchers, overlapping state roots, modified
-managed fragments, and partial second-phase installs fail closed; a failed registration after a
-projection install triggers compensating projection recovery. Repair and rollback preflight the
-projection and native registration before applying either surface, so recovery runs as one
-filesystem transaction. The compound lifecycle uses its receipt-bound per-file ownership and
-content-pin checks instead of treating its own managed projection as generic worktree dirt;
-unowned files and intervening drift still fail closed. Serena starts only through the AIH
-protocol guard with the exact reviewed package pin, offline resolution, isolated `SERENA_HOME`,
-telemetry disabled, and the reviewed tool allowlist. Ordinary MCP-health failures remain visible
-and advisory rather than blocking unrelated work.
-
-The primary registration ledger is `~/.aih/ecc/registration-ledger.json`. It records each project's
-component/MCP contribution and each target's installed union plus evidence provenance. The ledger is
-written atomically only after all selected target installs succeed. Re-running is idempotent; adding
-a second project grows the machine union without removing the first project's surface. The ledger is
-the authoritative input for `aih prune`: missing project roots are retired and only orphaned,
-state-recorded aih-managed operations are removed in a rollback-safe ledger-last transaction.
-
-Evidence verdicts partition the request per component. Authorized components install; held
-components do not, and the report names each held component with its evidence code and reason. A
-mixed result is a successful partial install, not an all-or-nothing failure. The project entry keeps
-the requested intent so a later evidence refresh can satisfy it, while target entries record only
-the components and MCPs actually installed. Reconcile and prune operate on that partial target
-surface without inventing held components. Structural evidence failures that make the partition
-untrustworthy still fail the request, and aih refuses all installer execution unless
-`runtime:ecc-installer` itself has an authorization receipt.
-
-The ECC registration lane's validated MCP default is pinned local `sequential-thinking`, repo-declared
-`code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at enterprise. Context7, Exa, and
-other egress-bearing servers are not defaults of that lane. Project config receives that project's set; global
-target config receives the machine union, with existing user-defined same-name servers preserved.
-
-aih fetches the catalog's exact commit into quarantine, verifies signed evidence for the installer
-runtime and selected components, re-hashes the same tree, then filters ECC's manifest operations and
-state preview to the authorized selected surface. Dependency preparation uses
-`npm ci --omit=dev --ignore-scripts` only after clearance.
-
-For Codex, aih copies selected skills to `~/.codex/skills/<name>/SKILL.md`, installs selected agents,
-uses ECC's add-only TOML merge helper for non-MCP settings, owns a fenced MCP block, and merges a
-scoped fenced AGENTS supplement. It preflights genuine project/global MCP transport collisions while
-allowing its own idempotent reruns. `--ecc-path <dir>` supplies an exact local checkout to the same
-evidence gate, and `AIH_ECC_REF` requests a different exact commit; either must match vendor or
-attributed org evidence for that pin. Non-SHA refs are refused.
-For an exact remote pin, dry-run reads the shipped pin-bound install preview and prints the selected
-target's stable file/merge/exec operations without fetching, invoking the installer, or writing a
-target. Every row is marked `contingent on evidence authorization`: it previews what the authorized
-install phase would attempt and does not claim that evidence has passed.
-Installed Codex skills are invoked on demand with `$<skill-name>` from
-`~/.codex/skills/<name>/SKILL.md`; they are not an auto-loaded `.agents/skills` surface.
-Per-mechanism claims are registry-driven. Each target declares how ECC installs for it — ECC's npm
-installer, the cached checkout plus add-only Codex merge helpers, ECC's native `.kiro/install.sh`, or
-consult-only — and the summary emits only the claims true for the selected targets. An unmapped
-target defaults to consult, so a newly registered CLI installs nothing rather than inheriting a claim
-that is false for it. No mechanism replaces already-installed content, so a rerun cannot re-scope an
-existing install.
-
-Kiro installs are ownership-tracked so a stale copy is visible. Because ECC's own installer writes
-the bytes, aih attributes ownership by what a run CREATES: it snapshots `.kiro/` before the
-installer, re-walks it after a successful install, and records each created file's sha256 plus the
-ECC commit it came from into repo-local `.aih/ecc/install-manifest.json`. That location survives
-target-directory cleanup and is never committed. A later run re-checks each recorded path: a matching
-hash from an older commit is _stale_, a changed hash is _locally modified_ and is never
-auto-replaced, a recorded path that is gone is _removed_, and anything with no record is _unknown
-provenance_ and is never claimed or touched. Kiro's installer copies only absent destinations, so a
-rerun cannot clear a stale finding — replacing that content is deliberate operator work and is not
-automated.
-
-The finding is advisory (`ecc.install-drift`), so it reports without failing the run. Installs
-predating the manifest have no record and report as unknown provenance until reinstalled; ownership
-is never inferred from a content match, which cannot distinguish an aih-written file from a
-user-authored identical one. A missing or unreadable manifest fails closed the same way. Codex and
-the npm targets install into home-scoped directories shared by every repo on the machine, so they
-declare no managed root and receive no ownership claim at all.
-
-See [Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md) for posture behavior and org
-overrides. <!-- aih:claim CM-21 -->
+ECC Catalog packages remain visible and selectable in `aih capability package`
+views with the `developer-managed` label and the next route `aih ecc`.
+<!-- aih:claim CM-20 --> <!-- aih:claim CM-41 -->
 
 ## aih superpowers
 
@@ -645,6 +583,11 @@ Antigravity, Copilot, marketplace, or TUI installs. It emits pin-aware manual gu
 marks those selections as not evidence-covered. The Kiro methodology steering bridge is AIH-owned
 first-party content, not mislabeled Superpowers vendor evidence. `AIH_SUPERPOWERS_REF` accepts only
 an exact commit with matching vendor or org evidence.
+
+The Superpowers behaviour ships inside `@aihq/core` as its bundled `@aihq/framework-superpowers`
+package; there is nothing extra to install. If an install lacks it, the command refuses with
+`framework-plugin-unavailable` and names the reinstall: `npm install -g @aihq/core`, or in a project delete `node_modules/@aihq/core` and run `npm install`. A bundled plugin that fails
+its contract, version or Catalog identity check refuses with `framework-plugin-incompatible`.
 
 ## aih crispy
 
@@ -722,6 +665,13 @@ requested source. The record is checked before and after analyzer execution. Mis
 malformed, mismatched, or replaced metadata is a named blocking result; an explicit caller `--pin`
 is an expectation and never substitutes for fetched provenance.
 
+**Exit code (0.7.0).** Findings and evidence problems are labels: `trust scan` exits 0 when every
+failed check is a finding or an evidence problem, and 1 for an integrity failure, an execution
+failure, a code no trust class names, or the organization's own configured requirement
+(`trust.unapproved-skill`, `mcp.policy-denied`, `org-policy.drift`). A CI that should fail on them
+opts in with `--fail-on findings`, `--fail-on evidence-problems`, or both (comma-separated or
+repeated); an unknown value is a usage error.
+
 ## aih skill
 
 The **skill lifecycle** on top of `trust` — a complete governance loop for external agent skills.
@@ -753,6 +703,8 @@ license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). Th
 **install-time teeth**: `workspace add` refuses promoting a skill with no committed approval _for
 that source's pinned commit_ at `enterprise` posture (advisory at `vibe`) — a same-named
 skill from an unrelated source never inherits an approval, and stale approvals are refused.
+`vet` exits like `trust scan`: 0 on findings and evidence problems unless `--fail-on` names
+them, and 1 for integrity, execution, unclassified, and consumer-policy failures.
 `inventory` joins on-disk skills against the approvals — approved / unapproved / stale-pin /
 quarantined, one row per physical install — and feeds a "Skill governance" panel in `report --v9`.
 `sync --name <skill> --cli <claude|codex>` materializes an **approved promoted** skill into the
@@ -769,7 +721,7 @@ approvals.
 
 ## aih pack
 
-**Repository note.** This repository commits `aih-packs.json` to curate its first-party documentation, governance, and review skill packs. Curation grants no approval or install authority; each target still needs its own verified per-skill approvals. The Workbench's offline catalog comes from its catalog source files and is independent of pack curation. On an AIH target without the optional manifest, `aih pack status` reports no packs and `aih pack validate` skips the pack-manifest check; neither reconstructs a manifest from unrelated files.
+**Repository note.** This repository commits `aih-packs.json` to curate its first-party documentation, governance, and review skill packs. Curation grants no approval or install authority; each target still needs its own verified per-skill approvals. Backend catalog source records are independent of pack curation. On an AIH target without the optional manifest, `aih pack status` reports no packs and `aih pack validate` skips the pack-manifest check; neither reconstructs a manifest from unrelated files.
 
 **Curation manifests** on top of the per-skill lifecycle — a committed root `aih-packs.json` names
 sets of approved skills so a team installs "the docs-quality pack", not N individual approvals. The
@@ -831,13 +783,9 @@ that blocks mutation; it does not delete content or stop native processes.
 Withdraw owned content through the authorized policy before revoking it. Rebind
 with current verified authority to recover.
 
-`aih policy project <root> --apply` projects supported controls and reconciles
-selected governed ECC content. `--ecc-path <path>` supplies a local checkout
-that must still pass exact source and qualification checks. An explicitly empty
-authorized ECC selection withdraws owned content; losing policy is not an
-unrestricted installer fallback. `aih init` also accepts `--ecc-path` for a bound
-project's required-content delivery and suppresses an unselected Superpowers
-baseline under governed policy.
+`aih policy project <root> --apply` projects supported aih-owned controls.
+It does not install or configure ECC. `aih init` likewise leaves ECC
+installation to developers.
 
 `policy evaluate --json`, readiness and HTML reports distinguish policy and
 binding blockers, selected content, ownership drift and unverified native
@@ -846,332 +794,21 @@ session or enforced practice. The full administrator/developer lifecycle and
 downstream content ownership contract are in
 [Project policy delivery](../guides/portable-policy-delivery.md).
 
-### Unreleased Workbench authoring core (#967)
+### Policy data and headless authority
 
-The in-progress authoring core is an offline, typed browser over `authoring-catalog-bundle/v1`. Its normalized bundle has source descriptors, immutable source and asset identities, relations, groups, templates, evidence summaries, provenance, and lazy detail chunks. Source identity records where an asset came from; it does not decide methodology. A resolved closure permits zero or one distinct methodology key, while assets in the same exclusive methodology slot may share the same key.
+The Policy Workbench browser and `aih policy generate` command were removed in this greenfield cutover; there is no `aih-ui` replacement. Core retains the policy schema, validation, effective-state resolution, and governed command routes. It does not expose a public browser or a replacement authoring command. Administrators prepare policy and PolicyBundle V2 files outside the governed target, validate them with `aih policy validate`, and supply an administrator-controlled protected file through `--policy <file>` or `AIH_ORG_POLICY`. A readable file or Catalog entry alone is not authority.
 
-The **Source** filter limits **Type** to categories with matching assets. Changing
-source clears a type that is no longer available. The **Adoption recipe** arrow
-opens a reading panel; dismiss it with Escape, its close button, or by moving the
-pointer away. Keyboard focus keeps the guide available while reading it. Adoption
-recipe and Evidence & versions sit in the Deployment setup header.
+Schema-v3 policy input still records exact `authoringSelections` and `minimumCoreVersion`; legacy schema-v2 input remains accepted. The retained `compilePolicy` and `compileOrganizationManifestV1` functions are Core/build-time APIs, not public `aih policy` authoring commands. Source selection, Scanner evidence, Catalog qualification, organization decisions, and effective policy are separate checks. An imported declaration or source-data snapshot grants no approval by itself.
 
-The working surface starts with Deployment setup, followed by Build your policy.
-Developer tool setup is a collapsed section inside Deployment setup; its summary
-shows the current selections and exclusions. Expand it to review or change tools.
-The setup strip keeps posture, allowed CLI choices, managed
-MCP intent and readiness together. Its information buttons open the full setup
-and CLI-sanctioning explanations by hover or click; Escape dismisses them.
-Developer-tool rows retain selection status beside compact actions. MarkItDown
-CLI is selected by default and can be excluded; its MCP adapter remains optional
-and is not enabled by that CLI selection.
+Compatible source data can be updated without replacing the installed Core package through `aih policy data prepare`, `aih policy data sign`, and `aih policy data import`. Each writes only with `--apply`; otherwise it is a dry run. Preparation takes `--source`, `--sequence`, `--out`, an optional `--source-bundle`, and `--previous-digest` after the first accepted snapshot. `--scanner-proof` and `--qualification-proof` supply independent raw proofs. Signing takes `--input`, `--key`, `--trust`, and `--out`; it checks the configured `workbench-source-data/v1` signer role and source scope but does not activate data or establish Scanner or Catalog custody. Keep signing keys outside repositories and exported policies.
 
-New policy drafts select the Core baseline: Docs Quality, Governance Quality,
-Review Quality, Sequential Thinking, and Usage Metering. These choices use the
-existing capability-package and control adoption paths; they do not add approval
-records. Imported policies retain their saved choices and exclusions. GitHub is
-not offered in the Core list. Existing GitHub requests remain visible in Draft
-and Exposure and can be removed from Draft.
+Import takes `--input`, optional `--store`, and `--scanner-source` for exact source bytes when replaying Scanner proofs. For digest-addressed manifests, `--proof-root <directory>` must contain the original `<sha256>.blob` files. Core checks size and hash before independently verifying original publications. Signed snapshots are bounded to 16 MiB; referenced compiler inputs and raw proofs have a separate aggregate 128 MiB ceiling and per-blob limits. GitHub CLI (`gh`) is required during independent raw-proof verification. The separately configured store `trust.json` is never accepted from an imported bundle. A new compiler format requires a Core release.
 
-Catalog actions describe the policy change they make:
+Accepted snapshots remain under per-user `.aih/workbench-data/v1` (override `AIH_WORKBENCH_DATA`); local verifier receipts remain under `.aih/workbench-verifier/v1` (override `AIH_WORKBENCH_VERIFIER_HOME`) outside that store. These are backend verification paths, not a retained browser UI. Back up signing roots, exact inputs, raw proofs, and signed bundles independently; copying a cache does not establish verification authority or extend report freshness.
 
-| Action | Meaning |
-| --- | --- |
-| Add to draft | Save this version as a direct choice. Only Core-selectable controls count as controls. |
-| Request review / Remove request | Save or remove a pending request without selecting a control. |
-| Keep as my choice | Keep an item independently of the starting point or dependency that already includes it. |
-| Remove my choice | Remove your direct choice; a template or required dependency can still retain the item. |
-| More options → Exclude from optional groups / Undo my exclusion | Add or remove your own exclusion from optional inclusion. Template exclusions remain until their template is removed; required dependencies cannot be overridden. |
+### Retained headless policy fields
 
-The workspace uses the available width. On wide screens, source navigation,
-catalog rows, and an item inspector sit side by side. Browse one source at a
-time; changing source keeps your draft choices and shows only that source's
-catalog, types, and starting points. Click an item name to open **Item** in the
-side panel. **Claims** shows its purpose and declared access; **Checks** shows
-report results and findings. **More technical details** holds draft provenance,
-covered paths, analyzer versions, report records, and prepared metadata.
-The same panel has **Draft** and **Exposure** views; switching views does not
-change choices. **Review draft** opens that panel beside the catalog, with
-reasons and adoption commands in closed disclosures. On smaller screens,
-choose a source from the picker and open the item
-panel when needed. The main workspace scrolls as one page across all columns;
-an open detail drawer on smaller screens scrolls separately. Browsing and opening
-details do not change the policy.
-The **Exposure** view, also opened by **Policy exposure**, summarizes catalog
-choices across all sources. The statement “A policy is a shape of exposure”
-appears in this view.
-It shows selected items separately from pending requests, with each item's
-declared access and report status. Missing or stale saved versions remain visible
-as unresolved pins. Developer tool setup is reviewed separately in Deployment
-setup. The catalog does not consistently record network destinations, filesystem
-limits, or credential scope; this view does not infer those permissions.
-Reports show their reported result, covered paths, findings, and analyzer names
-and versions when supplied. **Reports included** counts attached exact-version
-reports separately from those currently verified by Core. Packaged unverified
-reports remain readable without another scan, with one provenance notice; they
-do not establish a verified passing result or approval. Current verified reports
-also show their Core verification interval; a verification date is not a scanner
-run date. Bundled first-party skills, agents, and hooks show **Included with Core**
-and their package and bundled path or control identity. Their scan status and
-Catalog qualification remain separate in Checks; inclusion does not claim a
-passing scan or qualification. A missing report for those components says
-**Current scan report not attached**. Other missing AIH reports show
-**AIH evidence pending** with AIH as the owner
-and an explicit next step. Where the item identity still matches a packaged
-report from an earlier catalog, Details shows **Previous report — current catalog
-evidence pending**. It retains the reported result, findings, scope, original
-dates, source snapshots and public publication link. This reading material does
-not count as current evidence, renew expiry, or grant approval. MCP declaration
-reports cover the listed configuration files, not the entire upstream runtime.
-
-Generated methodology profiles show **Source item reports**: counts and Details
-links for other items from that source. These are separate reports; they do not
-establish coverage of the generated profile or automatically select those items.
-New or changed content needs its own matching report. **Starting points** previews changes before applying
-them; cancel leaves the draft unchanged. **Review draft** lists current choices
-and requests separately. Missing, stale, and unverified
-evidence are identified explicitly. Prepared scan results do not grant organization
-approval or make a control effective. **More technical details** retains the
-raw JSON for technical inspection. Browser validation does not require `eval` or
-browser storage. Report facts and current verification remain separate.
-
-Declared conflicts and incompatible methodology choices offer a replacement
-preview. It lists removed roots, dependencies, requests, and exclusions before
-one atomic draft change. A template-owned conflict requires removing that
-template's whole origin, including its other choices. Cancel changes nothing;
-if the draft changes during review, the comparison must be refreshed. Matching
-names alone do not establish duplicate or equivalent capabilities.
-
-A schema-v3 policy stores generic authoring intent in `authoringSelections` with `selectionVersion: "workbench-selection/v1"`. Roots bind the source id, source revision, and content digest; templates expand pinned roots with required and optional member semantics, exclusions, and provenance. Requests remain request-only intent, and `selectedControlCount` describes only Core-selectable controls in the resolved closure. The compiler writes `minimumCoreVersion: "0.6.0"` as an unreleased feature floor. That floor does not change the package version or release process. Legacy schema-v2 policy input remains accepted unchanged.
-
-`compilePolicy` and `compileOrganizationManifestV1` are build-time/Core APIs, not public `aih policy` authoring commands. The organization manifest compiler accepts bounded declaration bytes and cannot nominate a Core projector or authoring action. Core reconstructs bindings from its pinned catalog and prepares display-safe evidence only after its own verification. Browser imports, scanner intake, and organization declarations are not approval, authority, or effective state.
-
-The browser artifact has separate pure-contract, browser-journey, and packed-artifact lanes. Run `npm run test:workbench:pr` for the required budgeted PR lane; use `npm run test:workbench:pure`, `npm run test:workbench:contracts`, `npm run build:workbench`, and `npm run test:workbench:ui` for their individual scopes. The #967 acceptance evidence is recorded in `docs/testing/issue-967-workbench-authoring-core.tdd.md`.
-
-Starter seeding, portable authoring, effective-resolution, schema, projection, and trusted-channel gates for the org policy.
-`aih policy generate` is deliberately rootless with respect to a governed target repository: it writes a self-contained
-Policy Workbench and does not inspect a target repository, resolve repository state, or append a repository run ledger. Its
-Bring Your Own guides link to public MCP, Skill, npm, and GitHub search surfaces only for discovery. A directory page,
-README, popularity count, advertised install command, or third-party audit is never imported as identity, evidence, or
-authority. After an administrator enters a canonical npm package or exact GitHub repository/commit/path, the Workbench
-renders the matching `npm view`, `aih trust scan`, or `aih skill vet` command. Those commands obtain metadata or preflight
-evidence without granting approval, installation, or activation; the protected-file authority and target evaluation remain
-separate gates.
-parsed `--root` and `AIH_ROOT` compatibility inputs are ignored; the current directory is used only to contain a relative
-`--out` path. `--organization-manifest <path>` may be repeated to prepare bounded local
-`organization-authoring-manifest/v1` declaration bytes into the Workbench before it is written.
-Each input must be a readable non-symlink regular file no larger than 1 MiB and must pass the
-strict organization-manifest compiler. This offline preparation does not scan, fetch, verify,
-approve, activate, or make the declared assets effective.
-
-`--policy-input <path>` restores a bounded saved policy while preparing a new HTML artifact.
-For schema-v3 input, Core resolves the saved exact source revisions and content digests
-against retained source data before rendering. It does not silently move selections to
-the current source revision. A missing retained revision fails preparation.
-
-Compatible source data can be updated without replacing the installed Core package.
-The explicit operator commands are `aih policy data prepare`, `aih policy data sign`,
-and `aih policy data import`. Each writes only with a literal `--apply`; otherwise
-it is a dry run. Preparation takes `--source`, `--sequence`, `--out`, an optional
-`--source-bundle`, and `--previous-digest` after the first accepted snapshot.
-`--scanner-proof` and `--qualification-proof` carry raw independent proofs, not new
-authority from the data signer. Signing takes `--input`, `--key`, `--trust`, and
-`--out`; it checks the explicitly configured `workbench-source-data/v1` signer role
-and source scope but does not activate data or establish Scanner or Catalog custody.
-Keep the signing key out of repositories, exported policies, and browser artifacts.
-
-Import takes `--input`, optional `--store`, and `--scanner-source` for exact source
-bytes when replaying Scanner proofs. For digest-addressed proof manifests, supply
-`--proof-root <directory>` containing the original `<sha256>.blob` files. Core
-checks their exact sizes and hashes before independently verifying the original
-publications; the manifest is not a replacement for publication authority. The
-signed snapshot remains bounded to 16 MiB; referenced compiler input and raw proof
-bytes have a separate aggregate 128 MiB ceiling and per-blob limits.
-Raw Scanner refresh currently accepts the
-`pinned-skill-collection/v1` and `pinned-component-collection/v1` compiler formats.
-GitHub CLI (`gh`) must be available during independent raw-proof verification.
-The store's separately configured `trust.json` is never accepted from the imported
-bundle. Compatible data cannot introduce executable compilers or replace Core
-interpretation rules. A new compiler format still needs a Core release.
-
-Where published Scanner components cover a broader source tree than an offered
-asset, Core may verify complete file-and-digest containment against the original
-reports. The UI identifies this as shared source-file coverage. Broader findings
-remain conservative evidence for the asset; this does not establish a narrower
-scan, a dependency-runtime scan, or Catalog qualification.
-
-Accepted snapshots live under the per-user `.aih/workbench-data/v1` directory
-(override: `AIH_WORKBENCH_DATA`). A separate machine-local verifier key and signed
-receipts live under `.aih/workbench-verifier/v1` (override:
-`AIH_WORKBENCH_VERIFIER_HOME`); that private directory must be outside the data store.
-Normal Workbench generation checks the local receipts without `gh` or network
-access. The receipts bind the exact data, current trust configuration, verifier
-policy, original expiry, and protected active/history index. They protect against
-untrusted cache edits, not compromise of the operating-system user account.
-
-Back up the administrator signing key securely, its public root and role policy,
-signed source bundles, raw Scanner/Catalog proofs, and exact source inputs. On a
-replacement machine, configure trust independently and reimport the original proofs;
-do not treat a copied cache as verification authority. Missing local verification
-keys fail closed. When migrating an existing store, reverify retained snapshots
-before accepting their successor. Reverification does not extend report freshness.
-
-Saved policy pins and root rationale preserve selection intent, not a signed claim
-about the report reviewed at that time. Historical approval context belongs to the
-existing governance decision and enclosing signed receipt: source/evidence/control
-digests, policy version, actor, reason, and validity dates. Current security
-reevaluation may use newer valid evidence for the same exact asset identity without
-rewriting that historical decision.
-
-Workbench evidence details distinguish Scanner report signing, publication, and Core
-verification dates. These are historical timestamps, not interchangeable scan execution
-times. Currentness expires independently; revisiting a report does not renew it.
-Catalog qualification is a separate exact-source receipt and receipt-set binding. Neither
-a passing scan nor Catalog qualification grants organization admission or makes a selected
-asset effective. Raw findings remain report facts, including when qualification exists.
-Packaged collection records bind coverage paths and interpreted report components separately
-from license-inclusive material identity; the two tree hashes need not be identical.
-
-For a deliberate fresh preparation, an administrator invokes `aih policy generate <admin-root> --apply`
-with paired, repeatable `--fresh-organization-manifest <path>` and `--fresh-artifact-intake <path>`
-inputs. Each pair is bounded and strictly parsed before the Core-owned fresh scan prepares the
-manifest. The portable rootless route never runs that scan. The resulting same-process preparation
-is catalog input only; it does not make a scan record, organization declaration, browser import, or
-saved bundle an approval or effective state.
-
-Its one optional positional is an administrator root rather than a target repository — see
-"Administrator catalog consumption" below. The remaining `policy`
-subcommands are repo-scoped and accept the conventional optional `[root]` positional — `aih policy validate .` works exactly
-like `aih init .` (`--root` and `AIH_ROOT` still apply). The `policy supported accept|inspect`
-administrator commands use `--root <target>` instead of a positional root so their input surface
-contains only the exact decision binding and code-owned target.
-
-The **Compose** catalog has **Source** and **Type** filters with counts. Choose a source and a type such as Skills, Agents, or Profiles, then search by name within that selection. Empty categories describe only the prepared catalog. Results remain paged at 50 entries and details load when opened. Methodology profiles are optional and permit at most one methodology; additive skill and agent selections can span sources. Selection templates display readable names when supplied, with technical identities retained for inspection.
-
-`generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors the actual
-org-policy schema and downloads it under a safe administrator-chosen JSON filename. The default remains
-`aih-org-policy.json`; a project or team can use a distinct filename and select it explicitly with
-`aih <command> --policy <file>`. The browser download attribute accepts a filename, not a folder path; the
-administrator chooses or moves the file into the intended policy directory. Schema-backed audit references
-for ECC or Superpowers agents, skills, and commands remain part of the policy.
-At Enterprise posture, its protected-file form also authors organization-qualified Decision V2
-records for exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identities classified
-as tools, skills, agents, MCP servers, packages, or profiles. The administrator enters ordinary fields for targets, effects, evidence,
-issuer, accountable owner email, policy, and control; Web Crypto computes the domain-separated source, subject, and
-revocation digests. The read-only preview and `aih-policy-bundle.json` download are PolicyBundle V2,
-and Core's exported parser accepts the same bytes. This surface accepts no editable raw-JSON decision
-or bundle input. Vibe continues to export only ordinary repo-local policy and cannot generate
-authority.
-The protected-file decisions authorize only the effects named in the exact decision and supported by
-a closed Core lifecycle; the Workbench itself performs no install, projection, or execution.
-Choose **Accepted with conditions** when the decision must record named risk acceptance. Enter
-comma-separated stable identifiers in **Accepted findings** and **Accepted waivable gaps**, one
-condition per line, and an offset-qualified ISO-8601 **Review by** date within the authority window.
-The form sorts the entries, rejects duplicates and finding/gap overlap, and requires at least one
-named finding or gap and one condition. The preview and download retain those fields; revocation
-binds the complete conditional decision. Choosing **Approved** emits empty accepted sets and
-conditions and omits the review date. Neither disposition changes a scanner result or bypasses
-Core's evidence and lifecycle checks. The npm observer requires the `install` effect even though
-AIH only observes the already-installed package and does not install or execute it.
-Separately, external-curation records remain guidance only: AIH does not install, project, or enforce those external assets. Its
-catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
-not scan a repository. The workbench can also author `governance.supportedClis`, the organization-sanctioned CLI
-allow-list. At Enterprise posture it is required and non-empty; omission is refused with the current registry ids and a paste-all remedy, while wildcard sentinels are not supported. At Vibe posture omission is unrestricted, and a present list enforces at either posture. Sanctioned, materialization-capable, and projector-capable remain separate host sets, but every reviewed activation is authored only for the exact intersection of its projector targets and the sanctioned list. A control with no target in that intersection is refused by name, and changing the sanctioned list cannot silently retain an unselected target. The Workbench displays each requested target set before export; import/export preserves it exactly. A legacy Workbench activation that copied a control's complete support list is narrowed only when the candidate still exactly matches the current AIH-authored catalog record; imported approval and decision records are preserved and must independently match the narrowed scope. Browser import/export preserves policy semantics, including pinned stdio candidates, fenced remote endpoint candidates, annotations,
-signed-approval clarification, and external curation intent. A newly authored
-remote candidate records only an exact HTTPS origin, approval metadata, an
-administrator-managed `approved` or `revoked` status, and an explicit
-no-content-scan marker; the workbench never contacts or scans that endpoint.
-Imported legacy digest/verdict records remain exact and read-only until removed
-and recreated under the administrative-status model. The workbench can preflight JSON and preserve an
-imported authority receipt's subjects in `governance.authority.approvals`, but it does not verify a receipt or make any
-approval effective. It can separately import one strict standalone `GovernanceDecisionV1`, render its
-untrusted fields as text, and download the same deterministic canonical bytes as the headless parser.
-The record stays outside the policy and receipt state and is always labeled unverified and not effective;
-the browser cannot edit, verify, sign, fetch, resolve, project, or materialize it. Invalid and out-of-order
-replacement reads fail closed without changing the decision displayed when the latest import began.
-Scanner evidence imported through the Artifacts workspace remains a separate preflight record. The browser
-can create one mixed intake for up to 100 MCP, Skill, and Agent items; `aih trust scan` emits one evidence
-bundle for that intake. After merging the bundle, **Save team review workspace** downloads one resumable,
-strictly non-authoritative file containing the current draft policy, intake, and evidence history. Opening that
-workspace restores the review, but it is not a deployable policy or an evidence authority. Download the
-protected policy separately. The browser does not embed raw scanner output into that policy, verify
-organization authority, or make a reviewed subject effective. At runtime, commands that require
-`--evidence <file>` accept an explicit root-relative evidence file and revalidate its custody and bindings.
-Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
-hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
-
-The left rail suggests aggregate ECC language, framework, capability, and module choices. The center inventory
-is final authority for every individual Agent and Skill: a suggested row can always be deselected, and an
-explicit center deselection is not silently restored by a later aggregate choice. The source-locked skills plane
-lists all 286 canonical `skills/*/SKILL.md` identities at the pinned ECC commit and lets each exact row author
-reversible, source-bound requested intent against an independently scannable baseline subject. Selection is
-not evidence, approval, installation, materialization, or support; the governed lifecycle remains held until
-exact evidence clears. Before governed materialization computes closure, Core validates every selected
-identifier against the active pinned catalog. Dependency reachability follows required edges and declaration
-riders at every depth, while direct aggregate members remain suggestions that the center inventory can exclude.
-Reopening a saved policy preserves those exclusions. Kiro baseline-rule provenance uses the canonical
-selection-source mapping, so its accepted source paths cannot drift from the catalog helper.
-The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme,
-and keeps the rail available on compact screens. The inspector contains no policy mutation controls: it
-narrates the selected-to-materialized journey and routes one next action to the canonical selection or a
-separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31
-ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked
-`governance.eccMcpApprovals` records at the pinned catalog digest. Default developer tools have one
-selection surface in Deployment setup; their duplicate catalog entries remain stored only for detail
-inspection and existing-policy round trips. Other catalog entries may select a reviewed control or
-record requested intent in `governance.aihMcpRequests`. A request never creates or implies a
-matching Core control. Only entries labeled
-HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain
-approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
-The configured Playwright runtime identity is `@playwright/mcp@0.0.81`. Ordinary Developer tool setup
-can select and verify this runtime, but AIH ships no protected reviewed control for it because there
-is no current protected Scanner evidence record for that identity. A setup check does not provide
-that evidence, and organization approval cannot substitute for it. Context7 and Playwright are
-managed through Developer tool setup rather than duplicate request buttons in the catalog. Existing
-`governance.aihMcpRequests` entries remain preserved as requests without granting evidence or authority.
-Importing the exact legacy Core 0.5.0 enterprise Workbench
-footprint removes the unavailable Playwright candidate and activation, rebuilds the managed MCP allow-list
-from current projectable controls, and preserves all remaining targets and authority.
-
-A separate adoption-recipe panel is the first bounded, code-owned routing guide rather than another
-inventory or authoring surface. It gives exactly one question class to each of Token Savior, Serena,
-code-review-graph, codebase-memory-mcp, and Token Optimizer; states the prerequisite and overlap
-boundary; names the existing Workbench-row, AIH ECC lifecycle, or ECC approval/manual route; and
-reports only the usage signal the local capture layer can attribute. Token Savior explicitly has no
-captured attribution. The panel is escaped and inert: it adds no row or control, changes no policy
-export, executes no provider, and grants no evidence, authority, effective state, projector, or
-materialization. It is not a generic signed-recipe or catalog-distribution plane.
-
-### Administrator catalog consumption
-
-`aih policy generate <admin-root>` opts a single administrator workstation into signed supported-catalog consumption before
-the Workbench is rendered, and requires `--apply`: a non-applying invocation fails before acquisition, subprocess, cache,
-or output effects. Omit the positional and nothing changes: the portable artifact is written with no acquisition, no
-subprocess, and no cache work. Developer seats never take this route.
-
-The route starts from one canonical `admin-catalog-bootstrap.json`. At Enterprise posture — selected only by an explicit
-`--posture enterprise`, never by an environment variable — it is read from a fixed OS/admin-managed location
-(`C:\ProgramData\aih\admin-catalog` on Windows, `/Library/Application Support/aih/admin-catalog` on macOS,
-`/etc/aih/admin-catalog` elsewhere) and there is no fallback to the copy under `<admin-root>`. At Vibe posture it is read
-from `<admin-root>/.aih/admin-catalog` and reported as the visibly weaker `local-admin-file` provenance, which is never
-Enterprise-eligible. The bootstrap pins the HTTPS locators, the catalog/promotion/package digests, both signer identities and
-their distinct root digests, separate catalog and administrator workflow/bundle identities, the schema and effect versions,
-the source and channel, and a bounded cache policy. Its authority-controlled catalog path segment must be real directories
-rather than symlinks or junctions before the bootstrap file is read.
-
-Resolution degrades fresh → revalidated verified cache → packaged, and only a literal acquisition failure permits the
-fall-through: every trust, pin, cache, or attestation failure is fatal before rendering. Fetched and cached artifacts and the
-administrator distribution are independently verified with their respective pinned workflow and bundle by `gh attestation
-verify`, bound to the pinned repository, issuer, ref, and predicate; that verification completes before any material is
-admitted. The inner catalog-head DSSE PAE and
-signatures must exactly match bootstrap-carried state, so outer artifact provenance cannot authorize a replacement head
-signature. AIH never signs on the workstation and holds no key material — the administrator distribution is pre-signed by an
-external organization-admin OIDC workflow, and the locally composed binding must reproduce those exact canonical bytes. The
-visible Workbench provenance line then shows verified tier, source, channel, resolved time, download age, and bootstrap
-provenance. The embedded safe model also carries sequence, digests, posture, and verification time; neither surface carries
-locators, filesystem paths, tokens, signatures, raw attestations, signer identities, root digests, or machine detail.
-
-The Workbench's ECC hook-controls panel is bound to the pinned runtime inventory: 42 individually gated hook IDs plus one non-disableable Bash wrapper. It authors a required Minimal, Standard, or Strict profile and an optional canonical disabled-ID list, prunes disables that are ineligible after a profile change, and offers a clear inverse back to the policy baseline. AIH configures supported Claude environment intent; ECC executes and enforces it after process spawn.
+The retired administrator-catalog Workbench preparation route is not a CLI command. Core still parses and validates the declarative policy fields below. Catalog source qualification and administrator authority remain separate from policy input; neither a cached catalog nor a saved policy grants approval or effective state.
 
 The headless schema also accepts a declarative remote record with an
 administrator-managed `approved` or `revoked` status and no tool-surface digest.
@@ -1216,7 +853,7 @@ examples. Selected reviewed stdio MCP candidates also have receipt-owned workspa
 distribution for Codex, Cursor, Copilot CLI, OpenCode V1, Kimi Code, and Kiro; see
 [governed MCP targets and compatibility](governed-mcp.md) for the native paths and limits. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
-the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC—not AIH—executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
+the existing host-specific generator. A policy may separately declare `governance.frameworkHookControls` (schema 3, `minimumCoreVersion` 0.7.0), keyed by framework id with `{ profile?, disabledHookIds }`; the project's `.aih-config.json` `frameworkHookControls` list is `{ disabledHookIds }` only and may add further disables of disable-eligible rows; a profile or any other field there is refused, because enterprise policy is the only profile source. Each framework plugin validates the ids and profile against its own hook inventory and returns the hook-control plan; a requested framework whose plugin is not installed refuses with `framework-plugin-unavailable`. Controls are planned and validated for every targeted host, OpenCode-only included, and each disabled hook's per-host decision (`upstream-switch`, `not-applicable`, or `unenforced` with its next route) is carried in the projection output as an `<framework> hook controls` label. ECC hook controls are read-only decisions with a developer-managed next route; aih writes no ECC settings.
 It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
 file is a Claude projection: it writes only when Claude is selected (the default).
 Other governed MCP targets receive their own workspace configuration rather than a Claude
@@ -1246,11 +883,12 @@ difference still fails closed under the ordinary drift codes.
 the live AIH MCP or hook adapter and reports requested versus effective state, exact source and evidence
 digest, approval reference, target coverage, projection ownership/receipt/drift state, clarification or
 annotation, and the blocking reason. A config entry is not active merely because it is listed. Custom
-stdio MCP candidates name a pinned package identity and HTTPS registry for curation/evidence only. They
-remain blocked by the unwaivable `missing-projector` danger until AIH has an integrity-enforcing
-materialization and rollback lifecycle; policy evaluation and projection never construct or launch their
-commands. Unsafe inputs, collisions, missing projectors, unsupported targets, and all unwaivable danger
-codes remain blocked.
+stdio MCP candidates name a pinned package identity and HTTPS registry for curation/evidence only.
+Third-party selection remains available; AIH-owned projection reports `missing-projector` because
+it has no integrity-enforcing materialization and rollback lifecycle for those candidates. Policy
+evaluation and projection never construct or launch their commands. AIH-owned projection refuses
+unsafe inputs, collisions, missing projectors, and unsupported targets because it cannot establish
+an owned, valid destination for those effects.
 
 When `governance.authority.decisions` is non-empty, each value is an untrusted decision-id reference.
 Only the byte-exact copy inside a currently verified authority receipt V2 can affect resolution. A
@@ -1282,15 +920,12 @@ integrity-enforcing materializer continue to report `supported=none`.
 Custom evidence, approvals, and governance decisions require verified organization authority.
 The default Enterprise route is one PolicyBundle V2 JSON file at an absolute `AIH_ORG_POLICY` path
 outside the governed target. It combines the ordinary policy with the exact V3 decision-authority
-payload. Generate it through the Policy Workbench protected-file form; the `issuerRepository` field
+payload. Administrators prepare and validate that file outside the governed target; the `issuerRepository` field
 is an attribution identity required by the reused V3 schema, not a requirement that the file live in
 GitHub. Core accepts only current, strict, bounded, regular, single-link, non-symlinked custody,
 re-observes the exact bytes, and pins them inside every authority-dependent mutating transaction.
-ECC and Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
-mutation, standalone MCP planning, and standalone Usage ownership checks reuse that one verified
-policy observation. ECC profile install/update composes projection and native registration in one
-pinned filesystem transaction; receipt-bound uninstall remains independently authorized by installed
-custody. Init retains each nested phase's file assertions, deadline, and lock and refuses a
+ECC and Superpowers evidence and standalone Usage ownership checks reuse one
+verified policy observation. Init retains each nested phase's file assertions, deadline, and lock and refuses a
 conflicting observation before effects. A plan that launches a child process retains and renews the
 cooperative authority lease across the awaited process and revalidates immediately before and after
 it. A failed post-process revalidation blocks later effects and deferred writes but reports honestly
@@ -1317,22 +952,21 @@ an authority root. The strict receipt format is published as
 authority. A decision binds candidate id/kind, immutable
 source and evidence digests, projector, policy version, reason, signed clarification for a waiver, target scope, signer repository, and
 validity window; legacy receipt inputs may omit clarification but cannot waive a gap, and its post-signing transport locator is not part of the signed digest. Requested ECC or
-Superpowers framework intents remain visibly report-only and hard-blocked until a separately designed
-policy-gated binding lifecycle exists — this command does not select, install, or project ECC/Superpowers
+Superpowers framework intents remain visibly report-only with developer-managed external installation
+guidance. Third-party selection remains available; this command does not install or project ECC/Superpowers
 agents, skills, commands, or bindings. AIH-owned hook rollback removes only unchanged receipt-proven host
 entries and retains drifted user edits for doctor remediation. When `governance` is present it exclusively
 owns AIH MCP and usage-hook projection: `aih mcp` and `aih usage` fail closed, `aih init` suppresses their
-generic phases, workspace graph MCP registration is suppressed, and governed ECC materialization strips MCP and
-host-hook/runtime operations across core, platform, and full scope while retaining eligible agents, skills, and commands.
+generic phases, and workspace graph MCP registration is suppressed. ECC framework
+intent remains report-only with developer-managed guidance.
 Use
 `aih policy evaluate <root> --no-log --json` in CI and inspect the digest before `aih policy project --apply`.
 
 Authority receipt V1 remains the legacy approval transport. Decision-bearing policy requires receipt
 V2, whose decision and revocation arrays are strict, bounded, sorted, namespace-disjoint from legacy
 approvals, issuer-checked, target-bounded, and time-bounded. A V1 receipt can never satisfy a decision
-reference, and a decision present only in policy JSON has no authority. The portable Workbench's
-standalone decision import is likewise an unverified inspection and canonical-transport view only: it
-is not copied into the policy or receipt, cannot create authority, and cannot decide effective state.
+reference, and a decision present only in policy JSON has no authority. A standalone
+decision file cannot create authority or decide effective state.
 
 ### Strict V2 organization-qualified contract foundation
 
@@ -1362,7 +996,7 @@ verified receipt V3. The attestor field is an authority-issued attribution, not 
 verified signer identity.
 
 Receipt V3 carries only Strict V2 decisions
-and revocations: unsigned policy or Workbench `approved` fields, legacy approvals,
+and revocations: unsigned policy fields, legacy approvals,
 and standalone decision files cannot enter authority. It becomes usable only through either the
 protected PolicyBundle V2 transport or the optional GitHub-attested receipt transport. The separate observation receipt binds
 the decision digest, exact subject and installed digests, registered targets/effects,
@@ -1521,8 +1155,8 @@ descriptor and migration before it can update owned bytes; receipt data cannot
 nominate its own adapter or migration implementation.
 
 `npm run verify:cold-aih-managed-usage` builds and packs Core, installs that
-tarball into a disposable consumer, uses the installed CLI to generate the Policy Workbench, and
-drives its structured form/download to create the separate protected PolicyBundle V2 used for
+tarball into a disposable consumer, then uses the installed public Core parser to validate
+an exact headless PolicyBundle V2 fixture used for
 descriptor discovery, absent inspection,
 qualified preview, configure, inspect, authenticated revocation, final inspection,
 and fail-closed authority substitution. It uses no fake `gh` and no workflow for
@@ -1706,8 +1340,8 @@ newly authorized decision/evidence to append the new audit record. Live file obs
 not installation, activation, endpoint reachability, or process-running proof.
 
 `npm run verify:cold-upstream-artifact-lifecycle` builds and packs Core, installs only the tarball in
-a disposable consumer, and exercises the public parser, packaged schema, installed CLI, and the
-structured Workbench form/download that generates its authority file. It
+a disposable consumer, and exercises the public parser, packaged schema, installed CLI, and
+an exact headless validated authority fixture. It
 first proves that observation and explicit lifecycle apply refuse without authority. It then uses a
 separate protected PolicyBundle V2 to observe and persist one catalog-absent exact organization
 tool, append an exact source/version update, refuse live file drift, record authenticated
@@ -1716,8 +1350,9 @@ fake `gh`, never installs/configures/executes the observed tool, and does not cl
 the host ACL protecting the policy file.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
-and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
-with an otherwise valid approval.
+and last at most 90 days. Mandatory detector failures remain visible evidence problems and never block
+third-party selection. Integrity refusals on AIH-owned projection still apply despite an approval because
+an approval cannot establish a missing projector, valid destination, or receipt ownership.
 
 `validate` is the **read-only CI gate** over the active local org policy source: the default
 committed `aih-org-policy.json`, or an explicit `AIH_ORG_POLICY` override. The policy source is

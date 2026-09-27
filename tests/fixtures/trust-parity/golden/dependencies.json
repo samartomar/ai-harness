@@ -1,0 +1,600 @@
+{
+  "format": "aih-trust-parity-golden",
+  "version": 1,
+  "case": "dependencies",
+  "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+  "posture": "vibe",
+  "internalScopes": [
+    "@acme-internal"
+  ],
+  "native": {
+    "byEnvironment": {
+      "linux-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 8,
+            "detail": "package.json:8 — direct dependency left-pad uses a git/url dependency without a 40-character SHA pin",
+            "fingerprint": "trust-unpinned-dependency:package.json:2b8416f4536c47b57e905c4f3e14508ecc747281c261ad13cfee67ee97115ebd"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 13,
+            "detail": "package.json:13 — direct dependency vitest uses unpinned version spec \"latest\"",
+            "fingerprint": "trust-unpinned-dependency:package.json:8e88f878ffa0aee15ef1f2b2af2f014196f4578a7a7593651e0e8517132e3eca"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 10,
+            "detail": "package.json:10 — direct dependency zod uses unpinned version spec \"^3.23.0\"",
+            "fingerprint": "trust-unpinned-dependency:package.json:4223b2b9c8a4506df167a043302389d7c76e0a1deed0bb2dfb5dc5d52ec1d9d6"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.dependency-confusion",
+            "verdict": "fail",
+            "code": "trust.dependency-confusion",
+            "uri": "package.json",
+            "startLine": 5,
+            "detail": "package.json:5 — direct dependency @acme-internal/auth uses configured internal scope @acme-internal",
+            "fingerprint": "trust-dependency-confusion:package.json:09f89ac178e65e94d9b5821768768d061a21e76def6a8886d4bc6aa8319b749a"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.typosquat",
+            "verdict": "fail",
+            "code": "trust.typosquat",
+            "uri": "package.json",
+            "startLine": 6,
+            "detail": "package.json:6 — direct dependency axois is Damerau-Levenshtein distance 1 from popular package axios",
+            "fingerprint": "trust-typosquat:package.json:ef045450c6024e3532638b2711477801536fa3962d65607212ba4822ef9d5356"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.typosquat",
+            "verdict": "fail",
+            "code": "trust.typosquat",
+            "uri": "package.json",
+            "startLine": 7,
+            "detail": "package.json:7 — direct dependency lodahs is Damerau-Levenshtein distance 1 from popular package lodash",
+            "fingerprint": "trust-typosquat:package.json:70da3ee1459f5a571bea0eef00201cf64c23ea2fcb0609177d917ab568527af2"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 1,
+            "detail": "package.json:1 — package.json declares direct dependencies but no lockfile was found anywhere in the trust source",
+            "fingerprint": "trust-unpinned-dependency:package.json:429881e6c02d89f7beb0def7d7c4b004e4fc4db289e976e667e4a043481e1d68"
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": "trust.sandbox-smoke-unavailable",
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 7
+      },
+      "win32-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 8,
+            "detail": "package.json:8 — direct dependency left-pad uses a git/url dependency without a 40-character SHA pin",
+            "fingerprint": "trust-unpinned-dependency:package.json:2b8416f4536c47b57e905c4f3e14508ecc747281c261ad13cfee67ee97115ebd"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 13,
+            "detail": "package.json:13 — direct dependency vitest uses unpinned version spec \"latest\"",
+            "fingerprint": "trust-unpinned-dependency:package.json:8e88f878ffa0aee15ef1f2b2af2f014196f4578a7a7593651e0e8517132e3eca"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 10,
+            "detail": "package.json:10 — direct dependency zod uses unpinned version spec \"^3.23.0\"",
+            "fingerprint": "trust-unpinned-dependency:package.json:4223b2b9c8a4506df167a043302389d7c76e0a1deed0bb2dfb5dc5d52ec1d9d6"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.dependency-confusion",
+            "verdict": "fail",
+            "code": "trust.dependency-confusion",
+            "uri": "package.json",
+            "startLine": 5,
+            "detail": "package.json:5 — direct dependency @acme-internal/auth uses configured internal scope @acme-internal",
+            "fingerprint": "trust-dependency-confusion:package.json:09f89ac178e65e94d9b5821768768d061a21e76def6a8886d4bc6aa8319b749a"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.typosquat",
+            "verdict": "fail",
+            "code": "trust.typosquat",
+            "uri": "package.json",
+            "startLine": 6,
+            "detail": "package.json:6 — direct dependency axois is Damerau-Levenshtein distance 1 from popular package axios",
+            "fingerprint": "trust-typosquat:package.json:ef045450c6024e3532638b2711477801536fa3962d65607212ba4822ef9d5356"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.typosquat",
+            "verdict": "fail",
+            "code": "trust.typosquat",
+            "uri": "package.json",
+            "startLine": 7,
+            "detail": "package.json:7 — direct dependency lodahs is Damerau-Levenshtein distance 1 from popular package lodash",
+            "fingerprint": "trust-typosquat:package.json:70da3ee1459f5a571bea0eef00201cf64c23ea2fcb0609177d917ab568527af2"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.unpinned-dependency",
+            "verdict": "fail",
+            "code": "trust.unpinned-dependency",
+            "uri": "package.json",
+            "startLine": 1,
+            "detail": "package.json:1 — package.json declares direct dependencies but no lockfile was found anywhere in the trust source",
+            "fingerprint": "trust-unpinned-dependency:package.json:429881e6c02d89f7beb0def7d7c4b004e4fc4db289e976e667e4a043481e1d68"
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": "trust.sandbox-smoke-unavailable",
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 7
+      }
+    },
+    "identicalAcrossEnvironments": true
+  },
+  "detectors": {
+    "semgrep": {
+      "scanDetectorId": "detector.semgrep",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 7137,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 3,
+          "transcriptSha256": "3fa2ae306ccff6efbc0aedd1d4c0b832ae5fff439e19a40e1100eed5f6bc02e4"
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 16029,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 5,
+          "transcriptSha256": "84b4581ada1218b5347a7def41e810d607d6cf6d2c8da0ff8f5e97315374b737"
+        }
+      },
+      "executedOn": [
+        "linux-x64",
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "cisco": {
+      "scanDetectorId": "detector.cisco",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "cisco@uvx"
+          ],
+          "durationMs": 16971,
+          "checks": [
+            {
+              "name": "trust detector cisco",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Cisco AI Defense skill-scanner static scan completed through the committed uv lock with offline defaults-only. No findings != safe. Analyzers run: aih-native, cisco@uvx",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.skill-metadata-license",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:SKILL.md:9034c744696c6c304d05da32720288ec8e646f83195b4b53c5b2653ba46d7fc8"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "MANIFEST_MISSING_LICENSE",
+              "level": "note",
+              "message": "Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "sourceValue": "---",
+              "fingerprint": "trust-raw:0504f39a10a23860b57fcdc9beb8c4793176e3c744e4e54b71d38dab1c1be490"
+            }
+          ],
+          "executions": [
+            {
+              "detector": "cisco",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skill-scanner",
+              "version": "1.0.0"
+            }
+          ],
+          "runnerCalls": 3,
+          "transcriptSha256": "d6d3a58afbdff2d09d4a572f7b3eb9d25b2580f912e2d9642e3ae9fae40e3103"
+        }
+      },
+      "executedOn": [
+        "linux-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "mcp-scanner": {
+      "scanDetectorId": "detector.cisco-mcp-scanner",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco-mcp-scanner",
+          "mode": "executed",
+          "outcome": "not-applicable",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 7,
+          "checks": [],
+          "rawOccurrences": [],
+          "executions": [],
+          "scanObservations": [],
+          "analyzerDrivers": [],
+          "runnerCalls": 1,
+          "transcriptSha256": "3ccd5fc0989f490f06777f34580de64a4ce007723b53a48076478a1791c5c588"
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    },
+    "skillspector": {
+      "scanDetectorId": "detector.skillspector",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.skillspector",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "skillspector@docker"
+          ],
+          "durationMs": 7699,
+          "checks": [
+            {
+              "name": "trust detector skillspector",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: aih-native, skillspector@docker",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "package.json",
+              "startLine": 13,
+              "detail": "warning-only (vibe posture): package.json:13 — SkillSpector: Unpinned Dependencies",
+              "fingerprint": "trust-detector-finding:package.json:115ef5df0b661d88aef51886714d5c20e123449b736595f3ff72b5ce603c0ab7"
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "package.json",
+              "startLine": 10,
+              "detail": "warning-only (vibe posture): package.json:10 — SkillSpector: Unpinned Dependencies",
+              "fingerprint": "trust-detector-finding:package.json:d72527f2420b02ff12cd9dab497987df265d19df12bd48bf56a0a50a5910151e"
+            },
+            {
+              "name": "trust detector skillspector advisory",
+              "verdict": "pass",
+              "code": null,
+              "uri": "package.json",
+              "startLine": 1,
+              "detail": "package.json:1 — SkillSpector: 🟡 SC4: OSV.dev unreachable, using static fallback (9 packages). Results may be incomplete. Set SKILLSPECTOR_OSV_TIMEOUT to increase timeout or check network connectivity to api.osv.dev. This is the expected dependency-coverage mode for the locked no-egress baseline scan; static fallback coverage remains incomplete.",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "package.json",
+              "startLine": 7,
+              "detail": "warning-only (vibe posture): package.json:7 — SkillSpector: Possible Typosquatting: 'lodahs' resembles popular package 'lodash'",
+              "fingerprint": "trust-detector-finding:package.json:021fd25b228faa39a711b1ed0c8cad22c8419ac2b5870188bbbd25a7de1e29f2"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "SC1",
+              "level": "note",
+              "message": "Unpinned Dependencies",
+              "uri": "package.json",
+              "startLine": 13,
+              "sourceValue": "    \"vitest\": \"latest\"",
+              "fingerprint": "trust-raw:e0363edf63c34def952617d1667ff65e53c3a01d27a2cde89e009c0423397da0"
+            },
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "SC1",
+              "level": "note",
+              "message": "Unpinned Dependencies",
+              "uri": "package.json",
+              "startLine": 10,
+              "sourceValue": "    \"zod\": \"^3.23.0\"",
+              "fingerprint": "trust-raw:f0e1e44c3e9c8850751eae34326485638be8ccd405b46ed72bc36806bdfe0587"
+            },
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "SC4",
+              "level": "note",
+              "message": "🟡 SC4: OSV.dev unreachable, using static fallback (9 packages). Results may be incomplete. Set SKILLSPECTOR_OSV_TIMEOUT to increase timeout or check network connectivity to api.osv.dev.",
+              "uri": "package.json",
+              "startLine": 1,
+              "sourceValue": "{",
+              "fingerprint": "trust-raw:e5598a1c342d6c87920643be999d98069dc7ca92bfc8730c69bad0578e5c2bf8"
+            },
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "SC6",
+              "level": "error",
+              "message": "Possible Typosquatting: 'lodahs' resembles popular package 'lodash'",
+              "uri": "package.json",
+              "startLine": 7,
+              "sourceValue": "    \"lodahs\": \"4.17.21\",",
+              "fingerprint": "trust-raw:9fae6f56f31d705cc20e339e11c330a6590bbfc81aad5eb292c2b8ddaac1d581"
+            }
+          ],
+          "executions": [
+            {
+              "detector": "skillspector",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skillspector",
+              "version": "2.9.4"
+            }
+          ],
+          "runnerCalls": 8,
+          "transcriptSha256": "95428bbd099262f600c57dffeda3399add22400e0e638e32f5e8f968fd43da05"
+        }
+      },
+      "executedOn": [
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "snyk-agent-scan": {
+      "scanDetectorId": "detector.snyk-agent-scan",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.snyk-agent-scan",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 1018,
+          "checks": [
+            {
+              "name": "trust detector snyk-agent-scan",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "snyk-agent-scan",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 3,
+          "transcriptSha256": "98779b8624c2747176d639eed3aea17aefdeab4e836785409cd7a45b71ae94f8"
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    }
+  },
+  "sandboxSmoke": {
+    "byEnvironment": {
+      "linux-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": "trust.sandbox-smoke-unavailable",
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): Docker is unavailable (spawn docker ENOENT)",
+        "fingerprint": null
+      },
+      "win32-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "pass",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "Docker read-only/no-network sandbox smoke completed for package manifest(s): package.json; marker: aih sandbox smoke ok; evidence: aih sandbox smoke ok",
+        "fingerprint": null
+      }
+    }
+  }
+}

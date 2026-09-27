@@ -6,7 +6,7 @@ import { cliCapabilities, cliCapabilitySummary } from "../internals/cli-capabili
 import { homeDir, isTargeted } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
-import { upsertTextBlock } from "../internals/envfile.js";
+import { removeManagedBlock, upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type {
@@ -70,6 +70,7 @@ import {
   mcpConfigAbs,
   mcpEntries,
   mcpTomlBody,
+  mcpTomlServerTree,
   removeMcpTomlServers,
 } from "./render.js";
 import { envPlaceholders, type GithubMcpAuth, type McpServer, N24Q02M_HOST } from "./servers.js";
@@ -431,6 +432,145 @@ function managedBlockText(existing: string, scope: string): string | undefined {
     normalized,
   );
   return match?.[1];
+}
+
+/**
+ * Recorded-retired tables in AIH's managed Codex block that no longer match the
+ * launcher AIH recorded. The user edited them, so a rewrite of the block carries
+ * them over verbatim instead of discarding them.
+ */
+function editedRecordedTomlTrees(
+  block: string | undefined,
+  recorded: Record<string, McpServer>,
+  writing: Record<string, McpServer>,
+): string[] {
+  if (block === undefined) return [];
+  return Object.entries(recorded).flatMap(([name, server]) => {
+    if (Object.hasOwn(writing, name)) return [];
+    const tree = mcpTomlServerTree(block, name);
+    return tree === undefined || tree === mcpTomlBody({ [name]: server }) ? [] : [tree];
+  });
+}
+
+export interface RetainedRecordedMcpEntry {
+  readonly host: Cli;
+  readonly path: string;
+  readonly reason: string;
+}
+
+/**
+ * The hosts whose MCP config still registers a recorded-retired server: AIH's
+ * unchanged entry, or (Codex) an edited table inside AIH's managed block that AIH
+ * will not discard. An edited JSON entry is the user's own and is not reported.
+ */
+export function retainedRecordedMcpEntries(
+  ctx: PlanContext,
+  hosts: readonly Cli[],
+  name: string,
+  server: McpServer,
+): RetainedRecordedMcpEntry[] {
+  const home = homeDir(ctx);
+  const seen = new Set<string>();
+  const retained: RetainedRecordedMcpEntry[] = [];
+  for (const host of hosts) {
+    const p = entry(host).mcp;
+    if (p.support !== "native" || !p.configPath || !p.configKey) continue;
+    const abs = isExternalMcp(p.configPath)
+      ? mcpConfigAbs(home, p.configPath)
+      : join(ctx.root, p.configPath);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    if (p.configFormat === "toml") {
+      const block = managedBlockText(readIfExists(abs) ?? "", MCP_TOML_SCOPE);
+      const tree = block === undefined ? undefined : mcpTomlServerTree(block, name);
+      if (tree === undefined) continue;
+      retained.push({
+        host,
+        path: p.configPath,
+        reason:
+          tree === mcpTomlBody({ [name]: server })
+            ? `AIH's generated \`${name}\` table is still registered`
+            : `the \`${name}\` table inside AIH's managed block was edited after activation, so AIH will not discard it`,
+      });
+    } else if (
+      matchingGeneratedJsonServerNames(
+        abs,
+        p.configKey,
+        mcpEntries(host, { [name]: server }),
+      ).includes(name)
+    ) {
+      retained.push({
+        host,
+        path: p.configPath,
+        reason: `AIH's generated \`${name}\` entry is still registered`,
+      });
+    }
+  }
+  return retained;
+}
+
+/**
+ * Remove only a recorded-retired server, only where a host still holds AIH's exact
+ * copy, from hosts the current projection may not target (a narrower `--cli`).
+ * Nothing else in those configs is re-projected.
+ */
+export function recordedRetirementActions(
+  ctx: PlanContext,
+  hosts: readonly Cli[],
+  name: string,
+  server: McpServer,
+): WriteAction[] {
+  const home = homeDir(ctx);
+  const seen = new Set<string>();
+  const actions: WriteAction[] = [];
+  for (const host of hosts) {
+    const e = entry(host);
+    const p = e.mcp;
+    if (p.support !== "native" || !p.configPath || !p.configKey) continue;
+    const external = isExternalMcp(p.configPath);
+    const writePath = external ? mcpConfigAbs(home, p.configPath) : p.configPath;
+    const abs = external ? writePath : join(ctx.root, p.configPath);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    const source = readIfExists(abs);
+    if (source === undefined) continue;
+    const describe = `${e.label}: remove AIH's unchanged ${name} MCP entry (${p.configPath})`;
+    if (p.configFormat === "toml") {
+      const block = managedBlockText(source, MCP_TOML_SCOPE);
+      if (block === undefined || mcpTomlServerTree(block, name) !== mcpTomlBody({ [name]: server }))
+        continue;
+      const body = removeMcpTomlServers(block, [name])
+        .replace(/\n{3,}/g, "\n\n")
+        .replace(/^\n+|\n+$/g, "");
+      const contents =
+        body.length > 0
+          ? upsertTextBlock(source, MCP_TOML_SCOPE, body)
+          : removeManagedBlock(source, MCP_TOML_SCOPE);
+      actions.push(
+        withExpectedContents(writeText(writePath, contents, describe, { external }), source),
+      );
+    } else if (
+      matchingGeneratedJsonServerNames(
+        abs,
+        p.configKey,
+        mcpEntries(host, { [name]: server }),
+        {},
+        source,
+      ).includes(name)
+    ) {
+      actions.push(
+        withExpectedContents(
+          writeJson(writePath, {}, describe, {
+            merge: true,
+            external,
+            removeJsonKeys: { [p.configKey]: [name] },
+          }),
+          source,
+        ),
+      );
+    }
+  }
+  return actions;
 }
 
 function matchingManagedTomlServerNames(absPath: string, deniedNames: readonly string[]): string[] {
@@ -957,7 +1097,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       // config. The user's own servers win; aih's block adds only what's absent.
       const have = existingMcpTomlNames(existing, MCP_TOML_SCOPE);
       const fresh = Object.fromEntries(Object.entries(writeServers).filter(([n]) => !have.has(n)));
-      const merged = upsertTextBlock(existing, MCP_TOML_SCOPE, mcpTomlBody(fresh));
+      const kept = editedRecordedTomlTrees(
+        managedBlockText(source ?? "", MCP_TOML_SCOPE),
+        catalog.recordedRetiredServers ?? {},
+        fresh,
+      );
+      const body = [mcpTomlBody(fresh), ...kept].filter((part) => part.length > 0).join("\n\n");
+      const merged = upsertTextBlock(existing, MCP_TOML_SCOPE, body);
       actions.push(
         withExpectedContents(writeText(writePath, merged, describe, { external }), source),
       );

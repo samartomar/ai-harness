@@ -16,35 +16,41 @@ import type { AcceptanceTuple } from "./acceptance.js";
 import type { BaselineCatalog } from "./catalog.js";
 import { type ResolveOrgBaselineEvidenceResult, resolveOrgBaselineEvidence } from "./org.js";
 import {
-  BaselineEvidenceBlockedError,
+  BaselineEvidenceIntegrityError,
   baselineInstallPhasePlan,
   captureBaselineGate,
 } from "./run.js";
 import type { BaselineEvidenceLock } from "./schema.js";
 import { readVendorBaselineLock, vendorBaselineLockSha256 } from "./vendor.js";
-import type { BaselineAuthorization, BaselineHeldComponent } from "./verify.js";
+import type {
+  BaselineAuthorization,
+  BaselineComponentLabels,
+  BaselineHeldComponent,
+} from "./verify.js";
 
 export interface BaselineEvidencePipelineInput {
   catalog: BaselineCatalog;
   source: TrustSource;
   componentIds: readonly string[];
   allowPartial?: boolean;
-  /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
+  /** When set, organization decisions for this exact tuple are attached to the evidence. */
   acceptanceTuple?: AcceptanceTuple;
   /** Exact protected-policy custody pins carried into the target-local install transaction. */
   transactionPins?: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock">;
   /** The caller's one verified policy observation; avoids a second authority read. */
   policy?: OrgPolicy;
   /**
-   * `held` rides alongside `authorizations` because a caller that reports WHY a
-   * requested component did not install needs the evidence state that held it
-   * back, and re-deriving it downstream would be a second verification whose
-   * verdict could differ from the one this gate acted on.
+   * `held` and `labels` ride alongside `authorizations` because a caller that
+   * reports why a requested component did not install (no evidence matches its
+   * bytes), or what an installed component's evidence found, needs the state this
+   * gate acted on; re-deriving it downstream would be a second verification whose
+   * answer could differ.
    */
   buildInstallPlan: (
     sourceRoot: string,
     authorizations: readonly BaselineAuthorization[],
     held: readonly BaselineHeldComponent[],
+    labels: readonly BaselineComponentLabels[],
   ) => Plan | Promise<Plan>;
 }
 
@@ -181,9 +187,9 @@ export async function executeBaselineEvidencePipeline(
         acceptanceTuple: input.acceptanceTuple,
       });
     } catch (err) {
-      if (!(err instanceof BaselineEvidenceBlockedError)) throw err;
+      if (!(err instanceof BaselineEvidenceIntegrityError)) throw err;
       return executePlan(
-        checksPlan(`${input.catalog.id}: baseline evidence gate`, err.checks),
+        checksPlan(`${input.catalog.id}: baseline evidence integrity`, err.checks),
         ctx,
       );
     }
@@ -191,8 +197,8 @@ export async function executeBaselineEvidencePipeline(
     const install = await baselineInstallPhasePlan(
       ctx,
       gate,
-      async (authorizations, held) =>
-        (await input.buildInstallPlan(sourceRoot, authorizations, held)).actions,
+      async (authorizations, held, labels) =>
+        (await input.buildInstallPlan(sourceRoot, authorizations, held, labels)).actions,
     );
     const actions =
       org.checks.length > 0

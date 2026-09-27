@@ -25,7 +25,7 @@ function overlaps(first: string, second: string, platform: NodeJS.Platform): boo
 
 function socketBudget(root: string, platform: NodeJS.Platform): void {
   if (platform === "win32") return;
-  // Pinned 0.10.8 src/daemon/ipc.c appends this directory and a 16-hex instance key.
+  // Pinned 0.11.0 src/daemon/ipc.c appends this directory and a 16-hex instance key.
   // Use the native effective uid; reserve uint32 width for cross-platform previews.
   const address = `${root}/cbm-daemon-${effectiveUid() ?? "4294967295"}/cbm-${"0".repeat(16)}.sock`;
   if (Buffer.byteLength(address, "utf8") >= (platform === "darwin" ? 104 : 108)) {

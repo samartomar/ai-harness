@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { policyAuthoringCatalog } from "../../../src/org-policy/catalog.js";
-import * as packagedSourceData from "../../../src/org-policy/workbench/core/packaged-source-data.js";
 import {
   defaultPreparedWorkbenchCatalog,
   packagedPreparedWorkbenchCatalogV1,
@@ -20,7 +19,7 @@ beforeAll(() => {
 });
 
 describe("prepared workbench catalog", () => {
-  it("reuses the admitted package for current exact pins without rebuilding its overlays", () => {
+  it("reuses the admitted package for current exact pins without rebuilding Catalog data", () => {
     const baseline = admittedPackage;
     const asset = baseline.bundle.assets["mattpocock/skill:tdd"];
     if (asset === undefined) throw new Error("Missing packaged Matt skill");
@@ -30,33 +29,21 @@ describe("prepared workbench catalog", () => {
       sourceRevisionId: asset.sourceRevisionId,
       contentDigest: asset.contentDigest,
     };
-    const overlay = vi.spyOn(packagedSourceData, "applyPackagedWorkbenchSourceDataV1");
-    try {
-      const first = prepareWorkbenchCatalog(baseline.catalog, {
+    const first = prepareWorkbenchCatalog(baseline.catalog, {
+      sourceDataPins: [pin],
+      packageDataOnly: true,
+    });
+    expect(first).toEqual(baseline);
+    const firstAsset = first.bundle.assets[pin.assetId];
+    if (firstAsset === undefined) throw new Error("Missing detached Matt skill");
+    firstAsset.label = "caller mutation";
+    first.bindings[pin.assetId] = { kind: "intent" };
+    expect(
+      prepareWorkbenchCatalog(baseline.catalog, {
         sourceDataPins: [pin],
         packageDataOnly: true,
-      });
-      expect(first).toEqual(baseline);
-      expect(overlay).not.toHaveBeenCalled();
-      const firstAsset = first.bundle.assets[pin.assetId];
-      if (firstAsset === undefined) throw new Error("Missing detached Matt skill");
-      firstAsset.label = "caller mutation";
-      first.bindings[pin.assetId] = { kind: "intent" };
-      expect(
-        prepareWorkbenchCatalog(baseline.catalog, {
-          sourceDataPins: [pin],
-          packageDataOnly: true,
-        }),
-      ).toEqual(baseline);
-      expect(overlay).not.toHaveBeenCalled();
-      prepareWorkbenchCatalog(baseline.catalog, {
-        sourceDataPins: [{ ...pin, contentDigest: `sha256:${"0".repeat(64)}` }],
-        packageDataOnly: true,
-      });
-      expect(overlay).toHaveBeenCalledOnce();
-    } finally {
-      overlay.mockRestore();
-    }
+      }),
+    ).toEqual(baseline);
   });
 
   it("rechecks source-store bytes after reusing an admitted package snapshot", () => {
@@ -138,7 +125,7 @@ describe("prepared workbench catalog", () => {
     }
   });
 
-  it("returns detached prepared snapshots and invalidates them when catalog bytes change", () => {
+  it("returns detached prepared snapshots and refuses replacement Catalog bytes", () => {
     const catalog = policyAuthoringCatalog();
     const first = prepareWorkbenchCatalog(catalog);
     const assetId = Object.keys(first.bundle.assets)[0];
@@ -160,9 +147,8 @@ describe("prepared workbench catalog", () => {
     const firstMcp = changed.mcp[0];
     if (firstMcp === undefined) throw new Error("expected built-in MCP catalog entry");
     firstMcp.description = `${firstMcp.description} changed`;
-    const changedPrepared = prepareWorkbenchCatalog(changed);
-    expect(changedPrepared.bundle.provenance.bundleDigest).not.toBe(
-      second.bundle.provenance.bundleDigest,
+    expect(() => prepareWorkbenchCatalog(changed)).toThrow(
+      /cannot compile a replacement Catalog-owned baseline/,
     );
   });
   it("keeps the default prepared catalog memo independent of organization options", () => {

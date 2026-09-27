@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "search": {
+      "type": "remote",
+      "url": "https://mcp.example.invalid/sse",
+      "enabled": true
+    },
+    "tools": {
+      "type": "local",
+      "command": [
+        "node",
+        "tools.js"
+      ],
+      "enabled": true
+    }
+  }
+}

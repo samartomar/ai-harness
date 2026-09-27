@@ -53,6 +53,9 @@ export type CheckCode =
   // (the post-upgrade re-projection half of the double lag).
   | "mcp.pin-stale"
   | "mcp.projection-stale"
+  // A Chrome DevTools MCP launch aih emits, merges or accepts lacks one of the
+  // mandatory CHROME_DEVTOOLS_MCP_NO_* opt-outs; aih refuses and never rewrites it.
+  | "mcp.telemetry-opt-out-missing"
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.config-only"
@@ -163,7 +166,6 @@ export type CheckCode =
   | "baseline.evidence-missing"
   | "baseline.org-evidence-required"
   | "baseline.evidence-mismatch"
-  | "baseline.evidence-blocked"
   // A signed baseline evidence lock this build cannot read — most often one
   // produced by a NEWER build, now that the lock ships on its own cadence. Kept
   // distinct from `evidence-missing`/`evidence-mismatch` because the remedy is
@@ -181,6 +183,9 @@ export type CheckCode =
   | "trust.sandbox-smoke-unavailable"
   | "trust.sandbox-smoke-failed"
   | "trust.cisco-finding"
+  // A rule id an analyzer upgrade introduced that Core has not reviewed yet
+  // (src/trust/unreviewed-analyzer-rules.ts): a WARN that never blocks.
+  | "trust.unreviewed-analyzer-rule"
   // Cisco metadata-hygiene "missing license field" finding, reclassified out of
   // the generic cisco-finding block into a graded, acknowledgeable trust-origin
   // finding (advisory at vibe, blocking-but-acknowledgeable at enterprise).
@@ -230,7 +235,11 @@ export type CheckCode =
   // ECC installed-source drift (#555). Advisory: reporting drift is in scope, the repair
   // path that could CLEAR a stale finding is not — and Kiro's absence-guarded installer
   // can never update an existing file, so failing the run would wedge the repo red.
-  | "ecc.install-drift";
+  | "ecc.install-drift"
+  // Framework plugins (C3): a framework phase refused because its plugin package is
+  // not installed (coded skip) or is installed but unusable (fail, never absent).
+  | "framework-plugin.unavailable"
+  | "framework-plugin.incompatible";
 
 export interface Check {
   name: string;

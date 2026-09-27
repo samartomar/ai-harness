@@ -1287,9 +1287,5 @@ describe("operational developer-seat catalog custody V1", () => {
       expect(readFileSync(resolve(surface), "utf8")).not.toContain(
         "developer-seat-catalog-operations",
       );
-    // The admin operational route must not gain a seat dependency either.
-    expect(
-      readFileSync(resolve("src/org-policy/admin-catalog-operations-v1.ts"), "utf8"),
-    ).not.toContain("developer-seat-catalog");
   });
 });

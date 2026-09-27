@@ -18,11 +18,9 @@ const MAX_JSON_DEPTH = 64;
 const MAX_JSON_NODES = 250_000;
 
 const DigestSchema = z.string().regex(SHA256);
-const SupportedMemberIdSchema = SurfaceIdSchema.refine((id) =>
-  /^(?:skill|agent|rule|mcp):/.test(id),
-);
+const SupportedMemberIdSchema = SurfaceIdSchema.refine((id) => id.startsWith("skill:"));
 const SupportedPackageIdSchema = PackageIdSchema.refine((id) =>
-  /^package:(?:skill-pack|ecc-agent|ecc-rule|ecc-mcp)\//.test(id),
+  id.startsWith("package:skill-pack/"),
 );
 const RelativePathSchema = z
   .string()
@@ -54,7 +52,7 @@ export const CapabilityPackageCustodyReceiptSchema = z
     schemaVersion: z.literal(1),
     ownershipReceipt: z.strictObject({ sha256: DigestSchema }),
     domainReceipt: z.strictObject({
-      kind: z.enum(["skill-promotion-trust-lock", "ecc-materialization", "ecc-mcp-explicit-add"]),
+      kind: z.literal("skill-promotion-trust-lock"),
       sha256: DigestSchema,
     }),
     members: z.array(CustodyMemberSchema).min(1).max(MAX_CAPABILITY_PACKAGE_CUSTODY_MEMBERS),
@@ -78,13 +76,7 @@ export const CapabilityPackageCustodyReceiptSchema = z
           path: ["members", memberIndex, "packageIds"],
         });
       }
-      const packagePrefix = member.id.startsWith("skill:")
-        ? "package:skill-pack/"
-        : member.id.startsWith("agent:")
-          ? "package:ecc-agent/"
-          : member.id.startsWith("rule:")
-            ? "package:ecc-rule/"
-            : "package:ecc-mcp/";
+      const packagePrefix = "package:skill-pack/";
       if (member.packageIds.some((id) => !id.startsWith(packagePrefix))) {
         context.addIssue({
           code: "custom",

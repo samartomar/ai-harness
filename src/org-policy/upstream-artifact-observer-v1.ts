@@ -1,9 +1,4 @@
-import { createHash } from "node:crypto";
-import { lstatSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
-import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
-import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { CommandSpec, FileAssertion, Plan, PlanContext } from "../internals/plan.js";
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
@@ -13,10 +8,7 @@ import {
   verifiedPolicyAuthoritySourceCustodyV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
-import {
-  custodyOrganizationEvidenceV1,
-  isContainedEvidenceRelativePathV1,
-} from "./evidence-custody-v1.js";
+import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governance-decision-v2.js";
 import {
   parseOrganizationEvidenceEnvelopeV1Bytes,
@@ -24,39 +16,30 @@ import {
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
 import {
-  isCanonicalUpstreamArtifactPathV1,
   MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
   parseUpstreamArtifactManifestV1Bytes,
   type UpstreamArtifactManifestV1,
 } from "./upstream-artifact-manifest-v1.js";
 import {
-  MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   type ObservedEffectResolution,
   resolveObservedEffect,
   type UpstreamObservationReceiptV1,
-  upstreamObservationReceiptDigestV1,
-  verifyUpstreamObservationV1,
 } from "./upstream-observation-receipt-v1.js";
+import {
+  type CustodiedObservedFileV1,
+  custodyObservedFileV1,
+  installedUpstreamArtifactIdentityV1,
+  isCanonicalUpstreamArtifactRequestPathV1,
+  MAX_OBSERVED_FILE_BYTES_V1,
+  MAX_OBSERVED_TOTAL_BYTES_V1,
+  mintUpstreamObservationReceiptV1,
+  UPSTREAM_ARTIFACT_OBSERVER_V1,
+} from "./upstream-observed-files-v1.js";
+
+/** The bounded request-path grammar moved beside the custody it guards. */
+export { isCanonicalUpstreamArtifactRequestPathV1 };
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
-const MAX_OBSERVED_FILE_BYTES = 4 * 1024 * 1024;
-const MAX_OBSERVED_TOTAL_BYTES = 64 * 1024 * 1024;
-const OBSERVER_CONTRACT = Object.freeze({
-  format: "aih-upstream-artifact-observer",
-  manifestVersion: 1,
-  maxFileBytes: MAX_OBSERVED_FILE_BYTES,
-  maxFiles: 256,
-  maxTotalBytes: MAX_OBSERVED_TOTAL_BYTES,
-  version: 1,
-});
-const OBSERVER = Object.freeze({
-  id: "upstream-artifact-observer",
-  version: "1.0.0",
-  digest: `sha256:${createHash("sha256")
-    .update("aih-upstream-artifact-observer/v1\0", "utf8")
-    .update(canonicalStrictJsonBytesV1(OBSERVER_CONTRACT))
-    .digest("hex")}`,
-});
 
 type Reason =
   | "invalid-input"
@@ -203,16 +186,6 @@ export interface UpstreamArtifactObservationRequestV1 {
   readonly target: Cli;
 }
 
-/** Exact bounded grammar shared by live observation and durable lifecycle parsing. */
-export function isCanonicalUpstreamArtifactRequestPathV1(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value === value.trim() &&
-    isCanonicalUpstreamArtifactPathV1(value) &&
-    isContainedEvidenceRelativePathV1(value)
-  );
-}
-
 function request(ctx: PlanContext): UpstreamArtifactObservationRequestV1 | undefined {
   const decision = option(ctx, "decision");
   const digest = option(ctx, "decisionDigest");
@@ -246,89 +219,6 @@ function decisionFor(
     : undefined;
 }
 
-function safeLstat(path: string): ReturnType<typeof lstatSync> | undefined {
-  try {
-    return lstatSync(path);
-  } catch {
-    return undefined;
-  }
-}
-
-function containedPath(root: string, path: string): string | undefined {
-  if (!isContainedEvidenceRelativePathV1(path)) return undefined;
-  const absolute = resolve(root, ...path.split("/"));
-  return isContainedEvidenceRelativePathV1(relative(root, absolute)) ? absolute : undefined;
-}
-
-function parentState(root: string, absolute: string): "safe" | "unsafe" | "unavailable" {
-  const rootStat = safeLstat(root);
-  if (rootStat === undefined) return "unavailable";
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return "unsafe";
-  const rel = relative(root, absolute);
-  if (!isContainedEvidenceRelativePathV1(rel)) return "unsafe";
-  let cursor = root;
-  for (const segment of rel.split(sep).slice(0, -1)) {
-    cursor = join(cursor, segment);
-    const stat = safeLstat(cursor);
-    if (stat === undefined) return "unavailable";
-    if (!stat.isDirectory() || stat.isSymbolicLink()) return "unsafe";
-  }
-  return "safe";
-}
-
-interface CustodiedFile {
-  readonly assertion: FileAssertion;
-  readonly bytes: Buffer;
-  readonly identity: { readonly dev: bigint; readonly ino: bigint; readonly nlink: bigint };
-  readonly rawDigest: string;
-  readonly size: number;
-  unchanged(): boolean;
-}
-
-function custodyFile(
-  root: string,
-  path: string,
-  maxBytes: number,
-  describe: string,
-): CustodiedFile | "unsafe" | "unavailable" {
-  const absolute = containedPath(root, path);
-  if (absolute === undefined) return "unsafe";
-  const parents = parentState(root, absolute);
-  if (parents !== "safe") return parents;
-  const opened = readRegularFileWithStats(absolute, { maxBytes });
-  if (opened === undefined) {
-    const stat = safeLstat(absolute);
-    return stat === undefined ? "unavailable" : "unsafe";
-  }
-  const bytes = Buffer.from(opened.contents);
-  const identity = {
-    dev: opened.identity.dev,
-    ino: opened.identity.ino,
-    nlink: opened.identity.nlink,
-    size: opened.stats.size,
-  };
-  const raw = createHash("sha256").update(bytes).digest("hex");
-  return {
-    assertion: { path, sha256: raw, maxBytes, describe },
-    bytes,
-    identity: { dev: identity.dev, ino: identity.ino, nlink: identity.nlink },
-    rawDigest: `sha256:${raw}`,
-    size: bytes.byteLength,
-    unchanged(): boolean {
-      if (parentState(root, absolute) !== "safe") return false;
-      const current = readRegularFileWithStats(absolute, { maxBytes });
-      return (
-        current !== undefined &&
-        current.identity.dev === identity.dev &&
-        current.identity.ino === identity.ino &&
-        current.identity.nlink === identity.nlink &&
-        current.stats.size === identity.size &&
-        current.contents.equals(bytes)
-      );
-    },
-  };
-}
-
 function manifestMatches(
   manifest: UpstreamArtifactManifestV1,
   decision: GovernanceDecisionV2,
@@ -345,23 +235,6 @@ function manifestMatches(
     decision.allowedEffects.includes(manifest.effect) &&
     decision.qualificationBasis.kind === "organization-qualified"
   );
-}
-
-function installedIdentity(manifest: UpstreamArtifactManifestV1): { id: string; digest: string } {
-  const identity = {
-    effect: manifest.effect,
-    files: manifest.files,
-    integration: manifest.integration,
-    subject: manifest.subject,
-    target: manifest.target,
-  };
-  return {
-    id: "upstream-artifact-files",
-    digest: `sha256:${createHash("sha256")
-      .update("aih-upstream-artifact-installed/v1\0", "utf8")
-      .update(canonicalStrictJsonBytesV1(identity))
-      .digest("hex")}`,
-  };
 }
 
 export async function observeUpstreamArtifactV1(
@@ -398,7 +271,7 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
   const envelope = parseOrganizationEvidenceEnvelopeV1Bytes(evidence.evidence.bytes);
   if (envelope === undefined) return refusal("qualification-unverified", "verified");
 
-  const manifestFile = custodyFile(
+  const manifestFile = custodyObservedFileV1(
     ctx.root,
     requested.manifest,
     MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
@@ -435,7 +308,7 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
     owner: manifest.integration.owner,
     version: manifest.integration.version,
   };
-  const installed = installedIdentity(manifest);
+  const installed = installedUpstreamArtifactIdentityV1(manifest);
   const initial = resolveObservedEffect({
     authority: verified.authority,
     decisionReference: { id: requested.decision, digest: requested.digest },
@@ -444,7 +317,7 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
     target: requested.target,
     effect: manifest.effect,
     supportedTargets: SUPPORTED_CLIS,
-    expectedVerifier: OBSERVER,
+    expectedVerifier: UPSTREAM_ARTIFACT_OBSERVER_V1,
     expectedInstalled: installed,
     expectedIntegration: integration,
     now: initialNow,
@@ -456,22 +329,22 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
       manifest.effect,
     );
 
-  const observedFiles: CustodiedFile[] = [];
+  const observedFiles: CustodiedObservedFileV1[] = [];
   let totalBytes = 0;
   for (const file of manifest.files) {
     if (file.path === requested.manifest || file.path === requested.evidence)
       return refusal("manifest-mismatch", "verified", provenance);
-    const observed = custodyFile(
+    const observed = custodyObservedFileV1(
       ctx.root,
       file.path,
-      MAX_OBSERVED_FILE_BYTES,
+      MAX_OBSERVED_FILE_BYTES_V1,
       "assert observed upstream artifact file remains exact",
     );
     if (observed === "unavailable")
       return refusal("observed-file-unavailable", "verified", provenance);
     if (observed === "unsafe") return refusal("observed-file-unsafe", "verified", provenance);
     totalBytes += observed.size;
-    if (totalBytes > MAX_OBSERVED_TOTAL_BYTES || observed.rawDigest !== file.sha256)
+    if (totalBytes > MAX_OBSERVED_TOTAL_BYTES_V1 || observed.rawDigest !== file.sha256)
       return refusal("observed-file-mismatch", "verified", provenance);
     observedFiles.push(observed);
   }
@@ -504,7 +377,7 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
     target: requested.target,
     effect: manifest.effect,
     supportedTargets: SUPPORTED_CLIS,
-    expectedVerifier: OBSERVER,
+    expectedVerifier: UPSTREAM_ARTIFACT_OBSERVER_V1,
     expectedInstalled: installed,
     expectedIntegration: integration,
     now: observedAt,
@@ -515,45 +388,17 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
       currentQualification === undefined ? "unqualified" : provenance,
       manifest.effect,
     );
-  const validUntil = new Date(
-    Math.min(
-      Date.parse(verified.authority.receipt.expiresAt),
-      Date.parse(decision.expiresAt),
-      Date.parse(envelope.expiresAt),
-      decision.disposition === "accepted-with-conditions"
-        ? Date.parse(decision.reviewBy)
-        : Number.POSITIVE_INFINITY,
-      Date.parse(observedAt) + MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
-    ),
-  ).toISOString();
-  const receipt: UpstreamObservationReceiptV1 = {
-    format: "aih-upstream-observation-receipt",
-    version: 1,
-    id: "observation-upstream-artifact",
-    decision: { id: requested.decision, digest: requested.digest },
-    subject: manifest.subject,
-    targets: [requested.target],
-    allowedEffects: [manifest.effect],
-    integration,
-    installed,
-    verifier: OBSERVER,
+  const minted = mintUpstreamObservationReceiptV1({
+    authorityExpiresAt: verified.authority.receipt.expiresAt,
+    decision,
+    decisionReference: { id: requested.decision, digest: requested.digest },
+    evidenceExpiresAt: envelope.expiresAt,
+    manifest,
     observedAt,
-    validUntil,
-    outcome: "observed-success",
-  };
-  const observation = verifyUpstreamObservationV1({
-    receipt,
-    expectedVerifier: OBSERVER,
-    expectedInstalled: installed,
-    expectedIntegration: integration,
-    subject: decision.subject,
     target: requested.target,
-    effect: manifest.effect,
-    supportedTargets: SUPPORTED_CLIS,
-    now: observedAt,
-    verify: (candidate) =>
-      upstreamObservationReceiptDigestV1(candidate) === upstreamObservationReceiptDigestV1(receipt),
   });
+  const receipt = minted.receipt;
+  const observation = minted.observation;
   const effective = resolveObservedEffect({
     authority: verified.authority,
     decisionReference: { id: requested.decision, digest: requested.digest },
@@ -563,7 +408,7 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
     target: requested.target,
     effect: manifest.effect,
     supportedTargets: SUPPORTED_CLIS,
-    expectedVerifier: OBSERVER,
+    expectedVerifier: UPSTREAM_ARTIFACT_OBSERVER_V1,
     expectedInstalled: installed,
     expectedIntegration: integration,
     now: observedAt,
@@ -576,7 +421,7 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
     qualification: provenance,
     effective: "observed-effective",
     outcome: "observed-effective",
-    observationDigest: upstreamObservationReceiptDigestV1(receipt),
+    observationDigest: minted.digest,
   };
   const fileAssertions = [
     authorityFile.assertion,

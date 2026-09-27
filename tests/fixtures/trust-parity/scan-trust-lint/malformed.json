@@ -1,0 +1,251 @@
+{
+  "case": "malformed",
+  "producer": {
+    "engine": "runTrustLintV1",
+    "scanCheckout": "sep/scan-detectors",
+    "scanCommit": "28718a7515829c64b0b1410d98bfd1c48d29069b"
+  },
+  "request": {
+    "selectedClosurePaths": [
+      ".mcp.json",
+      "agents/bad.md",
+      "assets/blob.bin",
+      "docs/latin1.md",
+      "package.json",
+      "scripts/install-data.bin",
+      "settings.json",
+      "SKILL.md"
+    ],
+    "detectorOptions": {
+      "internalScopes": [],
+      "mcpConfigPaths": [
+        ".mcp.json"
+      ]
+    }
+  },
+  "sarif": {
+    "version": "2.1.0",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "aih-trust-lint",
+            "version": "1.0.0"
+          }
+        },
+        "properties": {
+          "aih-trust/v1": {
+            "format": "aih-trust-lint-facts",
+            "version": 1,
+            "trustDocumentCount": 3,
+            "repositoryLicenseFile": null
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": ".mcp.json"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "agents/bad.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "assets/blob.bin"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": false,
+                "unicodeRisk": {
+                  "category": "visible-typography",
+                  "code": "trust.visible-unicode",
+                  "reason": "ordinary visible Unicode on instruction/config/executable surface"
+                },
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "docs/latin1.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": false,
+                "unicodeRisk": {
+                  "category": "visible-typography",
+                  "code": "trust.visible-unicode",
+                  "reason": "ordinary visible Unicode in documentation"
+                },
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "package.json"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "scripts/install-data.bin"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "settings.json"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "ruleId": "trust.visible-unicode",
+            "level": "error",
+            "message": {
+              "text": "docs/latin1.md:1 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "docs/latin1.md"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-visible-unicode:docs/latin1.md:5aabc836efe8a265fbf26857256bd920c6d63cd9c53521d9673db07cbdaf39d2"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": "agents/bad.md:1 — unparseable YAML frontmatter in trust document"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "agents/bad.md"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:agents/bad.md:3309cf9a9bd99b1b37b7c56d4879fe86a148d75fdfbf501a71827d61bac16a19"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": "package.json:1 — unparseable package.json in trust source"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:package.json:717b1ddf3b2983db8d6e2568463436360ae6cbc075ed0444f5340ea44ac02b5e"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:1 — unparseable YAML frontmatter in trust document"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:SKILL.md:cc6259b3e95d4b7dd23160671a547fcd41593b00634ad3e070c3c889f86e1e83"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

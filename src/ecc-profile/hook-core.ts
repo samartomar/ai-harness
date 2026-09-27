@@ -933,17 +933,3 @@ export async function dispatchHookEvent(
     return { action: "block", reason: blockReason, contexts, receipts };
   return { action: "continue", contexts, receipts };
 }
-
-function stableJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableJson);
-  if (!isPlainObject(value)) return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([key, child]) => [key, stableJson(child)]),
-  );
-}
-
-export function serializeHookDispatchResult(result: HookDispatchResult): string {
-  return `${JSON.stringify(stableJson(result), null, 2)}\n`;
-}

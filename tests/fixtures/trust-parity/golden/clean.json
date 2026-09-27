@@ -1,0 +1,442 @@
+{
+  "format": "aih-trust-parity-golden",
+  "version": 1,
+  "case": "clean",
+  "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+  "posture": "vibe",
+  "internalScopes": [],
+  "native": {
+    "byEnvironment": {
+      "linux-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "summary",
+            "name": "trust scan",
+            "verdict": "pass",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "scanned 2 trust document(s) in <root>",
+            "fingerprint": null,
+            "hostDependentDetail": true
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 0
+      },
+      "win32-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "summary",
+            "name": "trust scan",
+            "verdict": "pass",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "scanned 2 trust document(s) in <root>",
+            "fingerprint": null,
+            "hostDependentDetail": true
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 0
+      }
+    },
+    "identicalAcrossEnvironments": true
+  },
+  "detectors": {
+    "semgrep": {
+      "scanDetectorId": "detector.semgrep",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 8197,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "42b80481b4f0f7eadd0b01965bb7d2788c902638e8ca130167d2399e4228374d"
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 13167,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "cbc67d437f5018e5e84576a63e13301f7270ad14733fa24ed606dd6e8661c659"
+        }
+      },
+      "executedOn": [
+        "linux-x64",
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "cisco": {
+      "scanDetectorId": "detector.cisco",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "cisco@uvx"
+          ],
+          "durationMs": 18305,
+          "checks": [
+            {
+              "name": "trust detector cisco",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Cisco AI Defense skill-scanner static scan completed through the committed uv lock with offline defaults-only. No findings != safe. Analyzers run: aih-native, cisco@uvx",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "cisco",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skill-scanner",
+              "version": "1.0.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "8113602c667037ac6302e4cffbc299fe0dcd032ccb4279544c58c5df330e4b11"
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.cisco",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (   Building litellm==1.92.0\n  × Failed to build `litellm==1.92.0`\n  ├─▶ The build backend returned an error\n  ╰─▶ Call to `maturin.build_wheel` failed (exit code: 1)\n\n      [stdout]\n      Running `maturin pep517 build-wheel -i\n      <uv-cache>\\builds-v0\\.tmpEJMfNH\\Scripts\\python.exe --compatibility\n      off`\n\n      [stderr]\n      🍹 Building a mixed python/rust project\n      🔗 Found pyo3 bindings\n      🐍 Found CPython 3.12 at\n      <uv-cache>\\builds-v0\\.tmpEJMfNH\\Scripts\\python.exe\n      📡 Using build options bindings from pyproject.toml\n         Compiling windows-sys v0.61.2\n         Compiling ring v0.17.14\n         Compiling synstructure v0.13.2\n         Compiling zerovec-derive v0.11.3\n         Compiling tokio-macros v2.7.0\n         Compiling displaydoc v0.2.6\n         Compiling pyo3-build-config v0.23.5\n         Compiling futures-macro v0.3.32\n         Compiling ppv-lite86 v0.2.21\n         Compiling serde_derive v1.0.228\n         Compiling thiserror-impl v1.0.69\n         Compiling thiserror-impl v2.0.18\n         Compiling serde_json v1.0.150\n      warning: ring@0.17.14: Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n      warning: ring@0.17.14: Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n      error: failed to run custom build command for `ring v0.17.14`\n\n      Caused by:\n        process didn't exit successfully:\n      `<uv-cache>\\sdists-v9\\pypi\\litellm\\1.92.0\\ebYL0YUG8MfnlqNv\\src\\litellm-rust\\target\\release\\build\\ring-77fb91a82ccd589e\\build-script-build`\n      (exit code: 1)\n        --- stdout\n        cargo:rerun-if-env-changed=CARGO_MANIFEST_DIR\n        cargo:rerun-if-env-changed=CARGO_PKG_NAME\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_MAJOR\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_MINOR\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_PATCH\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_PRE\n        cargo:rerun-if-env-changed=CARGO_MANIFEST_LINKS\n        cargo:rerun-if-env-changed=RING_PREGENERATE_ASM\n        cargo:rerun-if-env-changed=OUT_DIR\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_OS\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ENV\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ENDIAN\n        cargo:rerun-if-env-changed=CC_x86_64-pc-windows-gnu\n        CC_x86_64-pc-windows-gnu = None\n        cargo:rerun-if-env-changed=CC_x86_64_pc_windows_gnu\n        CC_x86_64_pc_windows_gnu = None\n        cargo:rerun-if-env-changed=HOST_CC\n        HOST_CC = None\n        cargo:rerun-if-env-changed=CC\n        CC = None\n        cargo:rerun-if-env-changed=CC_ENABLE_DEBUG_OUTPUT\n        cargo:warning=Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n        cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS\n        CRATE_CC_NO_DEFAULTS = None\n        cargo:rerun-if-env-changed=CFLAGS\n        CFLAGS = None\n        cargo:rerun-if-env-changed=HOST_CFLAGS\n        HOST_CFLAGS = None\n        cargo:rerun-if-env-changed=CFLAGS_x86_64_pc_windows_gnu\n        CFLAGS_x86_64_pc_windows_gnu = None\n        cargo:rerun-if-env-changed=CFLAGS_x86_64-pc-windows-gnu\n        CFLAGS_x86_64-pc-windows-gnu = None\n        cargo:warning=Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n\n        --- stderr\n\n\n        error occurred in cc-rs: failed to find tool \"gcc.exe\": program not\n      found (see https://docs.rs/cc/latest/cc/#compile-time-requirements for\n      help)\n\n\n      warning: build failed, waiting for other jobs to finish...\n      error: error calling dlltool 'dlltool.exe': program not found\n\n      error: could not compile `windows-sys` (lib) due to 1 previous error\n      💥 maturin failed\n        Caused by: Failed to build a native library through cargo\n        Caused by: Cargo build finished with \"exit code: 101\": `\"cargo\"\n      \"rustc\" \"--message-format\" \"json-render-diagnostics\" \"--manifest-path\"\n      \"<uv-cache>\\\\sdists-v9\\\\pypi\\\\litellm\\\\1.92.0\\\\ebYL0YUG8MfnlqNv\\\\src\\\\litellm-rust\\\\crates\\\\python-bridge\\\\Cargo.toml\"\n      \"--release\" \"--lib\"`\n      Error: command ['maturin', 'pep517', 'build-wheel', '-i',\n      '<uv-cache>\\\\builds-v0\\\\.tmpEJMfNH\\\\Scripts\\\\python.exe',\n      '--compatibility', 'off'] returned non-zero exit status 1\n\n\nhint: `litellm` (v1.92.0) was included because `aih-cisco-skill-scanner-runtime` (v0.0.0) depends on `cisco-ai-skill-scanner` (v2.0.14) which depends on `litellm`\nhint: Build failures usually indicate a problem with the package or the build environment\n); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 12450,
+          "checks": [
+            {
+              "name": "trust detector cisco",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (   Building litellm==1.92.0\n  × Failed to build `litellm==1.92.0`\n  ├─▶ The build backend returned an error\n  ╰─▶ Call to `maturin.build_wheel` failed (exit code: 1)\n\n      [stdout]\n      Running `maturin pep517 build-wheel -i\n      <uv-cache>\\builds-v0\\.tmpEJMfNH\\Scripts\\python.exe --compatibility\n      off`\n\n      [stderr]\n      🍹 Building a mixed python/rust project\n      🔗 Found pyo3 bindings\n      🐍 Found CPython 3.12 at\n      <uv-cache>\\builds-v0\\.tmpEJMfNH\\Scripts\\python.exe\n      📡 Using build options bindings from pyproject.toml\n         Compiling windows-sys v0.61.2\n         Compiling ring v0.17.14\n         Compiling synstructure v0.13.2\n         Compiling zerovec-derive v0.11.3\n         Compiling tokio-macros v2.7.0\n         Compiling displaydoc v0.2.6\n         Compiling pyo3-build-config v0.23.5\n         Compiling futures-macro v0.3.32\n         Compiling ppv-lite86 v0.2.21\n         Compiling serde_derive v1.0.228\n         Compiling thiserror-impl v1.0.69\n         Compiling thiserror-impl v2.0.18\n         Compiling serde_json v1.0.150\n      warning: ring@0.17.14: Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n      warning: ring@0.17.14: Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n      error: failed to run custom build command for `ring v0.17.14`\n\n      Caused by:\n        process didn't exit successfully:\n      `<uv-cache>\\sdists-v9\\pypi\\litellm\\1.92.0\\ebYL0YUG8MfnlqNv\\src\\litellm-rust\\target\\release\\build\\ring-77fb91a82ccd589e\\build-script-build`\n      (exit code: 1)\n        --- stdout\n        cargo:rerun-if-env-changed=CARGO_MANIFEST_DIR\n        cargo:rerun-if-env-changed=CARGO_PKG_NAME\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_MAJOR\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_MINOR\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_PATCH\n        cargo:rerun-if-env-changed=CARGO_PKG_VERSION_PRE\n        cargo:rerun-if-env-changed=CARGO_MANIFEST_LINKS\n        cargo:rerun-if-env-changed=RING_PREGENERATE_ASM\n        cargo:rerun-if-env-changed=OUT_DIR\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_OS\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ENV\n        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ENDIAN\n        cargo:rerun-if-env-changed=CC_x86_64-pc-windows-gnu\n        CC_x86_64-pc-windows-gnu = None\n        cargo:rerun-if-env-changed=CC_x86_64_pc_windows_gnu\n        CC_x86_64_pc_windows_gnu = None\n        cargo:rerun-if-env-changed=HOST_CC\n        HOST_CC = None\n        cargo:rerun-if-env-changed=CC\n        CC = None\n        cargo:rerun-if-env-changed=CC_ENABLE_DEBUG_OUTPUT\n        cargo:warning=Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n        cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS\n        CRATE_CC_NO_DEFAULTS = None\n        cargo:rerun-if-env-changed=CFLAGS\n        CFLAGS = None\n        cargo:rerun-if-env-changed=HOST_CFLAGS\n        HOST_CFLAGS = None\n        cargo:rerun-if-env-changed=CFLAGS_x86_64_pc_windows_gnu\n        CFLAGS_x86_64_pc_windows_gnu = None\n        cargo:rerun-if-env-changed=CFLAGS_x86_64-pc-windows-gnu\n        CFLAGS_x86_64-pc-windows-gnu = None\n        cargo:warning=Compiler family detection failed due to error:\n      ToolNotFound: failed to find tool \"gcc.exe\": program not found (see\n      https://docs.rs/cc/latest/cc/#compile-time-requirements for help)\n\n        --- stderr\n\n\n        error occurred in cc-rs: failed to find tool \"gcc.exe\": program not\n      found (see https://docs.rs/cc/latest/cc/#compile-time-requirements for\n      help)\n\n\n      warning: build failed, waiting for other jobs to finish...\n      error: error calling dlltool 'dlltool.exe': program not found\n\n      error: could not compile `windows-sys` (lib) due to 1 previous error\n      💥 maturin failed\n        Caused by: Failed to build a native library through cargo\n        Caused by: Cargo build finished with \"exit code: 101\": `\"cargo\"\n      \"rustc\" \"--message-format\" \"json-render-diagnostics\" \"--manifest-path\"\n      \"<uv-cache>\\\\sdists-v9\\\\pypi\\\\litellm\\\\1.92.0\\\\ebYL0YUG8MfnlqNv\\\\src\\\\litellm-rust\\\\crates\\\\python-bridge\\\\Cargo.toml\"\n      \"--release\" \"--lib\"`\n      Error: command ['maturin', 'pep517', 'build-wheel', '-i',\n      '<uv-cache>\\\\builds-v0\\\\.tmpEJMfNH\\\\Scripts\\\\python.exe',\n      '--compatibility', 'off'] returned non-zero exit status 1\n\n\nhint: `litellm` (v1.92.0) was included because `aih-cisco-skill-scanner-runtime` (v0.0.0) depends on `cisco-ai-skill-scanner` (v2.0.14) which depends on `litellm`\nhint: Build failures usually indicate a problem with the package or the build environment\n); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null,
+              "hostDependentDetail": true
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "cisco",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 1,
+          "transcriptSha256": "005c9285e225d6ce2cb553b6c3bde4a40be015d8e66df7b1be82107d60ba1197"
+        }
+      },
+      "executedOn": [
+        "linux-x64"
+      ],
+      "identicalAcrossEnvironments": false
+    },
+    "mcp-scanner": {
+      "scanDetectorId": "detector.cisco-mcp-scanner",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco-mcp-scanner",
+          "mode": "executed",
+          "outcome": "not-applicable",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 4,
+          "checks": [],
+          "rawOccurrences": [],
+          "executions": [],
+          "scanObservations": [],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.cisco-mcp-scanner",
+          "mode": "executed",
+          "outcome": "not-applicable",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 16,
+          "checks": [],
+          "rawOccurrences": [],
+          "executions": [],
+          "scanObservations": [],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    },
+    "skillspector": {
+      "scanDetectorId": "detector.skillspector",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.skillspector",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "skillspector@docker"
+          ],
+          "durationMs": 5919,
+          "checks": [
+            {
+              "name": "trust detector skillspector",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: aih-native, skillspector@docker",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "skillspector",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skillspector",
+              "version": "2.9.4"
+            }
+          ],
+          "runnerCalls": 5,
+          "transcriptSha256": "314c028edc76641ec0490dae6a84987e355061b97386be7aa3eb86f571e1cf7e"
+        }
+      },
+      "executedOn": [
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "snyk-agent-scan": {
+      "scanDetectorId": "detector.snyk-agent-scan",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.snyk-agent-scan",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 13,
+          "checks": [
+            {
+              "name": "trust detector snyk-agent-scan",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "snyk-agent-scan",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    }
+  },
+  "sandboxSmoke": {
+    "byEnvironment": {
+      "linux-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+        "fingerprint": null
+      },
+      "win32-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+        "fingerprint": null
+      }
+    }
+  }
+}

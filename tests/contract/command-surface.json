@@ -4,9 +4,6 @@
   "arguments": [],
   "options": [
     {
-      "flags": "--ui"
-    },
-    {
       "flags": "-V, --version"
     }
   ],
@@ -901,7 +898,13 @@
       ],
       "options": [
         {
+          "flags": "--accept-headroom-egress"
+        },
+        {
           "flags": "--accept-token-optimizer-license"
+        },
+        {
+          "flags": "--activate-headroom"
         },
         {
           "flags": "--all-tools"
@@ -915,6 +918,9 @@
         {
           "flags": "--context-dir <dir>",
           "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--deactivate-headroom"
         },
         {
           "flags": "--detect"
@@ -934,6 +940,9 @@
         {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
+        },
+        {
+          "flags": "--primary-code-graph <id>"
         },
         {
           "flags": "--root <dir>"
@@ -1046,12 +1055,6 @@
       ],
       "options": [
         {
-          "flags": "--all-tools"
-        },
-        {
-          "flags": "--apply"
-        },
-        {
           "flags": "--cli <list>"
         },
         {
@@ -1059,22 +1062,7 @@
           "defaultValue": "ai-coding"
         },
         {
-          "flags": "--detect"
-        },
-        {
-          "flags": "--ecc-path <dir>"
-        },
-        {
-          "flags": "--force"
-        },
-        {
           "flags": "--json"
-        },
-        {
-          "flags": "--lifecycle <operation>"
-        },
-        {
-          "flags": "--no-log"
         },
         {
           "flags": "--policy <file>"
@@ -1084,149 +1072,13 @@
           "defaultValue": "vibe"
         },
         {
-          "flags": "--profile <profile>",
-          "defaultValue": "minimal"
-        },
-        {
           "flags": "--root <dir>"
         },
         {
-          "flags": "--support-out <dir>"
-        },
-        {
-          "flags": "--verify"
-        },
-        {
-          "flags": "--with <component>"
-        },
-        {
-          "flags": "--yes"
+          "flags": "--status"
         }
       ],
-      "commands": [
-        {
-          "name": "mcp",
-          "hasDescription": true,
-          "arguments": [],
-          "options": [],
-          "commands": [
-            {
-              "name": "add",
-              "hasDescription": true,
-              "arguments": [
-                {
-                  "name": "id",
-                  "required": true
-                }
-              ],
-              "options": [
-                {
-                  "flags": "--all-tools"
-                },
-                {
-                  "flags": "--apply"
-                },
-                {
-                  "flags": "--cli <list>"
-                },
-                {
-                  "flags": "--context-dir <dir>",
-                  "defaultValue": "ai-coding"
-                },
-                {
-                  "flags": "--detect"
-                },
-                {
-                  "flags": "--force"
-                },
-                {
-                  "flags": "--json"
-                },
-                {
-                  "flags": "--no-log"
-                },
-                {
-                  "flags": "--policy <file>"
-                },
-                {
-                  "flags": "--posture <posture>",
-                  "defaultValue": "vibe"
-                },
-                {
-                  "flags": "--root <dir>"
-                },
-                {
-                  "flags": "--support-out <dir>"
-                },
-                {
-                  "flags": "--verify"
-                },
-                {
-                  "flags": "--yes"
-                }
-              ],
-              "commands": []
-            },
-            {
-              "name": "remove",
-              "hasDescription": true,
-              "arguments": [
-                {
-                  "name": "id",
-                  "required": true
-                }
-              ],
-              "options": [
-                {
-                  "flags": "--all-tools"
-                },
-                {
-                  "flags": "--apply"
-                },
-                {
-                  "flags": "--cli <list>"
-                },
-                {
-                  "flags": "--context-dir <dir>",
-                  "defaultValue": "ai-coding"
-                },
-                {
-                  "flags": "--detect"
-                },
-                {
-                  "flags": "--force"
-                },
-                {
-                  "flags": "--json"
-                },
-                {
-                  "flags": "--no-log"
-                },
-                {
-                  "flags": "--policy <file>"
-                },
-                {
-                  "flags": "--posture <posture>",
-                  "defaultValue": "vibe"
-                },
-                {
-                  "flags": "--root <dir>"
-                },
-                {
-                  "flags": "--support-out <dir>"
-                },
-                {
-                  "flags": "--verify"
-                },
-                {
-                  "flags": "--yes"
-                }
-              ],
-              "commands": []
-            }
-          ]
-        }
-      ]
+      "commands": []
     },
     {
       "name": "evidence",
@@ -1605,7 +1457,13 @@
       ],
       "options": [
         {
+          "flags": "--accept-headroom-egress"
+        },
+        {
           "flags": "--accept-token-optimizer-license"
+        },
+        {
+          "flags": "--activate-headroom"
         },
         {
           "flags": "--all-tools"
@@ -1628,10 +1486,10 @@
           "defaultValue": "ai-coding"
         },
         {
-          "flags": "--detect"
+          "flags": "--deactivate-headroom"
         },
         {
-          "flags": "--ecc-path <path>"
+          "flags": "--detect"
         },
         {
           "flags": "--force"
@@ -1658,6 +1516,9 @@
         {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
+        },
+        {
+          "flags": "--primary-code-graph <id>"
         },
         {
           "flags": "--root <dir>"
@@ -2722,79 +2583,6 @@
           "commands": []
         },
         {
-          "name": "generate",
-          "hasDescription": true,
-          "arguments": [
-            {
-              "name": "admin-root",
-              "required": false
-            }
-          ],
-          "options": [
-            {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
-              "flags": "--cli <list>"
-            },
-            {
-              "flags": "--context-dir <dir>",
-              "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
-            },
-            {
-              "flags": "--fresh-artifact-intake <path>"
-            },
-            {
-              "flags": "--fresh-organization-manifest <path>"
-            },
-            {
-              "flags": "--json"
-            },
-            {
-              "flags": "--no-log"
-            },
-            {
-              "flags": "--organization-manifest <path>"
-            },
-            {
-              "flags": "--out <path>",
-              "defaultValue": "aih-policy-workbench.html"
-            },
-            {
-              "flags": "--policy <file>"
-            },
-            {
-              "flags": "--policy-input <path>"
-            },
-            {
-              "flags": "--posture <posture>",
-              "defaultValue": "vibe"
-            },
-            {
-              "flags": "--root <dir>"
-            },
-            {
-              "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
-            }
-          ],
-          "commands": []
-        },
-        {
           "name": "init",
           "hasDescription": true,
           "arguments": [
@@ -3188,9 +2976,6 @@
             },
             {
               "flags": "--detect"
-            },
-            {
-              "flags": "--ecc-path <path>"
             },
             {
               "flags": "--force"
@@ -4504,6 +4289,9 @@
               "flags": "--detect"
             },
             {
+              "flags": "--fail-on <conditions>"
+            },
+            {
               "flags": "--force"
             },
             {
@@ -5034,6 +4822,9 @@
             },
             {
               "flags": "--evidence-out <file>"
+            },
+            {
+              "flags": "--fail-on <conditions>"
             },
             {
               "flags": "--force"

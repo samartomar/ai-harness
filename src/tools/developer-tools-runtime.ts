@@ -16,7 +16,11 @@ import {
   type DefaultNativeRuntimeLayout,
   defaultNativeRuntimeLayout,
 } from "../mcp/default-native-runtime.js";
-import type { DeveloperToolId } from "./default-tool-selection.js";
+import {
+  type DeveloperToolId,
+  isPrimaryCodeGraphId,
+  type PrimaryCodeGraphId,
+} from "./default-tool-selection.js";
 import type {
   DeveloperToolLifecycleResult,
   DeveloperToolLifecycleState,
@@ -75,9 +79,17 @@ export interface DeveloperToolReceiptEntry {
   readonly ownedPaths: readonly DeveloperToolOwnedPath[];
 }
 
+/** The effective primary code graph at the last apply and who chose it. */
+export interface PrimaryCodeGraphRecord {
+  readonly id: PrimaryCodeGraphId;
+  readonly source: "policy" | "user";
+}
+
 export interface DeveloperToolsRuntimeReceipt {
   readonly version: typeof RECEIPT_VERSION;
   readonly canonicalRoot: string;
+  /** Optional: absent when no primary code graph has been chosen. */
+  readonly primaryCodeGraph?: PrimaryCodeGraphRecord;
   readonly tools: Partial<Record<ReceiptToolId, DeveloperToolReceiptEntry>>;
 }
 
@@ -184,15 +196,33 @@ function parseOwnedPath(
   return { path: resolved, sha256: path.sha256, ownership: "file" };
 }
 
+function parsePrimaryCodeGraph(value: unknown): PrimaryCodeGraphRecord {
+  const record = object(value, "developer-tool primary code graph");
+  exactKeys(record, ["id", "source"], "developer-tool primary code graph");
+  if (
+    !isPrimaryCodeGraphId(record.id) ||
+    (record.source !== "policy" && record.source !== "user")
+  ) {
+    throw new Error("developer-tool primary code graph record is invalid");
+  }
+  return { id: record.id, source: record.source };
+}
+
 function parseReceipt(
   value: unknown,
   layout: DefaultNativeRuntimeLayout,
 ): DeveloperToolsRuntimeReceipt {
   const receipt = object(value, "developer-tool runtime receipt");
-  exactKeys(receipt, ["version", "canonicalRoot", "tools"], "developer-tool runtime receipt");
+  const hasPrimary = Object.hasOwn(receipt, "primaryCodeGraph");
+  exactKeys(
+    receipt,
+    ["version", "canonicalRoot", "tools", ...(hasPrimary ? ["primaryCodeGraph"] : [])],
+    "developer-tool runtime receipt",
+  );
   if (receipt.version !== RECEIPT_VERSION || receipt.canonicalRoot !== layout.project) {
     throw new Error("developer-tool runtime receipt does not belong to this canonical worktree");
   }
+  const primaryCodeGraph = hasPrimary ? parsePrimaryCodeGraph(receipt.primaryCodeGraph) : undefined;
   const tools = object(receipt.tools, "developer-tool runtime receipt tools");
   for (const id of Object.keys(tools)) {
     if (!(RECEIPT_TOOL_IDS as readonly string[]).includes(id)) {
@@ -216,7 +246,12 @@ function parseReceipt(
     }
     parsedTools[id] = { sourceDigest: entry.sourceDigest, ownedPaths };
   }
-  return { version: RECEIPT_VERSION, canonicalRoot: layout.project, tools: parsedTools };
+  return {
+    version: RECEIPT_VERSION,
+    canonicalRoot: layout.project,
+    ...(primaryCodeGraph === undefined ? {} : { primaryCodeGraph }),
+    tools: parsedTools,
+  };
 }
 
 function sha256(contents: Buffer | string): string {
@@ -267,11 +302,65 @@ function stableReceipt(receipt: DeveloperToolsRuntimeReceipt): string {
     {
       version: RECEIPT_VERSION,
       canonicalRoot: receipt.canonicalRoot,
+      ...(receipt.primaryCodeGraph === undefined
+        ? {}
+        : { primaryCodeGraph: receipt.primaryCodeGraph }),
       tools,
     },
     null,
     2,
   )}\n`;
+}
+
+/** The recorded primary code graph, validating the whole receipt first. */
+export function readDeveloperToolPrimaryCodeGraph(
+  layout: DefaultNativeRuntimeLayout,
+): PrimaryCodeGraphRecord | undefined {
+  return readReceipt(layout).receipt.primaryCodeGraph;
+}
+
+/**
+ * Record (or clear) the primary code graph with the receipt's compare-and-swap
+ * write. Returns false when the stored record already matches.
+ */
+export function recordDeveloperToolPrimaryCodeGraph(
+  layout: DefaultNativeRuntimeLayout,
+  record: PrimaryCodeGraphRecord | undefined,
+): boolean {
+  const { receipt, sha256: expected } = readReceipt(layout);
+  const current = receipt.primaryCodeGraph;
+  if (current?.id === record?.id && current?.source === record?.source) return false;
+  const { primaryCodeGraph: _previous, ...rest } = receipt;
+  const next: DeveloperToolsRuntimeReceipt =
+    record === undefined ? rest : { ...rest, primaryCodeGraph: record };
+  const contents = stableReceipt(next);
+  const parent = prepareOwnedStateDirectory(
+    dirname(layout.runtimeReceiptPath),
+    "developer-tool receipt directory",
+  );
+  const onDisk = readRegularFileWithStats(layout.runtimeReceiptPath, {
+    maxBytes: MAX_RECEIPT_BYTES,
+  });
+  if ((onDisk === undefined ? undefined : sha256(onDisk.contents)) !== expected) {
+    throw new Error(
+      "developer-tool runtime receipt changed while recording the primary code graph",
+    );
+  }
+  const temporary = resolve(
+    parent,
+    `.developer-tools-receipt.${process.pid}.${randomBytes(8).toString("hex")}.tmp`,
+  );
+  try {
+    writeFileSync(temporary, contents, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    retryTransient(() => renameSync(temporary, layout.runtimeReceiptPath));
+  } finally {
+    try {
+      unlinkSync(temporary);
+    } catch {
+      // Renamed or already absent.
+    }
+  }
+  return true;
 }
 
 function sameSnapshot(left: Stats, right: Stats): boolean {
@@ -453,7 +542,8 @@ export function createDeveloperToolReconciler(
     }
     const id = input.id;
     const operation =
-      deps.operations?.[id] ?? defaultOperations[id] ?? defaultUnavailableOperation(id);
+      deps.operations?.[id] ??
+      (id === "headroom" ? defaultUnavailableOperation(id) : defaultOperations[id]);
 
     // Token Optimizer owns its independent receipt and removal contract.
     if (id === "token-optimizer") {

@@ -2,28 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 
 const mocks = vi.hoisted(() => ({
-  ownership: vi.fn(() => ({ state: "absent" as const })),
-  mixed: vi.fn(() => ({
+  skill: vi.fn(() => ({
     schemaVersion: 1 as const,
     status: "applied" as const,
     operation: "add" as const,
-    packageId: "package:ecc-agent/reviewer",
+    packageId: "package:skill-pack/review",
     writes: ["aih-capability-packages.json"],
     removes: [],
     report: { schemaVersion: 1 },
   })),
-  skill: vi.fn(() => {
-    throw new Error("skill coordinator must not receive ECC packages");
-  }),
-}));
-
-vi.mock("../../src/capability/package-manager/receipt.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/capability/package-manager/receipt.js")>()),
-  readCapabilityPackageOwnershipReceipt: mocks.ownership,
-}));
-
-vi.mock("../../src/capability/package-manager/domains/mixed-coordinator.js", () => ({
-  reconcileMixedCapabilityPackages: mocks.mixed,
 }));
 vi.mock("../../src/capability/package-manager/domains/skill-pack-coordinator.js", () => ({
   reconcileSkillPackCapabilityPackage: mocks.skill,
@@ -31,157 +18,39 @@ vi.mock("../../src/capability/package-manager/domains/skill-pack-coordinator.js"
 
 import { executeCapabilityPackageCommand } from "../../src/capability/package-manager/commands.js";
 
-describe("capability package command domain dispatch", () => {
-  it("routes removal through the closure coordinator when another package remains", async () => {
-    mocks.ownership.mockReturnValueOnce({
-      state: "valid",
-      receipt: {
-        packages: [
-          { id: "package:ecc-agent/reviewer" },
-          { id: "package:ecc-agent/security-reviewer" },
-        ],
-      },
-    } as never);
-    const ctx = {
-      root: "/tmp/package-command-dispatch",
-      contextDir: "ai-coding",
-      apply: true,
-      verify: false,
-      json: false,
-      env: {},
-      options: { packageId: "package:ecc-agent/reviewer" },
-    } as unknown as PlanContext;
+function context(packageId: string): PlanContext {
+  return {
+    root: "/tmp/package-command-dispatch",
+    contextDir: "ai-coding",
+    apply: true,
+    verify: false,
+    json: false,
+    env: {},
+    options: { packageId },
+  } as unknown as PlanContext;
+}
 
-    await executeCapabilityPackageCommand("remove", ctx);
-
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "remove",
-      packageId: "package:ecc-agent/reviewer",
-      apply: true,
-    });
-  });
-
-  it("routes a single-domain ECC removal through the closure coordinator", async () => {
-    const ctx = {
-      root: "/tmp/package-command-dispatch",
-      contextDir: "ai-coding",
-      apply: true,
-      verify: false,
-      json: false,
-      env: {},
-      options: { packageId: "package:ecc-agent/reviewer" },
-    } as unknown as PlanContext;
-
-    const result = await executeCapabilityPackageCommand("remove", ctx);
-
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "remove",
-      packageId: "package:ecc-agent/reviewer",
-      apply: true,
-    });
-    expect(mocks.skill).not.toHaveBeenCalled();
-    expect(result.digests[0]?.data).toMatchObject({ status: "applied" });
-  });
-
-  it("routes a single-domain ECC MCP removal through the closure coordinator", async () => {
-    const ctx = {
-      root: "/tmp/package-command-dispatch",
-      contextDir: "ai-coding",
-      apply: true,
-      verify: false,
-      json: false,
-      env: {},
-      options: { packageId: "package:ecc-mcp/memxus" },
-    } as unknown as PlanContext;
-
-    await executeCapabilityPackageCommand("remove", ctx);
-
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "remove",
-      packageId: "package:ecc-mcp/memxus",
-      apply: true,
-    });
+describe("capability package command dispatch", () => {
+  it("refuses ECC agent, rule, and MCP mutations with the developer route", async () => {
+    for (const id of [
+      "package:ecc-agent/reviewer",
+      "package:ecc-rule/rules",
+      "package:ecc-mcp/memxus",
+    ]) {
+      await expect(executeCapabilityPackageCommand("remove", context(id))).rejects.toMatchObject({
+        code: "AIH_CONFIG",
+        message: expect.stringContaining("run aih ecc for the exact ECC commands"),
+      });
+    }
     expect(mocks.skill).not.toHaveBeenCalled();
   });
 
-  it("routes add/update through the closure-wide coordinator", async () => {
-    const ctx = {
-      root: "/tmp/package-command-dispatch",
-      contextDir: "ai-coding",
-      apply: true,
-      verify: false,
-      json: false,
-      env: {},
-      options: { packageId: "package:ecc-agent/reviewer" },
-    } as unknown as PlanContext;
-
-    await executeCapabilityPackageCommand("add", ctx);
-
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "add",
-      packageId: "package:ecc-agent/reviewer",
-      apply: true,
-    });
-  });
-
-  it("surfaces a stable stage and reason when reconciliation refuses", async () => {
-    mocks.mixed.mockReturnValueOnce({
-      schemaVersion: 1,
-      status: "refused",
-      stage: "custody",
-      reason: "invalid-current-custody",
-    } as never);
-    const ctx = {
-      root: "/tmp/package-command-dispatch",
-      contextDir: "ai-coding",
-      apply: true,
-      verify: false,
-      json: false,
-      env: {},
-      options: { packageId: "package:ecc-agent/reviewer" },
-    } as unknown as PlanContext;
-
-    await expect(executeCapabilityPackageCommand("update", ctx)).rejects.toThrow(
-      "reconciliation refused at custody: invalid-current-custody",
+  it("keeps skill-pack mutation dispatch", async () => {
+    const result = await executeCapabilityPackageCommand(
+      "add",
+      context("package:skill-pack/review"),
     );
-  });
-
-  it("projects reconciled removals into the command result", async () => {
-    mocks.mixed.mockReturnValueOnce({
-      schemaVersion: 1,
-      status: "applied",
-      operation: "remove",
-      packageId: "package:ecc-agent/reviewer",
-      writes: [],
-      removes: [".claude/agents/reviewer.md"],
-      report: { schemaVersion: 1 },
-    } as never);
-    const ctx = {
-      root: "/tmp/package-command-dispatch",
-      contextDir: "ai-coding",
-      apply: true,
-      verify: false,
-      json: false,
-      env: {},
-      options: { packageId: "package:ecc-agent/reviewer" },
-    } as unknown as PlanContext;
-
-    const result = await executeCapabilityPackageCommand("remove", ctx);
-
-    expect(result.removed).toEqual([
-      {
-        path: ".claude/agents/reviewer.md",
-        describe: "receipt-bound capability package subtraction",
-        effect: "delete",
-      },
-    ]);
+    expect(mocks.skill).toHaveBeenCalledOnce();
+    expect(result.writes.map((entry) => entry.path)).toEqual(["aih-capability-packages.json"]);
   });
 });

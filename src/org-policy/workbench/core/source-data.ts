@@ -45,10 +45,8 @@ import {
   verifySourceDataLocalReceiptV1,
   writeSourceDataLocalReceiptV1,
 } from "./source-data-local-receipt.js";
-import {
-  SourceDataQualificationProofV1Schema,
-  verifySourceDataQualificationV1,
-} from "./source-data-qualification.js";
+import { verifySourceDataQualificationV1 } from "./source-data-qualification.js";
+import { SourceDataQualificationProofV1Schema } from "./source-data-qualification-contract.js";
 
 const DOMAIN = "workbench-source-data/v1";
 const MAX_BYTES = 16 * 1024 * 1024;

@@ -31,6 +31,14 @@ import {
 } from "@aihq/scan";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports none, with neutral facts for every selected file.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) =>
+  (await import("../trust/fakes/installed-fake-scan.js")).withInstalledFakeScan(
+    await importOriginal(),
+  ),
+);
+
 const mocks = vi.hoisted(() => ({ defaultRunner: vi.fn() }));
 
 vi.mock("../../src/internals/proc.js", async (importOriginal) => ({
@@ -39,6 +47,7 @@ vi.mock("../../src/internals/proc.js", async (importOriginal) => ({
 }));
 
 import {
+  aihScannerCompilationFromCatalogV1,
   assertAihScanMaterialEquivalenceV1,
   type MaterializedAihScanSubjectsV1,
   materializeAihScanSubjectsV1,
@@ -65,8 +74,6 @@ import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js
 import { acquireBoundedGithubSourceArchiveV1 } from "../../src/internals/bounded-github-source-archive.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import { PackagedScannerCollectionEvidenceRecordV1Schema } from "../../src/org-policy/packaged-collection-evidence-v1.js";
-import { assembleCompilerOutputsV1 } from "../../src/org-policy/workbench/assembly.js";
-import { compileBuiltInCatalogV1 } from "../../src/org-policy/workbench/compilers/built-in.js";
 import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
 import {
   canonicalCatalogQualificationClosureV1,
@@ -75,7 +82,9 @@ import {
   prepareAihFirstPartyCompilerQualificationsV1,
   verifyCatalogQualificationArtifactsForPackagingV1,
 } from "../../src/org-policy/workbench/core/catalog-qualification-v1.js";
-import { builtInAssemblyInputV1 } from "../../src/org-policy/workbench/providers/aih.js";
+import { packagedPreparedWorkbenchCatalogV1 } from "../../src/org-policy/workbench/prepared-catalog.js";
+import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { selfDerivedPrecomputedCompletionForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 const roots: string[] = [];
 const materializedRoots: MaterializedAihScanSubjectsV1[] = [];
@@ -248,7 +257,7 @@ function materialize(): MaterializedAihScanSubjectsV1 {
     outputParent,
     coreRevision: { pinnedSha: currentRevision() },
     catalog,
-    compiled: compileBuiltInCatalogV1(catalog),
+    compiled: aihScannerCompilationFromCatalogV1(),
   });
   materializedRoots.push(materialized);
   return materialized;
@@ -265,7 +274,7 @@ it("accepts evidence-only release commits while retaining the scanned revision a
       packageRoot,
       coreRevision: { pinnedSha },
       catalog: inputCatalog,
-      compiled: compileBuiltInCatalogV1(inputCatalog),
+      compiled: aihScannerCompilationFromCatalogV1(),
     });
     materializedRoots.push(materialized);
     return materialized;
@@ -328,7 +337,8 @@ function sha256(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function signedPublication(request: BaselineVetRequestV1) {
+/** A signed publication whose SARIF annexes carry completion evidence SELF-DERIVED for `sourceRoot`. */
+function signedPublication(sourceRoot: string, request: BaselineVetRequestV1) {
   const annexArtifacts = [
     ...new Set(request.components.flatMap((component) => component.analyzers)),
   ].map((analyzer) => {
@@ -339,7 +349,22 @@ function signedPublication(request: BaselineVetRequestV1) {
             sourceTreeSha256: request.source.treeSha256,
             files: [],
           }
-        : { version: "2.1.0", runs: [{ tool: { driver: { name: analyzer } }, results: [] }] };
+        : selfDerivedPrecomputedCompletionForTests(
+            {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: { driver: { name: analyzer } },
+                  invocations: [{ executionSuccessful: true }],
+                  results: [],
+                },
+              ],
+            },
+            SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+            sourceRoot,
+            // A Scanner publication's annex: the baseline subject and Scan's batch profiles.
+            { origin: "scanner-baseline-vet" },
+          );
     return {
       path: `annex/${analyzer}.json`,
       bytes: canonicalStrictJsonBytesV1(value),
@@ -575,7 +600,7 @@ describe("AIH scan material", () => {
   it("refuses a non-pinned checkout, output below the checkout, and altered compiler output before producing a scan tree", () => {
     const parent = temporaryDirectory("aih-scan-material-reject-");
     const catalog = policyAuthoringCatalog();
-    const compiled = compileBuiltInCatalogV1(catalog);
+    const compiled = aihScannerCompilationFromCatalogV1();
     expect(() =>
       materializeAihScanSubjectsV1({
         packageRoot: resolve("."),
@@ -609,7 +634,7 @@ describe("AIH scan material", () => {
         catalog,
         compiled: altered,
       }),
-    ).toThrow(/canonical compiler output/);
+    ).toThrow(/compiled AIH catalog differs from admitted Catalog declarations/);
     expect(readdirSync(parent)).toEqual([]);
   });
 
@@ -617,7 +642,7 @@ describe("AIH scan material", () => {
     const packageRoot = copiedPackageCheckout();
     const outputParent = temporaryDirectory("aih-scan-material-links-");
     const catalog = policyAuthoringCatalog();
-    const compiled = compileBuiltInCatalogV1(catalog);
+    const compiled = aihScannerCompilationFromCatalogV1();
     const sourceFile = join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md");
     linkSync(sourceFile, join(packageRoot, "packs/docs-quality/aih-betterdoc/hardlink.md"));
 
@@ -641,7 +666,7 @@ describe("AIH scan material", () => {
     const packageRoot = copiedPackageCheckout();
     const outputParent = temporaryDirectory("aih-scan-material-dirty-pack-");
     const catalog = policyAuthoringCatalog();
-    const compiled = compileBuiltInCatalogV1(catalog);
+    const compiled = aihScannerCompilationFromCatalogV1();
     const skill = join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md");
     writeFileSync(skill, `${readFileSync(skill, "utf8")}\nchanged after pin\n`);
 
@@ -665,7 +690,7 @@ describe("AIH scan material", () => {
     const packageRoot = copiedPackageCheckout();
     const outputParent = temporaryDirectory("aih-scan-material-oversized-pack-");
     const catalog = policyAuthoringCatalog();
-    const compiled = compileBuiltInCatalogV1(catalog);
+    const compiled = aihScannerCompilationFromCatalogV1();
     const relativeSkill = "packs/docs-quality/aih-betterdoc/SKILL.md";
     writeFileSync(join(packageRoot, relativeSkill), Buffer.alloc(16 * 1024 * 1024 + 1, 0x61));
     execFileSync("git", ["-C", packageRoot, "add", relativeSkill]);
@@ -709,7 +734,7 @@ describe("AIH scan material", () => {
       destination: packageRoot,
     });
     const catalog = policyAuthoringCatalog();
-    const compiled = compileBuiltInCatalogV1(catalog);
+    const compiled = aihScannerCompilationFromCatalogV1();
     const materialized = materializeAihScanSubjectsV1({
       packageRoot,
       outputParent,
@@ -767,7 +792,7 @@ describe("AIH scan material", () => {
         outputParent,
         coreRevision: { pinnedSha: currentRevision() },
         catalog,
-        compiled: compileBuiltInCatalogV1(catalog),
+        compiled: aihScannerCompilationFromCatalogV1(),
       }),
     ).toThrow(/omits a covered source path/);
     expect(readdirSync(outputParent)).toEqual([]);
@@ -779,7 +804,7 @@ describe("AIH scan material", () => {
     const artifacts = createCoreBaselineVetRequests(
       materialized.sourceRoot,
       materialized.catalog,
-    ).map(signedPublication);
+    ).map((request) => signedPublication(materialized.sourceRoot, request));
     const calls: string[][] = [];
     let next = 0;
     const scannerRunner = async (argv: readonly string[]) => {
@@ -792,7 +817,7 @@ describe("AIH scan material", () => {
     mocks.defaultRunner.mockImplementation(scannerRunner);
 
     const catalog = policyAuthoringCatalog();
-    const compiled = compileBuiltInCatalogV1(catalog);
+    const compiled = aihScannerCompilationFromCatalogV1();
     const prepared = await prepareAihScannerPublicationsV1({
       packageRoot: resolve("."),
       materialOutputParent: preparationParent,
@@ -811,7 +836,7 @@ describe("AIH scan material", () => {
     if (authored === undefined || sealed === undefined)
       throw new Error("operational output missing");
     const firstParty = prepareAihFirstPartyCompilerQualificationsV1(
-      assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+      packagedPreparedWorkbenchCatalogV1().bundle,
       prepared,
     );
     expect(firstParty).toBeDefined();
@@ -831,7 +856,7 @@ describe("AIH scan material", () => {
     ]);
     expect(
       prepareAihFirstPartyCompilerQualificationsV1(
-        assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+        packagedPreparedWorkbenchCatalogV1().bundle,
         structuredClone(prepared),
       ),
     ).toBeUndefined();
@@ -1046,7 +1071,7 @@ describe("AIH scan material", () => {
       };
       expect(
         inspectCatalogQualificationArtifactV1(
-          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          packagedPreparedWorkbenchCatalogV1().bundle,
           releaseRecord,
           firstParty!.bindings,
           "2026-09-07T12:10:00Z",
@@ -1061,7 +1086,7 @@ describe("AIH scan material", () => {
       );
       expect(
         inspectCatalogQualificationArtifactV1(
-          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          packagedPreparedWorkbenchCatalogV1().bundle,
           {
             ...releaseRecord,
             closureBytesByIdentity: { "artifact:artifacts/closure.json": invalidClosureBytes },
@@ -1083,7 +1108,7 @@ describe("AIH scan material", () => {
       });
       expect(
         await verifyCatalogQualificationArtifactsForPackagingV1(
-          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          packagedPreparedWorkbenchCatalogV1().bundle,
           firstParty!.bindings,
           [releaseRecord],
           "2026-09-07T12:10:00Z",
@@ -1111,7 +1136,7 @@ describe("AIH scan material", () => {
       },
     });
     expect(record).toMatchObject({
-      version: "packaged-scanner-collection-evidence/v1",
+      version: "packaged-scanner-collection-evidence/v2",
       authority: "display-only",
       catalog: authored.catalog,
       verification: {
@@ -1130,7 +1155,7 @@ describe("AIH scan material", () => {
       packageRoot: resolve("."),
       coreRevision: { pinnedSha: currentRevision() },
       catalog,
-      compiled: compileBuiltInCatalogV1(catalog),
+      compiled: aihScannerCompilationFromCatalogV1(),
       batches: artifacts.map(({ discoveryBytes, publicationBytes }) => ({
         discoveryBytes,
         publicationBytes,
@@ -1141,6 +1166,34 @@ describe("AIH scan material", () => {
     expect(authorPreparedAihScannerPublicationV1(reverified)).toMatchObject({
       verification: { preparedAt: "2026-09-07T12:20:00.000Z" },
     });
+  });
+
+  it("refuses a deeply nested discovery document typed, before any recursive parse or attestation", async () => {
+    const outputParent = temporaryDirectory("aih-scan-material-deep-discovery-");
+    let refusal: unknown;
+    try {
+      await prepareAihScannerPublicationsV1({
+        packageRoot: resolve("."),
+        materialOutputParent: outputParent,
+        coreRevision: { pinnedSha: currentRevision() },
+        catalog: policyAuthoringCatalog(),
+        compiled: aihScannerCompilationFromCatalogV1(),
+        // 8,000 opening brackets fit the discovery byte limit.
+        batches: [
+          {
+            discoveryBytes: Buffer.from(`{"x":${"[".repeat(8_000)}`),
+            publicationBytes: Buffer.from("{}"),
+          },
+        ],
+        now: "2026-09-07T12:10:00.000Z",
+      });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(TypeError);
+    expect((refusal as Error).message).toBe("publication discovery nests deeper than 32 levels");
+    expect(readdirSync(outputParent)).toEqual([]);
+    expect(mocks.defaultRunner).not.toHaveBeenCalled();
   });
 
   it("uses the process-owned attestation verifier after materializing from a real Core pin", async () => {
@@ -1157,7 +1210,7 @@ describe("AIH scan material", () => {
         materialOutputParent: outputParent,
         coreRevision: { pinnedSha: currentRevision() },
         catalog,
-        compiled: compileBuiltInCatalogV1(catalog),
+        compiled: aihScannerCompilationFromCatalogV1(),
         batches: [
           {
             discoveryBytes: Buffer.from(

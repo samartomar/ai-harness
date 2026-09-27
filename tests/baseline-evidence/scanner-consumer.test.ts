@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type BaselineVetBatchResultV1,
   type BaselineVetRequestV1,
@@ -25,6 +25,27 @@ import {
   SCANNER_TO_CORE_BASELINE_ANALYZER,
   type ScannerBaselineAnalyzer,
 } from "../../src/baseline-evidence/scanner-profile.js";
+import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
+import {
+  BASELINE,
+  CISCO_NAMESPACE,
+  SEMGREP_NAMESPACE,
+  SKILLSPECTOR_HARDENED,
+  VECTOR_FILES,
+  vectorAnnex,
+  vectorEvidence,
+  WITH_GIT,
+} from "../trust/fakes/baseline-annex-vector.js";
+import { selfDerivedPrecomputedCompletionForTests } from "../trust/fakes/fake-scan-adapter.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports none, with neutral facts for every selected file.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) =>
+  (await import("../trust/fakes/installed-fake-scan.js")).withInstalledFakeScan(
+    await importOriginal(),
+  ),
+);
 
 const roots: string[] = [];
 
@@ -89,10 +110,21 @@ function largeSourceFixture(count = SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1) 
   return { root, catalog };
 }
 
+/**
+ * A Scanner result for `request` over the fixture at `root`. Its SARIF annexes
+ * carry completion evidence v1 SELF-DERIVED for `root` (these tests are about
+ * custody and signatures, not the completion boundary), so Core counts them.
+ * Each annex is a baseline-vet annex (the baseline subject, Scan's batch profiles);
+ * `uvProfile` names another profile whose pinned identity an annex states instead;
+ * a `literalAnnexes` entry is published as written, its evidence not derived.
+ */
 function buildResult(
+  root: string,
   request: BaselineVetRequestV1,
   overrides: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
   annexOverrides: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
+  uvProfile: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
+  literalAnnexes: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
 ): BaselineVetBatchResultV1 {
   const analyzers = [
     ...new Set(request.components.flatMap((component) => component.analyzers)),
@@ -100,16 +132,34 @@ function buildResult(
   const annexArtifacts = analyzers.map((analyzer) => {
     const bytes = Buffer.from(
       canonical(
-        analyzer === "aih-native"
-          ? {
-              protocol: "BaselineNativeObservationV1",
-              sourceTreeSha256: request.source.treeSha256,
-              files: [],
-            }
-          : (annexOverrides[analyzer] ?? {
-              version: "2.1.0",
-              runs: [{ tool: { driver: { name: analyzer } }, results: [] }],
-            }),
+        literalAnnexes[analyzer] !== undefined
+          ? literalAnnexes[analyzer]
+          : analyzer === "aih-native"
+            ? {
+                protocol: "BaselineNativeObservationV1",
+                sourceTreeSha256: request.source.treeSha256,
+                files: [],
+              }
+            : selfDerivedPrecomputedCompletionForTests(
+                annexOverrides[analyzer] ?? {
+                  version: "2.1.0",
+                  runs: [
+                    {
+                      tool: { driver: { name: analyzer } },
+                      invocations: [{ executionSuccessful: true }],
+                      results: [],
+                    },
+                  ],
+                },
+                SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+                root,
+                {
+                  origin: "scanner-baseline-vet",
+                  ...(uvProfile[analyzer] === undefined
+                    ? {}
+                    : { executionProfileId: uvProfile[analyzer] }),
+                },
+              ),
       ),
       "utf8",
     );
@@ -165,6 +215,40 @@ function buildResult(
   } as BaselineVetBatchResultV1;
 }
 
+/**
+ * A baseline-vet SARIF annex as Scan 0.5.0 publishes it (S2j): completion evidence for the
+ * baseline subject of `root` under the batch profile's lock, stating `version`.
+ */
+function publishedAnnexStating(
+  root: string,
+  analyzer: ScannerBaselineAnalyzer,
+  version: string,
+): Record<string, unknown> {
+  const annex = selfDerivedPrecomputedCompletionForTests(
+    {
+      version: "2.1.0",
+      runs: [
+        {
+          tool: { driver: { name: analyzer } },
+          invocations: [{ executionSuccessful: true }],
+          results: [],
+        },
+      ],
+    },
+    SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+    root,
+    { origin: "scanner-baseline-vet" },
+  ) as unknown as {
+    runs: { invocations: { properties: Record<string, { analyzer: { version: string } }> }[] }[];
+  };
+  for (const run of annex.runs) {
+    const evidence = run.invocations[0]?.properties.aihScanCompletionV1;
+    if (evidence === undefined) throw new Error("fixture annex carries no completion evidence");
+    evidence.analyzer = { ...evidence.analyzer, version };
+  }
+  return annex;
+}
+
 function signedFixture(request: BaselineVetRequestV1, result: BaselineVetBatchResultV1) {
   const keys = generateKeyPairSync("ed25519");
   const keyId = ed25519KeyIdV2(keys.publicKey);
@@ -200,7 +284,7 @@ describe("Core Scanner baseline consumer", () => {
     const keyId = ed25519KeyIdV2(keys.publicKey);
     const signer = { identity: "fixture-linear-scanner", class: "test-ephemeral" as const, keyId };
     const batches = requests.map((request) => {
-      const result = buildResult(request);
+      const result = buildResult(root, request);
       const signed = signBaselineVetBundleV1({
         request,
         result,
@@ -250,7 +334,7 @@ describe("Core Scanner baseline consumer", () => {
     const signer = { identity: "fixture-batch-scanner", class: "test-ephemeral" as const, keyId };
     const expected = { now: "2026-08-31T05:30:00.000Z", signer };
     const batches = requests.map((request) => {
-      const result = buildResult(request);
+      const result = buildResult(root, request);
       const signed = signBaselineVetBundleV1({
         request,
         result,
@@ -300,6 +384,7 @@ describe("Core Scanner baseline consumer", () => {
       requests.map((request, index) => {
         const suffix = String(index + 1).repeat(32);
         const result = buildResult(
+          root,
           request,
           {},
           {
@@ -308,6 +393,7 @@ describe("Core Scanner baseline consumer", () => {
               runs: [
                 {
                   tool: { driver: { name: "skillspector" } },
+                  invocations: [{ executionSuccessful: true }],
                   results: [
                     {
                       ruleId: "skillspector.future-rule",
@@ -382,7 +468,7 @@ describe("Core Scanner baseline consumer", () => {
       ["aih-native", "skillspector", "semgrep"],
       ["aih-native", "skillspector", "semgrep", "cisco"],
     ]);
-    const result = buildResult(request);
+    const result = buildResult(root, request);
     const signed = signedFixture(request, result);
 
     const evidence = await consumeVerifiedScannerBaseline({
@@ -395,15 +481,18 @@ describe("Core Scanner baseline consumer", () => {
       expected: signed.expected,
     });
 
-    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass", "pass"]);
+    expect(evidence.components.map((component) => component.verdict)).toEqual([
+      "no-findings",
+      "no-findings",
+    ]);
     expect(evidence.components[0]?.analyzers).toEqual([
       {
         name: "aih-native",
         version: SCANNER_BASELINE_ANALYZER_VERSIONS["aih-native"],
       },
       {
-        name: "semgrep@uv:1.173.0",
-        version: SCANNER_BASELINE_ANALYZER_VERSIONS["semgrep@uv:1.173.0"],
+        name: "semgrep@uv:1.178.0",
+        version: SCANNER_BASELINE_ANALYZER_VERSIONS["semgrep@uv:1.178.0"],
       },
       {
         name: "skillspector@docker",
@@ -413,15 +502,109 @@ describe("Core Scanner baseline consumer", () => {
     expect(evidence.components[1]?.analyzers.map((entry) => entry.name)).toEqual([
       "aih-native",
       "cisco@uvx",
-      "semgrep@uv:1.173.0",
+      "semgrep@uv:1.178.0",
       "skillspector@docker",
+    ]);
+  });
+
+  it("accepts a Cisco annex under either uv profile: since U1g both install the one Cisco lock, so the identity names the same analyzer", async () => {
+    // D35/D48: the attested publisher workflow at P, not the shared lock, proves the profile.
+    const { root, catalog } = sourceFixture();
+    const request = createCoreBaselineVetRequest(root, catalog);
+    const result = buildResult(root, request, {}, {}, { cisco: "host-process-uv-v1" });
+    const signed = signedFixture(request, result);
+
+    const evidence = await consumeVerifiedScannerBaseline({
+      sourceRoot: root,
+      catalog,
+      request,
+      result,
+      envelope: signed.envelope,
+      roots: signed.roots,
+      expected: signed.expected,
+    });
+    expect(evidence.components.map((component) => component.verdict)).toEqual([
+      "no-findings",
+      "no-findings",
+    ]);
+  });
+
+  it("never receives a Cisco annex naming a pre-upgrade Cisco lock: Scan 0.5.0 refuses to sign it (S2j)", () => {
+    // Scan's receipt verification binds every SARIF annex to exactly the batch profile's lock,
+    // named by the receipt's analyzer version; the pre-upgrade lock is not that lock.
+    const { root, catalog } = sourceFixture();
+    const request = createCoreBaselineVetRequest(root, catalog);
+    const version = "2.0.14+uvlock.aaba1f326049";
+    const result = buildResult(
+      root,
+      request,
+      { cisco: version },
+      {},
+      {},
+      { cisco: publishedAnnexStating(root, "cisco", version) },
+    );
+    expect(() => signedFixture(request, result)).toThrow(
+      "invalid BaselineVetAttestationV1: receipt and annex verification",
+    );
+  });
+
+  it("refuses a signed Cisco identity Core does not pin, under the batch profile's lock", async () => {
+    const { root, catalog } = sourceFixture();
+    const request = createCoreBaselineVetRequest(root, catalog);
+    const version = "2.0.14+uvlock.1e98c5679994";
+    const result = buildResult(
+      root,
+      request,
+      { cisco: version },
+      {},
+      {},
+      { cisco: publishedAnnexStating(root, "cisco", version) },
+    );
+    const signed = signedFixture(request, result);
+
+    await expect(
+      consumeVerifiedScannerBaseline({
+        sourceRoot: root,
+        catalog,
+        request,
+        result,
+        envelope: signed.envelope,
+        roots: signed.roots,
+        expected: signed.expected,
+      }),
+    ).rejects.toThrow(
+      `Scanner baseline analyzer cisco identity ${version} does not match pinned 2.1.0+uvlock.1e98c5679994`,
+    );
+  });
+
+  it("checks publication annexes against the baseline subject, which leaves out the top-level .git", async () => {
+    const { root, catalog } = sourceFixture();
+    mkdirSync(join(root, ".git"), { recursive: true });
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+    const request = createCoreBaselineVetRequest(root, catalog);
+    const result = buildResult(root, request);
+    const signed = signedFixture(request, result);
+
+    const evidence = await consumeVerifiedScannerBaseline({
+      sourceRoot: root,
+      catalog,
+      request,
+      result,
+      envelope: signed.envelope,
+      roots: signed.roots,
+      expected: signed.expected,
+    });
+
+    expect(evidence.components.map((component) => component.verdict)).toEqual([
+      "no-findings",
+      "no-findings",
     ]);
   });
 
   it("rejects source drift, replay, and a signed but unpinned analyzer identity", async () => {
     const { root, catalog } = sourceFixture();
     const request = createCoreBaselineVetRequest(root, catalog);
-    const result = buildResult(request);
+    const result = buildResult(root, request);
     const signed = signedFixture(request, result);
     writeFileSync(join(root, "rules", "base.md"), "# Changed after request\n", "utf8");
     await expect(
@@ -438,7 +621,7 @@ describe("Core Scanner baseline consumer", () => {
 
     const fresh = sourceFixture();
     const freshRequest = createCoreBaselineVetRequest(fresh.root, fresh.catalog);
-    const freshResult = buildResult(freshRequest);
+    const freshResult = buildResult(fresh.root, freshRequest);
     const freshSigned = signedFixture(freshRequest, freshResult);
     await expect(
       consumeVerifiedScannerBaseline({
@@ -453,7 +636,17 @@ describe("Core Scanner baseline consumer", () => {
       }),
     ).rejects.toThrow(/replayed evidence/);
 
-    const wrongResult = buildResult(freshRequest, { semgrep: "1.173.0+uvlock.wrong" });
+    // Signed as Scan 0.5.0 signs it: the annex states the receipt's version, which names the
+    // batch profile's lock (S2j); the upstream version is one Core does not pin.
+    const unpinned = "1.177.0+uvlock.5fae6a8598f7";
+    const wrongResult = buildResult(
+      fresh.root,
+      freshRequest,
+      { semgrep: unpinned },
+      {},
+      {},
+      { semgrep: publishedAnnexStating(fresh.root, "semgrep", unpinned) },
+    );
     const wrongSigned = signedFixture(freshRequest, wrongResult);
     await expect(
       consumeVerifiedScannerBaseline({
@@ -466,5 +659,124 @@ describe("Core Scanner baseline consumer", () => {
         expected: wrongSigned.expected,
       }),
     ).rejects.toThrow(/does not match pinned/);
+  });
+});
+
+/** The S2j hand vector's tree as a baseline source with one skill component. */
+function vectorFixture() {
+  const root = mkdtempSync(join(tmpdir(), "aih-core-scanner-vector-"));
+  roots.push(root);
+  for (const [path, body] of Object.entries(VECTOR_FILES)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), body, "utf8");
+  }
+  const catalog = defineBaselineCatalog({
+    id: "vector",
+    owner: "example",
+    repo: "vector",
+    pinnedSha: "c".repeat(40),
+    components: [{ id: "skill:vector", paths: ["SKILL.md", "src"], skillContent: true }],
+  });
+  return { root, catalog };
+}
+
+/** Annexes stating the S2j vector's evidence by hand, with the batch's analyzers. */
+function vectorAnnexes(
+  overrides: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
+): Partial<Record<ScannerBaselineAnalyzer, unknown>> {
+  return {
+    semgrep: vectorAnnex(vectorEvidence("detector.semgrep", BASELINE, SEMGREP_NAMESPACE)),
+    skillspector: vectorAnnex(
+      vectorEvidence("detector.skillspector", BASELINE, SKILLSPECTOR_HARDENED),
+    ),
+    cisco: vectorAnnex(vectorEvidence("detector.cisco", BASELINE, CISCO_NAMESPACE)),
+    ...overrides,
+  };
+}
+
+async function consumeVector(
+  annexes: Partial<Record<ScannerBaselineAnalyzer, unknown>>,
+  arrange: (root: string) => void = () => {},
+  versions: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
+) {
+  const { root, catalog } = vectorFixture();
+  arrange(root);
+  const request = createCoreBaselineVetRequest(root, catalog);
+  const result = buildResult(root, request, versions, {}, {}, annexes);
+  const signed = signedFixture(request, result);
+  return consumeVerifiedScannerBaseline({
+    sourceRoot: root,
+    catalog,
+    request,
+    result,
+    envelope: signed.envelope,
+    roots: signed.roots,
+    expected: signed.expected,
+  });
+}
+
+describe("verified Scanner-publication annexes follow Scan's baseline rule (D24, S2j vector)", () => {
+  it("completes Semgrep, SkillSpector and Cisco evidence for F without the top-level .git", async () => {
+    const evidence = await consumeVector(vectorAnnexes());
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["no-findings"]);
+  });
+
+  it.each([
+    ["semgrep", "detector.semgrep", SEMGREP_NAMESPACE],
+    ["skillspector", "detector.skillspector", SKILLSPECTOR_HARDENED],
+    ["cisco", "detector.cisco", CISCO_NAMESPACE],
+  ] as const)(
+    "refuses %s evidence whose subject includes the top-level .git",
+    async (analyzer, id, identity) => {
+      await expect(
+        consumeVector(
+          vectorAnnexes({ [analyzer]: vectorAnnex(vectorEvidence(id, WITH_GIT, identity)) }),
+        ),
+      ).rejects.toThrow(
+        `precomputed SARIF for ${id} is refused: completion evidence for 3 files with subject tree ${WITH_GIT.subjectTreeSha256}; the subject Core submitted has 2 files with subject tree ${BASELINE.subjectTreeSha256}`,
+      );
+    },
+  );
+
+  it("accepts a source whose top-level .git holds a broken link: the snapshot leaves .git out", async () => {
+    const evidence = await consumeVector(vectorAnnexes(), (root) =>
+      symlinkSync("missing-object", join(root, ".git", "dangling"), "file"),
+    );
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["no-findings"]);
+  });
+
+  it("refuses a source holding a link Scan's snapshot refuses, naming it", async () => {
+    await expect(
+      consumeVector(vectorAnnexes(), (root) =>
+        symlinkSync(".git/HEAD", join(root, "head"), "file"),
+      ),
+    ).rejects.toThrow(
+      "precomputed SARIF for detector.semgrep is refused: completion evidence Core cannot check, because it cannot rebuild the baseline subject of detector.semgrep: symbolic link head names .git/HEAD, inside the top-level .git that Scan's baseline snapshot leaves out",
+    );
+  });
+
+  it("never receives an evidence-less annex: Scan 0.5.0 refuses to sign it (S2j)", async () => {
+    // D17's completion-evidence-absent stays Core's reading of such SARIF; a Scanner
+    // publication cannot carry one, because Scan's receipt verification requires the evidence.
+    await expect(consumeVector(vectorAnnexes({ semgrep: vectorAnnex() }))).rejects.toThrow(
+      "invalid BaselineVetAttestationV1: receipt and annex verification",
+    );
+  });
+
+  it("refuses a signed SkillSpector identity naming an image digest Core does not accept", async () => {
+    const other = `${SKILLSPECTOR_SOURCE_REVISION}@sha256:${"0".repeat(64)}`;
+    await expect(
+      consumeVector(
+        vectorAnnexes({
+          skillspector: vectorAnnex(
+            vectorEvidence("detector.skillspector", BASELINE, { version: other, lockSha256: null }),
+          ),
+        }),
+        () => {},
+        { skillspector: other },
+      ),
+    ).rejects.toThrow(
+      `Scanner baseline analyzer skillspector identity ${other} does not match pinned`,
+    );
   });
 });

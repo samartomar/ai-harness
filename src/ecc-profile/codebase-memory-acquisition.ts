@@ -13,6 +13,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { retryTransient } from "../internals/fsxn.js";
 import type { Runner } from "../internals/proc.js";
 import { defaultRunner } from "../internals/proc.js";
+import { CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION } from "./codebase-memory-native-pins.js";
 import {
   type AuthenticatedCodebaseMemoryNativePayload,
   authenticateCodebaseMemoryNativePayload,
@@ -24,7 +25,7 @@ import {
 } from "./default-mcp-runtime-lock.js";
 import { prepareOwnedStateDirectory } from "./native-runtime.js";
 
-const RELEASE_BASE = "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8";
+const RELEASE_BASE = `https://github.com/DeusData/codebase-memory-mcp/releases/download/v${CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION}`;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 120_000;

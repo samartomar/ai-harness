@@ -8,8 +8,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { basename, dirname, join, resolve } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -18,14 +18,18 @@ const mocks = vi.hoisted(() => ({
   authorAih: vi.fn(),
   firstParty: vi.fn(),
   gitHead: vi.fn(),
+  definitionCoverage: vi.fn(),
 }));
 vi.mock("node:child_process", () => ({ execFileSync: mocks.gitHead }));
 vi.mock("../../src/baseline-evidence/aih-scan-preparation.js", () => ({
   prepareAihScannerPublicationsV1: mocks.prepareAih,
   authorPackagedAihScannerEvidenceRecordV1: mocks.authorAih,
 }));
-vi.mock("../../src/baseline-evidence/scanner-provider-catalogs.js", () => ({
+vi.mock("../../src/baseline-evidence/scanner-catalog-consumer.js", () => ({
   prepareRegisteredScannerCatalogV1: () => ({ catalog: {} }),
+}));
+vi.mock("../../src/baseline-evidence/scanner-definition.js", () => ({
+  prepareDefinitionScannerCoverageV1: mocks.definitionCoverage,
 }));
 vi.mock("../../src/baseline-evidence/scanner-consumer.js", () => ({
   createCoreBaselineVetRequests: () => [{ requestSha256: "a".repeat(64) }],
@@ -83,6 +87,7 @@ it("accepts a new output under the current temp root and refuses to replace it",
     "No scan, signing, publication, or qualification",
   );
   expect(mocks.author).toHaveBeenCalledWith(handle);
+  expect(mocks.definitionCoverage).not.toHaveBeenCalled();
   expect(JSON.parse(readFileSync(current.output, "utf8"))).toEqual({
     bytes: '{"authority":"display-only","fixture":true}',
     sha256: `sha256:${"a".repeat(64)}`,
@@ -324,3 +329,148 @@ it.skipIf(process.platform !== "win32")(
     expect(mocks.prepareAih).not.toHaveBeenCalled();
   },
 );
+
+describe("definition route (a pin the installed Catalog does not carry)", () => {
+  const sealedReport = {
+    bytes: '{"authority":"display-only","fixture":true}',
+    sha256: `sha256:${"a".repeat(64)}`,
+  };
+
+  it("prepares coverage from the definition and candidate bundle and hands it to preparation", async () => {
+    const current = fixture();
+    const definition = join(current.batch, "..", "..", "definition.json");
+    const bundle = join(current.batch, "..", "..", "bundle.json");
+    const coverage = { catalog: { id: "mattpocock" }, coverage: {}, coverageDigest: "x" };
+    mocks.gitHead.mockReturnValue(`${"c".repeat(40)}
+`);
+    mocks.definitionCoverage.mockReturnValue(coverage);
+    mocks.prepare.mockResolvedValue({ kind: "opaque-test-fixture" });
+    mocks.author.mockReturnValue(sealedReport);
+    await expect(
+      prepareWorkbenchCollectionEvidenceCommandV1([
+        ...current.args,
+        "--definition",
+        definition,
+        "--source-bundle",
+        bundle,
+      ]),
+    ).resolves.toContain("Prepared sealed collection report");
+    expect(mocks.definitionCoverage).toHaveBeenCalledWith({
+      sourceRoot: current.args[3],
+      catalogId: "mattpocock",
+      definitionPath: resolve(definition),
+      head: "c".repeat(40),
+      sourceBundlePath: resolve(bundle),
+    });
+    expect(mocks.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({ catalogId: "mattpocock", coverage }),
+    );
+  });
+
+  it("passes the assembled vendor lock for a framework", async () => {
+    const current = fixture();
+    current.args[1] = "superpowers";
+    mocks.gitHead.mockReturnValue("c".repeat(40));
+    mocks.definitionCoverage.mockReturnValue({ catalog: { id: "superpowers" } });
+    mocks.prepare.mockResolvedValue({ kind: "opaque-test-fixture" });
+    mocks.author.mockReturnValue(sealedReport);
+    await prepareWorkbenchCollectionEvidenceCommandV1([
+      ...current.args,
+      "--vendor-lock",
+      "lock.json",
+      "--source-bundle",
+      "bundle.json",
+      "--definition",
+      "definition.json",
+    ]);
+    expect(mocks.definitionCoverage).toHaveBeenCalledWith(
+      expect.objectContaining({ catalogId: "superpowers", vendorLockPath: resolve("lock.json") }),
+    );
+  });
+
+  it.each(["disjoint", "compiler-catalog"] as const)(
+    "forwards the named %s overlap mode to the definition coverage",
+    async (overlap) => {
+      const current = fixture();
+      current.args[1] = "ecc";
+      mocks.gitHead.mockReturnValue("c".repeat(40));
+      mocks.definitionCoverage.mockReturnValue({ catalog: { id: "ecc" } });
+      mocks.prepare.mockResolvedValue({ kind: "opaque-test-fixture" });
+      mocks.author.mockReturnValue(sealedReport);
+      await prepareWorkbenchCollectionEvidenceCommandV1([
+        ...current.args,
+        "--definition-overlap",
+        overlap,
+        "--definition",
+        "definition.json",
+        "--source-bundle",
+        "bundle.json",
+      ]);
+      expect(mocks.definitionCoverage).toHaveBeenCalledWith({
+        sourceRoot: current.args[3],
+        catalogId: "ecc",
+        definitionPath: resolve("definition.json"),
+        head: "c".repeat(40),
+        sourceBundlePath: resolve("bundle.json"),
+        overlap,
+      });
+    },
+  );
+
+  it("stops before any publication is read when the definition is refused", async () => {
+    const current = fixture();
+    mocks.gitHead.mockReturnValue("c".repeat(40));
+    mocks.definitionCoverage.mockImplementation(() => {
+      throw new TypeError("baseline definition: the installed Catalog carries mattpocock@c");
+    });
+    await expect(
+      prepareWorkbenchCollectionEvidenceCommandV1([
+        ...current.args,
+        "--definition",
+        "d.json",
+        "--source-bundle",
+        "b.json",
+      ]),
+    ).rejects.toThrow(/installed Catalog carries/);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(existsSync(current.output)).toBe(false);
+  });
+
+  it.each([
+    ["a definition without its candidate bundle", ["--definition", "d.json"]],
+    ["a candidate bundle without its definition", ["--source-bundle", "b.json"]],
+    ["a vendor lock without a definition", ["--vendor-lock", "l.json"]],
+    ["an overlap mode without a definition", ["--definition-overlap", "compiler-catalog"]],
+    [
+      "an unknown overlap mode",
+      ["--definition", "d.json", "--source-bundle", "b.json", "--definition-overlap", "any"],
+    ],
+    [
+      "a repeated definition flag",
+      ["--definition", "d.json", "--source-bundle", "b.json", "--definition", "e.json"],
+    ],
+    ["a flag without a value", ["--definition", "--source-bundle", "b.json"]],
+    ["an unknown flag", ["--definition", "d.json", "--source-bundle", "b.json", "--x", "y"]],
+  ])("rejects %s", async (_label, extra) => {
+    const current = fixture();
+    await expect(
+      prepareWorkbenchCollectionEvidenceCommandV1([...current.args, ...extra]),
+    ).rejects.toThrow(/Usage/);
+    expect(mocks.definitionCoverage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a definition for the AIH catalog", async () => {
+    const current = fixture();
+    current.args[1] = "aih";
+    await expect(
+      prepareWorkbenchCollectionEvidenceCommandV1([
+        ...current.args,
+        "--definition",
+        "d.json",
+        "--source-bundle",
+        "b.json",
+      ]),
+    ).rejects.toThrow(/Usage/);
+    expect(mocks.prepareAih).not.toHaveBeenCalled();
+  });
+});

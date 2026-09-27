@@ -30,6 +30,15 @@ import {
 } from "../../src/trust/evidence.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
 import type { TrustScanResult } from "../../src/trust/scan.js";
+import { createSelfCompletingFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+
+// The vet runs through the installed @aihq/scan; this fake declares the uv
+// detectors with their analyzer locks, which is all the plan reads before vetting.
+const fakeScan = createSelfCompletingFakeScanAdapterForTests({
+  "detector.cisco": { kind: "refused", reason: "unused", detail: "unused" },
+  "detector.semgrep": { kind: "refused", reason: "unused", detail: "unused" },
+});
+const scanPackageImporter = () => Promise.resolve(fakeScan);
 
 const PIN = "a".repeat(40);
 const REPORT = `.aih/baseline-reports/ecc-${PIN.slice(0, 12)}.json`;
@@ -88,9 +97,10 @@ function evidence(sourceCatalog = catalog()) {
       id: component.id,
       paths: component.paths,
       treeSha256: hashComponentTree(sourceRoot, component.paths).treeSha256,
-      verdict: "pass",
+      verdict: "no-findings",
       analyzers: [{ name: "aih-native", version: "2.7.0" }],
       findings: [],
+      evidenceProblems: [],
     })),
   });
 }
@@ -177,6 +187,7 @@ describe("baseline vet command qualification boundaries", () => {
     const result = await executePlan(
       await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), sourceCatalog, {
         vetCatalog: controlledVet(true, scan, sourceScan),
+        scanPackageImporter,
         profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
       }),
       ctx,
@@ -196,9 +207,14 @@ describe("baseline vet command qualification boundaries", () => {
       normalizedFindings: scan.normalizedFindings,
       policyDispositions: scan.policyDispositions,
     });
-    expect(report.activeProfile.verdict).toBe("BLOCK");
-    expect(report.components[0]).toMatchObject({ correctedVerdict: "BLOCK" });
-    expect(report.acceptanceRecordsStillRequired).toEqual([
+    expect(report.schemaVersion).toBe(2);
+    expect(report.activeProfile.verdict).toBe("has-findings");
+    expect(report.components[0]).toMatchObject({
+      correctedVerdict: "has-findings",
+      inventoryStatus: "DISCOVERED / SELECTED / NOT INSTALLED",
+    });
+    expect(report).not.toHaveProperty("acceptanceRecordsStillRequired");
+    expect(report.reviewFindingsWithoutDecision).toEqual([
       {
         componentId: "skill:x-api",
         fingerprint: "finding:0",
@@ -219,6 +235,10 @@ describe("baseline vet command qualification boundaries", () => {
     );
     expect(result.digests[0]?.text).toContain(
       'BLOCK skill:x-api skills/x-api/SKILL.md:2 = "fixture value 1"',
+    );
+    expect(result.digests[0]?.text).toContain("component counts: no findings 0, has findings 1");
+    expect(result.digests[0]?.text).toContain(
+      "policy decision: the selected components carry 3 finding(s), shown as labels; the consumer decides",
     );
     expect(
       Object.fromEntries(
@@ -256,6 +276,7 @@ describe("baseline vet command qualification boundaries", () => {
         executePlan(
           await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), catalog(), {
             vetCatalog: controlledVet(true, cleanScan, scan),
+            scanPackageImporter,
             profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
           }),
           ctx,
@@ -275,6 +296,7 @@ describe("baseline vet command qualification boundaries", () => {
     const result = await executePlan(
       await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), catalog(), {
         vetCatalog: controlledVet(true),
+        scanPackageImporter,
         profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
       }),
       ctx,
@@ -288,7 +310,7 @@ describe("baseline vet command qualification boundaries", () => {
     expect(JSON.parse(readFileSync(join(root, OCCURRENCES), "utf8"))).toMatchObject({
       source: { pinnedSha: PIN, integrity: "EXACT PIN VERIFIED" },
       fullSourceDisclosure: { rawOccurrences: 0, normalizedFindings: 0 },
-      activeProfile: { verdict: "PASS", selectedComponents: ["skill:clean"] },
+      activeProfile: { verdict: "no-findings", selectedComponents: ["skill:clean"] },
     });
     expect(
       Object.fromEntries(
@@ -310,6 +332,7 @@ describe("baseline vet command qualification boundaries", () => {
       executePlan(
         await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), catalog(), {
           vetCatalog: controlledVet(false),
+          scanPackageImporter,
           profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
         }),
         ctx,

@@ -32,7 +32,7 @@ function catalog() {
   const asset = bundle.assets.external!;
   bundle.evidence.evidence = {
     id: "evidence",
-    projectionVersion: "evidence-summary/v1",
+    projectionVersion: "evidence-summary/v2",
     subjects: [
       {
         assetId: asset.id,
@@ -51,9 +51,27 @@ function catalog() {
     },
     qualification: { state: "unknown" },
     findings: [],
+    evidenceProblems: [],
   };
   return bundle;
 }
+
+it("carries evidence problems as their own required label on evidence-summary/v2 (D56)", () => {
+  const withProblem = catalog();
+  const summary = withProblem.evidence.evidence!;
+  summary.evidenceProblems = ["trust.detector-unavailable: semgrep did not run"];
+  expect(AuthoringCatalogBundleV1Schema.safeParse(withProblem).success).toBe(true);
+
+  const missing = catalog();
+  delete (missing.evidence.evidence as { evidenceProblems?: string[] }).evidenceProblems;
+  expect(AuthoringCatalogBundleV1Schema.safeParse(missing).success).toBe(false);
+
+  for (const problems of [[""], ["x".repeat(1_001)], Array.from({ length: 51 }, () => "p")]) {
+    const bad = catalog();
+    bad.evidence.evidence!.evidenceProblems = problems;
+    expect(AuthoringCatalogBundleV1Schema.safeParse(bad).success).toBe(false);
+  }
+});
 it("accepts a tiny source-neutral catalog and rejects dangling, conflicting, unordered, and misbound references", () => {
   expect(AuthoringCatalogBundleV1Schema.safeParse(catalog()).success).toBe(true);
   const mutations: Array<(bundle: AuthoringCatalogBundleV1) => void> = [
@@ -118,7 +136,7 @@ it("accepts a tiny source-neutral catalog and rejects dangling, conflicting, uno
       b.evidence.evidence!.verification = { state: "missing", verifiedAt: "2026-09-04T00:00:00Z" };
     },
     (b) => {
-      b.evidence.evidence!.scan = { outcome: "pass", coverage: "partial" };
+      b.evidence.evidence!.scan = { outcome: "no-findings", coverage: "partial" };
     },
     (b) => {
       b.evidence.evidence!.scan.analyzers = [{ name: "unsafe\u202E", version: "1" }];

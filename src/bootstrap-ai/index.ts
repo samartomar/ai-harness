@@ -46,6 +46,7 @@ import {
 } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
+import { effectivePrimaryCodeGraphFor } from "../tools/primary-code-graph.js";
 import {
   adapterNote,
   agentBehaviorCoreDoc,
@@ -252,7 +253,7 @@ export async function bootstrapAiPlan(
     ),
     writeText(
       posix.join(dir, "rules", "agent-behavior-core.md"),
-      agentBehaviorCoreDoc(dir),
+      agentBehaviorCoreDoc(dir, effectivePrimaryCodeGraphFor(ctx, policyTargets.policy)),
       "agent behavior core (the working discipline the router + bootloaders point to)",
     ),
     // Keep the harness's own backup/temp files out of git.
@@ -456,9 +457,9 @@ function summaryText(
       ? "Repo contract (stack/commands/scale/gaps): `aih contract`. Re-run `aih bootstrap-ai`"
       : "Context dir (INDEX/architecture/conventions): `aih scaffold`. Re-run `aih bootstrap-ai`";
   const layer1 = governed
-    ? `Required project guidance: ${dir}/policy-required-guidance.md. Reconcile the bound selection with \`aih policy project --apply\`; native plugins and user content remain separately owned.`
+    ? "Project policy-owned settings with `aih policy project --apply`; use `aih ecc` for developer-managed ECC installation guidance."
     : baseline.id === "ecc"
-      ? "Layer 1 (user baseline): install ECC + Superpowers with `aih ecc` / `aih superpowers`."
+      ? "Layer 1 (user baseline): use `aih ecc` for ECC installation guidance and `aih superpowers` for Superpowers setup."
       : `Layer 1 (user baseline): ${baseline.label} (${baseline.sources
           .map((repo) => `${repo.owner}/${repo.repo}@${repo.pinnedSha.slice(0, 12)}`)
           .join(" + ")}), installed via ${baseline.installVerb}.`;

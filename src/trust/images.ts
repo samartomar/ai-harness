@@ -3,10 +3,10 @@ import type { Platform } from "../platform/base.js";
 import { execArgv } from "../tools/install.js";
 import { scrubDockerClientEnv } from "./fetch.js";
 
-export const SKILLSPECTOR_IMAGE = "skillspector:aih-2d198ab910ad";
-export const SKILLSPECTOR_SOURCE_REVISION = "2d198ab910add401cad658d1087e7c7ba24fd640";
+export const SKILLSPECTOR_IMAGE = "skillspector:aih-c7958a3268d9";
+export const SKILLSPECTOR_SOURCE_REVISION = "c7958a3268d9498644b22edb75d0f051bbc8cbfc";
 export const SKILLSPECTOR_IMAGE_DIGEST =
-  "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800";
+  "sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6";
 
 const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
 

@@ -22,10 +22,11 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const TARGETS = ["claude", "codex", "cursor", "opencode", "kimi", "kiro"];
-const PIN = "5caf398a91599029a176ca6d806409b00d1052c4";
+const PIN = "5064474d4d762dc9640234a41617cccb79185cec";
 const COMPONENTS = {
   tdd: { id: "skill:tdd-workflow", path: ".agents/skills/tdd-workflow" },
   frontend: { id: "skill:frontend-patterns", path: ".agents/skills/frontend-patterns" },
@@ -156,7 +157,13 @@ function policy(items) {
 }
 
 function seedEvidence(root) {
-  const lock = readFileSync(resolve("src/baseline-evidence/vendor-lock.json"));
+  const descriptor = JSON.parse(
+    readFileSync(
+      createRequire(import.meta.url).resolve("@aihq/catalog/catalog-framework-ecc.json"),
+      "utf8",
+    ),
+  );
+  const lock = Buffer.from(descriptor.sections.vendorLockDocument.bytesBase64, "base64");
   const artifact = ".aih/baseline-reports/ecc.json";
   const digest = sha256(lock);
   const manifest = Buffer.from(

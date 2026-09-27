@@ -456,7 +456,7 @@ describe("removeSkillLockEntry", () => {
 
   it("drops the named entry and preserves the siblings", () => {
     const next = removeSkillLockEntry(lock, "alpha");
-    expect(next.schemaVersion).toBe(1);
+    expect(next.schemaVersion).toBe(2);
     expect(next.skills.map((s) => s.name)).toEqual(["beta"]);
     // Immutable — the input is untouched.
     expect(lock.skills).toHaveLength(2);

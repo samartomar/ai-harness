@@ -11,6 +11,8 @@ import {
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+/** The cross-boundary format name; see CONTRACTS.md. */
+export const ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT = "aih-organization-evidence";
 /** Bound portable evidence transport before decoding hostile input. */
 export const MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1 = 4_096;
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
@@ -50,7 +52,7 @@ function sortedUnique(values: readonly string[]): boolean {
  */
 export const OrganizationEvidenceEnvelopeV1Schema = z
   .object({
-    format: z.literal("aih-organization-evidence"),
+    format: z.literal(ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT),
     version: z.literal(1),
     subjectDigest: digest,
     evidence: z

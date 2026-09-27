@@ -28,7 +28,6 @@ import {
   policyBindCommand,
   policyRebindCommand,
 } from "../../src/org-policy/binding.js";
-import { planPolicyRequiredGuidance } from "../../src/org-policy/required-guidance.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as profileCommand } from "../../src/profile/index.js";
@@ -120,30 +119,27 @@ describe("governed uninstall continuity", () => {
     ).toBe("revoked");
   });
 
-  it("keeps edited required guidance at its marker-owned path even with an explicit context override", async () => {
-    const ctx = await boundFixture();
-    const bridge = planPolicyRequiredGuidance(
-      tmp,
-      "ai-coding",
-      [{ id: "skill:tdd-workflow", files: [{ path: ".claude/skills/tdd-workflow/SKILL.md" }] }],
-      {
-        policyVersion: "1",
-        source: { repository: "fictional/ecc", commit: "a".repeat(40) },
-        targets: ["claude"],
-      },
-    );
-    await executePlan(plan("fixture", ...bridge.actions), ctx);
-    put("ai-coding/policy-required-guidance.md", "# Operator customization\n");
-    const receipt = readFileSync(join(tmp, "ai-coding/policy-required-guidance.receipt.json"));
+  it("leaves former required-guidance bridge bytes alone even with a context override", async () => {
+    const ctx = makeCtx({ cli: "claude", project: "harbor-node-api" }, { apply: true });
+    const guidance = "# Former bridge\n";
+    put("ai-coding/policy-required-guidance.md", guidance);
+    const receipt = JSON.stringify({
+      format: "aih-policy-required-guidance-receipt",
+      schemaVersion: 1,
+      path: "ai-coding/policy-required-guidance.md",
+      sha256: createHash("sha256").update(guidance).digest("hex"),
+      policyVersion: "1",
+      source: { repository: "fictional/ecc", commit: "a".repeat(40) },
+      targets: ["claude"],
+      components: [{ id: "skill:tdd-workflow", paths: [".claude/skills/tdd-workflow/SKILL.md"] }],
+    });
+    put("ai-coding/policy-required-guidance.receipt.json", receipt);
     const overridden = { ...ctx, contextDir: "other-context" };
-    const result = await executePlan(await uninstallCommand.plan(overridden), overridden);
-    expect(readFileSync(join(tmp, "ai-coding/policy-required-guidance.md"), "utf8")).toBe(
-      "# Operator customization\n",
-    );
-    expect(readFileSync(join(tmp, "ai-coding/policy-required-guidance.receipt.json"))).toEqual(
+    await executePlan(await uninstallCommand.plan(overridden), overridden);
+    expect(readFileSync(join(tmp, "ai-coding/policy-required-guidance.md"), "utf8")).toBe(guidance);
+    expect(readFileSync(join(tmp, "ai-coding/policy-required-guidance.receipt.json"), "utf8")).toBe(
       receipt,
     );
-    expect(result.digests.map((entry) => entry.text).join("\n")).toMatch(/guidance.*preserv/i);
   });
 });
 
@@ -574,10 +570,7 @@ describe("aih uninstall", () => {
     expect(result.removed.map((r) => r.path)).not.toContain(".aih");
     expect(result.removed.map((r) => r.path)).toContain(".aih-config.json");
     expect(artifacts?.artifacts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: "docs", disposition: "advisory" }),
-        expect.objectContaining({ path: ".aih", disposition: "advisory" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ path: "docs", disposition: "advisory" })]),
     );
   });
 

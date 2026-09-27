@@ -1,7 +1,8 @@
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
+import { scanCoverageV1, scanOutcomeV1 } from "../trust/evidence.js";
 import { adminBaselineEvidenceTimestampEpochV1 } from "./admin-baseline-evidence-cache-v1.js";
-import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "./workbench/contracts.js";
+import { type AuthoringCatalogBundleV1, EvidenceSummaryV2Schema } from "./workbench/contracts.js";
 
 export interface BaselineDisplayFactsV1 {
   readonly lock: BaselineEvidenceLock;
@@ -50,9 +51,10 @@ export function projectBaselineDisplayEvidenceV1(
       )
         continue;
       const id = `evidence:${assetId}`;
-      result[id] = EvidenceSummaryV1Schema.parse({
+      const coverage = scanCoverageV1(component.evidenceProblems);
+      result[id] = EvidenceSummaryV2Schema.parse({
         id,
-        projectionVersion: "evidence-summary/v1",
+        projectionVersion: "evidence-summary/v2",
         subjects: [
           {
             assetId,
@@ -76,14 +78,24 @@ export function projectBaselineDisplayEvidenceV1(
             }
           : { state: "stale" },
         scan: {
-          outcome: component.verdict === "blocked" ? "failed" : fresh ? "pass" : "unknown",
-          coverage: "complete",
+          // Coverage is what the evidence problems leave; no-findings holds only on
+          // complete coverage, and only while the evidence is fresh.
+          outcome:
+            component.verdict === "has-findings"
+              ? "has-findings"
+              : fresh
+                ? scanOutcomeV1("no-findings", coverage)
+                : "unknown",
+          coverage,
           analyzers: component.analyzers.map(({ name, version }) => ({ name, version })),
         },
         qualification: { state: "unknown" },
         findings: component.findings
           .slice(0, 50)
           .map((finding) => `${finding.code}: ${finding.detail}`.slice(0, 1000)),
+        evidenceProblems: component.evidenceProblems
+          .slice(0, 50)
+          .map((problem) => `${problem.code}: ${problem.detail}`.slice(0, 1000)),
       });
     }
   }

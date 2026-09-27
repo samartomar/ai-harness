@@ -26,6 +26,7 @@ import {
 } from "../../src/binding/scan-gate.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -201,7 +202,11 @@ describe("acquireNpmTree — verify, unpack, digest", () => {
     // npm identity (its integrity), and the provision guard authorizes it.
     const scannable = scannableFromNpm(resolved);
     expect(scannable.digest).toBe(integrity);
-    const disposition = runFastScanGate(scannable, { posture: "enterprise" }, { cacheHome });
+    const disposition = await runFastScanGate(
+      scannable,
+      { posture: "enterprise" },
+      { cacheHome, scanExecution: fakeBindingGateScan() },
+    );
     expect(disposition.digest).toBe(integrity);
     expect(disposition.verdict).toBe("allow");
     expect(() =>
@@ -380,15 +385,15 @@ describe("acquireNpmTree — digest comparability & non-collision with git", () 
       cacheHome,
     });
 
-    const gitDisp = runFastScanGate(
+    const gitDisp = await runFastScanGate(
       scannableFromGit(gitResolved),
       { posture: "enterprise" },
-      { cacheHome },
+      { cacheHome, scanExecution: fakeBindingGateScan() },
     );
-    const npmDisp = runFastScanGate(
+    const npmDisp = await runFastScanGate(
       scannableFromNpm(npmResolved),
       { posture: "enterprise" },
-      { cacheHome },
+      { cacheHome, scanExecution: fakeBindingGateScan() },
     );
 
     // Equal trees, DIFFERENT disposition digests (git: treeDigest, npm: integrity).

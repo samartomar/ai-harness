@@ -19,7 +19,7 @@
   checked against non-symlinked `SKILL.md` discovery at the exact source pin.
 - Exact ECC and Superpowers source pins, component hashes, danger-class floors, and fork-pin bridge semantics remain unchanged.
 - Vendor lock signing remains the npm tarball checksum/provenance/Sigstore envelope; do not invent an independent `vendor-lock.sigstore.json`.
-- `module:hooks-runtime` may remain blocked. The accepted lock must authorize `runtime:ecc-installer` and at least one useful common/project component at every posture.
+- `module:hooks-runtime` may carry a BLOCK finding label in this historical plan; that label does not disable third-party selection. The accepted lock was intended to authorize `runtime:ecc-installer` and at least one useful common/project component at every posture.
 - Never apply the ECC installer to the real developer HOME; fixture homes only.
 
 ---
@@ -263,7 +263,7 @@ either artifact is written.
 
 - [ ] **Step 4: Inspect evidence and installability**
 
-Run `npm run check:baseline-analyzers`, `npm run baseline:check -- ...`, focused vendor/installability tests, and `npm run check:baseline-installable`. Confirm the installer runtime and a useful subset remain authorized while genuine danger findings remain blocked.
+Run `npm run check:baseline-analyzers`, `npm run baseline:check -- ...`, focused vendor/installability tests, and `npm run check:baseline-installable`. In this historical plan, confirm the installer runtime and a useful subset remained authorized while genuine danger findings remained visible as labels.
 
 - [ ] **Step 5: Commit regenerated evidence**
 

@@ -65,20 +65,20 @@ const ACQUISITION_TRUST_ENV_KEYS = [
 
 /** Immutable identity for the published Microsoft MarkItDown CLI release. */
 export const MARKITDOWN_RUNTIME_PIN = {
-  version: "0.1.7",
-  package: "markitdown[docx,outlook,pdf,pptx,xls,xlsx]==0.1.7",
-  sourceTag: "v0.1.7",
-  sourceCommit: "fd239d5d2be43d9b68329730206b9312c7d5a388",
-  wheelSha256: "4eca912c87c6aa6897284a7f4bf6769a23bccf8544530f5d8b175fbe3797c916",
+  version: "0.1.8",
+  package: "markitdown[docx,outlook,pdf,pptx,xls,xlsx]==0.1.8",
+  sourceTag: "v0.1.8",
+  sourceCommit: "b8f79c57ebc0044be41323d89b2a45d3fda8460e",
+  wheelSha256: "de7375a50578a39bcbbf13b48c67d99033d988e0ae8ad25af46ed432dbe4cbab",
   license: "MIT",
 } as const;
 
 export const MARKITDOWN_RUNTIME_PYPROJECT_SHA256 =
-  "f8e6c843f8be6f6e8d6910ba21e95ca6b6b8dac3e208d28a2c141263faf69469";
+  "4285e6190bc803e8da1169cd18c6fa7d50e90c862959cb18c7442013ec7c8d35";
 export const MARKITDOWN_RUNTIME_UV_LOCK_SHA256 =
-  "a4c5a8505b39f9d990ab15605689ce446aedaea3f1c6b22aeb6c62c94e373af6";
+  "7d42167515feaf7a8da2c46c2b124b92c2dd542f5c64108c0c3fab31b9faaf34";
 export const MARKITDOWN_DEPENDENCY_LOCK_SHA256 =
-  "8cdf8e5fcd24cef05fe1704a90274223a83f5aae30cd52a02ace22b706498d08";
+  "27827be1e2d9c058d54e6f16572a17e6dbdad0da0474a8fb9ac5a4fc36e49c0f";
 
 // A 128-bit digest prefix keeps the external Python path safely short on Windows.
 const MARKITDOWN_RUNTIME_DIRECTORY = `md-${MARKITDOWN_DEPENDENCY_LOCK_SHA256.slice(0, 32)}`;
@@ -419,7 +419,7 @@ export function createMarkItDownOperation(
       return {
         state: "verified",
         detail:
-          `MarkItDown CLI 0.1.7 was provisioned in the shared pinned runtime at ${prepared.executable}; ` +
+          `MarkItDown CLI ${MARKITDOWN_RUNTIME_PIN.version} was provisioned in the shared pinned runtime at ${prepared.executable}; ` +
           `the official CLI and ${prepared.python} -m markitdown converted a bounded local HTML fixture twice offline without plugins or cloud flags. ` +
           `${displayShell} command: ${directCommand}. Equivalent module command: ${moduleCommand}.`,
         sourceDigest: MARKITDOWN_DEPENDENCY_LOCK_SHA256,

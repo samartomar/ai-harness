@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "skill-helper": {
+      "command": "uvx",
+      "args": [
+        "example-helper==1.2.3"
+      ]
+    }
+  }
+}

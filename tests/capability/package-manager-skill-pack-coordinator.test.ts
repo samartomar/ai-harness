@@ -16,6 +16,7 @@ import { capabilityPackageCustodyReceiptPath } from "../../src/capability/packag
 import { reconcileSkillPackCapabilityPackage } from "../../src/capability/package-manager/domains/skill-pack-coordinator.js";
 import { CAPABILITY_PACKAGE_INTENT_PATH } from "../../src/capability/package-manager/intent.js";
 import { CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH } from "../../src/capability/package-manager/receipt.js";
+import { buildProgram } from "../../src/program.js";
 
 const SHA = "a".repeat(40);
 const PACKAGE_ID = "package:skill-pack/docs-quality";
@@ -198,6 +199,91 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("GitHub skill-pack package reconciliation", () => {
+  it("routes two packs through add, partial remove, retained update, and final remove", async () => {
+    const originalExit = process.exitCode;
+    const output: string[] = [];
+    const write = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    const command = async (operation: "add" | "update" | "remove", id: string) => {
+      process.exitCode = 0;
+      await buildProgram().parseAsync([
+        "node",
+        "aih",
+        "capability",
+        "package",
+        operation,
+        id,
+        "--root",
+        root,
+        "--apply",
+      ]);
+      expect(process.exitCode ?? 0, `${operation} ${id}: ${output.join("")}`).toBe(0);
+      output.length = 0;
+    };
+    const state = (ids: string[], clean: boolean, review: boolean) => {
+      expect(existsSync(join(root, "ai-coding/skills/owner-repo/clean/SKILL.md"))).toBe(clean);
+      expect(existsSync(join(root, "ai-coding/skills/owner-repo/review/SKILL.md"))).toBe(review);
+      if (clean)
+        expect(readFileSync(join(root, "ai-coding/skills/owner-repo/clean/SKILL.md"))).toEqual(
+          SKILL_BYTES,
+        );
+      if (review)
+        expect(readFileSync(join(root, "ai-coding/skills/owner-repo/review/SKILL.md"))).toEqual(
+          SECOND_SKILL_BYTES,
+        );
+      if (ids.length === 0) {
+        expect(existsSync(join(root, CAPABILITY_PACKAGE_INTENT_PATH))).toBe(false);
+        expect(existsSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toBe(false);
+        return;
+      }
+      const intent = JSON.parse(readFileSync(join(root, CAPABILITY_PACKAGE_INTENT_PATH), "utf8"));
+      const receiptBytes = readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH));
+      const receipt = JSON.parse(receiptBytes.toString("utf8"));
+      expect(intent.roots).toEqual(ids);
+      expect(receipt.packages.map((pkg: { id: string }) => pkg.id)).toEqual(ids);
+      const trustBytes = readFileSync(join(root, ".aih/trust-lock.json"));
+      expect(
+        existsSync(
+          join(root, capabilityPackageCustodyReceiptPath(sha256(receiptBytes), sha256(trustBytes))),
+        ),
+      ).toBe(true);
+    };
+    try {
+      await command("add", PACKAGE_ID);
+      state([PACKAGE_ID], true, false);
+      addSecondApprovedPromotion();
+      const secondId = "package:skill-pack/review-quality";
+      const catalog = JSON.parse(readFileSync(join(root, "aih-packs.json"), "utf8"));
+      catalog.packs[0].skills.pop();
+      catalog.packs.push({
+        name: "review-quality",
+        skills: [{ name: "review", source: `owner/repo@${SHA}`, commit: SHA }],
+      });
+      put("aih-packs.json", catalog);
+      const policy = JSON.parse(readFileSync(join(root, "aih-org-policy.json"), "utf8"));
+      policy.capabilityPackages.roots = [PACKAGE_ID, secondId];
+      put("aih-org-policy.json", policy);
+      await command("add", secondId);
+      state([PACKAGE_ID, secondId], true, true);
+      policy.capabilityPackages.roots = [secondId];
+      put("aih-org-policy.json", policy);
+      await command("remove", PACKAGE_ID);
+      state([secondId], false, true);
+      await command("update", secondId);
+      state([secondId], false, true);
+      policy.capabilityPackages.roots = [];
+      put("aih-org-policy.json", policy);
+      await command("remove", secondId);
+      state([], false, false);
+    } finally {
+      process.stdout.write = write;
+      process.exitCode = originalExit;
+    }
+  });
+
   it("publishes exact ownership and custody from the existing promotion receipt", () => {
     const result = apply("add");
 

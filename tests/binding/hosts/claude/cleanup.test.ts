@@ -56,20 +56,20 @@ function report(): ClaudeContaminationReport {
 
 /** All framework-attributed pollution (no unknown surfaces) — cleans to a clean report. */
 function seedFrameworkPollution(): void {
-  seed(".claude/rules/ecc/RULES.md", "# ecc rules\n");
-  seed(".claude/rules/ecc/policy/strict.md", "# nested\n");
-  seed(".claude/skills/ecc-review/SKILL.md", "# ecc review\n");
-  seed(".claude/skills/ecc-review/refs/deep.md", "# nested\n");
-  seed(".claude/skills/ecc-plan/SKILL.md", "# ecc plan\n");
-  seed(".claude/agents/ecc-architect.md", "# architect\n");
+  seed(".claude/rules/gsd/RULES.md", "# gsd rules\n");
+  seed(".claude/rules/gsd/policy/strict.md", "# nested\n");
+  seed(".claude/skills/gsd-review/SKILL.md", "# gsd review\n");
+  seed(".claude/skills/gsd-review/refs/deep.md", "# nested\n");
+  seed(".claude/skills/gsd-plan/SKILL.md", "# gsd plan\n");
+  seed(".claude/agents/gsd-architect.md", "# architect\n");
   seedJson(".claude/settings.json", {
     enabledPlugins: { "superpowers@obra": true },
     hooks: {
       PreToolUse: [
-        { matcher: "*", hooks: [{ type: "command", command: "~/.claude/rules/ecc/hooks/pre.sh" }] },
+        { matcher: "*", hooks: [{ type: "command", command: "~/.claude/rules/gsd/hooks/pre.sh" }] },
       ],
     },
-    mcpServers: { "ecc-memory": { command: "ecc-mcp" } },
+    mcpServers: { "gsd-memory": { command: "gsd-mcp" } },
     skillOverrides: { "code-review": "superpowers/code-review" },
     telemetry: false,
   });
@@ -99,6 +99,21 @@ function snapshotTree(relRoot: string): Map<string, string> {
 }
 
 describe("planClaudeCleanup — preview shape and safety", () => {
+  it("keeps ECC contamination visible but never plans an ECC edit", () => {
+    seed(".claude/skills/ecc-review/SKILL.md", "# ECC\n");
+    seed(".claude/ecc/skills/planning/SKILL.md", "# ECC current layout\n");
+    const plan = planClaudeCleanup(report(), { includeUnknown: true });
+    expect(plan.steps).toEqual([]);
+    expect(plan.skipped.map((step) => step.path).sort()).toEqual([
+      ".claude/ecc/skills/planning",
+      ".claude/skills/ecc-review",
+    ]);
+    expect(() => applyClaudeCleanup({ ...plan, steps: plan.skipped }, { home })).toThrow(
+      /ECC surfaces are developer-managed/,
+    );
+    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(true);
+  });
+
   it("includes only framework-attributed surfaces by default; never whole-settings removal", () => {
     seedFrameworkPollution();
     // An UNKNOWN surface that must be excluded by default.
@@ -164,7 +179,7 @@ describe("planClaudeCleanup — preview shape and safety", () => {
           surface: "skill",
           name: "not-a-skill",
           path: ".claude/settings.json",
-          attribution: "ecc",
+          attribution: "gsd",
         },
       ],
       informational: { skillOverrides: [], settingsHusk: false },
@@ -220,7 +235,7 @@ describe("applyClaudeCleanup — backup + manifest are written BEFORE any remova
     expect(existsSync(join(result.backupRoot, "files"))).toBe(true);
 
     // Nothing was removed / disabled — every original surface survives.
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(true);
     expect(readJson(".claude/settings.json").enabledPlugins).toEqual({ "superpowers@obra": true });
   });
 
@@ -246,13 +261,13 @@ describe("applyClaudeCleanup — backup + manifest are written BEFORE any remova
 
 describe("applyClaudeCleanup — targeted JSON key removal preserves unrelated keys", () => {
   it("removes only the framework keys, leaving unrelated siblings untouched", () => {
-    seed(".claude/skills/ecc-review/SKILL.md", "# ecc\n");
+    seed(".claude/skills/gsd-review/SKILL.md", "# gsd\n");
     seedJson(".claude/settings.json", {
       enabledPlugins: { "superpowers@obra": true, "userplugin@mkt": true },
       hooks: {
-        PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "ecc/pre.sh" }] }],
+        PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "gsd/pre.sh" }] }],
       },
-      mcpServers: { "ecc-memory": { command: "ecc-mcp" }, "user-mcp": { command: "mine" } },
+      mcpServers: { "gsd-memory": { command: "gsd-mcp" }, "user-mcp": { command: "mine" } },
       telemetry: false,
     });
 
@@ -266,10 +281,10 @@ describe("applyClaudeCleanup — targeted JSON key removal preserves unrelated k
     expect(settings.mcpServers).toEqual({ "user-mcp": { command: "mine" } });
     // Unrelated top-level key preserved verbatim.
     expect(settings.telemetry).toBe(false);
-    // The ecc hook's event emptied out and was pruned.
+    // The gsd hook's event emptied out and was pruned.
     expect(settings.hooks).toEqual({});
-    // The ecc skill dir is gone.
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(false);
+    // The gsd skill dir is gone.
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(false);
   });
 });
 
@@ -278,7 +293,7 @@ describe("applyClaudeCleanup + rollbackClaudeCleanup — full round-trip", () =>
     seedFrameworkPollution();
     expect(report().clean).toBe(false);
 
-    // Snapshot every file that will be backed up (ecc trees + the two JSON files).
+    // Snapshot every file that will be backed up (gsd trees + the two JSON files).
     const before = new Map<string, string>([
       ...snapshotTree(".claude/skills"),
       ...snapshotTree(".claude/agents"),
@@ -293,7 +308,7 @@ describe("applyClaudeCleanup + rollbackClaudeCleanup — full round-trip", () =>
 
     // The world is clean after cleanup.
     expect(report().clean).toBe(true);
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(false);
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(false);
 
     // Rollback restores every backed-up file byte-identically.
     const rolledBack = rollbackClaudeCleanup(applied.backupRoot, { home });
@@ -323,11 +338,24 @@ describe("applyClaudeCleanup + rollbackClaudeCleanup — full round-trip", () =>
     const rolledBack = rollbackClaudeCleanup(applied.backupRoot, { home });
     expect(rolledBack.skippedDrifted).toEqual([]);
     expect(rolledBack.restored.length).toBeGreaterThan(0);
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(true);
   });
 });
 
 describe("rollbackClaudeCleanup — refuses tampered state", () => {
+  it("refuses a manifest that would restore ECC files", () => {
+    seedFrameworkPollution();
+    const applied = applyClaudeCleanup(planClaudeCleanup(report()), { home, runId: "run-ecc" });
+    const manifestPath = join(applied.backupRoot, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      entries: { attribution: string }[];
+    };
+    if (manifest.entries[0] === undefined) throw new Error("expected cleanup manifest entry");
+    manifest.entries[0].attribution = "ecc";
+    writeFileSync(manifestPath, JSON.stringify(manifest), "utf8");
+    expect(() => rollbackClaudeCleanup(applied.backupRoot, { home })).toThrow(ClaudeCleanupError);
+  });
+
   it("throws on a schema-broken manifest", () => {
     seedFrameworkPollution();
     const applied = applyClaudeCleanup(planClaudeCleanup(report()), { home, runId: "run-schema" });
@@ -351,9 +379,9 @@ describe("rollbackClaudeCleanup — refuses tampered state", () => {
     // The live settings.json was NOT overwritten with the tampered backup bytes.
     expect(readFileSync(join(home, ".claude", "settings.json"), "utf8")).toBe(postApplySettings);
     expect(readJson(".claude/settings.json").tampered).toBeUndefined();
-    // Other entries still restored (the ecc skill tree came back).
+    // Other entries still restored (the gsd skill tree came back).
     expect(rolledBack.restored.length).toBeGreaterThan(0);
-    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "skills", "gsd-review"))).toBe(true);
   });
 });
 

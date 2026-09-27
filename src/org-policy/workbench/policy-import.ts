@@ -1,3 +1,4 @@
+import { isSupportedDeveloperToolPolicyFloorV1 } from "../developer-tool-policy.js";
 import {
   inspectSavedWorkbenchSourcesV1,
   referencedWorkbenchSourcePinsV1,
@@ -5,7 +6,6 @@ import {
 import type { WorkbenchPolicyBindingsV1 } from "./compile-policy.js";
 import {
   type AuthoringCatalogBundleV1,
-  WORKBENCH_MINIMUM_CORE_VERSION,
   type WorkbenchActionV1,
   WorkbenchActionV1Schema,
   WorkbenchSelectionExportV1Schema,
@@ -110,7 +110,7 @@ export function importWorkbenchPolicySelections(
   const policy = object(input);
   const empty = createWorkbenchState();
   if (policy.schemaVersion === 3) {
-    if (policy.minimumCoreVersion !== WORKBENCH_MINIMUM_CORE_VERSION)
+    if (!isSupportedDeveloperToolPolicyFloorV1(policy.minimumCoreVersion, policy.developerTools))
       return {
         accepted: false,
         state: empty,
@@ -447,7 +447,10 @@ export function serializeWorkbenchRepairV1(
   sourceInputs: WorkbenchSourceInputsV1 = {},
 ): WorkbenchPolicyRepairV1 {
   const policy = object(input);
-  if (policy.schemaVersion !== 3 || policy.minimumCoreVersion !== WORKBENCH_MINIMUM_CORE_VERSION)
+  if (
+    policy.schemaVersion !== 3 ||
+    !isSupportedDeveloperToolPolicyFloorV1(policy.minimumCoreVersion, policy.developerTools)
+  )
     return rejectedRepair(["Repair requires an exact V3 Workbench policy"]);
 
   const budgetIssue =

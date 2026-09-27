@@ -12,13 +12,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { authorProtectedPolicyViaPackedWorkbench } from "./lib/author-protected-policy-via-workbench.mjs";
+import { buildProtectedPolicyFixture } from "./lib/build-protected-policy-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = process.env.npm_execpath;
 if (typeof npmCli !== "string" || !isAbsolute(npmCli) || !existsSync(npmCli))
   throw new Error("cold-upstream-artifact-npm-cli-unavailable");
 const CHILD_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
+let childEnvironment;
 
 function requireCompleted(result, context) {
   if (result.error !== undefined)
@@ -33,6 +34,7 @@ function runNode(cwd, args) {
   const result = spawnSync(process.execPath, args, {
     cwd,
     encoding: "utf8",
+    env: childEnvironment,
     maxBuffer: 16 * 1024 * 1024,
     timeout: CHILD_PROCESS_TIMEOUT_MS,
   });
@@ -57,10 +59,7 @@ function stableJson(value) {
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
 function runInstalledCli(cwd, cli, bin, args, allowFailure = false, extraEnv = {}) {
-  const env = { ...process.env };
-  delete env.AIH_POLICY_AUTHORITY_REPOSITORY;
-  delete env.AIH_POLICY_AUTHORITY_WORKFLOW;
-  delete env.AIH_ORG_POLICY;
+  const env = { ...childEnvironment };
   Object.assign(env, extraEnv);
   const result = spawnSync(
     process.platform === "win32" ? process.execPath : bin,
@@ -84,6 +83,25 @@ function runInstalledCli(cwd, cli, bin, args, allowFailure = false, extraEnv = {
 const tempBase = realpathSync(resolve(tmpdir()));
 const temp = realpathSync(mkdtempSync(join(tempBase, "aih-upstream-artifact-cold-")));
 try {
+  const home = resolve(temp, "home");
+  childEnvironment = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: resolve(home, "AppData", "Roaming"),
+    LOCALAPPDATA: resolve(home, "AppData", "Local"),
+    XDG_CONFIG_HOME: resolve(home, ".config"),
+    XDG_CACHE_HOME: resolve(home, ".cache"),
+    XDG_DATA_HOME: resolve(home, ".local", "share"),
+    XDG_STATE_HOME: resolve(home, ".local", "state"),
+    XDG_RUNTIME_DIR: resolve(home, ".runtime"),
+  };
+  if (process.platform === "win32") {
+    childEnvironment.HOMEDRIVE = home.slice(0, 2);
+    childEnvironment.HOMEPATH = home.slice(2);
+  }
+  for (const key of Object.keys(childEnvironment))
+    if (/^AIH_/iu.test(key)) delete childEnvironment[key];
   const packed = runNode(root, [npmCli, "pack", "--json", "--pack-destination", temp]);
   const packManifest = JSON.parse(packed.stdout);
   if (
@@ -115,15 +133,6 @@ try {
     throw new Error("cold-upstream-artifact-install");
   const admin = resolve(temp, "admin");
   mkdirSync(admin);
-  const workbenchPath = resolve(admin, "aih-policy-workbench.html");
-  runInstalledCli(admin, cli, bin, [
-    "policy",
-    "generate",
-    "--apply",
-    "--out",
-    workbenchPath,
-  ]);
-  if (!existsSync(workbenchPath)) throw new Error("cold-upstream-artifact-workbench-generation");
 
   writeFileSync(
     resolve(consumer, "verify-public.mjs"),
@@ -311,47 +320,48 @@ try {
   writeCandidate(first);
 
   const policyPath = resolve(admin, "policy-bundle.json");
-  const workbenchDecision = (decision) => ({
-    "protected-actor": decision.actor,
-    "protected-attestor": decision.evidence.attestor,
-    "protected-control-digest": decision.control.digest,
-    "protected-control-id": decision.control.id,
-    "protected-decision-id": decision.id,
-    "protected-effects": decision.allowedEffects.join(","),
-    "protected-evidence-digest": decision.evidence.digest,
-    "protected-evidence-id": decision.evidence.id,
-    "protected-kind": decision.subject.kind,
-    "protected-policy-digest": decision.policy.digest,
-    "protected-policy-id": decision.policy.id,
-    "protected-policy-version": decision.policy.version,
-    "protected-reason": decision.reason,
-    "protected-source-commit": decision.subject.source.commit,
-    "protected-source-path": decision.subject.source.path,
-    "protected-source-repository": decision.subject.source.repository,
-    "protected-source-type": "github",
-    "protected-subject-id": decision.subject.id,
-    "protected-targets": decision.targets.join(","),
-  });
-  const writePolicy = async (bundleVersion, candidates, revokeDecisionIndexes = []) =>
-    authorProtectedPolicyViaPackedWorkbench({
-      authorityFields: {
-        "protected-bundle-version": bundleVersion,
-        "protected-expires-at": expiresAt,
-        "protected-issued-at": issuedAt,
-        "protected-issuer": "platform-security",
-        "protected-issuer-repository": "example.invalid/cold-admin",
-      },
-      decisions: candidates.map((candidate) => workbenchDecision(candidate.decision)),
-      htmlPath: workbenchPath,
+  const basePolicy = {
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "2026.08",
+      catalog: { reviewed: [], custom: [] },
+      supportedClis: ["codex"],
+    },
+  };
+  const writePolicy = (bundleVersion, candidates, revokeDecisionIndexes = []) =>
+    buildProtectedPolicyFixture({
+      core: packedCore,
+      basePolicy,
       outputPath: policyPath,
-      revokeDecisionIndexes,
+      bundleVersion,
+      issuer: "platform-security",
+      authorityReceipt: {
+        format: "aih-policy-authority-receipt",
+        version: 3,
+        issuerRepository: "example.invalid/cold-admin",
+        issuedAt,
+        expiresAt,
+        trustedIssuers: [{ id: "platform-security", githubRepository: "example.invalid/cold-admin" }],
+        targets: ["codex"],
+        decisions: candidates.map((candidate) => candidate.decision).sort((a, b) => a.id.localeCompare(b.id)),
+        decisionRevocations: revokeDecisionIndexes.map((index) => ({
+          format: "aih-governance-decision-revocation",
+          version: 2,
+          decisionDigest: candidates[index].decisionDigest,
+          issuer: candidates[index].decision.issuer,
+          revokedAt: issuedAt,
+          reason: "Disposable fixture withdraws exact tool authority.",
+        })),
+      },
     });
   const firstBundle = await writePolicy("2026.08.1", [first]);
   if (
     packedCore.governanceDecisionDigestV2(firstBundle.authorityReceipt.decisions[0]) !==
     first.decisionDigest
   )
-    throw new Error("cold-upstream-artifact-workbench-decision-mismatch");
+    throw new Error("cold-upstream-artifact-fixture-decision-mismatch");
   if (!packedCore.parsePolicyBundle(JSON.parse(readFileSync(policyPath, "utf8"))).ok)
     throw new Error("cold-upstream-artifact-public-policy-bundle-parser");
   const authorityEnv = { AIH_ORG_POLICY: policyPath };
@@ -406,7 +416,7 @@ try {
     updateDecision === undefined ||
     packedCore.governanceDecisionDigestV2(updateDecision) !== second.decisionDigest
   )
-    throw new Error("cold-upstream-artifact-workbench-update-mismatch");
+    throw new Error("cold-upstream-artifact-fixture-update-mismatch");
   const observedSecond = runInstalledCli(
     target,
     cli,
@@ -455,7 +465,7 @@ try {
     throw new Error(`cold-upstream-artifact-history:${evaluated.stdout.slice(0, 800)}`);
 
   process.stdout.write(
-    "Cold packed organization-managed artifact proof PASS (packed parser/schema/CLI and Workbench-generated PolicyBundle V2; missing authority refused; observed and recorded a catalog-absent exact tool, appended an exact version update, refused drift, recorded revocation, and exposed durable history; no install, configuration, execution, or host-ACL claim)\n",
+    "Cold packed organization-managed artifact proof PASS (packed parser/schema/CLI and headless validated PolicyBundle V2 fixture; missing authority refused; observed and recorded a catalog-absent exact tool, appended an exact version update, refused drift, recorded revocation, and exposed durable history; no install, configuration, execution, or host-ACL claim)\n",
   );
 } finally {
   const resolvedTemp = resolve(temp);

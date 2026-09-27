@@ -10,12 +10,13 @@ import {
   DEFAULT_MCP_RUNTIME_PYPROJECT_SHA256,
   DEFAULT_MCP_RUNTIME_UV_LOCK_SHA256,
 } from "../../src/ecc-profile/default-mcp-runtime-lock.js";
+import { DEFAULT_MCP_EXCLUDE_NEWER } from "../../src/tools/developer-tools-operations.js";
 
 const root = fileURLToPath(new URL("../../src/ecc-profile/default-mcp-runtime/", import.meta.url));
 const sha256 = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
 
 describe("default local MCP dependency lock", () => {
-  it("authenticates the shipped Graph 2.3.8 and Memory 0.10.8 closure", () => {
+  it("authenticates the shipped Graph 2.3.9 and Memory 0.11.0 closure", () => {
     const pyproject = readFileSync(`${root}/pyproject.toml`);
     const uvLock = readFileSync(`${root}/uv.lock`);
     expect(sha256(pyproject)).toBe(DEFAULT_MCP_RUNTIME_PYPROJECT_SHA256);
@@ -23,14 +24,23 @@ describe("default local MCP dependency lock", () => {
     expect(DEFAULT_MCP_DEPENDENCY_LOCK_SHA256).toBe(
       sha256(`${DEFAULT_MCP_RUNTIME_PYPROJECT_SHA256}\0${DEFAULT_MCP_RUNTIME_UV_LOCK_SHA256}`),
     );
-    expect(uvLock.toString("utf8")).toContain('name = "code-review-graph"\nversion = "2.3.8"');
+    expect(uvLock.toString("utf8")).toContain('name = "code-review-graph"\nversion = "2.3.9"');
     expect(uvLock.toString("utf8")).toContain(
-      'hash = "sha256:013ae3c119cc7de337f9e88fe36daef82e2d4def942a014edcf97f126e208547"',
+      'hash = "sha256:908500a23f23fe05566090a2e5fce95f7f177d054090a355b46367546db5d910"',
     );
-    expect(uvLock.toString("utf8")).toContain('name = "codebase-memory-mcp"\nversion = "0.10.8"');
+    expect(uvLock.toString("utf8")).toContain('name = "codebase-memory-mcp"\nversion = "0.11.0"');
     expect(uvLock.toString("utf8")).toContain(
-      'hash = "sha256:a5e39e6886bbdd7836cadaec13cdeb3ee3648c34fdf88359d9395abccc16287c"',
+      'hash = "sha256:2775931b6615344777926ef6ba4e11330a4b26040be06901d2556edb5e673be7"',
     );
+  });
+
+  it("syncs with the resolution cutoff the shipped lock records", () => {
+    // Setup runs `uv sync --locked --no-config`, which ignores pyproject settings, so the
+    // cutoff it passes through UV_EXCLUDE_NEWER must equal the one recorded in the lock.
+    const uvLock = readFileSync(`${root}/uv.lock`, "utf8");
+    const pyproject = readFileSync(`${root}/pyproject.toml`, "utf8");
+    expect(uvLock).toContain(`[options]\nexclude-newer = "${DEFAULT_MCP_EXCLUDE_NEWER}"\n`);
+    expect(pyproject).toContain(`exclude-newer = "${DEFAULT_MCP_EXCLUDE_NEWER}"`);
   });
 
   it("rejects a modified packaged dependency lock", () => {

@@ -15,8 +15,7 @@ import {
 import {
   type AcceptedContentFinding,
   assertProvisionAuthorized,
-  BindingScanError,
-  type DimensionInspector,
+  type DimensionReport,
   resolveGitSource,
   runFastScanGate,
   type ScanDisposition,
@@ -25,6 +24,7 @@ import {
 } from "../../src/binding/scan-gate.js";
 import { defaultRunner } from "../../src/internals/proc.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 // Heavy real-git/child-process tests: per-test budgets sized for worker
 // contention, not idle hardware — 5s defaults flaked on CI runners (#509).
@@ -241,6 +241,27 @@ function sha256Lf(text: string): string {
   return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
 }
 
+/** Scan's hidden-unicode findings for `paths`, pinned to the bytes `files` gives them. */
+function hiddenUnicodeIn(
+  files: Record<string, string>,
+  paths: readonly string[],
+  typography?: DimensionReport["typography"],
+): DimensionReport {
+  return {
+    dimension: "hidden-unicode",
+    status: "produced",
+    findings: paths.map((path) => ({
+      code: "trust.hidden-unicode",
+      severity: "high" as const,
+      detail: "hidden or bidirectional unicode",
+      coverage: "complete" as const,
+      path,
+      contentSha256: sha256Lf(files[path] ?? ""),
+    })),
+    ...(typography === undefined ? {} : { typography }),
+  };
+}
+
 function fixtureClosureSpec(): ClosureSpec {
   return {
     profile: FIXTURE_PROFILE,
@@ -276,13 +297,17 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   async function gateOver(
     files: Record<string, string>,
     policy: Parameters<typeof runFastScanGate>[1],
+    reports: readonly DimensionReport[] = [],
   ): Promise<ScanDisposition> {
     initGitRepo(repoDir, files);
     const resolved = await resolveGitSource(
       { repository: repoDir, ref: "HEAD" },
       { runner: defaultRunner, cacheHome },
     );
-    return runFastScanGate(scannableFromGit(resolved), policy, { cacheHome });
+    return runFastScanGate(scannableFromGit(resolved), policy, {
+      cacheHome,
+      scanExecution: fakeBindingGateScan(reports),
+    });
   }
 
   beforeEach(() => {
@@ -296,9 +321,11 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   });
 
   it("rule 3 — an inert high finding is reported, not gated (ALLOW with FINDINGS_PRESENT)", async () => {
+    const files = { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN };
     const disposition = await gateOver(
-      { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN },
+      files,
       { posture: "vibe", closureSpec: fixtureClosureSpec(), hostFacts: HOST_FACTS_A },
+      [hiddenUnicodeIn(files, ["notes/inert.md"])],
     );
     expect(disposition.selectedProfileGate).toBe("ALLOW");
     expect(disposition.verdict).toBe("allow");
@@ -310,9 +337,11 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   });
 
   it("rule 10 — the SAME finding blocks once its file is referenced into the closure", async () => {
+    const files = { "qa/SKILL.md": REF_SKILL, "qa/sections/detail.md": HIDDEN };
     const disposition = await gateOver(
-      { "qa/SKILL.md": REF_SKILL, "qa/sections/detail.md": HIDDEN },
+      files,
       { posture: "vibe", closureSpec: fixtureClosureSpec(), hostFacts: HOST_FACTS_A },
+      [hiddenUnicodeIn(files, ["qa/sections/detail.md"])],
     );
     expect(disposition.selectedProfileGate).toBe("BLOCK");
     const reached = disposition.findings.find((f) => f.path === "qa/sections/detail.md");
@@ -328,14 +357,16 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
       fileSha256: sha256Lf(HIDDEN),
       profile: FIXTURE_PROFILE,
     };
+    const files = { "qa/SKILL.md": REF_SKILL, "qa/sections/detail.md": HIDDEN };
     const disposition = await gateOver(
-      { "qa/SKILL.md": REF_SKILL, "qa/sections/detail.md": HIDDEN },
+      files,
       {
         posture: "vibe",
         closureSpec: fixtureClosureSpec(),
         hostFacts: HOST_FACTS_A,
         acceptedFindings: [accept],
       },
+      [hiddenUnicodeIn(files, ["qa/sections/detail.md"])],
     );
     expect(disposition.selectedProfileGate).toBe("ALLOW_WITH_CONDITIONS");
     expect(disposition.verdict).toBe("allow");
@@ -353,14 +384,16 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
       fileSha256: sha256Lf(HIDDEN),
       profile: FIXTURE_PROFILE,
     };
+    const files = { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN };
     const disposition = await gateOver(
-      { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN },
+      files,
       {
         posture: "vibe",
         closureSpec: fixtureClosureSpec(),
         hostFacts: HOST_FACTS_A,
         acceptedFindings: [accept],
       },
+      [hiddenUnicodeIn(files, ["notes/inert.md"])],
     );
     expect(disposition.selectedProfileGate).toBe("ALLOW");
     const inert = disposition.findings.find((f) => f.path === "notes/inert.md");
@@ -369,9 +402,11 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   });
 
   it("host fact absent ⇒ the inert file becomes unknown and the gate BLOCKS", async () => {
+    const files = { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN };
     const disposition = await gateOver(
-      { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN },
+      files,
       { posture: "vibe", closureSpec: fixtureClosureSpec(), hostFacts: undefined },
+      [hiddenUnicodeIn(files, ["notes/inert.md"])],
     );
     expect(disposition.selectedProfileGate).toBe("BLOCK");
     const nowUnknown = disposition.findings.find((f) => f.path === "notes/inert.md");
@@ -380,29 +415,26 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   });
 
   it("fixture 10 — a critical finding is never inert, even in a materialized file", async () => {
-    const criticalInInertFile: DimensionInspector = {
-      dimension: "test-critical-inert",
-      run: () => ({
-        dimension: "test-critical-inert",
-        status: "produced",
-        findings: [
-          {
-            code: "trust.malicious-code",
-            severity: "critical",
-            detail: "boom",
-            coverage: "complete",
-            path: "notes/inert.md",
-            contentSha256: "ab".repeat(32),
-          },
-        ],
-      }),
+    const criticalInInertFile: DimensionReport = {
+      dimension: "suspicious-execution",
+      status: "produced",
+      findings: [
+        {
+          code: "trust.malicious-code",
+          severity: "critical",
+          detail: "boom",
+          coverage: "complete",
+          path: "notes/inert.md",
+          contentSha256: sha256Lf("clean\n"),
+        },
+      ],
     };
     initGitRepo(repoDir, { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": "clean\n" });
     const resolved = await resolveGitSource(
       { repository: repoDir, ref: "HEAD" },
       { runner: defaultRunner, cacheHome },
     );
-    const disposition = runFastScanGate(
+    const disposition = await runFastScanGate(
       scannableFromGit(resolved),
       {
         posture: "vibe",
@@ -410,7 +442,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
         closureSpec: fixtureClosureSpec(),
         hostFacts: HOST_FACTS_A,
       },
-      { cacheHome, inspectors: [criticalInInertFile] },
+      { cacheHome, scanExecution: fakeBindingGateScan([criticalInInertFile]) },
     );
     expect(disposition.selectedProfileGate).toBe("BLOCK");
     const critical = disposition.findings.find((f) => f.code === "trust.malicious-code");
@@ -420,6 +452,26 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   // -- rule-8 visible-typography demotion at the gate -----------------------
 
   const BANNER_TS = "/*\n * ────────────────────\n * banner\n */\nexport const value = 1;\n";
+
+  /** Scan's verdict on BANNER_TS: box drawing is visible typography, no dotted-I blocker. */
+  function bannerTypography(text: string = BANNER_TS): DimensionReport {
+    const path = "browse/src/index.ts";
+    return {
+      dimension: "hidden-unicode",
+      status: "produced",
+      findings: [
+        {
+          code: "trust.visible-unicode",
+          severity: "medium",
+          detail: "visible non-ASCII typography",
+          coverage: "complete",
+          path,
+          contentSha256: sha256Lf(text),
+        },
+      ],
+      dottedIBlocking: { [path]: false },
+    };
+  }
 
   function tsBuildInputSpec(): ClosureSpec {
     return {
@@ -434,6 +486,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
     const disposition = await gateOver(
       { "browse/src/index.ts": BANNER_TS },
       { posture: "vibe", closureSpec: tsBuildInputSpec(), hostFacts: HOST_FACTS_A },
+      [bannerTypography()],
     );
     expect(disposition.selectedProfileGate).toBe("ALLOW");
     expect(disposition.rawSourceScan).toBe("CLEAN");
@@ -447,7 +500,9 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   });
 
   it("rule 8 — the legacy path also keeps ordinary visible typography non-blocking", async () => {
-    const disposition = await gateOver({ "browse/src/index.ts": BANNER_TS }, { posture: "vibe" });
+    const disposition = await gateOver({ "browse/src/index.ts": BANNER_TS }, { posture: "vibe" }, [
+      bannerTypography(),
+    ]);
     expect(disposition.verdict).toBe("allow");
     const finding = disposition.findings.find((f) => f.code === "trust.visible-unicode");
     expect(finding?.advisory).toBeDefined();
@@ -455,9 +510,22 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
 
   it("rule 8 — an actual zero-width character remains blocking", async () => {
     const mixed = "/*\n * ─────\n */\nconst value\u200b = 1;\n";
+    const files = { "browse/src/index.ts": mixed };
+    const visible = bannerTypography(mixed);
+    const hidden = hiddenUnicodeIn(files, ["browse/src/index.ts"], {
+      "browse/src/index.ts": { demote: false },
+    });
+    // Scan: the zero-width space is not typography, so the file is not demotable.
     const disposition = await gateOver(
-      { "browse/src/index.ts": mixed },
+      files,
       { posture: "vibe", closureSpec: tsBuildInputSpec(), hostFacts: HOST_FACTS_A },
+      [
+        {
+          ...hidden,
+          findings: [...hidden.findings, ...visible.findings],
+          dottedIBlocking: visible.dottedIBlocking,
+        },
+      ],
     );
     expect(disposition.selectedProfileGate).toBe("BLOCK");
     const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
@@ -468,10 +536,68 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
     const disposition = await gateOver(
       { "browse/src/index.ts": BANNER_TS },
       { posture: "vibe", closureSpec: fullTreeClosureSpec(), hostFacts: HOST_FACTS_A },
+      [bannerTypography()],
     );
     expect(disposition.verdict).toBe("allow");
     const finding = disposition.findings.find((f) => f.code === "trust.visible-unicode");
     expect(finding?.advisory).toBeDefined();
+  });
+
+  // Scan's per-file typography verdict for a hidden-unicode file (ARROW_TS stands
+  // for a file whose every non-ASCII occurrence is display typography).
+  const ARROW_TS = 'export const label = "a → b";\n';
+
+  function demotableHiddenUnicode(contextClass?: string): DimensionReport {
+    const path = "browse/src/index.ts";
+    return hiddenUnicodeIn({ [path]: ARROW_TS }, [path], {
+      [path]: contextClass === undefined ? { demote: true } : { demote: true, contextClass },
+    });
+  }
+
+  it("rule 8 — a hidden-unicode file Scan finds all typography is demoted under a seeded closure", async () => {
+    const disposition = await gateOver(
+      { "browse/src/index.ts": ARROW_TS },
+      { posture: "vibe", closureSpec: tsBuildInputSpec(), hostFacts: HOST_FACTS_A },
+      [demotableHiddenUnicode("tsjs-string")],
+    );
+    expect(disposition.selectedProfileGate).toBe("ALLOW");
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    // Raw severity stays; the demotion is a reported advisory, not a rewrite.
+    expect(finding?.severity).toBe("high");
+    expect(finding?.advisory).toEqual({ reclassifiedFrom: "high", contextClass: "tsjs-string" });
+    expect(disposition.disclosure.visibleTypographyAdvisories.total).toBeGreaterThan(0);
+  });
+
+  it("rule 8 — a demotable verdict without a context class reads as visible-typography", async () => {
+    const disposition = await gateOver(
+      { "browse/src/index.ts": ARROW_TS },
+      { posture: "vibe", closureSpec: tsBuildInputSpec(), hostFacts: HOST_FACTS_A },
+      [demotableHiddenUnicode()],
+    );
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    expect(finding?.advisory?.contextClass).toBe("visible-typography");
+  });
+
+  it("rule 8 — the legacy (no-closure) path never reclassifies a hidden-unicode finding", async () => {
+    const legacy = await gateOver({ "browse/src/index.ts": ARROW_TS }, { posture: "vibe" }, [
+      demotableHiddenUnicode("tsjs-string"),
+    ]);
+    expect(legacy.verdict).toBe("block");
+    expect(legacy.findings.find((f) => f.code === "trust.hidden-unicode")).not.toHaveProperty(
+      "advisory",
+    );
+  });
+
+  it("rule 8 — a full-tree closure never reclassifies a hidden-unicode finding", async () => {
+    const fullTree = await gateOver(
+      { "browse/src/index.ts": ARROW_TS },
+      { posture: "vibe", closureSpec: fullTreeClosureSpec(), hostFacts: HOST_FACTS_A },
+      [demotableHiddenUnicode("tsjs-string")],
+    );
+    expect(fullTree.verdict).toBe("block");
+    expect(fullTree.findings.find((f) => f.code === "trust.hidden-unicode")).not.toHaveProperty(
+      "advisory",
+    );
   });
 });
 
@@ -502,18 +628,20 @@ describe("W4 full-tree closure reproduces the legacy verdict (byte-identical out
     files: Record<string, string>,
     accepted?: readonly AcceptedContentFinding[],
   ): Promise<{ legacy: ScanDisposition; fullTree: ScanDisposition }> {
+    // Scan finds the hidden unicode in SKILL.md.
+    const scanExecution = fakeBindingGateScan([hiddenUnicodeIn(files, ["SKILL.md"])]);
     initGitRepo(repoDir, files);
     const resolved = await resolveGitSource(
       { repository: repoDir, ref: "HEAD" },
       { runner: defaultRunner, cacheHome },
     );
     const src = scannableFromGit(resolved);
-    const legacy = runFastScanGate(
+    const legacy = await runFastScanGate(
       src,
       { posture: "vibe", acceptedFindings: accepted },
-      { cacheHome },
+      { cacheHome, scanExecution },
     );
-    const fullTree = runFastScanGate(
+    const fullTree = await runFastScanGate(
       src,
       {
         posture: "vibe",
@@ -521,7 +649,7 @@ describe("W4 full-tree closure reproduces the legacy verdict (byte-identical out
         closureSpec: fullTreeClosureSpec(),
         hostFacts: HOST_FACTS_A,
       },
-      { cacheHome },
+      { cacheHome, scanExecution },
     );
     return { legacy, fullTree };
   }
@@ -569,9 +697,30 @@ describe("W4 full-tree closure reproduces the legacy verdict (byte-identical out
     expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).not.toThrow();
   });
 
-  it("a block disposition refuses provisioning under both models", async () => {
+  it("a BLOCK-labelled disposition provisions under both models and keeps its label", async () => {
     const { legacy, fullTree } = await bothGates({ "SKILL.md": `# s\n${HIDDEN}` });
-    expect(() => assertProvisionAuthorized(legacy, legacy.digest)).toThrow(BindingScanError);
-    expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).toThrow(BindingScanError);
+    expect(legacy.selectedProfileGate).toBe("BLOCK");
+    expect(fullTree.selectedProfileGate).toBe("BLOCK");
+    expect(legacy.rawSourceScan).toBe("FINDINGS_PRESENT");
+    expect(() => assertProvisionAuthorized(legacy, legacy.digest)).not.toThrow();
+    expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).not.toThrow();
+  });
+
+  it("refuses a disposition whose accepted conditions were altered after the gate produced it", async () => {
+    const skill = `# s\n${HIDDEN}`;
+    const accepted: AcceptedContentFinding[] = [
+      {
+        repository: "test/w4",
+        code: "trust.hidden-unicode",
+        path: "SKILL.md",
+        fileSha256: sha256Lf(skill),
+      },
+    ];
+    const { fullTree } = await bothGates({ "SKILL.md": skill, "README.md": "hi\n" }, accepted);
+    expect(fullTree.selectedProfileGate).toBe("ALLOW_WITH_CONDITIONS");
+    for (const finding of fullTree.findings) (finding as { accepted?: boolean }).accepted = false;
+    expect(() => assertProvisionAuthorized(fullTree, fullTree.digest)).toThrow(
+      /was altered after the scan gate produced it/,
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { AihError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { trustCodeClassV1 } from "./evidence.js";
 import { TRUST_REVIEW_CODES } from "./grade.js";
 
 export const TRUST_DANGER_CODES = new Set<string>([
@@ -53,20 +54,24 @@ function actor(ctx: PlanContext): string {
   );
 }
 
-function isDanger(check: Check): boolean {
-  return check.code !== undefined && TRUST_DANGER_CODES.has(check.code);
-}
-
-function isAcknowledgeableReview(check: Check): boolean {
+/**
+ * Any finding or evidence problem can be acknowledged: the acknowledgement records
+ * the consumer's decision and is never required (D50). An integrity failure cannot:
+ * the scanned bytes are not the recorded source, so there is nothing to decide on.
+ */
+function isAcknowledgeable(check: Check): boolean {
+  const trustClass = trustCodeClassV1(check.code);
   return (
-    check.code !== undefined &&
-    (TRUST_REVIEW_CODES.has(check.code) || check.code === "mcp.policy-denied")
+    trustClass === "finding" ||
+    trustClass === "evidence-problem" ||
+    (check.code !== undefined && TRUST_REVIEW_CODES.has(check.code)) ||
+    check.code === "mcp.policy-denied"
   );
 }
 
-function refusal(check: Check): AihError {
+function integrityRefusal(check: Check): AihError {
   return new AihError(
-    `cannot acknowledge ${check.code ?? check.name}; trust-danger findings must be fixed before promotion`,
+    `cannot acknowledge ${check.code ?? check.name}; the scanned bytes do not match the recorded source, so the evidence itself is not usable — re-fetch or re-pin the source and scan again`,
     "AIH_TRUST",
   );
 }
@@ -92,18 +97,18 @@ export function applyTrustAcknowledgements(
     return acknowledgeAll || explicit.has(check.fingerprint);
   });
 
-  const danger = selected.find(isDanger);
-  if (danger !== undefined) throw refusal(danger);
-  const notReview = selected.find((check) => !isAcknowledgeableReview(check));
-  if (notReview !== undefined) {
+  const integrity = selected.find((check) => trustCodeClassV1(check.code) === "integrity");
+  if (integrity !== undefined) throw integrityRefusal(integrity);
+  const other = selected.find((check) => !isAcknowledgeable(check));
+  if (other !== undefined) {
     throw new AihError(
-      `cannot acknowledge ${notReview.code ?? notReview.name}; only review-required findings are overridable`,
+      `cannot acknowledge ${other.code ?? other.name}; only findings and evidence problems can be acknowledged`,
       "AIH_TRUST",
     );
   }
   if (selected.length > 0 && acknowledgeReason(ctx) === undefined) {
     throw new AihError(
-      "--acknowledge requires --reason for review-required overrides",
+      "--acknowledge requires --reason; the acknowledgement records your decision and why",
       "AIH_TRUST",
     );
   }
@@ -137,10 +142,10 @@ export function acknowledgeCommandHint(
 ): string | undefined {
   const fingerprints = checks
     .filter((check) => check.verdict === "fail" && check.fingerprint !== undefined)
-    .filter((check) => !isDanger(check) && isAcknowledgeableReview(check))
+    .filter(isAcknowledgeable)
     .map((check) => check.fingerprint as string);
   if (fingerprints.length === 0) return undefined;
-  return `To acknowledge the current review-required finding(s), rerun: aih ${command} ${quoteArg(
+  return `To record your decision on the current finding(s), rerun: aih ${command} ${quoteArg(
     source,
   )} --acknowledge ${quoteArg(fingerprints.join(","))} --reason ${quoteArg("<reason>")}`;
 }

@@ -31,10 +31,12 @@ function catalog(pin = "a".repeat(40)) {
   });
 }
 
-function lock(over: { hash?: string; verdict?: "pass" | "blocked"; pin?: string } = {}) {
-  const verdict = over.verdict ?? "pass";
+function lock(
+  over: { hash?: string; verdict?: "no-findings" | "has-findings"; pin?: string } = {},
+) {
+  const verdict = over.verdict ?? "no-findings";
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -49,7 +51,7 @@ function lock(over: { hash?: string; verdict?: "pass" | "blocked"; pin?: string 
             verdict,
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings:
-              verdict === "blocked"
+              verdict === "has-findings"
                 ? [
                     {
                       code: "trust.hidden-unicode",
@@ -57,6 +59,7 @@ function lock(over: { hash?: string; verdict?: "pass" | "blocked"; pin?: string 
                     },
                   ]
                 : [],
+            evidenceProblems: [],
           },
         ],
       },
@@ -119,7 +122,7 @@ describe("verifyBaselineComponents", () => {
       expect.objectContaining({ verdict: "fail", code: "baseline.evidence-mismatch" }),
     ]);
   });
-  it("partitions mixed signed verdicts into authorized and held components", () => {
+  it("authorizes both verdicts and labels the findings instead of holding a component", () => {
     mkdirSync(join(root, "skills", "held"), { recursive: true });
     writeFileSync(join(root, "skills", "held", "SKILL.md"), "# Held\n");
     const mixedCatalog = defineBaselineCatalog({
@@ -133,7 +136,7 @@ describe("verifyBaselineComponents", () => {
       ],
     });
     const mixedLock = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "ecc",
@@ -145,15 +148,16 @@ describe("verifyBaselineComponents", () => {
               id: "skill:clean",
               paths: ["skills/clean"],
               treeSha256: hashComponentTree(root, ["skills/clean"]).treeSha256,
-              verdict: "pass",
+              verdict: "no-findings",
               analyzers: [{ name: "aih-native", version: "2.8.0" }],
               findings: [],
+              evidenceProblems: [],
             },
             {
               id: "skill:held",
               paths: ["skills/held"],
               treeSha256: hashComponentTree(root, ["skills/held"]).treeSha256,
-              verdict: "blocked",
+              verdict: "has-findings",
               analyzers: [{ name: "aih-native", version: "2.8.0" }],
               findings: [
                 {
@@ -161,6 +165,7 @@ describe("verifyBaselineComponents", () => {
                   detail: "SKILL body contains a leading ! auto-run line",
                 },
               ],
+              evidenceProblems: [],
             },
           ],
         },
@@ -178,22 +183,60 @@ describe("verifyBaselineComponents", () => {
 
     expect(result.authorizations).toEqual([
       expect.objectContaining({ componentId: "skill:clean", tier: "vendor" }),
+      expect.objectContaining({ componentId: "skill:held", tier: "vendor" }),
     ]);
-    expect(result.held).toEqual([
+    expect(result.held).toEqual([]);
+    expect(result.labels).toEqual([
+      {
+        componentId: "skill:clean",
+        tier: "vendor",
+        verdict: "no-findings",
+        findings: [],
+        evidenceProblems: [],
+      },
       {
         componentId: "skill:held",
-        routeCode: "baseline.evidence-blocked",
-        codes: ["trust.auto-exec-hook"],
-        details: [expect.stringContaining("trust.auto-exec-hook")],
+        tier: "vendor",
+        verdict: "has-findings",
+        findings: [{ code: "trust.auto-exec-hook", count: 1 }],
+        evidenceProblems: [],
       },
     ]);
+    expect(result.checks).toEqual([
+      expect.objectContaining({ name: "baseline evidence skill:clean", verdict: "pass" }),
+      expect.objectContaining({
+        name: "baseline evidence skill:held",
+        verdict: "pass",
+        detail: expect.stringContaining("carries 1 finding: trust.auto-exec-hook"),
+      }),
+    ]);
+  });
+
+  it("labels evidence problems apart from findings and still authorizes the component", () => {
+    const vendorLock = lock();
+    const component = vendorLock.sources[0]?.components[0];
+    if (component === undefined) throw new Error("expected a component");
+    component.evidenceProblems = [
+      { code: "trust.detector-unavailable", detail: "cisco did not run" },
+      { code: "trust.detector-unavailable", count: 2, detail: "semgrep did not run" },
+    ];
+    const result = verify("enterprise", vendorLock);
+    expect(result.authorizations).toEqual([
+      expect.objectContaining({ componentId: "skill:clean", tier: "vendor" }),
+    ]);
+    expect(result.labels[0]).toMatchObject({
+      verdict: "no-findings",
+      findings: [],
+      evidenceProblems: [{ code: "trust.detector-unavailable", count: 3 }],
+    });
+    expect(result.checks[0]?.detail).toContain("evidence problems: trust.detector-unavailable");
   });
 
   it.each(["enterprise", "enterprise"] as const)(
     "fails closed on uncovered evidence at %s posture",
     (posture) => {
       const empty = parseBaselineEvidenceLock({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sources: [
           {
             id: "other",
@@ -205,9 +248,10 @@ describe("verifyBaselineComponents", () => {
                 id: "skill:other",
                 paths: ["skills/other"],
                 treeSha256: "c".repeat(64),
-                verdict: "pass",
+                verdict: "no-findings",
                 analyzers: [{ name: "aih-native", version: "2.7.0" }],
                 findings: [],
+                evidenceProblems: [],
               },
             ],
           },
@@ -223,7 +267,7 @@ describe("verifyBaselineComponents", () => {
 
   it("warns but does not invent an authorization for uncovered vibe installs", () => {
     const empty = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "other",
@@ -235,9 +279,10 @@ describe("verifyBaselineComponents", () => {
               id: "skill:other",
               paths: ["skills/other"],
               treeSha256: "c".repeat(64),
-              verdict: "pass",
+              verdict: "no-findings",
               analyzers: [{ name: "aih-native", version: "2.7.0" }],
               findings: [],
+              evidenceProblems: [],
             },
           ],
         },
@@ -250,14 +295,26 @@ describe("verifyBaselineComponents", () => {
     expect(result.authorizations).toEqual([]);
   });
 
-  it.each(["vibe", "enterprise", "enterprise"] as const)(
-    "never permits an exact component whose signed verdict is blocked at %s",
+  it.each(["vibe", "enterprise"] as const)(
+    "authorizes an exact component whose signed evidence has findings at %s, with the label",
     (posture) => {
-      const result = verify(posture, lock({ verdict: "blocked" }));
+      const result = verify(posture, lock({ verdict: "has-findings" }));
       expect(result.checks).toEqual([
-        expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
+        expect.objectContaining({
+          verdict: "pass",
+          detail: expect.stringContaining("carries 1 finding: trust.hidden-unicode"),
+        }),
       ]);
-      expect(result.authorizations).toEqual([]);
+      expect(result.authorizations).toEqual([
+        expect.objectContaining({ componentId: "skill:clean", tier: "vendor" }),
+      ]);
+      expect(result.held).toEqual([]);
+      expect(result.labels).toEqual([
+        expect.objectContaining({
+          verdict: "has-findings",
+          findings: [{ code: "trust.hidden-unicode", count: 1 }],
+        }),
+      ]);
     },
   );
 
@@ -313,8 +370,8 @@ describe("verifyBaselineComponents", () => {
     });
   });
 
-  it.each(["vibe", "enterprise", "enterprise"] as const)(
-    "never permits a component whose org evidence is blocked at %s",
+  it.each(["vibe", "enterprise"] as const)(
+    "authorizes a component whose org evidence has findings at %s, with the label",
     (posture) => {
       const newerPin = "b".repeat(40);
       const result = verifyBaselineComponents({
@@ -328,23 +385,31 @@ describe("verifyBaselineComponents", () => {
           tier: "org",
           issuer: "github:acme/engineering-governance",
           evidenceSha256: "e".repeat(64),
-          lock: lock({ pin: newerPin, verdict: "blocked" }),
+          lock: lock({ pin: newerPin, verdict: "has-findings" }),
         },
       });
       expect(result.checks).toEqual([
-        expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
+        expect.objectContaining({
+          verdict: "pass",
+          detail: expect.stringContaining("carries 1 finding: trust.hidden-unicode"),
+        }),
       ]);
-      expect(result.authorizations).toEqual([]);
+      expect(result.authorizations).toEqual([
+        expect.objectContaining({ componentId: "skill:clean", tier: "org", pinnedSha: newerPin }),
+      ]);
+      expect(result.labels).toEqual([
+        expect.objectContaining({ tier: "org", verdict: "has-findings" }),
+      ]);
     },
   );
 
-  it("does not let org evidence replace an exact vendor-blocked verdict for the same bytes", () => {
+  it("keeps exact vendor evidence and its findings label when org evidence also covers the bytes", () => {
     const result = verifyBaselineComponents({
       sourceRoot: root,
       catalog: catalog(),
       componentIds: ["skill:clean"],
       posture: "enterprise",
-      vendorLock: lock({ verdict: "blocked" }),
+      vendorLock: lock({ verdict: "has-findings" }),
       vendorLockSha256: "f".repeat(64),
       orgEvidence: {
         tier: "org",
@@ -353,10 +418,12 @@ describe("verifyBaselineComponents", () => {
         lock: lock(),
       },
     });
-    expect(result.checks[0]).toMatchObject({
-      verdict: "fail",
-      code: "baseline.evidence-blocked",
-    });
-    expect(result.authorizations).toEqual([]);
+    expect(result.checks[0]).toMatchObject({ verdict: "pass" });
+    expect(result.authorizations).toEqual([
+      expect.objectContaining({ componentId: "skill:clean", tier: "vendor" }),
+    ]);
+    expect(result.labels).toEqual([
+      expect.objectContaining({ tier: "vendor", verdict: "has-findings" }),
+    ]);
   });
 });

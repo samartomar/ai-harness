@@ -11,19 +11,20 @@ npm run verify:local -- --base origin/main --head HEAD --include-working
 ```
 
 Use focused tests while editing. `verify:local` is the routine local completion
-gate: it uses CI's classifier, runs every static quality check, then runs the
-applicable Core, Workbench browser, or provider lanes. Global, unknown, and
-selector changes retain the full suite with coverage and browser acceptance.
-The existing provider and browser runners include their packed-artifact checks.
+gate: it uses CI's classifier, runs every static quality check (including the
+installed Core policy surface and retired-UI absence check), then runs the
+selected backend Core, catalog, or provider tests. Global, unknown, and
+selector changes retain the full suite with coverage. There is no browser
+Workbench lane or Chromium prerequisite.
 
 Supply the intended base and head refs explicitly; the checkout must be at the
 specified head. `--include-working` also includes staged, unstaged, and untracked
 non-ignored paths, including new tests. Without it, a dirty checkout fails.
 The same base and head are allowed only with nonempty explicit working changes.
 Add `--plan` to inspect the paths, selection reasons, fallback, commands, and
-hosted gaps without running checks. For browser/provider lanes, install the
-pinned Chromium beforehand with `npx --no-install playwright install chromium`
-(CI installs Chromium's system dependencies on its Ubuntu runner).
+hosted gaps without running checks. Backend provider tests use the selected or
+complete test lane; the separate installed-package check exercises the retained
+policy surface and confirms that browser artifacts and routes are absent.
 
 A successful local run covers the current host only. The printed hosted OS gaps,
 CodeQL, PR metadata, release-preparation authorization when applicable, and

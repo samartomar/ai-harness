@@ -223,7 +223,7 @@ describe("authenticated versioned Workbench source data with a sealed fixture ba
     const id = `evidence:${asset.id}`;
     next.sourceBundle.evidence[id] = {
       id,
-      projectionVersion: "evidence-summary/v1",
+      projectionVersion: "evidence-summary/v2",
       subjects: [
         {
           assetId: asset.id,
@@ -240,9 +240,10 @@ describe("authenticated versioned Workbench source data with a sealed fixture ba
         validUntil: "2026-12-07T00:00:00.000Z",
         contextDigest: `sha256:${"2".repeat(64)}`,
       },
-      scan: { outcome: "pass", coverage: "complete" },
+      scan: { outcome: "no-findings", coverage: "complete" },
       qualification: { state: "unknown" },
       findings: [],
+      evidenceProblems: [],
     };
     next.sourceBundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({
       ...next.sourceBundle,

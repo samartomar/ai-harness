@@ -81,6 +81,60 @@ npm install -g "@aihq/core@$CORE_VERSION"
 aih verify-release "$CORE_VERSION"   # npm signatures, GitHub sums, and cosign evidence
 ```
 
+### Scanner beside Core (`@aihq/scan`)
+
+`@aihq/scan` is an optional peer dependency of `@aihq/core`, range `>=0.5.0 <0.6.0`.
+Core does not bundle it: Node loads the Scan installed beside Core, so a compatible
+Scan can be updated on its own without reinstalling Core. Install both together:
+
+```bash
+npm install -g @aihq/core @aihq/scan   # global
+npm install @aihq/core @aihq/scan      # in a project
+```
+
+A Core-only installation supports operations that do not need a sibling package.
+Where Core needs Scan's public API it says so instead of substituting a copy: `scan-package-unavailable`
+when Scan is not installed, `scan-package-incompatible` when the installed Scan lacks a
+function Core calls, each naming the install command above. Consuming a Scanner
+baseline publication (for example Workbench source-data import with `--scanner-source`)
+needs Scan and refuses without it. Core runs no detector of its own: `aih trust scan`,
+`aih skill vet`, workspace acquisition and the binding scan gate run every detector in
+the installed Scan and refuse with `scan-package-unavailable` or
+`scan-package-incompatible` without it. The runtime advisory names each detector's
+executor (`Detector executors: … installed @aihq/scan <profile> (completed)`) and records
+Scan's `detector.aih-native` identity observation, with its execution profile and annex
+digest. That observation is not a finding and does not change a verdict.
+
+### Catalog beside Core (`@aihq/catalog`)
+
+`@aihq/catalog` is also an optional peer dependency of `@aihq/core`, range
+`>=0.3.0 <0.4.0`, loaded from the consumer's own install and never bundled. Install all
+three together:
+
+```bash
+npm install -g @aihq/core @aihq/scan @aihq/catalog   # global
+npm install @aihq/core @aihq/scan @aihq/catalog      # in a project
+```
+
+Core can read an authenticated Catalog ECC runtime descriptor for current policy inventory.
+`aih ecc` guidance and presence-only status do not consume its install fields. Core resolves it in a fixed order and prints which
+source it used on stderr:
+
+1. a machine-local, trust-verified Workbench source-data receipt, as before;
+2. the installed Catalog's `@aihq/catalog/catalog-runtime-descriptors.json`, read with
+   Catalog's own reader and accepted only when the descriptor bytes have a sha256 that
+   Core pins (Catalog carries the bytes; Core's pin is the custody).
+
+A missing Catalog is `catalog-package-unavailable`. An installed Catalog that cannot
+supply acceptable bytes is also a named refusal, never a switch to Core's embedded
+Workbench data: `catalog-package-incompatible` (it cannot be loaded,
+lacks a reader, is outside Core's compatible range, or does not publish the subpath),
+`catalog-index-refused`, `catalog-runtime-descriptors-refused`,
+`catalog-descriptor-absent`, `catalog-descriptor-unverified` or
+`catalog-descriptor-not-accepted`. Historical-source ECC resolution succeeds without
+Catalog only when a matching verified local source-data receipt is available; other
+Core-only operations remain supported.
+
 ### macOS/Linux global-install permission errors
 
 If npm reports `EACCES` while installing globally, do not rerun the install with
@@ -149,7 +203,7 @@ Read governance output as a chain of separate proofs, not as one broad approval:
 
 | Question | AIH surface | Boundary |
 | --- | --- | --- |
-| Is this the authoritative organization policy? | A current PolicyBundle V2 selected through `AIH_ORG_POLICY`, or the optional separately attested authority receipt | A readable JSON file, Workbench draft, or Catalog entry is not authority. |
+| Is this the authoritative organization policy? | A current PolicyBundle V2 selected through `AIH_ORG_POLICY`, or the optional separately attested authority receipt | A readable JSON file or Catalog entry is not authority. |
 | What execution is permitted? | The exact decision target/effect plus a code-owned projector or adapter | Qualification or observation alone does not install, activate, or run a candidate. |
 | What independently verifiable evidence exists? | Canonical evidence/qualification receipts, exact digests, custody records, and fresh observations | Catalog membership is provenance; it is not organization admission or live-state proof. |
 | Which public claim does that proof support? | [`docs/CONTROL_MATRIX.md`](https://github.com/samartomar/ai-harness/blob/main/docs/CONTROL_MATRIX.md) maps the scoped claim to implementation and named regressions | A passing test supports its named assertion, not general maturity, compliance, or deployment claims. |
@@ -167,26 +221,21 @@ and durable audit inspection. The complete packaged syntax is in
 [Catalog-absent organization detector evidence](guides/enterprise-admin-guide.md#catalog-absent-organization-detector-evidence).
 
 <!-- aih:claim CM-91 -->
-For Enterprise, the shortest organization-authority path starts in the generated Policy Workbench.
-Run `aih policy generate --apply`, open `aih-policy-workbench.html`, select Enterprise, fill the
-protected-file form, and download `aih-policy-bundle.json`. The administrator supplies ordinary
-fields for the issuer, an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity, artifact kind, targets, effects, and
-attributable evidence; the browser computes the canonical Decision V2 source and subject digests.
-Choose **Accepted with conditions** to record named accepted findings or waivable gaps, conditions,
-and a review date within the authority window. Review those entries in the generated decision before
-downloading it. Risk acceptance does not change a scanner result or replace Core's evidence checks.
-The administrator does not write JSON. Store the generated **PolicyBundle V2** file at an
+For Enterprise, the administrator prepares a strict **PolicyBundle V2** file with the
+ordinary org policy and exact V3 Decision V2 authority payload. The former browser authoring
+route and `aih policy generate` command are gone; Core supplies validation and governance
+consumption, not a replacement authoring UI. The administrator must bind the issuer,
+exact source identity, artifact kind, targets, effects, attributable evidence, and any
+accepted findings, gaps, conditions, and review deadline in the decision. Core validates
+the source, subject, and revocation digests. Risk acceptance does not change a scanner
+result or replace Core's evidence checks. Store the file at an
 administrator-controlled read-only path outside the governed target, then select it with an explicit
 `--policy <file>` or `AIH_ORG_POLICY` path. The CLI flag wins when both are present. It contains the ordinary org policy plus the
 existing V3 decision-authority payload; no approval workflow or second policy store is required.
 Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
 a regular single-link file reached without symlinked parents, and exact byte re-observation before
-effects. Authority-dependent mutating transactions pin those same external bytes. ECC and
-Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
-mutation, standalone MCP planning, and standalone Usage ownership decisions reuse one verified
-policy observation. ECC profile install/update composes projection and native registration inside
-one pinned filesystem transaction; receipt-bound uninstall remains independently authorized by
-installed custody. Init retains each nested phase's file assertions, deadline, and lock and refuses
+effects. Authority-dependent mutating transactions pin those same external bytes. ECC and Superpowers evidence and standalone Usage ownership decisions reuse one verified
+policy observation. Init retains each nested phase's file assertions, deadline, and lock and refuses
 a conflicting observation before effects. Child-process effects retain a renewable cooperative
 lease and revalidate authority before and after execution; if the latter fails, Core blocks later
 effects without claiming it rolled back the already-run child.
@@ -323,10 +372,10 @@ distribution and process-configuration boundary; Core does not certify that host
 For an `aih-supported` basis, the administrator first supplies the separately controlled support
 repository/workflow roots and applies the exact decision binding to durable custody:
 
-In Policy Workbench, choose **AIH-supported Catalog receipt** as the qualification basis and copy
-the exact Catalog signer, Catalog digest, Catalog head digest, and Catalog member digest from the
-independently verified Qualification Receipt V2. The Workbench computes and embeds the matching
-subject kind and subject digest. The receipt qualifies those exact subject bytes; it does not grant
+In the protected Decision V2, use the separately verified Qualification Receipt V2's exact
+Catalog signer, Catalog digest, Catalog head digest, Catalog member digest, subject kind,
+and subject digest for an `aih-supported` qualification basis. Core checks this binding;
+the receipt qualifies those exact subject bytes but does not grant
 organization admission or replace the accountable organization approval in the protected file.
 
 ```bash
@@ -426,7 +475,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | Command | What it does |
 | --- | --- |
 | [`aih certs`](docs/commands.md#aih-certs) | Extract the corporate root CA from the OS trust store and propagate trust to npm/pip/cargo/conda. |
-| [`aih cleanup`](docs/commands.md#aih-cleanup) | Preview and remove framework-contaminated Claude user-scope surfaces with backup and rollback. |
+| [`aih cleanup`](docs/commands.md#aih-cleanup) | Preview Claude user-scope contamination and remove non-ECC surfaces with backup and rollback; ECC stays read-only. |
 | [`aih heal`](docs/commands.md#aih-heal) | Diagnose and repair the broken runtime behind any TLS-intercepting proxy — corporate trust, npm, PATH, MCP pre-flight. |
 | [`aih tools`](docs/commands.md#aih-tools) | Install the agent shell tools the harness leans on (`rg`/`fd`/`jq`, `ast-grep`, `gh`, …) through the platform package manager. |
 | [`aih ready`](docs/commands.md#aih-ready) | Check host and selected-client configuration prerequisites, with blockers and unverified MCP capabilities visible. |
@@ -458,9 +507,9 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih contract`](docs/commands.md#aih-contract) | Synthesize the machine-readable repo contract (`project.json`) from the detected stack. |
 | [`aih capability`](docs/commands.md#aih-capability) | Resolve repo capability needs; inspect or preview policy-driven packages; explicitly reconcile already-promoted, approved GitHub skill packs. |
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
-| [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and reconcile orphaned aih-managed ECC components from the machine registration ledger. <!-- aih:claim CM-22 --> |
+| [`aih prune`](docs/commands.md#aih-prune) | Remove stale aih-owned per-CLI artifacts; ECC remains developer-managed. |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, manage the reviewed Claude/Codex projection with `--lifecycle`, or explicitly add/remove policy-approved ECC HTTPS MCP entries for one selected native client with `aih ecc mcp add/remove`. In a governed repository, `--lifecycle install` materializes the org policy's evidence-passed selection for the targets `--cli` selects, including the separately evidence-bound Kiro skill/steering projection; removal lives in `aih uninstall`. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> <!-- aih:claim CM-50 --> <!-- aih:claim CM-55 --> |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Show exact developer-managed ECC guidance and presence-only `--status`. <!-- aih:claim CM-20 --> <!-- aih:claim CM-41 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
@@ -473,7 +522,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih skill`](docs/commands.md#aih-skill) | Govern the skill lifecycle — vet → approve → inventory → quarantine → remove — anchored in `aih-skills.lock.json`. |
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
 | [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact for hostable approved skills — never a registry. |
-| [`aih policy`](docs/commands.md#aih-policy) | Generate the Policy Workbench and its protected Enterprise authority file; resolve protected-file or optional attested V3 authority plus exact organization evidence; observe and persist governed lifecycles; evaluate, project, validate, or verify policy. |
+| [`aih policy`](docs/commands.md#aih-policy) | Validate policy; resolve protected-file or optional attested V3 authority plus exact organization evidence; observe and persist governed lifecycles; evaluate, project, or verify policy. The browser authoring and `generate` routes were removed. |
 | [`aih evidence`](docs/commands.md#aih-evidence) | Vet exact-pinned baseline components and package local audit artifacts into deterministic signed evidence bundles. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
@@ -496,13 +545,12 @@ not guess which names are private to your organization.
 
 ### Baseline component evidence
 
-`aih ecc` and `aih superpowers` acquire only exact Git commits into quarantine. Selected component
-paths must match the vendor lock shipped in the npm release or an attributable GitHub-attested org
-bundle. Covered user seats verify hashes and signatures; they do not rerun the release analyzers.
-Missing/mismatched coverage warns without an authorization receipt at `vibe` and denies at
-`enterprise`. A signed `blocked` verdict denies at every posture and cannot be waived by org
-evidence for the same bytes. See [Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md)
-for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
+`aih ecc` shows the reviewed ECC source pin and developer-managed installation guidance;
+`aih ecc --status` reports only the presence of ECC's own install-state files. Neither
+command installs ECC. `aih evidence vet-baseline` remains an evidence diagnostic;
+findings inform selection rather than block third-party inventory. See
+[Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md).
+<!-- aih:claim CM-20 -->
 
 ### Analytics & operations
 
@@ -580,7 +628,7 @@ telemetry. `aih report --demo --v9` opens the same dashboard locally.*
 
 ### Targeting CLIs
 
-`aih ecc`, `aih superpowers`, and `aih bootstrap-ai` only touch the agent CLIs you actually use.
+`aih ecc` and `aih superpowers` give guidance for selected CLIs; `aih bootstrap-ai` writes only the agent CLI canon you target.
 Pass `--cli` with a comma-separated list, `--all-tools` for every supported CLI, or `--detect` to
 auto-target the CLIs found on this machine; the default is `claude`. Supported:
 `claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro`.
@@ -589,7 +637,7 @@ At Enterprise posture, an org policy must declare a non-empty `governance.suppor
 ```bash
 aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto-loaded)
 # repeatable declarations add to detection and the prior machine union
-aih ecc --cli claude,codex --with framework:react --with lang:typescript
+aih ecc --cli claude,codex       # exact developer-managed guidance
 aih superpowers --cli antigravity   # verify exact pin; guidance only (no mutable plugin exec)
 aih bootstrap-ai --cli kiro --kiro-hook-runtime ide1-cli3  # Kiro IDE1/CLI3 hooks opt-in
 aih bootstrap-ai --detect           # target only the CLIs installed here
@@ -626,14 +674,6 @@ real `.kiro/` tree):
   opt out of workspace MCP inheritance.
 - `aih ecc --cli kiro` → emits scoped consult guidance; Kiro's native installer cannot yet
   materialize the component union safely, so aih does not run it.
-- In a governed repository, `aih ecc --lifecycle install --cli kiro` is a separate AIH-owned
-  path: it projects only evidence-passed selected agents with an exact pinned Kiro mapping, skills,
-  and steering from the exact pinned source, under dual selected/runtime evidence and receipt
-  ownership. A mapped agent lands as its exact selected `.kiro/agents/<name>.md` IDE representation
-  and curated `.kiro/agents/<name>.json` CLI configuration; an unmapped agent is reported by name,
-  while a pre-existing same-name Markdown/JSON definition, including a
-  case-folded spelling on a case-sensitive filesystem, is refused rather than overwritten. It does
-  not run or adopt the native installer or project hooks/settings/scripts.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 
@@ -664,77 +704,17 @@ aih init --context-dir my-canon   # → my-canon/    (any name; everything adapt
 aih init --context-dir .ai-context  # → hidden, the old default
 ```
 
-ECC install actions execute under `--apply` only after exact component evidence clears and the same
-quarantined tree re-hashes. By default, `aih ecc` materializes the additive union of its common
-baseline, detected or repeatably declared project riders, posture-selected security, and validated
-MCPs; `--profile full` is the explicit full-surface opt-in. Evidence verdicts apply per component:
-authorized components install, while held components are quarantined and reported with their exact
-codes and reasons. No install process starts unless ECC's installer runtime is also authorized.
-The project contribution keeps the requested intent, while each target record contains only the
-surface actually installed. The primary project/target contribution ledger lives at
-`~/.aih/ecc/registration-ledger.json` and commits only after every install step succeeds. A bare
-`aih prune` also checks that ledger: missing project roots are retired, the live
-component/MCP union is recomputed, and only state-recorded aih-managed operations no longer shared
-by a live project are removed. Dry-run reports the diff without mutation; `--apply` hash-binds all
-inputs, rolls back partial failure, and replaces target state before committing the ledger last.
-Superpowers marketplace/TUI paths cannot bind installed bytes to that
-tree, so aih executes none of them; it emits pin-aware guidance and says those marketplace selections
-are not evidence-covered. ECC and Superpowers are complementary — ECC supplies stack-aware rules,
-agents, and memory; Superpowers supplies the disciplined agent loop that uses them.
-For Codex, installed ECC skills are consumed on demand by name, such as `$configure-ecc`, from the
-literal Codex skills path (`~/.codex/skills/<name>/SKILL.md`); they are not an ambient auto-loaded
-`.agents/skills/` surface. `aih ecc --cli codex` still installs the selected ECC Codex
-skills/agents from ECC's manifest, but uses add-only Codex TOML merge helpers and a fenced AGENTS
-merge rather than the upstream `ecc-install --target codex` copy mode for shared `~/.codex` files.
-Its scoped MCP block contains pinned `sequential-thinking` plus GitHub at enterprise (and
-repo-declared local graph/memory servers); Context7 and Exa are never defaults.
-
-For ECC's separate external MCP catalog, `governance.eccMcpApprovals` is only a seat approval record.
-An operator still performs an explicit Add when a project needs one approved HTTPS entry:
-`aih ecc mcp add memxus --cli claude --apply`. That path writes project-local JSON client configs for
-Claude, Cursor, Copilot, Kimi, and Kiro; guarded global JSON configs for Antigravity, Gemini, Windsurf,
-OpenCode, and Zed; and guarded Codex TOML. It records ownership under `.aih/`, removes only unchanged
-receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and doctor reports local
-receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
-approved entries.
-
-The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left
-rail suggests aggregate choices, while the center inventory remains final authority for individual Agent and
-Skill rows; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed
-next action. Its source-locked planes show all 286 canonical ECC skills and all 35 entries in ECC's pinned MCP
-source. Every exact Skill row authors reversible, source-bound requested intent against an independently
-scannable baseline subject. Selection alone still grants no evidence, approval, installation,
-materialization, or support; the governed lifecycle remains held until exact evidence clears. The 31
-ECC-owned MCP entries route to approval authoring, while the
-four AIH-owned declarations are all selectable: one is the shared AIH control row, and the other three record
-requested intent that never implies a matching Core control.
-The Artifacts workspace creates one intake and one scanner evidence bundle for up to 100 mixed items, then can
-save the draft policy, intake, and evidence history in one resumable, explicitly non-authoritative team review
-workspace. The deployable protected policy remains a separate download. At Enterprise posture, the
-protected-file form is the administrator-facing authority authoring surface: it accepts structured exact-source
-and evidence fields, computes the existing Decision V2 digests, and downloads the existing PolicyBundle V2
-without exposing editable raw JSON. Curation and custom-source forms live in a separate authoring sidebar. The
-separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or
-configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly
-with the command above; manual entries remain approval-only until a supported lifecycle exists.
-
-The Workbench also shows the first bounded adoption recipe for Token Savior, Serena,
-code-review-graph, codebase-memory-mcp, and Token Optimizer. It assigns one question class to each
-role and states the prerequisite, overlap boundary, supported next route, and locally captured usage
-signal without adding an inventory row or selection control. This is inert guidance: it neither
-approves nor installs anything, changes no exported policy bytes, and is not a generic recipe or
-catalog-distribution plane.
-
-The Workbench also authors source-locked ECC hook controls: Minimal, Standard, or Strict profile selection and eligible per-hook disables. Policy projection records those choices only as receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` keys in Claude `settings.json.env`; it never rewrites ECC launchers. ECC executes and enforces the selection after process spawn, so disabling a hook does not erase its spawn cost.
-
-The Workbench can also import one standalone `GovernanceDecisionV1` for inspection and canonical download. It applies the strict decision grammar and semantics, keeps the record separate from policy and receipt state, renders its untrusted fields as text, and labels it unverified and not effective. This is an inert transport view: it cannot edit, verify, sign, fetch, resolve, project, or materialize the decision, and importing one never grants approval or changes the authored policy.
+`aih ecc` prints exact, copyable ECC installation guidance; `aih ecc --status`
+reports only the presence of ECC's own install-state files. Full ECC is
+developer-managed. aih does not configure, install, or remove ECC.
+Third-party inventory remains selectable; scan findings are information.
 
 ### Layered AI canon (`bootstrap-ai`)
 
 The harness models the same two-layer setup used in the reference repos (eicp / ai-os / syntegris):
 
 - **Layer 1 — user baseline:** `--baseline ecc` — the default and sole selectable baseline
-  (ECC + Superpowers installed per CLI by `aih ecc` / `aih superpowers`).
+  (ECC and Superpowers are developer-managed; their aih commands give guidance).
 - **Layer 2 — repo canon:** the committed `ai-coding/` (or `--context-dir`) tree — `RULE_ROUTER.md`
   (stack-aware routing entry point), the contract files `project.json`, `project.md`, and `setup.md`,
   `adapters/<cli>.md` (per-tool wiring notes), and the root **bootloaders** (`CLAUDE.md`, `AGENTS.md`,
@@ -858,6 +838,56 @@ aih usage --rollup ../repo-a,../repo-b
   is incomplete evidence. Consumers with provenance-aware policy can also use `gh attestation verify`.
 - **Support** — [SUPPORT.md](https://github.com/samartomar/ai-harness/blob/main/SUPPORT.md) · **Security** — [SECURITY.md](https://github.com/samartomar/ai-harness/blob/main/SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](https://github.com/samartomar/ai-harness/blob/main/CONTRIBUTING.md).
+
+## Organization evidence library API
+
+Node consumers can import `parseOrganizationEvidenceEnvelopeV1Bytes`,
+`canonicalOrganizationEvidenceEnvelopeV1`, `organizationEvidenceEnvelopeDigestV1`,
+`OrganizationEvidenceEnvelopeV1Schema`, and
+`MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1` from `@aihq/core`.
+The corresponding `OrganizationEvidenceEnvelopeV1` type is also exported.
+
+Read an imported envelope as bytes and parse it before computing its digest.
+The parser returns `undefined` for invalid or noncanonical transport, including
+pretty-printed JSON and trailing newlines. The binding digest is domain-separated;
+it is not the raw file SHA-256. Parsing and hashing do not verify a Scan signature,
+establish organization authority, approve an item, or authorize an effect. Core's
+evidence and authority checks still apply when the policy is consumed.
+
+The formats Core reads and writes across a package boundary, and the exact refusal each
+produces for a version it does not know, are listed in
+[CONTRACTS.md](https://github.com/samartomar/ai-harness/blob/main/CONTRACTS.md).
+
+## Node-only interfaces
+
+Every JavaScript entry of `@aihq/core` is Node-only. The package root is a single
+bundle, so importing any export, even a pure digest function, loads code that reaches
+`node:child_process`, `node:http`, `node:fs` and `node:crypto`. There is no browser build
+and none is planned. The only runtime-neutral subpaths are data: the JSON schemas under
+`@aihq/core/schemas/*.json` and `@aihq/core/package.json`.
+
+Consuming the public types requires `@types/node` in the consumer: Core's declarations
+name `Buffer`, `NodeJS.ProcessEnv` and `node:fs` types. It is a documented prerequisite,
+not a declared dependency.
+
+A user interface that needs Core runs it in a Node process and talks to that process;
+the page itself never imports `@aihq/core`.
+
+Two runnable scripts show both governance input routes using only the package name:
+[examples/catalog-route.mjs](https://github.com/samartomar/ai-harness/blob/main/examples/catalog-route.mjs)
+selects a catalog item, prepares a governance input, saves its bytes and consumes them in
+a fresh process;
+[examples/organization-route.mjs](https://github.com/samartomar/ai-harness/blob/main/examples/organization-route.mjs)
+does the same from operator-supplied subject, evidence and authority. Without your own
+inputs they use a fictional organization and fail closed at `authority-unverified`; a
+fictional organization's authority is never production approval. They are not part of
+the published package: run them from a clone after `npm run build`, or copy them into a
+project that has `@aihq/core` installed.
+
+```bash
+node examples/organization-route.mjs --out ./route-example
+node examples/catalog-route.mjs --out ./catalog-example --index path/to/catalog-index.json
+```
 
 ## Development
 

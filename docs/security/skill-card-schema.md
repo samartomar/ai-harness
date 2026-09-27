@@ -34,11 +34,11 @@ aih skill approve
 `aih skill card` can render a card without an approval block. `aih skill approve`
 writes the approval block and the root lockfile entry.
 
-## Schema version 1 fields
+## Schema version 2 fields
 
 | Field | Required | Source |
 | --- | --- | --- |
-| `schemaVersion` | Yes | Literal `1`. |
+| `schemaVersion` | Yes | `2`. Version 1 files (aih 0.6.2 and earlier) are still read, with version 1's values only (`green`/`yellow` and `GREEN`/`YELLOW`); a version 1 file carrying another value is malformed. aih rewrites a file as version 2 only when it writes it. |
 | `name` | Yes | Skill directory name from vet evidence, or `--name` when the source has several skills. |
 | `source` | Yes | Vet evidence source, including pin for GitHub sources. |
 | `commit` | Yes | Full pinned SHA for GitHub sources, or `local` for local sources. |
@@ -48,7 +48,7 @@ writes the approval block and the root lockfile entry.
 | `firstParty` | No | Set when the approved source is repo-relative local content. |
 | `intendedUse` | No | Operator-provided intended-use statement. |
 | `installScope` | Yes | Currently `repo`. |
-| `riskClass` | Yes | `green` or `yellow`. RED/UNKNOWN sources do not get cards. |
+| `riskClass` | Yes | The vet verdict as a label: `green`, `yellow`, `red` or `unknown`. Every vetted source can get a card. |
 | `mode` | No | Operator-provided operating mode, such as `review-only`. |
 | `requiresMcp` | Yes | Derived from evidence shape. |
 | `requiresShell` | Yes | Derived from evidence shape install-script detection. |
@@ -70,7 +70,7 @@ The approval block has:
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `verdict` | Yes | `GREEN` or `YELLOW`. |
+| `verdict` | Yes | The vet verdict the approval recorded: `GREEN`, `YELLOW`, `RED` or `UNKNOWN`. |
 | `approvedBy` | Yes | The owner/team passed with `--owner`. |
 | `approvedAt` | Yes | Real timestamp under `--apply`; dry-run previews use `(set at apply)`. |
 
@@ -78,7 +78,7 @@ The approval block has:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "clean",
   "source": "owner/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -120,13 +120,14 @@ Card/approve planning refuses when the evidence chain is broken:
 - GitHub source has no `--pin`;
 - matching vet evidence is absent or unreadable;
 - evidence pin does not match `--pin`;
-- verdict is `RED` or `UNKNOWN`;
-- license is missing;
 - a multi-skill source has no `--name`;
 - `--name` does not match a skill found in evidence;
 - scoped evidence omits `sourceScope`, records an included path that does not
   promote to `--name`, overlaps included and excluded paths, or lacks the
   matching `skill source scope` pass-check from vet.
+
+A `RED` or `UNKNOWN` verdict and a missing license (recorded as `not determined`)
+are labels on the card, not refusals.
 
 Reading a card is fail-soft: a missing, unreadable, or schema-invalid card
 returns no card to callers instead of crashing the command.
@@ -137,8 +138,8 @@ returns no card to callers instead of crashing the command.
   `aih-skills.lock.json`.
 - `scanEvidence` points to local evidence. It is a reference, not embedded scan
   output.
-- A `YELLOW` card is approvable because the approval is the manual review the
-  verdict requested. A `RED` or `UNKNOWN` source is refused.
+- The card carries the vet verdict as its label; the approval records the
+  consumer's decision and does not depend on the verdict.
 
 ## Source links
 

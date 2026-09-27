@@ -99,7 +99,8 @@ export const PackageGraphObservedRiskSchema = z
   .object({
     detector: PackageGraphDetectorSchema,
     evidence: PackageGraphEvidenceSchema,
-    verdict: z.enum(["pass", "warn", "blocked", "unknown"]),
+    /** Whether the detector reported findings: information for the consumer, never a gate. */
+    verdict: z.enum(["no-findings", "has-findings", "unknown"]),
     findings: z.array(PackageGraphRiskFindingSchema).superRefine((findings, context) => {
       duplicateIssues(
         findings.map((finding) => finding.code),

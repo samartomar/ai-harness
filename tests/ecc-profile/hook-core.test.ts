@@ -6,7 +6,6 @@ import {
   type NormalizedHookEvent,
   normalizeClaudeHookInput,
   normalizeCodexHookInput,
-  serializeHookDispatchResult,
 } from "../../src/ecc-profile/hook-core.js";
 import vectors from "../fixtures/ecc-profile/hook-vectors.json";
 
@@ -348,9 +347,7 @@ describe("ECC composite hook dispatcher", () => {
         { handlerId: "second", status: "continued", failurePolicy: "open" },
       ],
     });
-    expect(serializeHookDispatchResult(first)).toBe(serializeHookDispatchResult(second));
-    expect(JSON.parse(serializeHookDispatchResult(first))).toEqual(first);
-    expect(serializeHookDispatchResult(first)).toMatch(/\n$/);
+    expect(second).toEqual(first);
   });
 
   it("keeps disabled and non-matching handlers explicit without running them", async () => {

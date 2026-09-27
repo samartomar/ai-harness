@@ -9,14 +9,12 @@ import {
 } from "../../src/internals/ci-local-verification.js";
 import { runLocalVerification } from "../../src/internals/ci-local-verification-command.js";
 import { fakeRunner, type RunOptions, type RunResult } from "../../src/internals/proc.js";
-import { providerTestsFor } from "../../src/internals/workbench-provider-ownership.js";
 
 const baseSha = "a".repeat(40);
 const headSha = "b".repeat(40);
 const coreTest = "tests/workspace/manifest.test.ts";
-const providerTest = "tests/org-policy/workbench/providers/ecc.test.ts";
-const providerTests = providerTestsFor(["ecc"]);
-const testFiles = ["tests/docs/readme-assets.test.ts", coreTest, ...providerTests];
+const workbenchTest = "tests/org-policy/workbench/prepared-catalog.test.ts";
+const testFiles = ["tests/docs/readme-assets.test.ts", coreTest, workbenchTest];
 const args = ["--base", "main", "--head", "HEAD"];
 
 function impact(changedPaths: string[]) {
@@ -93,19 +91,11 @@ describe("local CI verification", () => {
   it.each([
     ["docs", ["README.md"], ["ci:run-selected"]],
     ["Core", ["src/workspace/manifest.ts"], ["ci:run-selected"]],
-    ["provider", [providerTest], ["ci:run-selected", "test:workbench:providers"]],
-    [
-      "browser",
-      ["tests/org-policy/workbench/browser/artifact.spec.ts"],
-      ["ci:run-selected", "test:workbench:pr"],
-    ],
-    [
-      "shared",
-      [providerTest, "src/org-policy/schema.ts"],
-      ["ci:run-selected", "test:workbench:pr"],
-    ],
-    ["unknown", ["unknown/input.json"], ["test:cov", "test:workbench:pr"]],
-    ["selector", ["src/internals/ci-local-verification.ts"], ["test:cov", "test:workbench:pr"]],
+    ["Workbench", [workbenchTest], ["ci:run-selected"]],
+    ["removed browser path", ["tests/org-policy/workbench/browser/artifact.spec.ts"], ["test:cov"]],
+    ["shared", [workbenchTest, "src/org-policy/schema.ts"], ["ci:run-selected"]],
+    ["unknown", ["unknown/input.json"], ["test:cov"]],
+    ["selector", ["src/internals/ci-local-verification.ts"], ["test:cov"]],
   ])("dispatches the %s selection to its existing lanes", (_name, paths, expected) => {
     const steps = localVerificationSteps(impact(paths));
     expect(steps.slice(CI_STATIC_SCRIPTS.length).map((step) => step.script)).toEqual(expected);
@@ -114,27 +104,18 @@ describe("local CI verification", () => {
     }
   });
 
-  it("executes static and provider lanes sequentially with the complete ownership receipt", async () => {
-    const h = harness({ changed: [providerTest] });
+  it("executes static checks and every selected backend test in one lane", async () => {
+    const h = harness({ changed: [workbenchTest] });
     const receipt = await runLocalVerification(args, h.options);
     const commands = h.calls.filter(({ argv }) => argv[0] !== "git");
-    expect(commands.map(({ argv }) => argv[3])).toEqual([
-      ...CI_STATIC_SCRIPTS,
-      "ci:run-selected",
-      "test:workbench:providers",
-    ]);
+    expect(commands.map(({ argv }) => argv[3])).toEqual([...CI_STATIC_SCRIPTS, "ci:run-selected"]);
     expect(commands.every(({ argv }) => argv[0] === process.execPath)).toBe(true);
     expect(commands.at(-1)?.options?.env).toMatchObject({
-      AFFECTED_PROVIDERS_JSON: '["ecc"]',
-      PROVIDER_TESTS_JSON: JSON.stringify(providerTests),
-    });
-    expect(commands.at(-2)?.options?.env).toMatchObject({
       SELECTED_TESTS_JSON: JSON.stringify(receipt.selectedTests),
       TEST_LANE: "workbench",
       FULL_SUITE: "false",
-      REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
     });
-    expect(h.output.join("")).toContain("provider:ecc");
+    expect(h.output.join("")).toContain("test-domain:org-policy");
     expect(h.output.join("")).toContain("Hosted gap:");
   });
 
@@ -143,17 +124,17 @@ describe("local CI verification", () => {
     const h = harness({
       changed: ["README.md"],
       unstaged: ["src/workspace/manifest.ts"],
-      staged: [providerTest],
+      staged: [workbenchTest],
       untracked: [newTest],
     });
     const receipt = await runLocalVerification([...args, "--include-working", "--plan"], h.options);
     expect(receipt.changedPaths).toEqual(
-      ["README.md", "src/workspace/manifest.ts", providerTest, newTest].sort((a, b) =>
+      ["README.md", "src/workspace/manifest.ts", workbenchTest, newTest].sort((a, b) =>
         a.localeCompare(b),
       ),
     );
     expect(receipt.selectedTests).toContain(newTest);
-    expect(receipt.affectedProviders).toEqual(["ecc"]);
+    expect(receipt.affectedProviders).toEqual([]);
     expect(h.calls.every(({ argv }) => argv[0] === "git")).toBe(true);
     expect(
       h.calls
@@ -175,12 +156,12 @@ describe("local CI verification", () => {
     ).rejects.toThrow("base and head SHA must differ");
   });
 
-  it("falls back when a provider test is deleted from the working tree", async () => {
-    const h = harness({ changed: [], unstaged: [providerTest], deleted: [providerTest] });
+  it("falls back when a changed Workbench test is deleted from the working tree", async () => {
+    const h = harness({ changed: [], unstaged: [workbenchTest], deleted: [workbenchTest] });
     const receipt = await runLocalVerification([...args, "--include-working", "--plan"], h.options);
     expect(receipt.fullSuite).toBe(true);
-    expect(receipt.fallbackReasons).toContain(`missing-provider-test:${providerTest}`);
-    expect(receipt.selectedTests).not.toContain(providerTest);
+    expect(receipt.fallbackReasons).toContain("unexpected-empty-test-selection");
+    expect(receipt.selectedTests).not.toContain(workbenchTest);
   });
 
   it("refuses to verify a different checkout or silently omit working changes", async () => {

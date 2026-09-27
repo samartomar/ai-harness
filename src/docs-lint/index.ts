@@ -430,7 +430,8 @@ function normalizeClaimId(value: string): string | undefined {
 
 function extractTestRefs(proof: string): MatrixTestRef[] {
   const refs: MatrixTestRef[] = [];
-  const files = [...proof.matchAll(/`(tests\/[^`]+\.test\.ts)`/g)];
+  // Core's own tests, and a workspace package's tests (`packages/<name>/tests/...`).
+  const files = [...proof.matchAll(/`((?:packages\/[a-z0-9-]+\/)?tests\/[^`]+\.test\.ts)`/g)];
   for (const match of files) {
     const path = match[1];
     if (path === undefined) continue;

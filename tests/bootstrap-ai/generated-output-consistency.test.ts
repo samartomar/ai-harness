@@ -64,12 +64,9 @@ function contract(over: Partial<ProjectContract> = {}): ProjectContract {
 }
 
 describe("generated canon — internal consistency", () => {
-  it("routes ordinary startup through the policy-selected required guidance in the configured context directory", () => {
+  it("does not advertise the removed policy-required guidance bridge", () => {
     const block = sharedCanonicalBlockBody(DIR);
-    expect(block).toContain(`${DIR}/policy-required-guidance.md`);
-    expect(block).toContain("before acting");
-    expect(block).toContain("instruction guidance");
-    expect(block).not.toContain("ai-coding/policy-required-guidance.md");
+    expect(block).not.toContain("policy-required-guidance.md");
   });
 
   it("compact router renders the External action boundary section every compact adapter cites", () => {
@@ -261,5 +258,25 @@ describe("setup.md — fresh-clone executability", () => {
 
   it("still prefers a detected package manager over any fallback", () => {
     expect(setupDoc(DIR, contract({ packageManager: "pnpm" }))).toContain("`pnpm install`");
+  });
+});
+
+describe("generated canon — primary code graph routing", () => {
+  it("keeps task-based graph routing byte-identical when no primary is chosen", () => {
+    expect(agentBehaviorCoreDoc(DIR)).toBe(agentBehaviorCoreDoc(DIR, undefined));
+    expect(agentBehaviorCoreDoc(DIR)).not.toContain("Primary code graph");
+  });
+
+  it.each([
+    ["code-review-graph", "codebase-memory-mcp", "policy", "organization policy"],
+    ["codebase-memory-mcp", "code-review-graph", "user", "developer-tools choice"],
+  ] as const)("names %s as primary and keeps %s available", (id, other, source, label) => {
+    const core = agentBehaviorCoreDoc(DIR, { id, source });
+    const tools = core.split("\n## Tool selection\n\n")[1]?.split("\n\n## ")[0] ?? "";
+    expect(tools).toContain(`Primary code graph: **${id}** (${label}).`);
+    expect(tools).toContain(`ask ${id} first`);
+    expect(tools).toContain(`**${other}**`);
+    // The shared block stays tool-agnostic, so bootloaders do not churn.
+    expect(sharedCanonicalBlockBody(DIR)).not.toContain("Primary code graph");
   });
 });

@@ -141,6 +141,48 @@ describe("docs-lint", () => {
     );
   });
 
+  it.each([
+    ["accepts", "covers the mapped claim", undefined],
+    ["fails", "missing named test", "fail"],
+  ])(
+    "%s a workspace package's cited test as it checks Core's own (%s)",
+    async (_label, cited, verdict) => {
+      const root = tempRoot();
+      write(root, "README.md", "Managed changes are dry-run first. <!-- aih:claim CM-01 -->\n");
+      write(
+        root,
+        "docs/CONTROL_MATRIX.md",
+        [
+          "# Control Matrix",
+          "",
+          "| ID | Public claim | Implementation seam | Regression proof |",
+          "| --- | --- | --- | --- |",
+          `| CM-01 | Managed changes are dry-run first. | \`src/internals/execute.ts\` | \`packages/framework-demo/tests/example.test.ts\` (\`${cited}\`) |`,
+        ].join("\n"),
+      );
+      write(
+        root,
+        "packages/framework-demo/tests/example.test.ts",
+        'it("covers the mapped claim", () => {});\n',
+      );
+
+      const findings = (await docsLintChecks(ctx(root))).filter(
+        (check) => check.code === "docs.claim-test-missing",
+      );
+
+      if (verdict === undefined) expect(findings).toEqual([]);
+      else
+        expect(findings).toEqual([
+          expect.objectContaining({
+            verdict,
+            detail: expect.stringContaining(
+              `"missing named test" in packages/framework-demo/tests/example.test.ts`,
+            ),
+          }),
+        ]);
+    },
+  );
+
   it("fails a matrix row whose named test only appears in a comment", async () => {
     const root = tempRoot();
     write(root, "README.md", "Managed changes are dry-run first. <!-- aih:claim CM-01 -->\n");

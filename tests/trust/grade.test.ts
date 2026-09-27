@@ -96,6 +96,7 @@ describe("gradeTrustCheck", () => {
       "trust.cisco-finding",
       "trust.detector-finding",
       "trust.legal-text-detector-finding",
+      "trust.unreviewed-analyzer-rule",
       "trust.visible-unicode",
     ]);
   });

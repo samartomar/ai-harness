@@ -15,7 +15,7 @@ import type {
   WorkbenchAuthoringSourceV1,
   WorkbenchSourceInputsV1,
 } from "../contracts.js";
-import { compileOrganizationManifestAssemblyInputV1 } from "../providers/organization.js";
+import { compileOrganizationManifestAssemblyInputV1 } from "./organization-compiler.js";
 
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
@@ -143,13 +143,23 @@ export function prepareOrganizationManifestWithFreshScanV1(
       observedAt <= timestamp &&
       timestamp < validUntil;
     const expired = detectorComplete && Number.isFinite(validUntil) && timestamp >= validUntil;
-    const passed = detectorComplete && matchingRecord?.state === "verified";
-    const failed = detectorComplete && matchingRecord?.state === "failed";
-    const coverage = detectorComplete ? "complete" : "none";
     const missingDetectors = (matchingRecord?.detectors ?? [])
       .filter((entry) => entry.required && entry.status !== "pass")
       .map((entry) => entry.id)
       .sort();
+    // Coverage as the record states it: a scan without a required detector is partial
+    // (as trust.detector-unavailable); no matching scan, or one the record cannot say
+    // covered the declared path, is none. No-findings holds only on complete coverage;
+    // findings the scan observed are stated at any coverage.
+    const coverage = detectorComplete
+      ? "complete"
+      : matchingRecord !== undefined && missingDetectors.length > 0
+        ? "partial"
+        : "none";
+    const passed = detectorComplete && matchingRecord?.state === "verified";
+    const failed =
+      matchingRecord?.state === "failed" &&
+      (detectorComplete || matchingRecord.findings.length > 0);
     const verification =
       current && matchingRecord !== undefined
         ? {
@@ -161,7 +171,7 @@ export function prepareOrganizationManifestWithFreshScanV1(
         : { state: expired ? ("stale" as const) : ("missing" as const) };
     evidence[`evidence:${assetId}`] = {
       id: `evidence:${assetId}`,
-      projectionVersion: "evidence-summary/v1",
+      projectionVersion: "evidence-summary/v2",
       subjects: [
         {
           assetId,
@@ -181,13 +191,14 @@ export function prepareOrganizationManifestWithFreshScanV1(
       coveredPaths: [subject.path],
       verification,
       scan: passed
-        ? { outcome: "pass", coverage }
+        ? { outcome: "no-findings", coverage }
         : failed
-          ? { outcome: "failed", coverage }
-          : { outcome: "unknown", coverage: "none" },
+          ? { outcome: "has-findings", coverage }
+          : { outcome: "unknown", coverage },
       qualification: { state: "unknown" },
-      findings: [
-        ...(matchingRecord?.findings ?? []),
+      findings: [...(matchingRecord?.findings ?? [])].sort().slice(0, 50),
+      // What kept the evidence from being complete: its own label (D56).
+      evidenceProblems: [
         ...missingDetectors.map((id) => `required detector is unavailable: ${id}`),
         ...(matchingRecord === undefined ? ["fresh scan evidence is missing"] : []),
         ...(matchingRecord?.state === "missing" ? ["fresh scan coverage is incomplete"] : []),

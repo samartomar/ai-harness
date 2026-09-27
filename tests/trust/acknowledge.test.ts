@@ -45,7 +45,7 @@ describe("applyTrustAcknowledgements — reclassified Cisco missing-license", ()
     ).toThrowError(/--acknowledge requires --reason/);
   });
 
-  it("never acknowledges a prompt-injection danger finding (danger floor intact)", () => {
+  it("records the consumer's acknowledgement of a prompt-injection finding", () => {
     const danger: Check = {
       name: "trust.prompt-injection",
       verdict: "fail",
@@ -53,11 +53,47 @@ describe("applyTrustAcknowledgements — reclassified Cisco missing-license", ()
       detail: "agents/x.md:11 — prompt-injection.secret-exfil",
       fingerprint: `trust-prompt-injection:agents/x.md:${"b".repeat(64)}`,
     };
+    const result = applyTrustAcknowledgements(
+      [danger],
+      ctx({ acknowledge: danger.fingerprint, reason: "reviewed; the prompt is a test fixture" }),
+    );
+    expect(result.acceptedFingerprints).toEqual([danger.fingerprint]);
+    expect(result.checks[0]).toMatchObject({
+      verdict: "skip",
+      detail: expect.stringContaining("acknowledged by reviewer"),
+    });
+  });
+
+  it("records the consumer's acknowledgement of an evidence problem", () => {
+    const gap: Check = {
+      name: "trust.detector-unavailable",
+      verdict: "fail",
+      code: "trust.detector-unavailable",
+      detail: "semgrep was unavailable",
+      fingerprint: `trust-detector-unavailable:semgrep:${"d".repeat(64)}`,
+    };
+    const result = applyTrustAcknowledgements(
+      [gap],
+      ctx({ acknowledge: gap.fingerprint, reason: "scanner outage; rescanning tomorrow" }),
+    );
+    expect(result.checks[0]?.verdict).toBe("skip");
+  });
+
+  it("never acknowledges an integrity failure, and says the evidence does not match", () => {
+    const drift: Check = {
+      name: "trust.source-drift",
+      verdict: "fail",
+      code: "trust.source-drift",
+      detail: "skills/x/SKILL.md changed after the trust lock was written",
+      fingerprint: `trust-source-drift:skills/x/SKILL.md:${"c".repeat(64)}`,
+    };
     expect(() =>
       applyTrustAcknowledgements(
-        [danger],
-        ctx({ acknowledge: danger.fingerprint, reason: "please" }),
+        [drift],
+        ctx({ acknowledge: drift.fingerprint, reason: "please" }),
       ),
-    ).toThrowError(/trust-danger findings must be fixed/);
+    ).toThrowError(
+      /cannot acknowledge trust\.source-drift; the scanned bytes do not match the recorded source/,
+    );
   });
 });

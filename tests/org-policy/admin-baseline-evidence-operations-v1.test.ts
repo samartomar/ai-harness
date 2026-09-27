@@ -28,13 +28,13 @@ const sources = [
     id: "ecc",
     owner: "affaan-m",
     repo: "ECC",
-    pinnedSha: "5caf398a91599029a176ca6d806409b00d1052c4",
+    pinnedSha: "5064474d4d762dc9640234a41617cccb79185cec",
   },
   {
     id: "superpowers",
     owner: "obra",
     repo: "Superpowers",
-    pinnedSha: "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+    pinnedSha: "5bf4e78011075bcfc0dc295f0724994cd123ee71",
   },
 ];
 const bootstrap: AdminBaselineEvidenceBootstrapV1 = {
@@ -48,7 +48,8 @@ const bootstrap: AdminBaselineEvidenceBootstrapV1 = {
   expectedRepository: "samartomar/ai-harness",
   expectedWorkflow: "samartomar/ai-harness/.github/workflows/vendor-baseline-evidence.yml",
   minSchemaVersion: 1,
-  maxSchemaVersion: 1,
+  // The packaged Catalog vendor lock is schemaVersion 2 (WARN-inclusive v2 evidence).
+  maxSchemaVersion: 2,
   sources,
 };
 const artifact = buildVendorBaselineEvidenceArtifactV1({
@@ -683,7 +684,7 @@ describe("admin baseline evidence resolution v1", () => {
       tier: "packaged",
       ageSeconds: null,
       sourceIds: ["ecc", "superpowers"],
-      schemaVersion: 1,
+      schemaVersion: 2,
       digest: createHash("sha256").update(vendorBaselineLockBytes()).digest("hex"),
     });
   });
@@ -714,7 +715,7 @@ describe("admin baseline evidence resolution v1", () => {
     if (ecc === undefined || superpowers === undefined)
       throw new Error("expected bootstrap sources");
     const incompatible: AdminBaselineEvidenceBootstrapV1[] = [
-      { ...bootstrap, maxSchemaVersion: 2, minSchemaVersion: 2 },
+      { ...bootstrap, maxSchemaVersion: 3, minSchemaVersion: 3 },
       {
         ...bootstrap,
         sources: [{ ...ecc, pinnedSha: "a".repeat(40) }, superpowers],

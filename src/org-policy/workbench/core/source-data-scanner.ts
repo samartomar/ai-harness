@@ -6,8 +6,12 @@ import { z } from "zod";
 import { BaselineCatalogSchema } from "../../../baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../../baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../../baseline-evidence/license.js";
+import {
+  type CollectionInput,
+  prepareCollectionScannerCoverageV1,
+} from "../../../baseline-evidence/scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "../../../baseline-evidence/scanner-consumer.js";
-import { prepareCollectionScannerCoverageV1 } from "../../../baseline-evidence/scanner-provider-catalogs.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../../../baseline-evidence/scanner-definition.js";
 import { consumeScannerBaselinePublicationsV1 } from "../../../baseline-evidence/scanner-publication.js";
 import {
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
@@ -25,9 +29,9 @@ import {
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../../ecc/runtime-adapter-compatibility.js";
 import {
   assertEccRuntimeDescriptorCustodyV1,
-  currentEccRuntimeAdapterCompatibilityV1,
   type EccRuntimeDescriptorV1,
   EccRuntimeDescriptorV1Schema,
   type PreparedEccRuntimeDescriptorV1,
@@ -41,8 +45,6 @@ import {
   type ScannerEvidenceProjectionRecordV1,
   ScannerEvidenceProjectionRecordV1Schema,
 } from "../../packaged-collection-evidence-v1.js";
-import type { PinnedComponentCollectionInputV1 } from "../compilers/pinned-component-collection.js";
-import type { PinnedSkillCollectionInputV1 } from "../compilers/pinned-skill-collection.js";
 import type { AuthoringCatalogBundleV1 } from "../contracts.js";
 import { projectContainedScannerEvidenceV1 } from "./source-data-contained-projection.js";
 import { verifyScannerComponentContainmentV1 } from "./source-data-containment.js";
@@ -58,6 +60,7 @@ import { mintPreparedEccRuntimeDescriptorV1 } from "./source-data-runtime-descri
 export const SourceDataScannerProofV1Schema = z
   .object({
     version: z.literal("source-data-scanner-proof/v1"),
+    definitionOverlap: z.enum(["disjoint", "compiler-catalog"]).optional(),
     compilerInput: z.unknown(),
     /** Original published component inventory, when broader than compiler closures. */
     publishedCatalog: BaselineCatalogSchema.refine(
@@ -67,21 +70,7 @@ export const SourceDataScannerProofV1Schema = z
     ).optional(),
     preparedAt: z.string().datetime(),
     publisherCommit: z.string().regex(/^[a-f0-9]{40}$/),
-    batches: z
-      .array(
-        z.union([
-          z
-            .object({
-              discoveryBytesBase64: z.string().min(1).max(12_000),
-              publicationBytesBase64: z.string().min(1).max(16_000_000),
-              attestation: z.string().min(1).max(512_000),
-            })
-            .strict(),
-          SourceDataScannerBlobBatchV1Schema,
-        ]),
-      )
-      .min(1)
-      .max(16),
+    batches: z.array(SourceDataScannerBlobBatchV1Schema).min(1).max(16),
   })
   .strict();
 
@@ -92,11 +81,6 @@ function fail(): never {
 }
 function codePointOrder(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-function decode(value: string): Buffer {
-  const bytes = Buffer.from(value, "base64");
-  if (bytes.toString("base64") !== value) fail();
-  return bytes;
 }
 
 export { sealPreparedEccRuntimeDescriptorV1 } from "./source-data-runtime-descriptor-custody.js";
@@ -119,6 +103,7 @@ function preparedEccRuntimeDescriptorV1(
   }[],
   consumed: Awaited<ReturnType<typeof consumeScannerBaselinePublicationsV1>>,
   now: string,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): PreparedEccRuntimeDescriptorV1 | undefined {
   if (compilerInput.framework.id !== "ecc") return undefined;
   for (const asset of compilerInput.framework.assets) {
@@ -138,6 +123,7 @@ function preparedEccRuntimeDescriptorV1(
     sourceRoot,
     prepared.coverage.components,
     requestedComponents,
+    overlap,
   );
   const signedAt = Math.min(
     ...consumed.provenance.map((publication) => Date.parse(publication.reportSignedAt)),
@@ -289,9 +275,11 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
   now = new Date().toISOString(),
   proofRoot?: string,
   runtimeCollector?: RuntimeDescriptorCollectorV1,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): Promise<AuthoringCatalogBundleV1["evidence"]> {
   assertStrictJsonValueV1(input, "Scanner source proof");
   const proof = SourceDataScannerProofV1Schema.parse(input);
+  const resolvedOverlap = proof.definitionOverlap ?? overlap;
   const compilerBlob =
     (proof.compilerInput as { version?: unknown })?.version === "source-compiler-input-blob/v1"
       ? SourceDataCompilerBlobV1Schema.parse(proof.compilerInput)
@@ -300,12 +288,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
     (compilerBlob?.bytes ?? canonicalStrictJsonBytesV1(proof.compilerInput).length) +
     proof.batches.reduce(
       (sum, batch) =>
-        sum +
-        ("version" in batch
-          ? batch.discovery.bytes + batch.publication.bytes + batch.attestation.bytes
-          : Math.ceil(
-              ((batch.discoveryBytesBase64.length + batch.publicationBytesBase64.length) * 3) / 4,
-            ) + Buffer.byteLength(batch.attestation)),
+        sum + batch.discovery.bytes + batch.publication.bytes + batch.attestation.bytes,
       0,
     );
   if (declaredProofBytes > SOURCE_DATA_RAW_PROOF_BUDGET_V1) fail();
@@ -329,10 +312,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
           "Scanner compiler input blob",
         )
       : proof.compilerInput
-  ) as
-    | PinnedSkillCollectionInputV1
-    | PinnedComponentCollectionInputV1
-    | z.infer<typeof SourceDataBaselineInputV1Schema>;
+  ) as CollectionInput | z.infer<typeof SourceDataBaselineInputV1Schema>;
   if (
     compilerInput?.version !== "pinned-skill-collection/v1" &&
     compilerInput?.version !== "pinned-component-collection/v1" &&
@@ -379,18 +359,11 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
   const directory = mkdtempSync(join(tmpdir(), "aih-source-scanner-proof-"));
   try {
     const batches = proof.batches.map((batch, index) => {
-      const publicationBytes =
-        "version" in batch
-          ? readSourceDataProofBlobV1(batch.publication, proofRoot, 12_000_000)
-          : decode(batch.publicationBytesBase64);
-      const discoveryBytes =
-        "version" in batch
-          ? readSourceDataProofBlobV1(batch.discovery, proofRoot, 8_192)
-          : decode(batch.discoveryBytesBase64);
-      const attestation =
-        "version" in batch
-          ? readSourceDataProofBlobV1(batch.attestation, proofRoot, 512_000).toString("utf8")
-          : batch.attestation;
+      const publicationBytes = readSourceDataProofBlobV1(batch.publication, proofRoot, 12_000_000);
+      const discoveryBytes = readSourceDataProofBlobV1(batch.discovery, proofRoot, 8_192);
+      const attestation = readSourceDataProofBlobV1(batch.attestation, proofRoot, 512_000).toString(
+        "utf8",
+      );
       const request = requests[index];
       if (!request) fail();
       // Decode only to reject malformed transport before launching the verifier.
@@ -442,6 +415,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
         requests,
         consumed,
         preparedAt: proof.preparedAt,
+        overlap: resolvedOverlap,
       });
       if (compilerInput.version === "pinned-baseline/v1") {
         const runtime = preparedEccRuntimeDescriptorV1(
@@ -451,6 +425,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
           requests.flatMap((request) => request.components),
           consumed,
           now,
+          resolvedOverlap,
         );
         if (runtime !== undefined && runtimeCollector !== undefined)
           runtimeCollector.value = runtime;
@@ -467,7 +442,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
       unmappedDerivedAssets: prepared.coverage.unmappedDerivedAssets,
     };
     const record: ScannerEvidenceProjectionRecordV1 = {
-      version: "packaged-scanner-collection-evidence/v1",
+      version: "packaged-scanner-collection-evidence/v2",
       authority: "display-only",
       catalog: {
         id: prepared.catalog.id,
@@ -565,6 +540,7 @@ export async function prepareSourceDataScannerRuntimeFactsV1(
   ),
   now = new Date().toISOString(),
   proofRoot?: string,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ): Promise<
   Readonly<{
     evidence: AuthoringCatalogBundleV1["evidence"];
@@ -581,6 +557,7 @@ export async function prepareSourceDataScannerRuntimeFactsV1(
     now,
     proofRoot,
     collector,
+    overlap,
   );
   return Object.freeze({
     evidence,

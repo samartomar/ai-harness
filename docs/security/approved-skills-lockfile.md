@@ -32,7 +32,7 @@ Downstream surfaces use the lockfile as authority:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "skills": [
     {
       "name": "clean",
@@ -64,12 +64,14 @@ Downstream surfaces use the lockfile as authority:
 
 ## Entry fields
 
+The current `schemaVersion` is `2`. Version 1 files (aih 0.6.2 and earlier) are still read, with version 1's values only (`GREEN` or `YELLOW`); a version 1 file carrying another value is malformed. aih rewrites a file as version 2 only when it writes it.
+
 | Field | Required | Notes |
 | --- | --- | --- |
 | `name` | Yes | Skill name; slash-separated path segments are allowed, but traversal, absolute paths, backslashes, drive letters, and control characters are rejected. |
 | `source` | Yes | Approved source string. GitHub approvals include the pinned source form. |
 | `commit` | Yes | Full pinned SHA for GitHub sources, or `local` for local sources. |
-| `verdict` | Yes | `GREEN` or `YELLOW`. |
+| `verdict` | Yes | The vet verdict the approval recorded: `GREEN`, `YELLOW`, `RED` or `UNKNOWN`. It is a label for the consumer. |
 | `pack` | No | Pack tag copied from `aih skill approve --pack`. |
 | `firstParty` | No | True when approving repo-relative local content. |
 | `scope` | Yes | Currently `repo`. |
@@ -131,7 +133,7 @@ commit}` as a fail-closed cross-check against the lock entry:
   skill from another source does not inherit approval.
 - Scoped approval records the curated source boundary; an excluded sibling skill
   path does not inherit the selected skill's approval.
-- RED and UNKNOWN vet verdicts are not approvable.
+- A RED or UNKNOWN vet verdict is recorded as the entry's label; approval does not depend on it.
 - The lockfile does not embed evidence content; it records the evidence hash and
   card path.
 

@@ -1,0 +1,75 @@
+{
+  "case": "legal-text",
+  "producer": {
+    "engine": "runTrustLintV1",
+    "scanCheckout": "sep/scan-detectors",
+    "scanCommit": "28718a7515829c64b0b1410d98bfd1c48d29069b"
+  },
+  "request": {
+    "selectedClosurePaths": [
+      "LICENSE",
+      "SKILL.md"
+    ],
+    "detectorOptions": {
+      "internalScopes": [],
+      "mcpConfigPaths": []
+    }
+  },
+  "sarif": {
+    "version": "2.1.0",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "aih-trust-lint",
+            "version": "1.0.0"
+          }
+        },
+        "properties": {
+          "aih-trust/v1": {
+            "format": "aih-trust-lint-facts",
+            "version": 1,
+            "trustDocumentCount": 1,
+            "repositoryLicenseFile": "LICENSE"
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": "LICENSE"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": true,
+                "unicodeRisk": null,
+                "lintLines": [
+                  {
+                    "line": 4,
+                    "codes": [
+                      "trust.prompt-injection"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          }
+        ],
+        "results": []
+      }
+    ]
+  }
+}

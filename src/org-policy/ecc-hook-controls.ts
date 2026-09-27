@@ -1,11 +1,15 @@
-/** Exact pinned sources for ECC hook-profile and per-hook-disable semantics. */
+/**
+ * Exact pinned sources for ECC hook-profile and per-hook-disable semantics,
+ * reviewed at v2.2.1, plus the OpenCode plugin whose hooks the OpenCode row
+ * declares.
+ */
 export const ECC_HOOK_CONTROL_PROVENANCE = {
   repository: "affaan-m/ECC",
-  commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+  commit: "5064474d4d762dc9640234a41617cccb79185cec",
   sources: [
     {
       path: "hooks/hooks.json",
-      sha256: "ddf283b6f0e0ce262008145f1a258ceb0a50b6836060e5b7bdaab60694018faf",
+      sha256: "42376cf51c9453d0e9ac4fef9c30baa8acdd01e5a0067f63fd03a94bd1cb70a1",
     },
     {
       path: "scripts/hooks/session-start-bootstrap.js",
@@ -17,7 +21,7 @@ export const ECC_HOOK_CONTROL_PROVENANCE = {
     },
     {
       path: "scripts/hooks/posttooluse-dispatcher.js",
-      sha256: "65ca4075bed8fdc85c290e8299f76f25795fcd1595d47b41feb3985b7113d433",
+      sha256: "74262d37a1f02d63b44ce498178cb3327b429c6d278c7aed5453905efe71b725",
     },
     {
       path: "scripts/hooks/run-with-flags.js",
@@ -27,12 +31,16 @@ export const ECC_HOOK_CONTROL_PROVENANCE = {
       path: "scripts/lib/hook-flags.js",
       sha256: "1f5fbf2d2ebd0ab07a3e54406db18c2932ae7bf965513ec12c521da1be54425d",
     },
+    {
+      path: ".opencode/plugins/ecc-hooks.ts",
+      sha256: "0345093b34e537d350c5b5aa0296511f558aa767e5104fb5ef05069013f3b5b6",
+    },
   ],
   /**
    * SHA-256 of JSON.stringify(sources.map(({ path, sha256 }) => [path, sha256])).
    * This binds the reviewed inventory and the runtime flag grammar together.
    */
-  contentSha256: "7c58c4d611b9b8724690f0f018405e491965d5749b7ad82797a37e0c61d5955b",
+  contentSha256: "f413bc5e7194045ea43d228ef87b2730e3678d418f4a5634db5bb68fb51c97ce",
 } as const;
 
 export const ECC_HOOK_CONTROL_SOURCE_CONTENT_SHA256 = ECC_HOOK_CONTROL_PROVENANCE.contentSha256;
@@ -69,6 +77,12 @@ const STRICT: readonly EccHookProfile[] = ["strict"];
  */
 export const eccHookControlCatalog: readonly EccHookControlCatalogEntry[] = [
   { id: "pre:bash:dispatcher", event: "PreToolUse", profiles: ALL, disableEligible: false },
+  {
+    id: "pre:powershell:gateguard-fact-force",
+    event: "PreToolUse",
+    profiles: STANDARD_STRICT,
+    disableEligible: true,
+  },
   {
     id: "pre:write:doc-file-warning",
     event: "PreToolUse",
@@ -266,15 +280,15 @@ function invalid(message: string): never {
 const uniqueIds = new Set(eccHookControlCatalog.map((hook) => hook.id));
 const eligible = eccHookControlCatalog.filter((hook) => hook.disableEligible);
 if (
-  eccHookControlCatalog.length !== 43 ||
-  uniqueIds.size !== 43 ||
-  eligible.length !== 42 ||
+  eccHookControlCatalog.length !== 44 ||
+  uniqueIds.size !== 44 ||
+  eligible.length !== 43 ||
   eligible.filter((hook) => hook.profiles.includes("minimal")).length !== 11 ||
-  eligible.filter((hook) => hook.profiles.includes("standard")).length !== 39 ||
-  eligible.filter((hook) => hook.profiles.includes("strict")).length !== 42
+  eligible.filter((hook) => hook.profiles.includes("standard")).length !== 40 ||
+  eligible.filter((hook) => hook.profiles.includes("strict")).length !== 43
 ) {
   invalid(
-    "the pinned inventory must contain 43 distinct rows, 42 gated ids, and 11/39/42 profile eligibility",
+    "the pinned inventory must contain 44 distinct rows, 43 gated ids, and 11/40/43 profile eligibility",
   );
 }
 

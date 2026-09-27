@@ -40,28 +40,32 @@ and the executor is the only layer that performs filesystem or process effects.
   normalized projection separately from the caller-asserted source-store digest,
   and reports divergence without selecting a winner. It performs no I/O and is
   metadata, never approval or evidence. Source-specific adapters hash the exact
-  bytes they parse for the shipped baseline lock, ECC materialization receipts,
+  bytes they parse for the shipped baseline lock, read-only ECC Catalog claims,
   and strict GitHub skill lock/pack artifacts; the separate residue classifier
   never promotes discovery into an authority claim.
 - **Capability package reconciliation** (`src/capability/package-manager/`) projects effective
   org-policy roots through exact approval, evidence, catalog, Package Graph, intent, ownership,
-  custody, and domain receipts. Read commands and previews are local and side-effect-free. Apply
-  coordinates already-promoted GitHub skill packs, existing receipt-owned ECC agent/rule
-  materialization, and explicitly added HTTPS ECC MCP configuration. Mixed closures publish
-  ownership last through one ordered compensating transaction and conservatively retain drift or
-  shared files; this layer is not an acquisition, approval, or general dependency-management
+  custody, and skill domain receipts. Read commands and previews are local and side-effect-free.
+  ECC Catalog packages remain visible as developer-managed, with `aih ecc` as their next route.
+  Apply coordinates already-promoted GitHub skill packs, publishes ownership last through an
+  ordered compensating transaction, and conservatively retains drift or shared files; this layer is not an acquisition, approval, or general dependency-management
   authority and does not claim crash atomicity.
 - **Evidence and release verification** (`src/evidence/`, `src/bundle/`,
   `src/release/`) package local audit material and verify published releases.
 - **Reporting and local telemetry** (`src/report/`, `src/logging/`,
   `src/usage/`) render local diagnostics. They do not transmit prompts or costs.
 
-## Policy Workbench catalog providers
+## Retained policy and Catalog data
 
-The Policy Workbench composes its offline catalog from a fixed set of typed
-build-time providers. See [Policy Workbench catalog providers](workbench-catalog-providers.md)
-for source snapshots, Core evidence boundaries, fixture and test ownership, and
-its deliberate extension limits.
+Core still packages backend policy/catalog preassembly and shared JSON source records
+used by policy, evidence, and historical ECC consumers. Its former Policy Workbench
+browser renderer, HTML server, browser bundle, `aih --ui`, and `aih policy generate`
+are removed; no browser replacement was moved to `aih-ui`. Catalog ownership of
+the remaining provider data and history is a separate unfinished extraction. The
+installed `@aihq/catalog` reader already supplies the historical ECC runtime
+descriptor when no matching verified local source-data receipt exists, subject
+to Core's exact digest acceptance. This does not make the whole provider catalog
+an installed Catalog dependency yet.
 
 ## Data Boundaries
 
@@ -96,31 +100,26 @@ gateway, and observability-backend setup remains `doc` output for a human.
 
 ## Optional Extensions
 
-The only optional peer package the open-source CLI probes for is
-`@aihq/enterprise`, by literal name from the install tree that loaded `aih`.
-It is a reserved extension point for additive enterprise `CommandSpec` commands;
-the contract and fallback are defined in
+Core has two optional execution and data peers: `@aihq/scan` for Scan-backed
+detector execution and `@aihq/catalog` for its pinned index and runtime-descriptor
+readers. Neither is a general command-plugin loader. `@aihq/enterprise` remains the
+only optional **command** extension the open-source CLI probes for, by literal
+name from the install tree that loaded `aih`. It is a reserved extension point
+for additive enterprise `CommandSpec` commands; its contract and fallback are defined in
 [product/enterprise-extension-point.md](product/enterprise-extension-point.md).
-Not installed means local-only behavior.
+When Enterprise is not installed, those commands are unavailable and local-only
+Core behavior remains.
 
 MCP configuration is generated per supported CLI. MCP servers are never loaded
 just-in-case by the CLI; they are emitted into tool-specific config for the
 operator's AI coding tool to use.
 
-ECC registration is component-scoped even though upstream installation is module-shaped.
-`scanRepo` and repeatable `--with` declarations contribute project intent; aih resolves those
-components to verified module paths, filters generated operations at leaf granularity, and installs
-the additive machine union. `~/.aih/ecc/registration-ledger.json` is the single carved-out primary
-machine store because a deleted project cannot report its former contribution; installed capability
-content remains derived and recomputable. Project-local MCP files receive the current project's set,
-while global target files receive the machine union. The ledger is committed after the sequential
-install driver, never before it. `aih prune` is the inverse: it classifies registered roots without
-following links, reduces the live union, and filters only operations claimed by strict target install
-state. A local transaction driver revalidates planned hashes and contained regular-file paths,
-backs up every changed file, writes target states, and commits the primary ledger last; any earlier
-failure restores the prior bytes. User-owned config and components still shared by a live project
-remain outside the removal set. Whole-target uninstall actions remain authoritative for dropped
-CLIs, and an uninstall failure blocks the dependent ledger transaction.
+ECC installation is developer-managed. `aih ecc` gives exact installation guidance and
+`aih ecc --status` reports observed state. Earlier aih versions wrote ECC registration
+and materialization records; current `aih uninstall` and `aih prune` use those records
+only to remove unchanged files whose aih ownership they prove. Modified, shared,
+external, or ambiguous content is preserved and reported. Current aih does not
+construct a new ECC component union or run an ECC install driver.
 
 ## Release Integrity
 

@@ -6,16 +6,17 @@ function component(over: Record<string, unknown> = {}): Record<string, unknown> 
     id: "skill:verification-loop",
     paths: ["skills/verification-loop"],
     treeSha256: "a".repeat(64),
-    verdict: "pass",
+    verdict: "no-findings",
     analyzers: [{ name: "aih-native", version: "2.7.0" }],
     findings: [],
+    evidenceProblems: [],
     ...over,
   };
 }
 
 function lock(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -32,12 +33,14 @@ function lock(over: Record<string, unknown> = {}): Record<string, unknown> {
 describe("baseline evidence lock schema", () => {
   it("parses exact source pins and strict component receipts", () => {
     expect(parseBaselineEvidenceLock(lock())).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "ecc",
           pinnedSha: "b".repeat(40),
-          components: [{ id: "skill:verification-loop", verdict: "pass" }],
+          components: [
+            { id: "skill:verification-loop", verdict: "no-findings", evidenceProblems: [] },
+          ],
         },
       ],
     });
@@ -66,36 +69,87 @@ describe("baseline evidence lock schema", () => {
     expect(() => parseBaselineEvidenceLock(value)).toThrow();
   });
 
-  it("requires blocked entries to retain the danger finding that caused the denial", () => {
-    const blocked = lock({
+  function withComponent(over: Record<string, unknown>): Record<string, unknown> {
+    return lock({
       sources: [
         {
           id: "ecc",
           owner: "affaan-m",
           repo: "ECC",
           pinnedSha: "b".repeat(40),
-          components: [component({ verdict: "blocked", findings: [] })],
+          components: [component(over)],
         },
       ],
     });
-    expect(() => parseBaselineEvidenceLock(blocked)).toThrow(/blocked/i);
+  }
 
-    const withFinding = structuredClone(blocked);
-    const sources = withFinding.sources as Array<Record<string, unknown>>;
-    const components = sources[0]?.components as Array<Record<string, unknown>>;
-    components[0] = component({
-      verdict: "blocked",
-      findings: [
-        {
-          code: "trust.hidden-unicode",
-          detail: "instruction surface contains non-ASCII typography",
-          fingerprint: "trust-hidden-unicode:skill:abc123",
-        },
-      ],
-    });
-    expect(parseBaselineEvidenceLock(withFinding).sources[0]?.components[0]?.verdict).toBe(
-      "blocked",
+  const egress = {
+    code: "trust.external-egress",
+    detail: "REVIEW: SKILL.md:3 — curl https://api.example.test",
+    fingerprint: "trust-raw:egress",
+  };
+
+  it("labels a component that carries findings as has-findings and keeps every finding", () => {
+    const parsed = parseBaselineEvidenceLock(
+      withComponent({ verdict: "has-findings", findings: [egress] }),
     );
+    expect(parsed.sources[0]?.components[0]).toMatchObject({
+      verdict: "has-findings",
+      findings: [egress],
+      evidenceProblems: [],
+    });
+  });
+
+  it("refuses contradictory evidence: the verdict must match the findings it carries", () => {
+    expect(() =>
+      parseBaselineEvidenceLock(withComponent({ verdict: "has-findings", findings: [] })),
+    ).toThrow(/has-findings/);
+    expect(() =>
+      parseBaselineEvidenceLock(withComponent({ verdict: "no-findings", findings: [egress] })),
+    ).toThrow(/no-findings/);
+  });
+
+  it("keeps evidence problems in their own label, separate from findings", () => {
+    const unavailable = {
+      code: "trust.detector-unavailable",
+      detail: "required detector skillspector unavailable",
+    };
+    const parsed = parseBaselineEvidenceLock(withComponent({ evidenceProblems: [unavailable] }));
+    expect(parsed.sources[0]?.components[0]).toMatchObject({
+      verdict: "no-findings",
+      findings: [],
+      evidenceProblems: [unavailable],
+    });
+    expect(() =>
+      parseBaselineEvidenceLock(
+        withComponent({ verdict: "has-findings", findings: [unavailable] }),
+      ),
+    ).toThrow(/evidence problem/);
+    expect(() => parseBaselineEvidenceLock(withComponent({ evidenceProblems: [egress] }))).toThrow(
+      /evidence problem/,
+    );
+  });
+
+  it("never stores an integrity failure as a finding or an evidence problem", () => {
+    const drift = { code: "trust.source-drift", detail: "ref moved" };
+    expect(() =>
+      parseBaselineEvidenceLock(withComponent({ verdict: "has-findings", findings: [drift] })),
+    ).toThrow(/integrity/);
+    expect(() => parseBaselineEvidenceLock(withComponent({ evidenceProblems: [drift] }))).toThrow(
+      /integrity|evidence problem/,
+    );
+  });
+
+  it.each([
+    ["the retired pass verdict", { verdict: "pass" }],
+    ["the retired blocked verdict", { verdict: "blocked", findings: [egress] }],
+    ["a component without its evidence-problem label", { evidenceProblems: undefined }],
+  ])("rejects %s", (_label, over) => {
+    expect(() => parseBaselineEvidenceLock(withComponent(over))).toThrow();
+  });
+
+  it("has no reader for schema version 1", () => {
+    expect(() => parseBaselineEvidenceLock(lock({ schemaVersion: 1 }))).toThrow();
   });
 
   it("rejects duplicate source and component identities", () => {

@@ -1,0 +1,18 @@
+{
+  // Build settings for this package. Repository typechecking runs from the root
+  // tsconfig, which maps `@aihq/core/framework-host` to Core's source; this file
+  // deliberately has no `paths`, so the build can never inline Core code.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}

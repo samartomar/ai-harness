@@ -307,8 +307,9 @@ export interface V9SkillGovernance {
     analyzers: string[];
     gaps: string[];
   };
-  /** Approvable verdicts carried by committed `aih-skills.lock.json` entries. */
-  approvalVerdicts?: { GREEN: number; YELLOW: number };
+  /** Vet verdicts, as labels, carried by committed `aih-skills.lock.json` entries. */
+  /** RED/UNKNOWN appear only when an approval recorded one, so older renders stay identical. */
+  approvalVerdicts?: { GREEN: number; YELLOW: number; RED?: number; UNKNOWN?: number };
   /**
    * Installed skills grouped by their lock entry's `pack` tag — the pack-level
    * rollup. Absent when no skill carries a tag (a pack-free repo's panel stays

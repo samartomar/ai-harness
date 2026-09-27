@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flagKey, runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
 import {
@@ -25,6 +25,7 @@ import {
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyValidateCommand } from "../../src/org-policy/validate.js";
+import { startTrackedScanCall } from "../../src/scan-package/settlement.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
 import { trustScanPlanForSource } from "../../src/trust/scan.js";
 
@@ -807,6 +808,98 @@ describe("runCapability — deferred command cleanup", () => {
       expect.objectContaining({ name: "primary trust block", verdict: "fail" }),
     ]);
     expect(stderr).toBe("cleanup warning: quarantine remained locked\n");
+  });
+
+  async function interruptDuringScanCall(options: {
+    settleAfterAbortMs: number | undefined;
+    scanSettlementTimeoutMs: number;
+  }): Promise<{ events: string[]; stderr: string }> {
+    const events: string[] = [];
+    let stderr = "";
+    let scanStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      scanStarted = resolve;
+    });
+    let killed: () => void = () => {};
+    const reRaised = new Promise<void>((resolve) => {
+      killed = resolve;
+    });
+    const spec: CommandSpec = {
+      name: "interrupt-scan",
+      summary: "signal during a delegated Scan call",
+      alwaysVerify: true,
+      plan: async (ctx) => {
+        ctx.deferCleanup?.(() => {
+          events.push("source-cleanup");
+        });
+        await startTrackedScanCall(ctx.signal, "detector.semgrep", () => {
+          events.push("scan-started");
+          scanStarted();
+          return new Promise<never>((_resolve, reject) => {
+            ctx.signal?.addEventListener("abort", () => {
+              if (options.settleAfterAbortMs === undefined) return;
+              setTimeout(() => {
+                events.push("scan-settled");
+                reject(new Error("cancelled"));
+              }, options.settleAfterAbortMs);
+            });
+          });
+        });
+        return plan("interrupt-scan");
+      },
+    };
+    const before = new Set(process.listeners("SIGINT"));
+    const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+      events.push(`re-raise:${String(signal)} ${pid === process.pid ? "self" : "other"}`);
+      killed();
+      return true;
+    });
+    try {
+      const running = runCapability(spec, command(["--json", "--root", dir]), {
+        run: fakeRunner(() => undefined),
+        env: {},
+        write: () => {},
+        writeError: (text) => {
+          stderr += text;
+        },
+        scanSettlementTimeoutMs: options.scanSettlementTimeoutMs,
+      });
+      await started;
+      const onSigint = process.listeners("SIGINT").find((listener) => !before.has(listener));
+      expect(onSigint).toBeDefined();
+      (onSigint as () => void)();
+      await reRaised;
+      // A call that never settles leaves the command pending; only a settled one returns.
+      if (options.settleAfterAbortMs !== undefined) await running;
+    } finally {
+      kill.mockRestore();
+    }
+    return { events, stderr };
+  }
+
+  it("waits for the in-flight Scan call to settle before source cleanup and the re-raised SIGINT", async () => {
+    const { events, stderr } = await interruptDuringScanCall({
+      settleAfterAbortMs: 30,
+      scanSettlementTimeoutMs: 5_000,
+    });
+    expect(events).toEqual([
+      "scan-started",
+      "scan-settled",
+      "source-cleanup",
+      "re-raise:SIGINT self",
+    ]);
+    expect(stderr).toBe("");
+  });
+
+  it("bounds the wait for a Scan call that never settles and reports the expiry on stderr", async () => {
+    const { events, stderr } = await interruptDuringScanCall({
+      settleAfterAbortMs: undefined,
+      scanSettlementTimeoutMs: 20,
+    });
+    expect(events).toEqual(["scan-started", "source-cleanup", "re-raise:SIGINT self"]);
+    expect(stderr).toBe(
+      "cleanup warning: delegated Scan call detector.semgrep did not settle within 20 ms; its temporary files may remain\n",
+    );
   });
 
   it.skipIf(process.platform === "win32")(

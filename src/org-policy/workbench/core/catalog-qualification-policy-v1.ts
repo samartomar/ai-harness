@@ -44,30 +44,6 @@ export const CATALOG_QUALIFICATION_RELEASE_POLICIES_V1 = deepFreeze([
   CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
   {
     ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
-    catalogCommit: "98d95263aa0901504c9d480628f6c06c4a1fe453",
-    publisher: {
-      ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.publisher,
-      commit: "98d95263aa0901504c9d480628f6c06c4a1fe453",
-    },
-    receiptSetPublisher: {
-      ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.receiptSetPublisher,
-      commit: "98d95263aa0901504c9d480628f6c06c4a1fe453",
-    },
-  },
-  {
-    ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
-    catalogCommit: "0ce02656d5e281262af2177571033449f277dc46",
-    publisher: {
-      ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.publisher,
-      commit: "0ce02656d5e281262af2177571033449f277dc46",
-    },
-    receiptSetPublisher: {
-      ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.receiptSetPublisher,
-      commit: "0ce02656d5e281262af2177571033449f277dc46",
-    },
-  },
-  {
-    ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
     catalogCommit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
     publisher: {
       ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.publisher,
@@ -76,18 +52,6 @@ export const CATALOG_QUALIFICATION_RELEASE_POLICIES_V1 = deepFreeze([
     receiptSetPublisher: {
       ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.receiptSetPublisher,
       commit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
-    },
-  },
-  {
-    ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
-    catalogCommit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
-    publisher: {
-      ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.publisher,
-      commit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
-    },
-    receiptSetPublisher: {
-      ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.receiptSetPublisher,
-      commit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
     },
   },
 ] as const);

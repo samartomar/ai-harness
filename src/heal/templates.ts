@@ -89,7 +89,7 @@ export function npmOfflineDoc(cliPath: string | undefined): string {
 /** L3 — Node itself is missing; npm cannot be healed without it. */
 export function nodeMissingDoc(): string {
   return lines(
-    "Node.js was not found on PATH, so npm cannot be healed. Install Node.js >= 20",
+    "Node.js was not found on PATH, so npm cannot be healed. Install Node.js >= 20.6",
     "from your internal software catalog (or nodejs.org if direct downloads are",
     "permitted), reopen your shell, then re-run `aih heal`.",
   );

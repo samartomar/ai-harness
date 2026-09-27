@@ -56,8 +56,11 @@ function candidate(id: string, requested = true): EffectiveOrgPolicy["candidates
     source: { type: "mcp" as const, server: id, subject: `mcp-server-sha256:${"b".repeat(64)}` },
     evidence: "missing" as const,
     dangerCodes: [],
-    blockingCodes: ["evidence-missing"],
+    blockingCodes: ["authority-receipt-unverified"],
     decisionBlockers: [],
+    findings: [],
+    evidenceProblems: ["evidence-missing"],
+    decisionNotes: [],
     resolutionReasons: ["projector-unavailable-for-candidate"],
     lifecycle: "supported" as const,
     projection: {
@@ -101,6 +104,9 @@ function usageMeteringCandidate(
     dangerCodes: [],
     blockingCodes: [],
     decisionBlockers: [],
+    findings: [],
+    evidenceProblems: [],
+    decisionNotes: [],
     resolutionReasons: [],
     lifecycle: "supported",
     projection: {
@@ -257,6 +263,34 @@ describe("governanceReviewView", () => {
     expect(view.text).toContain(
       "This is observed state only; it never installs, configures, projects, or executes the artifact.",
     );
+  });
+
+  it("carries findings and evidence problems as their own labels, apart from what blocks", () => {
+    const labelled = {
+      ...usageMeteringCandidate(),
+      dangerCodes: ["mandatory-detector-failed", "prompt-injection"],
+      findings: ["prompt-injection"],
+      evidenceProblems: ["evidence-missing", "mandatory-detector-failed"],
+    } as EffectiveOrgPolicy["candidates"][number];
+    const view = governanceReviewView({
+      effective: { ...effective([]), candidates: [labelled], blocking: false },
+      receipts: RECEIPTS,
+      usage: readUsageStrict(ctx()),
+    });
+    const subject = (view.data as { subjects: Array<{ effective: boolean; evidence: unknown }> })
+      .subjects[0];
+    expect(subject).toMatchObject({
+      effective: true,
+      evidence: {
+        state: "verified",
+        findings: ["prompt-injection"],
+        evidenceProblems: ["evidence-missing", "mandatory-detector-failed"],
+        blockers: [],
+        decisionBlockers: [],
+        decisionNotes: [],
+      },
+    });
+    expect(view.text).toContain("verified; findings=1; evidenceProblems=2; blockers=0");
   });
 
   it("keeps all governed subjects in deterministic ordinal order and never includes raw unmatched names", () => {

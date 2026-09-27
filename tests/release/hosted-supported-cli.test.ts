@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
@@ -8,11 +9,10 @@ const args = await import(
 );
 const root = resolve("disposable-target");
 const decision = "decision-fixture";
-const digest = "sha256:" + "a".repeat(64);
+const digest = `sha256:${"a".repeat(64)}`;
 const accept = args.supportedAcceptArguments(root, decision, digest);
 
 it.each([
-  ["generate", args.workbenchGenerateArguments(resolve("workbench.html")), []],
   ["custody preview", accept, []],
   ["custody apply and repeat", [...accept, "--apply"], []],
   ["custody inspect", args.supportedInspectArguments(root), []],
@@ -24,7 +24,7 @@ it.each([
     [root],
   ],
   ["evaluate before and after revocation", args.policyEvaluateArguments(root), [root]],
-])("parses actual hosted %s arguments through the real CLI", (_label, argv, operands) => {
+])("parses shared hosted %s arguments through the current CLI", (_label, argv, operands) => {
   let command = buildProgram();
   let offset = 0;
   while (offset < argv.length) {
@@ -41,4 +41,30 @@ it.each([
   if (argv.includes("--json")) expect(command.opts().json).toBe(true);
   if (argv.includes("--apply")) expect(command.opts().apply).toBe(true);
   if (argv.includes("--root")) expect(command.opts().root).toBe(root);
+});
+
+it("keeps historical Workbench generation scoped to pinned public Core 0.6.1", () => {
+  const htmlPath = resolve("workbench.html");
+  expect(args.workbenchGenerateArguments(htmlPath)).toEqual([
+    "policy",
+    "generate",
+    "--apply",
+    "--out",
+    htmlPath,
+    "--no-log",
+  ]);
+
+  const identity = readFileSync(
+    resolve(".github/public-policy-acceptance/validate-public-inputs.mjs"),
+    "utf8",
+  );
+  const hosted = readFileSync(resolve(".github/public-policy-acceptance/run-848.mjs"), "utf8");
+  expect(identity).toMatch(/version:'0\.6\.1'/u);
+  expect(identity).toMatch(/tag:'v-core-0\.6\.1'/u);
+  expect(hosted).toContain("assert.equal(manifest.version, '0.6.1')");
+  expect(hosted).toContain("workbenchGenerateArguments(htmlPath)");
+
+  const policy = buildProgram().commands.find((entry) => entry.name() === "policy");
+  expect(policy).toBeDefined();
+  expect(policy?.commands.some((entry) => entry.name() === "generate")).toBe(false);
 });

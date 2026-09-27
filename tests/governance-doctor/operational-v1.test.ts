@@ -490,7 +490,7 @@ describe("GovernanceDoctor operational read-only adapter", () => {
     expect(actionKeys.some((keys) => keys.includes("runMany"))).toBe(true);
     expect(actionKeys.some((keys) => keys.includes("runStructuredLegacy"))).toBe(true);
     expect(runManyCalls).toBeGreaterThan(0);
-    expect(structuredLegacyCalls).toBeGreaterThan(0);
+    expect(structuredLegacyCalls).toBe(0);
     expect(result.audit.refusals).not.toContainEqual({
       diagnosticId: DOCTOR,
       state: "missing-adapter",

@@ -8,7 +8,6 @@ import {
   readAihConfig,
   readPolicyBinding,
 } from "../config/marker.js";
-import { readEccMaterializationReceipt } from "../ecc/materialization-receipt.js";
 import { AihError, SettingsError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
@@ -20,9 +19,8 @@ import {
   plan,
   writeJson,
 } from "../internals/plan.js";
-import { hasCommandPermissionOwnership } from "./command-permissions.js";
+import { GOVERNED_OWNERSHIP_PROBES } from "./ownership-probes.js";
 import { verifiedOrgPolicyTargets } from "./project.js";
-import { inspectPolicyRequiredGuidance } from "./required-guidance.js";
 import { MAX_ORG_POLICY_BYTES, orgPolicyPath } from "./schema.js";
 
 function sha256(value: string | Buffer): string {
@@ -169,10 +167,7 @@ export function assertPolicyBindingCurrent(
   if (binding === undefined) {
     if (
       options.requireIfOwned === true &&
-      (readEccMaterializationReceipt(root).state !== "absent" ||
-        inspectPolicyRequiredGuidance(root, readAihConfig(root)?.contextDir ?? "ai-coding")
-          .state !== "absent" ||
-        hasCommandPermissionOwnership(root))
+      GOVERNED_OWNERSHIP_PROBES.some((probe) => probe.owned(root))
     ) {
       throw new AihError(
         "governed policy ownership remains but the project policy binding is missing; bind the verified authority before material mutation",

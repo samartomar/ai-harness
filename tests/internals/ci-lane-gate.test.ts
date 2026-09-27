@@ -13,11 +13,6 @@ const selectedPullRequest = {
   FULL_RESULT: "skipped",
   WINDOWS_RESULT: "skipped",
   TEST_LANE: "core",
-  WORKBENCH_RESULT: "skipped",
-  PROVIDER_RESULT: "skipped",
-  AFFECTED_PROVIDERS_JSON: "[]",
-  REQUIRES_PACKED_ARTIFACT: "false",
-  REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
 } as const;
 
 function runGate(overrides: Record<string, string> = {}) {
@@ -31,11 +26,6 @@ const fullLane = {
   EVENT_NAME: "push",
   FULL_SUITE: "true",
   TEST_LANE: "full",
-  WORKBENCH_RESULT: "success",
-  PROVIDER_RESULT: "skipped",
-  AFFECTED_PROVIDERS_JSON: "[]",
-  REQUIRES_PACKED_ARTIFACT: "true",
-  REQUIRES_GENERIC_BROWSER_JOURNEYS: "true",
   RELEASE_PREP_RESULT: "skipped",
   SELECTED_RESULT: "skipped",
   FULL_RESULT: "success",
@@ -82,53 +72,5 @@ describe("required CI lane gate", () => {
     const result = runGate({ ...fullLane, WINDOWS_RESULT: "cancelled" });
     expect(result.status).toBe(1);
     expect(result.stderr).not.toBe("");
-  });
-
-  it("requires the provider receipt to execute its exact lane", () => {
-    const provider = {
-      TEST_LANE: "workbench",
-      WORKBENCH_RESULT: "skipped",
-      AFFECTED_PROVIDERS_JSON: '["ecc"]',
-      REQUIRES_PACKED_ARTIFACT: "true",
-      REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
-    };
-    expect(runGate({ ...provider, PROVIDER_RESULT: "success" }).status).toBe(0);
-    expect(runGate({ ...provider, PROVIDER_RESULT: "skipped" }).status).not.toBe(0);
-  });
-
-  it("accepts Matt's registered provider receipt only when its required lane succeeds", () => {
-    const matt = {
-      TEST_LANE: "workbench",
-      WORKBENCH_RESULT: "skipped",
-      AFFECTED_PROVIDERS_JSON: '["mattpocock"]',
-      REQUIRES_PACKED_ARTIFACT: "true",
-      REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
-    };
-    expect(runGate({ ...matt, PROVIDER_RESULT: "success" }).status).toBe(0);
-    expect(runGate({ ...matt, PROVIDER_RESULT: "skipped" }).status).not.toBe(0);
-  });
-
-  it("accepts the exact Ponytail provider receipt only when its required lane succeeds", () => {
-    const ponytail = {
-      TEST_LANE: "workbench",
-      WORKBENCH_RESULT: "skipped",
-      AFFECTED_PROVIDERS_JSON: '["ponytail"]',
-      REQUIRES_PACKED_ARTIFACT: "true",
-      REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
-    };
-    expect(runGate({ ...ponytail, PROVIDER_RESULT: "success" }).status).toBe(0);
-    expect(runGate({ ...ponytail, PROVIDER_RESULT: "skipped" }).status).not.toBe(0);
-  });
-  it("uses the generic browser lane once when a mixed change already owns provider contracts", () => {
-    const mixed = {
-      TEST_LANE: "both",
-      WORKBENCH_RESULT: "success",
-      PROVIDER_RESULT: "skipped",
-      AFFECTED_PROVIDERS_JSON: '["ecc"]',
-      REQUIRES_PACKED_ARTIFACT: "true",
-      REQUIRES_GENERIC_BROWSER_JOURNEYS: "true",
-    };
-    expect(runGate(mixed).status).toBe(0);
-    expect(runGate({ ...mixed, PROVIDER_RESULT: "success" }).status).not.toBe(0);
   });
 });

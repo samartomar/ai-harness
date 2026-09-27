@@ -1,0 +1,619 @@
+{
+  "format": "aih-trust-parity-golden",
+  "version": 1,
+  "case": "auto-exec-permissions",
+  "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+  "posture": "vibe",
+  "internalScopes": [],
+  "native": {
+    "byEnvironment": {
+      "linux-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": ".claude/hooks",
+            "startLine": 1,
+            "detail": ".claude/hooks:1 — .claude/hooks directory can auto-execute hook commands",
+            "fingerprint": "trust-auto-exec-hook:.claude/hooks:84b9c8df69e3008f203b2461be559ace7fac692d79a308fb22f76453a06dcd08"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": ".claude/settings.json",
+            "startLine": 2,
+            "detail": ".claude/settings.json:2 — settings file declares hooks that may auto-execute",
+            "fingerprint": "trust-auto-exec-hook:.claude/settings.json:6d9f6a2f7d09f487a6600e42a290153362b13c39c87464472e5a17a8ca9b89b8"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": ".npmrc",
+            "startLine": 1,
+            "detail": ".npmrc:1 — .npmrc explicitly enables package scripts",
+            "fingerprint": "trust-auto-exec-hook:.npmrc:c5967e5fbc523a123a55d0a892887b5a4f9a6a49fc0fae753025025fbe29f288"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.permission-risk",
+            "verdict": "fail",
+            "code": "trust.permission-risk",
+            "uri": "agents/reviewer.md",
+            "startLine": 3,
+            "detail": "agents/reviewer.md:3 — frontmatter allowed-tools grants broad Bash permission",
+            "fingerprint": "trust-permission-risk:agents/reviewer.md:fb46161924460c0c793422365a6acf8b3a202a5fd1fe7080753d097080dc5212"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "commands/deploy.md",
+            "startLine": 3,
+            "detail": "commands/deploy.md:3 — frontmatter allowed-tools has an invalid map shape",
+            "fingerprint": "trust-auto-exec-hook:commands/deploy.md:87158f2572ac957526cc6494411661f26e21aab25a8e16e6387da7d7b7401731"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "package.json",
+            "startLine": 7,
+            "detail": "package.json:7 — package.json lifecycle script postinstall can execute during install/publish",
+            "fingerprint": "trust-auto-exec-hook:package.json:6c829e3a1d83c6c89a5b921016171693be2bbad51da24a703c2da745ec1cd4bc"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.permission-risk",
+            "verdict": "fail",
+            "code": "trust.permission-risk",
+            "uri": "package.json",
+            "startLine": 8,
+            "detail": "package.json:8 — package.json prepublishOnly script executes only during an explicit publish workflow",
+            "fingerprint": "trust-permission-risk:package.json:5be1bb7f0aa53dce72f139add1c8044e408df1bc31e2e73e7039ea0961b2e01d"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.permission-risk",
+            "verdict": "fail",
+            "code": "trust.permission-risk",
+            "uri": "SKILL.md",
+            "startLine": 4,
+            "detail": "SKILL.md:4 — frontmatter allowed-tools grants broad Bash permission",
+            "fingerprint": "trust-permission-risk:SKILL.md:67ee9bce47b259234063b5f0e3e588ca949de448baaa297a61cf3164a09750fb"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "SKILL.md",
+            "startLine": 5,
+            "detail": "SKILL.md:5 — frontmatter permissionMode bypasses permissions",
+            "fingerprint": "trust-auto-exec-hook:SKILL.md:1b38b67e90e058158ae24f428dba3a1117285dff3d078b23ee20ed851ba3cbed"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "SKILL.md",
+            "startLine": 9,
+            "detail": "SKILL.md:9 — SKILL body contains a leading ! auto-run line",
+            "fingerprint": "trust-auto-exec-hook:SKILL.md:f75c7dd147703f69bb4b460f0217a15c84e06948cce99a5f15c55375f6efa7b9"
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": "trust.sandbox-smoke-unavailable",
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 10
+      },
+      "win32-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": ".claude/hooks",
+            "startLine": 1,
+            "detail": ".claude/hooks:1 — .claude/hooks directory can auto-execute hook commands",
+            "fingerprint": "trust-auto-exec-hook:.claude/hooks:84b9c8df69e3008f203b2461be559ace7fac692d79a308fb22f76453a06dcd08"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": ".claude/settings.json",
+            "startLine": 2,
+            "detail": ".claude/settings.json:2 — settings file declares hooks that may auto-execute",
+            "fingerprint": "trust-auto-exec-hook:.claude/settings.json:6d9f6a2f7d09f487a6600e42a290153362b13c39c87464472e5a17a8ca9b89b8"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": ".npmrc",
+            "startLine": 1,
+            "detail": ".npmrc:1 — .npmrc explicitly enables package scripts",
+            "fingerprint": "trust-auto-exec-hook:.npmrc:c5967e5fbc523a123a55d0a892887b5a4f9a6a49fc0fae753025025fbe29f288"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.permission-risk",
+            "verdict": "fail",
+            "code": "trust.permission-risk",
+            "uri": "agents/reviewer.md",
+            "startLine": 3,
+            "detail": "agents/reviewer.md:3 — frontmatter allowed-tools grants broad Bash permission",
+            "fingerprint": "trust-permission-risk:agents/reviewer.md:fb46161924460c0c793422365a6acf8b3a202a5fd1fe7080753d097080dc5212"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "commands/deploy.md",
+            "startLine": 3,
+            "detail": "commands/deploy.md:3 — frontmatter allowed-tools has an invalid map shape",
+            "fingerprint": "trust-auto-exec-hook:commands/deploy.md:87158f2572ac957526cc6494411661f26e21aab25a8e16e6387da7d7b7401731"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "package.json",
+            "startLine": 7,
+            "detail": "package.json:7 — package.json lifecycle script postinstall can execute during install/publish",
+            "fingerprint": "trust-auto-exec-hook:package.json:6c829e3a1d83c6c89a5b921016171693be2bbad51da24a703c2da745ec1cd4bc"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.permission-risk",
+            "verdict": "fail",
+            "code": "trust.permission-risk",
+            "uri": "package.json",
+            "startLine": 8,
+            "detail": "package.json:8 — package.json prepublishOnly script executes only during an explicit publish workflow",
+            "fingerprint": "trust-permission-risk:package.json:5be1bb7f0aa53dce72f139add1c8044e408df1bc31e2e73e7039ea0961b2e01d"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.permission-risk",
+            "verdict": "fail",
+            "code": "trust.permission-risk",
+            "uri": "SKILL.md",
+            "startLine": 4,
+            "detail": "SKILL.md:4 — frontmatter allowed-tools grants broad Bash permission",
+            "fingerprint": "trust-permission-risk:SKILL.md:67ee9bce47b259234063b5f0e3e588ca949de448baaa297a61cf3164a09750fb"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "SKILL.md",
+            "startLine": 5,
+            "detail": "SKILL.md:5 — frontmatter permissionMode bypasses permissions",
+            "fingerprint": "trust-auto-exec-hook:SKILL.md:1b38b67e90e058158ae24f428dba3a1117285dff3d078b23ee20ed851ba3cbed"
+          },
+          {
+            "family": "trust-lint",
+            "name": "trust.auto-exec-hook",
+            "verdict": "fail",
+            "code": "trust.auto-exec-hook",
+            "uri": "SKILL.md",
+            "startLine": 9,
+            "detail": "SKILL.md:9 — SKILL body contains a leading ! auto-run line",
+            "fingerprint": "trust-auto-exec-hook:SKILL.md:f75c7dd147703f69bb4b460f0217a15c84e06948cce99a5f15c55375f6efa7b9"
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": "trust.sandbox-smoke-unavailable",
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 10
+      }
+    },
+    "identicalAcrossEnvironments": true
+  },
+  "detectors": {
+    "semgrep": {
+      "scanDetectorId": "detector.semgrep",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 7555,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 3,
+          "transcriptSha256": "9a95d6988d47da4e11d8f96f8f3ee0025eb290bacec036c39ccb7e99d5daa8c2"
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 15829,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 5,
+          "transcriptSha256": "d6bddf67e04570f61711b36ec7feeb0caf546758f41279aba9964ce575000668"
+        }
+      },
+      "executedOn": [
+        "linux-x64",
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "cisco": {
+      "scanDetectorId": "detector.cisco",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "cisco@uvx"
+          ],
+          "durationMs": 17406,
+          "checks": [
+            {
+              "name": "trust detector cisco",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Cisco AI Defense skill-scanner static scan completed through the committed uv lock with offline defaults-only. No findings != safe. Analyzers run: aih-native, cisco@uvx",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.skill-metadata-license",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:SKILL.md:9034c744696c6c304d05da32720288ec8e646f83195b4b53c5b2653ba46d7fc8"
+            },
+            {
+              "name": "trust.cisco-finding",
+              "verdict": "pass",
+              "code": "trust.cisco-finding",
+              "uri": "commands/deploy.md",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): commands/deploy.md:1 — Cisco AI Defense skill-scanner: File 'deploy.md' extension (.md) suggests one format but Magika detected a different text format: YAML source (yaml). This may indicate content obfuscation or a misnamed file.",
+              "fingerprint": "trust-cisco-finding:commands/deploy.md:4c343098dee7cac590862857261e0066f5e19b65138d7cac6bad05e7ae1b4e29"
+            },
+            {
+              "name": "trust.skill-metadata-license",
+              "verdict": "pass",
+              "code": null,
+              "uri": "docs/mirror/SKILL.md",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): docs/mirror/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:docs/mirror/SKILL.md:52a7640b82d58b3e848b4e471304f9aa7916dc32a5c387282b73b06346c3241a"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "MANIFEST_MISSING_LICENSE",
+              "level": "note",
+              "message": "Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "sourceValue": "---",
+              "fingerprint": "trust-raw:0504f39a10a23860b57fcdc9beb8c4793176e3c744e4e54b71d38dab1c1be490"
+            },
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "FILE_MAGIC_MISMATCH",
+              "level": "warning",
+              "message": "File 'deploy.md' extension (.md) suggests one format but Magika detected a different text format: YAML source (yaml). This may indicate content obfuscation or a misnamed file.",
+              "uri": "commands/deploy.md",
+              "startLine": 1,
+              "sourceValue": "---",
+              "fingerprint": "trust-raw:fdbed9d77c1b5e259caf5285348810b131c7dbf3b633f6825e26cebb95897f4e"
+            },
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "MANIFEST_MISSING_LICENSE",
+              "level": "note",
+              "message": "Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "uri": "docs/mirror/SKILL.md",
+              "startLine": 1,
+              "sourceValue": "---",
+              "fingerprint": "trust-raw:f5d2695dd1abd163ecf6c5a19821dee2d2e33537a6caac299a816829d13e6b73"
+            }
+          ],
+          "executions": [
+            {
+              "detector": "cisco",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skill-scanner",
+              "version": "1.0.0"
+            }
+          ],
+          "runnerCalls": 4,
+          "transcriptSha256": "bdabf57205a94c6fa3dcbc22acc3b61e9a4f007908a9d9a901bdfdf467c20e94"
+        }
+      },
+      "executedOn": [
+        "linux-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "mcp-scanner": {
+      "scanDetectorId": "detector.cisco-mcp-scanner",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco-mcp-scanner",
+          "mode": "executed",
+          "outcome": "not-applicable",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 10,
+          "checks": [],
+          "rawOccurrences": [],
+          "executions": [],
+          "scanObservations": [],
+          "analyzerDrivers": [],
+          "runnerCalls": 1,
+          "transcriptSha256": "1d43811ab574ba9a70fe3389b82a39d6b8cfd1b324919259e7888b89819d1dfb"
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    },
+    "skillspector": {
+      "scanDetectorId": "detector.skillspector",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.skillspector",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "skillspector@docker"
+          ],
+          "durationMs": 7229,
+          "checks": [
+            {
+              "name": "trust detector skillspector",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: aih-native, skillspector@docker",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "skillspector",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skillspector",
+              "version": "2.9.4"
+            }
+          ],
+          "runnerCalls": 8,
+          "transcriptSha256": "39dd67900145de09f5825b4bcefebf676cfd983a21ac90b2917e50d265546c81"
+        }
+      },
+      "executedOn": [
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "snyk-agent-scan": {
+      "scanDetectorId": "detector.snyk-agent-scan",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.snyk-agent-scan",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 1079,
+          "checks": [
+            {
+              "name": "trust detector snyk-agent-scan",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "snyk-agent-scan",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 3,
+          "transcriptSha256": "4cdd2a699c587213dbcfb3f72a0b27fa55b133bd5cc9d51fea435e30023ee4a8"
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    }
+  },
+  "sandboxSmoke": {
+    "byEnvironment": {
+      "linux-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": "trust.sandbox-smoke-unavailable",
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): Docker is unavailable (spawn docker ENOENT)",
+        "fingerprint": null
+      },
+      "win32-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "pass",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "Docker read-only/no-network sandbox smoke completed for install scripts; package manifest(s): package.json; marker: aih sandbox smoke ok; evidence: aih sandbox smoke ok",
+        "fingerprint": null
+      }
+    }
+  }
+}

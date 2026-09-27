@@ -1,14 +1,8 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../baseline-evidence/scanner-profile.js";
-import { readVendorBaselineLock, vendorBaselineLockSha256 } from "../baseline-evidence/vendor.js";
+import { vendorBaselineLockSha256 } from "../baseline-evidence/vendor.js";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
-import { projectBaselineDisplayEvidenceV1 } from "./baseline-display-projection-v1.js";
-import {
-  PACKAGED_PUBLIC_BASELINE_BYTES_V1,
-  PACKAGED_PUBLIC_BASELINE_SHA256_V1,
-} from "./packaged-public-baseline-data.js";
-import type { AuthoringCatalogBundleV1 } from "./workbench/contracts.js";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 export const PUBLIC_BASELINE_PUBLISHER_V1 = Object.freeze({
@@ -76,34 +70,4 @@ export function inspectPackagedPublicBaselineBytesV1(bytes: string, seal: string
   )
     throw new TypeError("Packaged public evidence analyzer policy mismatch.");
   return parsed;
-}
-
-/** Inputless package loader. It never reads a caller's evidence file or starts a process. */
-export function packagedPublicBaselineEvidenceV1() {
-  if (PACKAGED_PUBLIC_BASELINE_BYTES_V1 === null && PACKAGED_PUBLIC_BASELINE_SHA256_V1 === null)
-    return undefined;
-  if (PACKAGED_PUBLIC_BASELINE_BYTES_V1 === null || PACKAGED_PUBLIC_BASELINE_SHA256_V1 === null)
-    throw new TypeError("Packaged public evidence is incomplete.");
-  return inspectPackagedPublicBaselineBytesV1(
-    PACKAGED_PUBLIC_BASELINE_BYTES_V1,
-    PACKAGED_PUBLIC_BASELINE_SHA256_V1,
-  );
-}
-
-export function packagedPublicBaselineOverlayV1(bundle: AuthoringCatalogBundleV1) {
-  const prepared = packagedPublicBaselineEvidenceV1();
-  if (!prepared) return {};
-  // Facts come from the exact shipped lock, not editable report copies in proof JSON.
-  // Retain original verified dates; the UI evaluates currency when it displays them.
-  return projectBaselineDisplayEvidenceV1(
-    {
-      lock: readVendorBaselineLock(),
-      evidenceDigest: prepared.lockDigest.slice(7),
-      contextDigest: prepared.contextDigest,
-      verifiedAt: prepared.verifiedAt,
-      validUntil: prepared.validUntil,
-    },
-    bundle,
-    prepared.verifiedAt,
-  );
 }

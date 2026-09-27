@@ -1,0 +1,740 @@
+{
+  "format": "aih-trust-parity-golden-metadata",
+  "version": 1,
+  "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+  "provenance": "Core's trust engines at coreCommit, unmodified, driven through scanTrustTreeWithAnalyzers on a fresh temporary copy of each case with Core's own defaultRunner; this script and the corpus were the only additions. win32-x64 ran the sources under tsx on the capture host; linux-x64 ran an esbuild bundle of the same sources in a local container (Node 22, uv 0.12.4, CPython 3.12) after a locked uv sync of Core's analyzer projects. Snyk Agent Scan was never executed (no SNYK_TOKEN): its goldens replay output recorded in Core's tests. Transcripts of every analyzer call are kept outside the repository; each run's transcriptSha256 names its transcript.",
+  "posture": "vibe",
+  "environments": {
+    "linux-x64": {
+      "label": "linux-x64",
+      "os": "linux",
+      "arch": "x64",
+      "osRelease": "linux",
+      "node": "v22.23.3",
+      "uv": "uv 0.12.4 (x86_64-unknown-linux-musl)",
+      "uvCacheDir": "<uv-cache>",
+      "python312": "Python 3.12.14",
+      "docker": "unavailable: spawnSync docker ENOENT",
+      "skillspectorImage": "docker unavailable",
+      "pinnedAnalyzers": {
+        "semgrep": "1.173.0",
+        "cisco": "2.0.14",
+        "mcp-scanner": "4.8.2",
+        "snyk-agent-scan": "0.5.17",
+        "skillspector": {
+          "image": "skillspector:aih-2d198ab910ad",
+          "digest": "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+          "sourceRevision": "2d198ab910add401cad658d1087e7c7ba24fd640"
+        }
+      },
+      "installedAnalyzers": {
+        "semgrep": {
+          "state": "resolved",
+          "version": "1.173.0"
+        },
+        "cisco": {
+          "state": "resolved",
+          "version": "2.0.14"
+        },
+        "mcp-scanner": {
+          "state": "resolved",
+          "version": "4.8.2"
+        }
+      },
+      "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+      "capturedAt": "2026-09-24T02:09:43.664Z",
+      "detectors": [
+        "native",
+        "semgrep",
+        "cisco",
+        "mcp-scanner"
+      ]
+    },
+    "win32-x64": {
+      "label": "win32-x64",
+      "os": "win32",
+      "arch": "x64",
+      "osRelease": "win32",
+      "node": "v26.4.0",
+      "uv": "uv 0.12.4 (77803aa22 2026-08-13 x86_64-pc-windows-msvc)",
+      "uvCacheDir": "<uv-cache>",
+      "python312": "Python 3.12.13",
+      "docker": "29.8.0 linux/amd64",
+      "skillspectorImage": "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800 [\"skillspector@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800\",\"ghcr.io/samartomar/skillspector@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800\"]",
+      "pinnedAnalyzers": {
+        "semgrep": "1.173.0",
+        "cisco": "2.0.14",
+        "mcp-scanner": "4.8.2",
+        "snyk-agent-scan": "0.5.17",
+        "skillspector": {
+          "image": "skillspector:aih-2d198ab910ad",
+          "digest": "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+          "sourceRevision": "2d198ab910add401cad658d1087e7c7ba24fd640"
+        }
+      },
+      "installedAnalyzers": {
+        "semgrep": {
+          "state": "resolved",
+          "version": "1.173.0"
+        },
+        "snyk-agent-scan": {
+          "state": "resolved",
+          "version": "0.5.17"
+        },
+        "cisco": {
+          "state": "unresolved",
+          "detail": "        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH         cargo:rerun-if-env-changed=CARGO_CFG_TARGET_OS    "
+        },
+        "mcp-scanner": {
+          "state": "unresolved",
+          "detail": "        cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH         cargo:rerun-if-env-changed=CARGO_CFG_TARGET_OS    "
+        }
+      },
+      "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+      "capturedAt": "2026-09-24T02:09:42.179Z",
+      "detectors": [
+        "native",
+        "semgrep",
+        "skillspector",
+        "snyk-agent-scan",
+        "cisco",
+        "mcp-scanner"
+      ]
+    }
+  },
+  "divergences": [],
+  "summary": [
+    {
+      "case": "empty",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "empty",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "unavailable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "empty",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "empty",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "empty",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "clean",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "clean",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "clean",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable",
+        "win32-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "clean",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "clean",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "prompt-injection",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 1,
+        "win32-x64": 1
+      }
+    },
+    {
+      "case": "prompt-injection",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 2
+      }
+    },
+    {
+      "case": "prompt-injection",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "prompt-injection",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 1
+      }
+    },
+    {
+      "case": "prompt-injection",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "unicode",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "unicode",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 5
+      }
+    },
+    {
+      "case": "unicode",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "unicode",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 4
+      }
+    },
+    {
+      "case": "unicode",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "auto-exec-permissions",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "auto-exec-permissions",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 3
+      }
+    },
+    {
+      "case": "auto-exec-permissions",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "auto-exec-permissions",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "auto-exec-permissions",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "dependencies",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "dependencies",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 1
+      }
+    },
+    {
+      "case": "dependencies",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "dependencies",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 3
+      }
+    },
+    {
+      "case": "dependencies",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "secrets",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "secrets",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 3
+      }
+    },
+    {
+      "case": "secrets",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "secrets",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "secrets",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "multi-skill-nested",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 3,
+        "win32-x64": 3
+      }
+    },
+    {
+      "case": "multi-skill-nested",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 8
+      }
+    },
+    {
+      "case": "multi-skill-nested",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "multi-skill-nested",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 2
+      }
+    },
+    {
+      "case": "multi-skill-nested",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "mcp-configs",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 1,
+        "win32-x64": 1
+      }
+    },
+    {
+      "case": "mcp-configs",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "linux-x64": 3,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "mcp-configs",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "linux-x64": 1,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "mcp-configs",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "mcp-configs",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "malformed",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0,
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "malformed",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "unavailable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "malformed",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "malformed",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "malformed",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "semgrep-positive",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 2,
+        "win32-x64": 2
+      }
+    },
+    {
+      "case": "semgrep-positive",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 2
+      }
+    },
+    {
+      "case": "semgrep-positive",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "semgrep-positive",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 1
+      }
+    },
+    {
+      "case": "semgrep-positive",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    },
+    {
+      "case": "legal-text",
+      "detector": "semgrep",
+      "outcomes": {
+        "linux-x64": "completed",
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 1,
+        "win32-x64": 1
+      }
+    },
+    {
+      "case": "legal-text",
+      "detector": "cisco",
+      "outcomes": {
+        "linux-x64": "completed"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "legal-text",
+      "detector": "mcp-scanner",
+      "outcomes": {
+        "linux-x64": "not-applicable"
+      },
+      "findings": {
+        "linux-x64": 0
+      }
+    },
+    {
+      "case": "legal-text",
+      "detector": "skillspector",
+      "outcomes": {
+        "win32-x64": "completed"
+      },
+      "findings": {
+        "win32-x64": 1
+      }
+    },
+    {
+      "case": "legal-text",
+      "detector": "snyk-agent-scan",
+      "outcomes": {
+        "win32-x64": "unavailable"
+      },
+      "findings": {
+        "win32-x64": 0
+      }
+    }
+  ]
+}

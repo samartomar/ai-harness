@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { hashComponentTree } from "../../../baseline-evidence/hash.js";
+import type { ScannerDefinitionOverlapModeV1 } from "../../../baseline-evidence/scanner-definition.js";
 import { BaselineComponentPathSchema } from "../../../baseline-evidence/schema.js";
 import { canonicalStrictJsonSha256V1 } from "../../../contract/strict-json-v1.js";
 
@@ -36,8 +37,10 @@ export function verifyScannerComponentContainmentV1(
   sourceRoot: string,
   declaredInput: unknown,
   publishedInput: unknown,
+  overlap: ScannerDefinitionOverlapModeV1 = "disjoint",
 ) {
   try {
+    if (overlap !== "disjoint" && overlap !== "compiler-catalog") fail();
     const declared = DeclaredSchema.parse(declaredInput);
     const published = PublishedSchema.parse(publishedInput);
     if (
@@ -45,14 +48,34 @@ export function verifyScannerComponentContainmentV1(
       new Set(published.map((item) => item.id)).size !== published.length
     )
       fail();
-    const ownerByFile = new Map<string, { id: string; digest: string }>();
+    const declaredDigestByFile = new Map<string, string>();
+    for (const component of declared) {
+      for (const file of component.files) {
+        const prior = declaredDigestByFile.get(file.path);
+        if (prior && prior !== file.digest) fail();
+        declaredDigestByFile.set(file.path, file.digest);
+      }
+    }
+    const ownersByFile = new Map<string, { id: string; digest: string }[]>();
     for (const component of published) {
       if (new Set(component.paths).size !== component.paths.length) fail();
       const material = hashComponentTree(sourceRoot, component.paths);
       if (material.treeSha256 !== component.treeSha256 || material.files.length === 0) fail();
       for (const file of material.files) {
-        if (ownerByFile.has(file.path) || ownerByFile.size >= 200_000) fail();
-        ownerByFile.set(file.path, { id: component.id, digest: `sha256:${file.sha256}` });
+        const owners = ownersByFile.get(file.path);
+        const digest = `sha256:${file.sha256}`;
+        if (!owners && ownersByFile.size >= 200_000) fail();
+        if (owners) {
+          const declaredDigest = declaredDigestByFile.get(file.path);
+          if (
+            overlap === "disjoint" ||
+            !declaredDigest ||
+            digest !== declaredDigest ||
+            owners.some((owner) => owner.digest !== declaredDigest)
+          )
+            fail();
+          owners.push({ id: component.id, digest });
+        } else ownersByFile.set(file.path, [{ id: component.id, digest }]);
       }
     }
     return declared.map((component) => {
@@ -70,9 +93,9 @@ export function verifyScannerComponentContainmentV1(
         fail();
       const publishedComponentIds = new Set<string>();
       for (const file of component.files) {
-        const published = ownerByFile.get(file.path);
-        if (!published || published.digest !== file.digest) fail();
-        publishedComponentIds.add(published.id);
+        const owners = ownersByFile.get(file.path);
+        if (!owners || owners.some((owner) => owner.digest !== file.digest)) fail();
+        for (const owner of owners) publishedComponentIds.add(owner.id);
       }
       return {
         componentId: component.componentId,

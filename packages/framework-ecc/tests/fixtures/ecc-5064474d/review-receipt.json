@@ -1,0 +1,12 @@
+{
+  "receiptVersion": 1,
+  "id": "pinned-source-evidence-v1",
+  "repository": "affaan-m/ECC",
+  "sourceCommit": "5064474d4d762dc9640234a41617cccb79185cec",
+  "evidence": "pinned install manifests and skill, role and workflow inventory the Catalog derived from ecc-profile-sources-v1.json, fetched by produce:ecc at this commit",
+  "manifestHashes": {
+    "manifests/install-components.json": "c13cfe4626d38818fa73dbff0e411e813599869031bcc7bd08fce1d2d8d4fd1c",
+    "manifests/install-modules.json": "a176a22ce40d2bf321afcf9aadfa2052be895f1bc87f0e8ada2fead20790ffbb",
+    "manifests/install-profiles.json": "3990be88bd4010eb960ad36dd20681ce045116e8aa05dcb06bd82f64f7c01d78"
+  }
+}

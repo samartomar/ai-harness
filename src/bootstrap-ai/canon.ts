@@ -11,6 +11,7 @@ import { LOADABILITY_SENTINEL } from "../internals/loadability-sentinel.js";
 import type { ManagedBlock } from "../internals/markers.js";
 import { frontmatter, lines } from "../internals/render.js";
 import type { RepoStack } from "../profile/scan.js";
+import type { PrimaryCodeGraphId } from "../tools/default-tool-selection.js";
 
 /** The marker id every canon bootloader shares (matches the eicp convention). */
 export const SHARED_MARKER = "ai-canonical:shared";
@@ -302,10 +303,6 @@ export function sharedCanonicalBlockBody(dir: string): string {
     "stack, and task routing. Load only task-relevant rules, then verify against repo",
     "evidence (PR diff, files, tests, schemas, CI) — never model memory or local notes.",
     "",
-    `If \`${dir}/policy-required-guidance.md\` exists, read it and every required`,
-    "practice it lists before acting. These selections come from this project's",
-    "organization policy; they are instruction guidance, not proof of enforced behavior.",
-    "",
     `Full working discipline: \`${dir}/rules/agent-behavior-core.md\`. Read it before`,
     "any non-trivial change; the essentials are inline below.",
     "",
@@ -325,13 +322,32 @@ export function sharedCanonicalBlockBody(dir: string): string {
   );
 }
 
+/** The chosen primary code graph and who chose it (policy or the user's developer-tools run). */
+export interface CanonPrimaryCodeGraph {
+  readonly id: PrimaryCodeGraphId;
+  readonly source: "policy" | "user";
+}
+
+/** Both graph tools stay available; the primary is simply asked first. */
+function primaryCodeGraphLines(primary: CanonPrimaryCodeGraph): string[] {
+  const other = primary.id === "code-review-graph" ? "codebase-memory-mcp" : "code-review-graph";
+  const label = primary.source === "policy" ? "organization policy" : "developer-tools choice";
+  return [
+    "",
+    `Primary code graph: **${primary.id}** (${label}). When a code-graph question fits either`,
+    `tool, ask ${primary.id} first; **${other}** stays available for its specialty above.`,
+  ];
+}
+
 /**
  * The canonical agent behavior core (`rules/agent-behavior-core.md`) — the full
  * working discipline the shared block and router route to. Generalized from the
  * widely-used Think/Simplify/Surgical/Goal-driven core; tool- and domain-agnostic.
  * Every section is the long-form rendering of the single-source discipline above.
+ * A chosen primary code graph adds one routing note; without one the text is
+ * unchanged task-based routing.
  */
-export function agentBehaviorCoreDoc(dir: string): string {
+export function agentBehaviorCoreDoc(dir: string, primary?: CanonPrimaryCodeGraph): string {
   return lines(
     "# Agent behavior core",
     "",
@@ -354,6 +370,7 @@ export function agentBehaviorCoreDoc(dir: string): string {
     "  invent commands, paths, or APIs; verify a path exists before citing it.",
     "",
     disciplineSectionLines("canon-tools"),
+    ...(primary === undefined ? [] : primaryCodeGraphLines(primary)),
     "",
     reportingSectionLines("longForm"),
   );
@@ -401,7 +418,7 @@ function baselineLayerLines(source: BaselineSource, governed: boolean): string[]
   if (source.id === "ecc") {
     return [
       "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
-      "  (obra/Superpowers), installed per CLI by `aih ecc` / `aih superpowers` —",
+      "  (obra/Superpowers); use `aih ecc` for ECC install guidance and `aih superpowers` for its setup —",
       "  generic agents, skills, memory, security, and the brainstorm→plan→TDD→review loop.",
     ];
   }
@@ -412,9 +429,9 @@ function baselineLayerLines(source: BaselineSource, governed: boolean): string[]
   ];
 }
 
-function baselineAlwaysReadLine(source: BaselineSource, dir: string, governed: boolean): string {
+function baselineAlwaysReadLine(source: BaselineSource, _dir: string, governed: boolean): string {
   if (governed) {
-    return `- The selected policy requirements and \`${dir}/policy-required-guidance.md\` when present. Missing expected guidance is a delivery gap: inspect \`aih policy evaluate --json\`; do not substitute a broad baseline.`;
+    return "- The selected organization policy requirements; inspect `aih policy evaluate --json` for the current selection.";
   }
   return source.id === "ecc"
     ? "- The ECC `common` rules (Layer 1) before any non-trivial change"
@@ -433,7 +450,7 @@ function baselineImplementationLines(
       canon === "compact"
         ? `Load \`${dir}/project.md\` for the commands, scale, and constraints.`
         : `Load \`${dir}/conventions.md\` + \`${dir}/architecture.md\` for the project contract.`,
-      `Read every required practice named by \`${dir}/policy-required-guidance.md\` before acting.`,
+      "Inspect the selected organization policy requirements before acting.",
       "Optional discovery is separate from required loading. State the goal and the smallest viable change first.",
     ];
   }
@@ -748,9 +765,8 @@ export function adapterNote(
       "",
       `- Entry: ${m.entry}`,
       `- Rule loading: ${m.loads}`,
-      `- Selected guidance: \`${dir}/policy-required-guidance.md\` names the admitted project practice files; read each required practice before acting.`,
-      "- Native skill discovery lists available metadata; complete required-content loading needs a native read. Global/plugin content is separately owned and may remain visible.",
-      "- Missing expected guidance is a delivery gap. Inspect `aih policy evaluate --json`; do not install broad defaults to fill it.",
+      "- Inspect `aih policy evaluate --json` for selected organization policy requirements.",
+      "- Native skill discovery lists available metadata; complete content loading needs a native read. Global/plugin content is separately owned and may remain visible.",
       `- Repo canon and contract: \`${dir}/RULE_ROUTER.md\`; boundaries: § External action boundary.`,
     );
   }

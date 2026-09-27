@@ -4,27 +4,28 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseNativeStrictJsonObjectV1 } from "../contract/native-strict-json-object-v1.js";
 import { AihError } from "../errors.js";
+import { FrameworkHookControlsSchema } from "../framework-plugin/hook-controls-schema.js";
 import { GOVERNED_MCP_TARGETS } from "../internals/cli-registry.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { STRIX_INVOCATION_LIMITS } from "../security/detectors/types.js";
-import { DEFAULT_DEVELOPER_TOOL_IDS } from "../tools/default-tool-selection.js";
+import {
+  DEFAULT_DEVELOPER_TOOL_IDS,
+  PRIMARY_CODE_GRAPH_IDS,
+} from "../tools/default-tool-selection.js";
 import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
-import {
-  canonicalEccDisabledHookIds,
-  ECC_DISABLE_ELIGIBLE_HOOK_IDS,
-  type EccHookProfile,
-} from "./ecc-hook-controls.js";
+import { isSupportedDeveloperToolPolicyFloorV1 } from "./developer-tool-policy.js";
 import {
   ECC_EXTERNAL_MCP_APPROVAL_IDS,
   POLICY_APPROVER_EMAIL_PATTERN,
 } from "./ecc-mcp-approval.js";
-import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
+import { AIH_OWNED_ECC_MCP_EXCLUSIONS } from "./ecc-mcp-contract.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 import { safePolicyCommandArgument as safeBrowserPolicyCommandArgument } from "./workbench/command-arguments.js";
 import {
+  HEADROOM_MINIMUM_CORE_VERSION,
   WORKBENCH_MAX_POLICY_BYTES,
   WORKBENCH_MINIMUM_CORE_VERSION,
   WorkbenchAuthoringSourcesV1Schema,
@@ -44,9 +45,22 @@ export const DeveloperToolSelectionV1Schema = z
   .object({
     selected: z.array(DeveloperToolIdSchema).max(DEFAULT_DEVELOPER_TOOL_IDS.length).optional(),
     excluded: z.array(DeveloperToolIdSchema).max(DEFAULT_DEVELOPER_TOOL_IDS.length).optional(),
+    /** Enterprise primary code graph. When set it binds; when omitted the user chooses. */
+    primaryCodeGraph: z.enum(PRIMARY_CODE_GRAPH_IDS).optional(),
   })
   .strict()
   .superRefine((selection, ctx) => {
+    if (
+      selection.primaryCodeGraph !== undefined &&
+      ((selection.excluded ?? []).includes(selection.primaryCodeGraph) ||
+        (selection.selected !== undefined &&
+          !selection.selected.includes(selection.primaryCodeGraph)))
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["primaryCodeGraph"],
+        message: `developerTools.primaryCodeGraph names a tool the policy does not select: ${selection.primaryCodeGraph}`,
+      });
     for (const [field, values] of [
       ["selected", selection.selected],
       ["excluded", selection.excluded],
@@ -233,6 +247,11 @@ const SecurityPolicySchema = z
   })
   .strict();
 
+/** One internal npm scope as policy may write it; normalized it must be `@[a-z0-9][a-z0-9._~-]*`. */
+export const InternalScopeSchema = z
+  .string()
+  .regex(/^\s*@?[A-Za-z0-9][A-Za-z0-9._~-]*\s*$/, "must be an npm scope such as @acme");
+
 const SkillSpectorDigestApprovalSchema = z
   .object({
     imageTag: SingleLinePolicyTextSchema,
@@ -315,36 +334,6 @@ const PolicyApproverIdentitySchema = z.union([
   SafePolicyIdentifierSchema,
 ]);
 
-const EccHookProfileSchema = z.enum(["minimal", "standard", "strict"]);
-const EccHookControlsSchema = z
-  .object({
-    profile: EccHookProfileSchema,
-    disabledIds: z
-      .array(z.enum([...ECC_DISABLE_ELIGIBLE_HOOK_IDS] as [string, ...string[]]))
-      .max(40)
-      .optional(),
-  })
-  .strict()
-  .transform((value, ctx) => {
-    let disabledIds: string[];
-    try {
-      disabledIds = canonicalEccDisabledHookIds(
-        value.disabledIds ?? [],
-        value.profile as EccHookProfile,
-      );
-    } catch (error) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["disabledIds"],
-        message: error instanceof Error ? error.message : "invalid ECC disabled hook ids",
-      });
-      return z.NEVER;
-    }
-    return {
-      profile: value.profile,
-      ...(disabledIds.length === 0 ? {} : { disabledIds }),
-    };
-  });
 export const SupportedCliSchema = z.enum(SUPPORTED_CLIS);
 const SupportedCliListSchema = z
   .array(SupportedCliSchema)
@@ -434,12 +423,14 @@ const RemoteMcpApprovalSchema = z
 /**
  * An administrator's declaration over an external ECC MCP from the exact
  * source-locked snapshot. It is neither a client configuration nor a grant to
- * contact, scan, inspect, project, or install that MCP.
+ * contact, scan, inspect, project, or install that MCP. It names the ECC content
+ * it was made for; one made for other content stays valid policy and is labelled
+ * stale at use, authorizing nothing (D74).
  */
 const EccMcpApprovalSchema = z
   .object({
     id: z.enum(ECC_EXTERNAL_MCP_APPROVAL_IDS),
-    sourceContentSha256: z.literal(ECC_MCP_CATALOG_PROVENANCE.contentSha256),
+    sourceContentSha256: z.string().regex(/^[0-9a-f]{64}$/),
     state: z.enum(["approved", "revoked"]),
     approvedBy: PolicyApproverIdentitySchema,
     authenticationMode: SafePolicyTextSchema,
@@ -1232,8 +1223,13 @@ const GovernedPolicyGovernanceSchema = z
      * side effect and deliberately creates no candidate or activation.
      */
     eccMcpApprovals: z.array(EccMcpApprovalSchema).default([]),
-    /** ECC-owned runtime controls projected only through receipt-owned Claude env keys. */
-    eccHookControls: EccHookControlsSchema.optional(),
+    /**
+     * Framework hook controls keyed by framework id (schema 3, Core 0.7.0). Each
+     * framework plugin validates the ids and profile against its own hook
+     * inventory and returns the plan; Core applies it through the hook
+     * registrar's receipt-owned Claude settings environment keys.
+     */
+    frameworkHookControls: FrameworkHookControlsSchema.optional(),
     /**
      * Organization-sanctioned AI CLIs. This is a governance boundary, not the
      * projector target set: every value comes from AIH's supported CLI registry,
@@ -1631,7 +1627,20 @@ const OrgPolicyBaseSchema = z
          */
         requiredChecks: z.array(z.string().min(1)).optional(),
         baselineOverrides: z.array(BaselineOverrideSchema).optional(),
-        internalScopes: z.array(z.string()).default([]),
+        /**
+         * npm scopes the organization owns (`acme` or `@acme`; trimmed, `@`-prefixed and
+         * lowercased when used). A malformed scope is refused here, with its field path,
+         * instead of being sent to Scan's trust lint, which refuses it too.
+         */
+        internalScopes: z.array(InternalScopeSchema).default([]),
+        /**
+         * The execution profile @aihq/scan runs every uv-backed detector under
+         * (semgrep, cisco, mcp-scanner, snyk-agent-scan). Absent: `host-process-uv-v1`
+         * on every OS. `linux-namespace-uv-v1` is the hardened Linux-only option; a
+         * profile the installed Scan does not declare for the host is refused, never
+         * substituted.
+         */
+        uvExecutionProfile: z.enum(["host-process-uv-v1", "linux-namespace-uv-v1"]).optional(),
         skillspector: z
           .object({
             approvedDigests: z.array(SkillSpectorDigestApprovalSchema).default([]),
@@ -1657,6 +1666,34 @@ const OrgPolicyBaseSchema = z
 
 const refineOrgPolicy = (rawPolicy: unknown, ctx: z.RefinementCtx) => {
   const policy = rawPolicy as z.infer<typeof OrgPolicyBaseSchema>;
+  if (
+    policy.governance !== undefined &&
+    "frameworkHookControls" in policy.governance &&
+    policy.governance.frameworkHookControls !== undefined &&
+    ((rawPolicy as { schemaVersion?: unknown }).schemaVersion !== 3 ||
+      (rawPolicy as { minimumCoreVersion?: unknown }).minimumCoreVersion !==
+        HEADROOM_MINIMUM_CORE_VERSION)
+  )
+    ctx.addIssue({
+      code: "custom",
+      path: ["governance", "frameworkHookControls"],
+      message: `governance.frameworkHookControls requires schemaVersion 3 and minimumCoreVersion ${HEADROOM_MINIMUM_CORE_VERSION}.`,
+    });
+  if (
+    (rawPolicy as { schemaVersion?: unknown }).schemaVersion === 3 &&
+    !isSupportedDeveloperToolPolicyFloorV1(
+      (rawPolicy as { minimumCoreVersion?: unknown }).minimumCoreVersion,
+      (rawPolicy as { developerTools?: unknown }).developerTools,
+    )
+  )
+    ctx.addIssue({
+      code: "custom",
+      path: ["minimumCoreVersion"],
+      message:
+        "A Headroom or primary code-graph developer-tool decision requires minimumCoreVersion " +
+        HEADROOM_MINIMUM_CORE_VERSION +
+        ".",
+    });
   if (
     policy.schemaVersion === 2 &&
     policy.governance !== undefined &&
@@ -1697,7 +1734,7 @@ export const AuthoringSelectionsV1Schema = WorkbenchStateV1Schema.extend({
 });
 const OrgPolicyV3Schema = OrgPolicyBaseSchema.extend({
   schemaVersion: z.literal(3),
-  minimumCoreVersion: z.literal(WORKBENCH_MINIMUM_CORE_VERSION),
+  minimumCoreVersion: z.enum([WORKBENCH_MINIMUM_CORE_VERSION, HEADROOM_MINIMUM_CORE_VERSION]),
   authoringSelections: AuthoringSelectionsV1Schema,
   authoringSources: WorkbenchAuthoringSourcesV1Schema.optional(),
   developerTools: DeveloperToolSelectionV1Schema.optional(),
@@ -1838,6 +1875,20 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
   ) {
     throw new OrgPolicyError(
       "org-policy minimumPosture team was removed; replace team with vibe or enterprise (the administrator chooses)",
+    );
+  }
+  const governance =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as { governance?: unknown }).governance
+      : undefined;
+  if (
+    governance !== null &&
+    typeof governance === "object" &&
+    !Array.isArray(governance) &&
+    "eccHookControls" in governance
+  ) {
+    throw new OrgPolicyError(
+      `org-policy governance.eccHookControls was replaced by governance.frameworkHookControls.ecc: set schemaVersion 3 and minimumCoreVersion ${HEADROOM_MINIMUM_CORE_VERSION}, and move { profile, disabledIds } to { profile, disabledHookIds }`,
     );
   }
   try {

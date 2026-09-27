@@ -19,7 +19,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as uninstallCommand } from "../../src/uninstall/index.js";
 import {
   aihDispatcher,
-  eccStopRegistrations,
+  nonEccStopRegistrations,
   repositoryStopHook,
 } from "./hook-registrar-fixtures.js";
 
@@ -103,7 +103,7 @@ const SEEDED_SETTINGS = `{
         "Stop": [
             {
                 "hooks": [
-${eccStopRegistrations()
+${nonEccStopRegistrations()
   .map(
     (registration) =>
       `                    { "type": "command", "command": ${JSON.stringify(registration.command)} }`,
@@ -122,7 +122,7 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     // administrator owns: ECC's six Stop hooks, the repository's own Stop
     // hook, and AIH's dispatcher — one harness (ecc) selected.
     const registrations = [
-      ...eccStopRegistrations(),
+      ...nonEccStopRegistrations(),
       repositoryStopHook(),
       aihDispatcher("Stop", ["continuity-checkpoint"]),
     ];

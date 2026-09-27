@@ -21,6 +21,7 @@ import {
   SKILL_INSTALL_SCOPE,
   type SkillCard,
   type SkillCardApproval,
+  type SkillRiskClass,
   type SkillSourceScope,
   skillCardRelPath,
 } from "./card.js";
@@ -33,21 +34,23 @@ import {
   upsertSkillLockEntry,
 } from "./lockfile.js";
 import type { SkillShape } from "./shape.js";
+import type { SkillVerdict } from "./verdict.js";
 
 /**
  * `aih skill card` + `aih skill approve` — slice 2 of the skill lifecycle: turn
  * a vet EVIDENCE artifact into committed governance state. Both are WRITE
  * commands (dry-run previews, `--apply` executes) that read the evidence at
  * plan time (pure fs — no spawns) and REFUSE when the evidence chain is broken:
- * no approval without a pin, without evidence, on a RED/UNKNOWN verdict, or
- * without a recorded license. YELLOW *is* approvable — approve IS the manual
- * review the verdict asked for. `approve` writes the card (with approval
+ * no approval without a pin or without matching evidence. The vet verdict and a
+ * missing license are labels: the card and the lock record them with the vet's
+ * reasons, and approve records the consumer's decision. `approve` writes the card (with approval
  * block), the root `aih-skills.lock.json` entry, and — for GitHub sources —
  * the org-policy approvedSources upsert, in one plan.
  */
 
 const APPROVED_AT_PLACEHOLDER = "(set at apply)";
 const LICENSE_MISSING_CODE = "trust.license-missing";
+const LICENSE_UNDETERMINED = "not determined";
 /** Where `skill vet --apply` lands its evidence artifacts (gitignored, content-addressed at approve). */
 export const EVIDENCE_DIR = ".aih/skill-reports";
 
@@ -109,7 +112,7 @@ interface SkillApprovalGate {
   evidenceSha256: string;
   evidence: VetEvidence;
   shape: SkillShape;
-  verdict: "GREEN" | "YELLOW";
+  verdict: SkillVerdict;
   name: string;
   commit: string;
   license: string;
@@ -166,10 +169,6 @@ function vetHint(source: TrustSource, raw: string, skillName?: string): string {
   const pin = source.kind === "github" && source.pin !== undefined ? ` --pin ${source.pin}` : "";
   const scoped = skillName !== undefined ? ` --name ${skillName}` : "";
   return `run \`aih skill vet ${raw}${pin}${scoped} --apply\` first`;
-}
-
-function reasonLines(reasons: readonly string[]): string {
-  return reasons.length > 0 ? reasons.map((reason) => `  - ${reason}`).join("\n") : "  (none)";
 }
 
 function readEvidenceOrRefuse(
@@ -424,29 +423,17 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
   // Rule 2 — no approval without a matching vet evidence artifact.
   const { rel, evidence, sha256 } = readEvidenceOrRefuse(ctx, source, raw, selectedName);
   assertLocalEvidenceSourceMatches(ctx, source, raw, rel, evidence);
-  // Rule 3 — RED is blocked outright; UNKNOWN means the evidence is insufficient.
-  if (evidence.verdict === "RED") {
-    throw refuse(
-      `vet verdict for ${source.display} is RED — blocked, do not install:\n${reasonLines(evidence.reasons)}`,
-    );
-  }
-  if (evidence.verdict === "UNKNOWN") {
-    throw refuse(
-      `vet verdict for ${source.display} is UNKNOWN — evidence insufficient:\n${reasonLines(evidence.reasons)}`,
-    );
-  }
+  // The vet verdict (GREEN/YELLOW/RED/UNKNOWN) is recorded with its reasons as a
+  // label; it never refuses (D50).
   const shape = evidence.shape;
   if (shape === undefined) {
     throw refuse(`vet evidence at ${rel} has no shape record; ${vetHint(source, raw)}`);
   }
-  // Rule 4 — no approval without a recorded license (UNKNOWN already covers a
-  // trust.license-missing fail; keep the explicit check anyway).
-  const license = hasLicenseMissing(evidence) ? undefined : licenseFromEvidence(evidence);
-  if (license === undefined) {
-    throw refuse(
-      `no license recorded in vet evidence for ${source.display}; a license is required before a card or approval`,
-    );
-  }
+  // A missing license is recorded as such; org-policy requiredChecks may still
+  // ask for one explicitly.
+  const license =
+    (hasLicenseMissing(evidence) ? undefined : licenseFromEvidence(evidence)) ??
+    LICENSE_UNDETERMINED;
   const name = skillNameFrom(shape, selectedName, source.display);
   assertSourceScopeMatches(evidence, name, selectedName, rel, raw, source);
   return {
@@ -503,13 +490,23 @@ function unmetRequiredChecks(required: readonly string[], gate: SkillApprovalGat
   return unmet;
 }
 
+function riskClassFor(verdict: SkillVerdict): SkillRiskClass {
+  return verdict === "GREEN"
+    ? "green"
+    : verdict === "YELLOW"
+      ? "yellow"
+      : verdict === "RED"
+        ? "red"
+        : "unknown";
+}
+
 function cardFor(gate: SkillApprovalGate, approval?: SkillCardApproval): SkillCard {
   return buildCard({
     name: gate.name,
     source: gate.evidence.source,
     commit: gate.commit,
     license: gate.license,
-    riskClass: gate.verdict === "GREEN" ? "green" : "yellow",
+    riskClass: riskClassFor(gate.verdict),
     requiresMcp: gate.shape.mcpConfig,
     requiresShell: gate.shape.installScripts,
     scanEvidence: [gate.evidenceRel],
@@ -528,9 +525,12 @@ function enforcementLines(gate: SkillApprovalGate, required: readonly string[]):
     "Enforcement:",
     `  - pinned commit: ${gate.commit === "local" ? "n/a (local source)" : gate.commit}`,
     `  - vet evidence: ${gate.evidenceRel} (sha256 ${gate.evidenceSha256.slice(0, 12)}…)`,
-    `  - verdict approvable: ${gate.verdict}${
-      gate.verdict === "YELLOW" ? " (this approval IS the manual review)" : ""
+    `  - vet verdict: ${gate.verdict}${
+      gate.verdict === "GREEN" ? "" : " (this approval records the consumer's decision)"
     }`,
+    ...(gate.evidence.reasons.length === 0
+      ? []
+      : ["  - vet reasons:", ...gate.evidence.reasons.map((reason) => `    - ${reason}`)]),
     `  - license recorded: ${gate.license}`,
     `  - owner: ${gate.flags.owner ?? "(none)"}`,
     `  - org-policy required checks: ${
@@ -549,7 +549,7 @@ function approveDigestText(
     `Skill: ${gate.name}`,
     `Source: ${gate.evidence.source}`,
     `Commit: ${gate.commit}`,
-    `Verdict: ${gate.verdict} → riskClass ${gate.verdict === "GREEN" ? "green" : "yellow"}`,
+    `Verdict: ${gate.verdict} → riskClass ${riskClassFor(gate.verdict)}`,
     `Owner: ${gate.flags.owner ?? "(none)"}`,
     `Pack: ${gate.flags.pack ?? "(none)"}`,
     `Card: ${cardRel}`,
@@ -629,7 +629,7 @@ function skillApprovePlan(ctx: PlanContext): Plan {
       source: gate.evidence.source,
       commit: gate.commit,
       verdict: gate.verdict,
-      riskClass: gate.verdict === "GREEN" ? "green" : "yellow",
+      riskClass: riskClassFor(gate.verdict),
       owner,
       pack: gate.flags.pack,
       card: cardRel,

@@ -34,6 +34,7 @@ import { readTrustLock } from "../trust/lock.js";
 import { TRUST_SKIP_DIRS } from "../trust/scan.js";
 import {
   captureWorkspaceAddTrustGate,
+  promotionBlockingChecks,
   type WorkspaceAddTrustGate,
   workspaceAddPhase1Plan,
   workspaceAddPhase2Plan,
@@ -55,10 +56,12 @@ import { type PackSkillStatus, type PackStatus, packStatus } from "./status.js";
  * 2. PINS COME FROM THE LOCK — each github ref resolves `owner/repo` pinned to
  *    its `aih-skills.lock.json` commit (the pin authority); local refs resolve
  *    the recorded path. The manifest never invents a pin.
- * 3. GATE ALL SOURCES BEFORE PROMOTING ANY — phase A runs fetch+scan+capture
+ * 3. CHECK ALL SOURCES BEFORE PROMOTING ANY — phase A runs fetch+scan+capture
  *    for EVERY source (sequential, one quarantine at a time on the wire);
- *    phase B promotes only when every source cleared. One poisoned source
- *    blocks the whole pack; quarantines are cleaned in `finally` either way.
+ *    phase B promotes only when every source cleared. Findings and evidence
+ *    problems are labels recorded in the trust lock; an integrity or
+ *    unclassified failure in any source stops the whole pack; quarantines are
+ *    cleaned in `finally` either way.
  *
  * `aih pack plan` is the read-only preview of the same resolution + gate: it
  * never fetches and never writes (a remote scan is fetch-blocked in dry-run
@@ -171,7 +174,7 @@ function gatedPackStatus(ctx: PlanContext, command: string): PackStatus {
       .map((ref) => `  - ${ref.name}: ${ref.approval}  (${ref.source}@${shortCommit(ref.commit)})`)
       .join("\n");
     throw refuse(
-      `pack ${packName} is blocked — every ref needs a clean ${AIH_SKILLS_LOCK_FILE} approval before any fetch:\n` +
+      `pack ${packName} cannot install yet — every ref needs its own ${AIH_SKILLS_LOCK_FILE} approval at the pinned commit before any fetch:\n` +
         `${listing}\n` +
         `run \`aih pack validate --pack ${packName}\` for the coded findings; approve with ` +
         "`aih skill vet <source> --apply` then `aih skill approve <source> --pin <sha> --owner <team> --apply`",
@@ -636,8 +639,13 @@ export async function runPackInstall(
       try {
         const phase1 = await executePlan(await workspaceAddPhase1Plan(ctx, run.source), ctx);
         run.phase1 = phase1;
-        if ((phase1.report?.exitCode() ?? 0) !== 0 || hasFailedExec(phase1)) {
-          run.failure = `trust scan failed for ${run.group.source}`;
+        // Findings and evidence problems are labels recorded at promotion; only an
+        // integrity or unclassified failure stops this source.
+        if (
+          promotionBlockingChecks(phase1.report?.checks ?? []).length > 0 ||
+          hasFailedExec(phase1)
+        ) {
+          run.failure = `trust scan recorded an integrity or unclassified failure for ${run.group.source}`;
           anyFailure = true;
           continue;
         }

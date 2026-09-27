@@ -14,7 +14,7 @@ import {
   readHookRegistrarReceipt,
 } from "../../src/org-policy/hook-registrar.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
+import { nonEccStopRegistrations } from "./hook-registrar-fixtures.js";
 
 /**
  * Revocation proves ownership and then pins the write it emits. Both have to
@@ -89,7 +89,7 @@ async function run(actions: Action[]): Promise<void> {
 /** Operator content in the file keeps revocation on the subtract path. */
 async function project(): Promise<void> {
   writeDestination(`${JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } }, null, 2)}\n`);
-  await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+  await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
   destinationReads.length = 0;
 }
 

@@ -9,7 +9,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-09-14T00:00:00Z"
+exclude-newer = "2026-09-24T00:00:00Z"
 
 [[package]]
 name = "aih-default-mcp-runtime"
@@ -22,8 +22,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "code-review-graph", specifier = "==2.3.8" },
-    { name = "codebase-memory-mcp", specifier = "==0.10.8" },
+    { name = "code-review-graph", specifier = "==2.3.9" },
+    { name = "codebase-memory-mcp", specifier = "==0.11.0" },
 ]
 
 [[package]]
@@ -262,9 +262,10 @@ wheels = [
 
 [[package]]
 name = "code-review-graph"
-version = "2.3.8"
+version = "2.3.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "anyio" },
     { name = "fastmcp" },
     { name = "mcp" },
     { name = "networkx" },
@@ -273,18 +274,18 @@ dependencies = [
     { name = "tree-sitter-language-pack" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b0/45/b37d3a9bc11a93fa625eb910018aa09e160685002e92e3a533d48fda3bb1/code_review_graph-2.3.8.tar.gz", hash = "sha256:245d9ef241b45281176cfa401470ba49bf13e6e00a9a9fc872fd8d1be0ef02e0", size = 650551, upload-time = "2026-08-21T22:38:06.029Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/aa/6dfa41456e9f3ed23cab75a39c68c6e72169bccec29bc67d2895f33d8b93/code_review_graph-2.3.9.tar.gz", hash = "sha256:3a73824c43502feab7c3ef00dcd096ce5c1a6e148b138084646ae3b4c88fce9f", size = 807071, upload-time = "2026-09-18T19:41:49.92Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/f7/7b329026ab076149bbef7c98a6d62f2f23b50e76f4a7d9726d7ef46a3b86/code_review_graph-2.3.8-py3-none-any.whl", hash = "sha256:013ae3c119cc7de337f9e88fe36daef82e2d4def942a014edcf97f126e208547", size = 619971, upload-time = "2026-08-21T22:38:04.806Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/79/f76be5687b87124039255fe70de06b2f266ece877f1038d9a3d0bde4a1c2/code_review_graph-2.3.9-py3-none-any.whl", hash = "sha256:908500a23f23fe05566090a2e5fce95f7f177d054090a355b46367546db5d910", size = 786718, upload-time = "2026-09-18T19:41:48.108Z" },
 ]
 
 [[package]]
 name = "codebase-memory-mcp"
-version = "0.10.8"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/55/d0/6e6276883e919fa8f474bbad74a436ef05d02fe0c8b2a7f75a8e6a409903/codebase_memory_mcp-0.10.8.tar.gz", hash = "sha256:d8186745440b33e4c11d66c619a425b8270933a0120f2b8ffc9e484c1a523ee0", size = 35192, upload-time = "2026-08-19T02:41:44.53Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/a3/4e38e31b3de4de605bcec00926c43a8cbcf7e373cb03fce320978d5732e6/codebase_memory_mcp-0.11.0.tar.gz", hash = "sha256:e481d411545655bf2f90d968474783eef7472bcc0d397e7781a93b938a109f62", size = 35245, upload-time = "2026-09-15T23:40:13.106Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/0c/41dcce39589044ffbdee1e3d4a86f8860b62905123bd3e26c6cbe88b323d/codebase_memory_mcp-0.10.8-py3-none-any.whl", hash = "sha256:a5e39e6886bbdd7836cadaec13cdeb3ee3648c34fdf88359d9395abccc16287c", size = 14871, upload-time = "2026-08-19T02:41:43.469Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/2b/98a14097307d4bb556a3d8d6d1bebaee07499fd03800eab9be55a686a07f/codebase_memory_mcp-0.11.0-py3-none-any.whl", hash = "sha256:2775931b6615344777926ef6ba4e11330a4b26040be06901d2556edb5e673be7", size = 14877, upload-time = "2026-09-15T23:40:12.187Z" },
 ]
 
 [[package]]

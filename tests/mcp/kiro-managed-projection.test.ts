@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Cli } from "../../src/internals/clis.js";
 import { executePlan } from "../../src/internals/execute.js";
@@ -22,13 +22,22 @@ import { command as pruneCommand } from "../../src/prune/index.js";
 import { command as uninstallCommand } from "../../src/uninstall/index.js";
 
 let root: string;
+let home: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aih-kiro-managed-mcp-"));
+  home = mkdtempSync(join(tmpdir(), "aih-kiro-managed-home-"));
 });
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
+  const resolvedHome = resolve(home);
+  if (
+    !resolvedHome.startsWith(`${resolve(tmpdir())}${sep}`) ||
+    !basename(resolvedHome).startsWith("aih-kiro-managed-home-")
+  )
+    throw new Error("unsafe Kiro fixture home cleanup path");
+  rmSync(home, { recursive: true, force: true });
 });
 
 function ctx(apply = true, targets: Cli[] = ["kiro"]): PlanContext {
@@ -43,9 +52,9 @@ function ctx(apply = true, targets: Cli[] = ["kiro"]): PlanContext {
     host: makeHostAdapter({
       platform: "linux",
       run: async () => ({ code: 0, stdout: "", stderr: "" }),
-      env: {},
+      env: { HOME: home, USERPROFILE: home },
     }),
-    env: {},
+    env: { HOME: home, USERPROFILE: home },
     options: {},
     targets,
   };

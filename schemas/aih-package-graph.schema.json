@@ -190,9 +190,8 @@
                 "verdict": {
                   "type": "string",
                   "enum": [
-                    "pass",
-                    "warn",
-                    "blocked",
+                    "no-findings",
+                    "has-findings",
                     "unknown"
                   ]
                 },
@@ -432,9 +431,8 @@
                 "verdict": {
                   "type": "string",
                   "enum": [
-                    "pass",
-                    "warn",
-                    "blocked",
+                    "no-findings",
+                    "has-findings",
                     "unknown"
                   ]
                 },

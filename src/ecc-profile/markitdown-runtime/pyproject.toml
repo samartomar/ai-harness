@@ -3,9 +3,9 @@ name = "aih-markitdown-runtime"
 version = "0.0.0"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-  "markitdown[docx,outlook,pdf,pptx,xls,xlsx]==0.1.7",
+  "markitdown[docx,outlook,pdf,pptx,xls,xlsx]==0.1.8",
 ]
 
 [tool.uv]
 package = false
-exclude-newer = "2026-09-15T00:00:00Z"
+exclude-newer = "2026-09-24T00:00:00Z"

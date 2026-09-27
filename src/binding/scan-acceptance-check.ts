@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
+import { ScanPackageRefusalError } from "../scan-package/load-scan-package.js";
 import shippedAcceptanceJson from "./scan-acceptance.json";
 import { type DimensionReport, inspectTree, type ScanSeverity } from "./scan-gate.js";
 
@@ -49,7 +50,7 @@ export interface ScanAcceptanceCheckInput {
 /** Test seams only; production calls use the shipped artifact, runtime inspector, and runner. */
 export interface ScanAcceptanceCheckDeps {
   runner?: Runner;
-  inspectTree?: (treePath: string) => readonly DimensionReport[];
+  inspectTree?: (treePath: string) => Promise<readonly DimensionReport[]>;
   acceptanceArtifact?: unknown;
 }
 
@@ -358,8 +359,10 @@ export async function checkSuperpowersScanAcceptance(
   const before = await checkoutIdentity(input.checkoutPath, runner);
   let reports: readonly DimensionReport[];
   try {
-    reports = (deps.inspectTree ?? inspectTree)(before.root);
-  } catch {
+    reports = await (deps.inspectTree ?? inspectTree)(before.root);
+  } catch (error) {
+    // A missing or incompatible @aihq/scan is its own typed refusal, never an unreadable checkout.
+    if (error instanceof ScanPackageRefusalError) throw error;
     fail("vendor checkout inspection is unavailable or unreadable");
   }
   const observations = scannerCandidates(reports);

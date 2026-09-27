@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION } from "./codebase-memory-native-pins.js";
 
 const LOCAL_CHILD_ENV_KEYS = [
   "PATH",
@@ -64,7 +65,7 @@ export function codebaseMemoryNativeBinaryPath(
   return join(
     base,
     "codebase-memory-mcp",
-    "0.10.8",
+    CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION,
     platform === "win32" ? "codebase-memory-mcp.exe" : "codebase-memory-mcp",
   );
 }

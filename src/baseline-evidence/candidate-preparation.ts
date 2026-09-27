@@ -2,6 +2,7 @@ import { lstatSync, readdirSync } from "node:fs";
 import { isAbsolute, posix, relative, resolve } from "node:path";
 import type { BaselineVetRequestV1 } from "@aihq/scan";
 import { z } from "zod";
+import { cloneJsonValueStructureV1, STRICT_JSON_MAX_DEPTH_V1 } from "../contract/strict-json-v1.js";
 import { defineBaselineCatalog } from "./catalog.js";
 import { hashSourceTree } from "./hash.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
@@ -283,18 +284,28 @@ function assertCoverage(sourceRoot: string, inventory: CandidateSourceInventory)
 }
 
 /** Validate an immutable, candidate-only inventory. It never reads active pins or evidence. */
+/** A copy read through descriptors, so schema parsing never invokes a caller's getter. */
+function snapshot<T>(value: T, label: string): T {
+  return cloneJsonValueStructureV1(
+    value,
+    `Candidate preparation: ${label}`,
+    STRICT_JSON_MAX_DEPTH_V1,
+  );
+}
+
 export function defineCandidateSourceInventory(value: unknown): CandidateSourceInventory {
-  return Object.freeze(inventorySchema.parse(value));
+  return Object.freeze(inventorySchema.parse(snapshot(value, "inventory")));
 }
 
 /**
  * Produce bounded canonical Scanner requests for a sealed candidate source.
  * Candidate preparation cannot qualify, publish, or replace an active catalog.
  */
-export function prepareCandidateBaselineRequests(input: {
+export function prepareCandidateBaselineRequests(supplied: {
   sourceRoot: string;
   inventory: CandidateSourceInventory;
 }): readonly BaselineVetRequestV1[] {
+  const input = snapshot(supplied, "input");
   const inventory = defineCandidateSourceInventory(input.inventory);
   assertCoverage(input.sourceRoot, inventory);
   const catalog = defineBaselineCatalog({
@@ -317,11 +328,12 @@ export function prepareCandidateBaselineRequests(input: {
  * converts an unsigned scan into publisher evidence, qualification, or a pin
  * update.
  */
-export function assessCandidateWorkbenchCoverage(input: {
+export function assessCandidateWorkbenchCoverage(supplied: {
   inventory: CandidateSourceInventory;
   requests: readonly BaselineVetRequestV1[];
   workbench?: z.input<typeof workbenchCoverageInput>;
 }): CandidateWorkbenchCoverageV1 {
+  const input = snapshot(supplied, "input");
   const inventory = defineCandidateSourceInventory(input.inventory);
   const components = requestComponents(inventory, input.requests);
   const workbench =

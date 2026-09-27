@@ -145,7 +145,7 @@ describe("marketplace build — the packaged approval set", () => {
     );
 
     const manifest = manifestOf(await planOf(ctx()));
-    expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.schemaVersion).toBe(2);
     expect(manifest.skills.map((s) => s.name)).toEqual(["alpha", "beta"]);
     const alpha = manifest.skills[0];
     expect(alpha).toMatchObject({

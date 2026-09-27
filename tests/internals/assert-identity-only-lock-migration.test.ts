@@ -13,7 +13,7 @@ import { assertIdentityOnlyLockMigration } from "../../src/internals/assert-iden
 
 function lock(): BaselineEvidenceLock {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -25,20 +25,22 @@ function lock(): BaselineEvidenceLock {
             id: "skill:example",
             paths: ["skills/example"],
             treeSha256: "a".repeat(64),
-            verdict: "pass",
+            verdict: "no-findings",
             analyzers: [
               { name: "aih-native", version: "2.9.0" },
               { name: "skillspector@docker", version: "rev@sha256:deadbeef" },
             ],
             findings: [],
+            evidenceProblems: [],
           },
           {
             id: "skill:blocked",
             paths: ["skills/blocked"],
             treeSha256: "b".repeat(64),
-            verdict: "blocked",
+            verdict: "has-findings",
             analyzers: [{ name: "aih-native", version: "2.9.0" }],
             findings: [{ code: "trust.hidden-unicode", detail: "danger", fingerprint: "fp:1" }],
+            evidenceProblems: [],
           },
         ],
       },
@@ -97,7 +99,7 @@ describe("assertIdentityOnlyLockMigration", () => {
         rewriteNative(
           {
             ...component,
-            verdict: component.id === "skill:blocked" ? "pass" : component.verdict,
+            verdict: component.id === "skill:blocked" ? "no-findings" : component.verdict,
             findings: component.id === "skill:blocked" ? [] : component.findings,
           },
           nextIdentity,

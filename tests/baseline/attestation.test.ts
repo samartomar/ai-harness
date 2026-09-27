@@ -271,7 +271,7 @@ describe("enterprise baseline attestation", () => {
     writePolicy(["code-review-graph", "context7"]);
     const graph = defaultNativeMcpServers(ctx())["code-review-graph"];
     if (graph?.type !== "stdio") throw new Error("expected native Code Review Graph stdio server");
-    expect(graph.args).toContain("code-review-graph==2.3.8");
+    expect(graph.args).toContain("code-review-graph==2.3.9");
     writeMcpConfig("opencode.json", {
       mcp: {
         "code-review-graph": {
@@ -412,7 +412,7 @@ describe("enterprise baseline attestation", () => {
           "--rm",
           "-e",
           "GITHUB_PERSONAL_ACCESS_TOKEN",
-          "ghcr.io/github/github-mcp-server@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560",
+          "ghcr.io/github/github-mcp-server@sha256:508a0857ec762b1ab1cece29193345b501fab1dd9d1228a7b617062954cecac6",
         ],
         env: { GITHUB_PERSONAL_ACCESS_TOKEN: "$" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" },
       },

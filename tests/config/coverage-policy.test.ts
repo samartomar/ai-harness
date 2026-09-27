@@ -7,9 +7,6 @@ import vitestConfig, {
   testTimeoutForPlatform,
   workerExecArgvForPlatform,
 } from "../../vitest.config.js";
-import coreVitestConfig from "../../vitest.core.config.js";
-import workbenchVitestConfig from "../../vitest.workbench.config.js";
-import { workbenchRetainedWorkersForParallelAcceptance } from "../../vitest.workbench-retained.config.js";
 
 interface CoverageShape {
   include?: string[];
@@ -22,7 +19,8 @@ interface CoverageShape {
 // genuine global statements aggregate at ~91.0% (CI ~90.98%), so the global floor is
 // 90.5 (tracked here so the drop is DELIBERATE, never silent — AIH-TEST-001). The two
 // W5 gate files gain scoped floors that lock them in to ratchet UP as their dedicated
-// closure/typography-path tests land.
+// closure/typography-path tests land. The typography reclassifier now runs in
+// @aihq/scan, so only the closure classifier keeps a floor.
 const minimumGlobalThresholds = {
   statements: 90.5,
   branches: 78,
@@ -61,30 +59,11 @@ const minimumScopedThresholds = {
     functions: 94,
     lines: 69,
   },
-  "src/binding/visible-typography.ts": {
-    statements: 84,
-    branches: 78,
-    functions: 92,
-    lines: 84,
-  },
 } as const;
 
 function coverageConfig(): CoverageShape {
   const config = vitestConfig as { test?: { coverage?: CoverageShape } };
   return config.test?.coverage ?? {};
-}
-
-function laneConfig(config: unknown): {
-  include: string[];
-  exclude: string[];
-  coverage: CoverageShape & { reportsDirectory?: string };
-} {
-  const test = (config as { test?: Record<string, unknown> }).test ?? {};
-  return {
-    include: test.include as string[],
-    exclude: test.exclude as string[],
-    coverage: test.coverage as CoverageShape & { reportsDirectory?: string },
-  };
 }
 
 function numericMetric(thresholds: Record<string, unknown>, metric: string): number {
@@ -119,7 +98,6 @@ describe("coverage policy", () => {
       "src/cli.ts",
       "src/ecc-runtime.ts",
       "**/*.d.ts",
-      "src/org-policy/workbench/ui/**",
     ]);
   });
 
@@ -136,49 +114,6 @@ describe("coverage policy", () => {
         expect(numericMetric(scoped, metric)).toBeGreaterThanOrEqual(minimum);
       }
     }
-  });
-
-  it("partitions Core and Workbench tests without overlapping source coverage", () => {
-    const core = laneConfig(coreVitestConfig);
-    const workbench = laneConfig(workbenchVitestConfig);
-
-    expect(core.include).toEqual(["tests/**/*.test.ts"]);
-    expect(core.exclude).toEqual(workbench.include);
-    expect(core.coverage.include).toEqual(["src/**/*.ts"]);
-    expect(core.coverage.exclude).toEqual(
-      expect.arrayContaining([
-        "src/org-policy/studio-*.ts",
-        "src/org-policy/generate.ts",
-        "src/org-policy/workbench/**",
-      ]),
-    );
-    expect(workbench.coverage.include).toEqual([
-      "src/org-policy/adoption-recipe.ts",
-      "src/org-policy/generate.ts",
-      "src/org-policy/studio-*.ts",
-      "src/org-policy/ui-server.ts",
-    ]);
-    expect(core.coverage.reportsDirectory).toBe("coverage/core");
-    expect(workbench.coverage.reportsDirectory).toBe("coverage/workbench");
-
-    for (const lane of [core, workbench]) {
-      const thresholds = lane.coverage.thresholds ?? {};
-      for (const metric of ["statements", "branches", "functions", "lines"]) {
-        expect(numericMetric(thresholds, metric)).toBeGreaterThan(0);
-      }
-    }
-    expect(workbench.coverage.thresholds).toMatchObject({
-      statements: 89,
-      branches: 80,
-      functions: 94,
-      lines: 92,
-    });
-    expect(core.coverage.thresholds).toMatchObject({
-      statements: 90,
-      branches: 83,
-      functions: 96,
-      lines: 92.5,
-    });
   });
 
   it("runs the published dist CLI smoke after build in verify", () => {
@@ -200,18 +135,10 @@ describe("coverage policy", () => {
     );
     expect(pkg.scripts?.["check:published-library"]).toContain("import('@aihq/core')");
     expect(pkg.scripts?.verify).toContain(
-      "npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library",
+      "npm run test:cov && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library",
     );
-    expect(pkg.scripts?.["test:core"]).toBe("vitest run --config vitest.core.config.ts");
-    expect(pkg.scripts?.["test:core:cov"]).toBe(
-      "vitest run --config vitest.core.config.ts --coverage",
-    );
-    expect(pkg.scripts?.["test:workbench"]).toBe(
-      "npm run build:workbench && vitest run --config vitest.workbench.config.ts",
-    );
-    expect(pkg.scripts?.["test:workbench:cov"]).toBe(
-      "npm run build:workbench && vitest run --config vitest.workbench.config.ts --coverage",
-    );
+    expect(pkg.scripts?.["test:cov"]).toBe("vitest run --coverage");
+    expect(pkg.scripts?.["test:workbench:cov"]).toBeUndefined();
   });
 
   it("matches the required hosted-runner budgets without weakening Linux", () => {
@@ -234,13 +161,5 @@ describe("coverage policy", () => {
       execArgv: [],
       testTimeout: 15_000,
     });
-
-    // Chromium and retained coverage run concurrently in the PR lane. On the
-    // four-core hosted runner, reserve half the processors for Chromium so
-    // the unchanged per-test deadlines do not depend on CPU oversubscription.
-    expect(workbenchRetainedWorkersForParallelAcceptance(4)).toBe(2);
-    expect(workbenchRetainedWorkersForParallelAcceptance(2)).toBe(1);
-    expect(workbenchRetainedWorkersForParallelAcceptance(1)).toBe(1);
-    expect(workbenchRetainedWorkersForParallelAcceptance(24)).toBe(4);
   });
 });

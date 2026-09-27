@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { trustCodeClassV1 } from "../trust/evidence.js";
 
 const SAFE_COMPONENT_ID = /^[a-z0-9][a-z0-9:._-]*$/;
 const SAFE_SOURCE_ID = /^[a-z0-9][a-z0-9._-]*$/;
@@ -13,7 +14,7 @@ export const BASELINE_REPORTS_DIR = ".aih/baseline-reports";
  * (`./skew.ts`) reads it, so the floor and the parser can never disagree about
  * what "readable" means.
  */
-export const BASELINE_EVIDENCE_SCHEMA_VERSION = 1;
+export const BASELINE_EVIDENCE_SCHEMA_VERSION = 2;
 
 function isSafeRelativePath(value: string): boolean {
   if (value.length === 0 || value.startsWith("/") || value.startsWith("./")) return false;
@@ -50,14 +51,21 @@ export const BaselineEvidenceFindingSchema = z
   })
   .strict();
 
+/**
+ * A component's evidence (D50). The verdict is a label, never a decision:
+ * `has-findings` when the analyzers observed something, `no-findings` otherwise.
+ * Evidence problems (the evidence is incomplete) are a separate label, and an
+ * integrity failure is never stored: the vet refuses to emit such evidence.
+ */
 export const BaselineComponentEvidenceSchema = z
   .object({
     id: BaselineComponentIdSchema,
     paths: z.array(BaselineComponentPathSchema).min(1),
     treeSha256: z.string().regex(SHA256),
-    verdict: z.enum(["pass", "blocked"]),
+    verdict: z.enum(["no-findings", "has-findings"]),
     analyzers: z.array(BaselineAnalyzerReceiptSchema).min(1),
     findings: z.array(BaselineEvidenceFindingSchema),
+    evidenceProblems: z.array(BaselineEvidenceFindingSchema),
   })
   .strict()
   .superRefine((component, ctx) => {
@@ -72,12 +80,41 @@ export const BaselineComponentEvidenceSchema = z
       }
       paths.add(path);
     }
-    if (component.verdict === "blocked" && component.findings.length === 0) {
+    if (component.verdict === "has-findings" && component.findings.length === 0) {
       ctx.addIssue({
         code: "custom",
         path: ["findings"],
-        message: "blocked component evidence must retain at least one blocking finding",
+        message: "has-findings component evidence must carry at least one finding",
       });
+    }
+    if (component.verdict === "no-findings" && component.findings.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["findings"],
+        message: "no-findings component evidence must carry no finding",
+      });
+    }
+    for (const [index, finding] of component.findings.entries()) {
+      const kind = trustCodeClassV1(finding.code);
+      if (kind === "evidence-problem" || kind === "integrity") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["findings", index, "code"],
+          message:
+            kind === "integrity"
+              ? `integrity failure ${finding.code} is never stored as a finding`
+              : `evidence problem ${finding.code} belongs in evidenceProblems, not findings`,
+        });
+      }
+    }
+    for (const [index, problem] of component.evidenceProblems.entries()) {
+      if (trustCodeClassV1(problem.code) !== "evidence-problem") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["evidenceProblems", index, "code"],
+          message: `${problem.code} is not an evidence problem`,
+        });
+      }
     }
   });
 

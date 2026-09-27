@@ -5,6 +5,12 @@ import { basename, isAbsolute, join, parse, relative, resolve } from "node:path"
 import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
 import { findOnPath } from "../live/runner.js";
 import {
+  SERENA_DEPENDENCY_LOCK_SHA256,
+  SERENA_RUNTIME_PYPROJECT_SHA256,
+  SERENA_RUNTIME_UV_LOCK_SHA256,
+} from "../mcp/serena-runtime-identity.js";
+import { runHeadroomMcpLauncher } from "../tools/headroom-launcher.js";
+import {
   CODE_REVIEW_GRAPH_ALLOWED_TOOLS,
   CodeReviewGraphMcpPolicyGuard,
   isolatedCodeReviewGraphEnvironment,
@@ -23,11 +29,6 @@ import {
 } from "./default-mcp-runtime-lock.js";
 import { HOOK_INPUT_LIMITS, type HookClient } from "./hook-core.js";
 import { SERENA_ALLOWED_TOOLS, SERENA_RUNTIME_PIN, SerenaMcpPolicyGuard } from "./mcp-profile.js";
-import {
-  SERENA_DEPENDENCY_LOCK_SHA256,
-  SERENA_RUNTIME_PYPROJECT_SHA256,
-  SERENA_RUNTIME_UV_LOCK_SHA256,
-} from "./native-registration.js";
 import { executeNativeEccHook, prepareOwnedStateDirectory } from "./native-runtime.js";
 import {
   assertHardenedSerenaRuntimeConfig,
@@ -563,9 +564,18 @@ export async function runNativeEccRuntime(
     }) as ChildProcessWithoutNullStreams;
     return proxyTransparentMcp(child, { stdin, stdout, stderr });
   }
+  if (mode === "headroom") {
+    return runHeadroomMcpLauncher(rest, {
+      stdin,
+      stdout,
+      stderr,
+      env,
+      ...(io.spawnProcess === undefined ? {} : { spawnProcess: io.spawnProcess }),
+    });
+  }
   if (mode !== "serena") {
     throw new Error(
-      "ECC runtime mode must be hook, code-review-graph, codebase-memory-mcp, or serena",
+      "ECC runtime mode must be hook, code-review-graph, codebase-memory-mcp, headroom, or serena",
     );
   }
   const options = optionMap(rest);

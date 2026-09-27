@@ -9,6 +9,7 @@ import {
   readOrgPolicy,
 } from "../org-policy/schema.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
+import { headroomMcpCandidates } from "../tools/headroom-projection.js";
 import { defaultNativeMcpServers } from "./default-native-runtime.js";
 import {
   type DefaultDeveloperMcpProjection,
@@ -26,6 +27,11 @@ export interface PolicyAwareMcpCatalog {
   policy?: OrgPolicy;
   servers?: Record<string, McpServer>;
   excludedDeveloperToolServers?: Record<string, McpServer>;
+  /**
+   * Entries AIH removes only when a host copy is byte-identical to the launcher it
+   * recorded (Headroom's activation receipt); an edited copy is the user's to keep.
+   */
+  recordedRetiredServers?: Record<string, McpServer>;
   developerTools?: DefaultDeveloperMcpProjection["selection"];
   githubHost?: string;
   error?: unknown;
@@ -158,6 +164,7 @@ export function policyAwareMcpCatalog(
       hostedGithub && !githubDisabled
         ? configuredGitHubHostForAuth(ctx, hostPolicyResult.policy, githubAuth)
         : undefined;
+    const headroom = headroomMcpCandidates(ctx);
     const rawServers = mcpServers(opts.scope, stack, {
       selfHost: opts.selfHost,
       githubAuth,
@@ -165,7 +172,10 @@ export function policyAwareMcpCatalog(
       githubIncumbent: hostedGithub
         ? githubIsIncumbent(hostPolicyResult.policy, githubHost)
         : undefined,
-      localRuntimeServers: defaultNativeMcpServers(ctx),
+      localRuntimeServers: {
+        ...defaultNativeMcpServers(ctx),
+        ...(headroom.active === undefined ? {} : { headroom: headroom.active }),
+      },
     });
     const optionalExcluded: Record<string, McpServer> = {};
     if (!githubSelected && rawServers.github !== undefined) {
@@ -179,11 +189,16 @@ export function policyAwareMcpCatalog(
     const enabledServers = includeDisabled
       ? rawServers
       : removeDisabledServers(rawServers, policyResult.policy);
-    const projected = projectDefaultDeveloperMcpSelection(enabledServers, policyResult.policy);
+    const projected = projectDefaultDeveloperMcpSelection(
+      enabledServers,
+      policyResult.policy,
+      headroom.retired,
+    );
     return {
       policy: policyResult.policy,
       servers: projected.servers,
       excludedDeveloperToolServers: { ...projected.excludedServers, ...optionalExcluded },
+      recordedRetiredServers: { headroom: headroom.retired },
       developerTools: projected.selection,
       githubHost,
     };

@@ -7,12 +7,7 @@ import { renderSerenaRuntimeConfig } from "./serena-runtime-config.js";
 const SHA256 = /^[a-f0-9]{64}$/;
 const CONTEXT7_ENDPOINT = "https://mcp.context7.com/mcp";
 
-export const ECC_MCP_SELECTED = [
-  "code-review-graph",
-  "codebase-memory-mcp",
-  "context7",
-  "serena",
-] as const;
+type EccMcpSelectedServer = "code-review-graph" | "codebase-memory-mcp" | "context7" | "serena";
 
 export const ECC_MCP_DISABLED = [
   "ecc-memory-mcp",
@@ -114,7 +109,7 @@ export interface EccMcpProjectionInput {
 
 export interface EccMcpProjection {
   activation: "prepared-not-registered";
-  servers: Record<(typeof ECC_MCP_SELECTED)[number], McpServer>;
+  servers: Record<EccMcpSelectedServer, McpServer>;
   disabled: typeof ECC_MCP_DISABLED;
   serenaConfig: string;
   provenance: {
@@ -199,32 +194,8 @@ function validateContext7Attestation(
   return { ...value };
 }
 
-export function renderSerenaConfig(): string {
-  return [
-    "language_backend: LSP",
-    "gui_log_window: false",
-    "web_dashboard: true",
-    "web_dashboard_open_on_launch: false",
-    "web_dashboard_interface: browser",
-    "web_dashboard_listen_address: 127.0.0.1",
-    "web_dashboard_trusted_hosts:",
-    "  - 127.0.0.1",
-    "  - localhost",
-    "fixed_tools:",
-    ...SERENA_ALLOWED_TOOLS.map((tool) => `  - ${tool}`),
-    "excluded_tools: []",
-    "included_optional_tools: []",
-    "base_modes:",
-    "  - interactive",
-    "  - editing",
-    "default_modes: []",
-    "projects: []",
-    "",
-  ].join("\n");
-}
-
 function localServers(): Pick<
-  Record<(typeof ECC_MCP_SELECTED)[number], McpServer>,
+  Record<EccMcpSelectedServer, McpServer>,
   "code-review-graph" | "codebase-memory-mcp"
 > {
   const catalog = coreLocalMcpServers();
@@ -449,28 +420,9 @@ export class SerenaMcpPolicyGuard {
   }
 }
 
-export function mergeEccMcpServers(
-  operator: Readonly<Record<string, McpServer>>,
-  managed: Readonly<Record<string, McpServer>>,
-): Record<string, McpServer> {
-  const conflicts = Object.keys(managed).filter((name) => Object.hasOwn(operator, name));
-  if (conflicts.length > 0) throw new Error(`MCP ownership conflict: ${conflicts.join(", ")}`);
-  return { ...operator, ...managed };
-}
-
 export type EccMcpHealth =
   | { mode: "ordinary"; status: "advisory"; failedServers: string[] }
   | { mode: "setup-acceptance"; status: "ready" | "blocked"; failedServers: string[] };
-
-export function evaluateEccMcpHealth(
-  mode: EccMcpHealth["mode"],
-  initialized: Readonly<Record<string, boolean>>,
-): EccMcpHealth {
-  const failedServers = ECC_MCP_SELECTED.filter((name) => initialized[name] !== true);
-  return mode === "ordinary"
-    ? { mode, status: "advisory", failedServers }
-    : { mode, status: failedServers.length === 0 ? "ready" : "blocked", failedServers };
-}
 
 /** Path is within root without treating prefix siblings as descendants. */
 export function isWithinEccMcpRoot(root: string, candidate: string): boolean {

@@ -22,7 +22,7 @@ function fixture(): { project: string; state: string; cache: string } {
   return { project, state, cache };
 }
 
-describe("Code Review Graph 2.3.8 runtime boundary", () => {
+describe("Code Review Graph 2.3.9 runtime boundary", () => {
   it("normalizes the Windows Path spelling without admitting unrelated environment variables", () => {
     const { state, cache } = fixture();
     const child = isolatedCodeReviewGraphEnvironment(

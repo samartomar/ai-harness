@@ -197,50 +197,59 @@ const installed = resolve(consumer, "node_modules", "@aihq", "core");
 const cli = resolve(installed, "dist", "cli.js");
 if (!existsSync(cli)) throw new Error("packed-core-cli-missing");
 const packedCore = await import(pathToFileURL(resolve(installed, "dist", "index.js")).href);
-const workbenchPath = resolve(admin, "aih-policy-workbench.html");
-const generate = requireSuccess(run(process.execPath, [cli, "policy", "generate", "--apply", "--out", workbenchPath], { cwd: admin }), "generate-packed-workbench");
-if (!existsSync(workbenchPath)) throw new Error("packed-workbench-missing");
 
 const policyDigest = sha256(Buffer.from("public-profile-custody-policy/v1\0", "utf8"));
 const controlDigest = sha256(Buffer.from("public-profile-custody-control/v1\0", "utf8"));
-const decisionFields = receiptRecords.map(({ receipt, receiptSha256, sequence }) => ({
-  "protected-actor": "custody-owner@example.invalid",
-  "protected-attestor": "catalog-attestation",
-  "protected-catalog-digest": receipt.qualificationBasis.catalogDigest,
-  "protected-catalog-head-digest": receipt.qualificationBasis.catalogHeadDigest,
-  "protected-catalog-member-digest": receipt.qualificationBasis.catalogMemberDigest,
-  "protected-catalog-signer": receipt.qualificationBasis.catalogSignerIdentity,
-  "protected-control-digest": controlDigest,
-  "protected-control-id": "catalog-custody",
-  "protected-decision-id": `decision-profile-default-${sequence}`,
-  "protected-effects": "use",
-  "protected-evidence-digest": receiptSha256,
-  "protected-evidence-id": `receipt-seq-${sequence}`,
-  "protected-kind": "profile",
-  "protected-policy-digest": policyDigest,
-  "protected-policy-id": "public-profile-custody",
-  "protected-policy-version": "2026.09",
-  "protected-qualification-kind": "aih-supported",
-  "protected-reason": "Custody only for the exact publicly attested profile receipt.",
-  "protected-source-release": receipt.subject.source.release,
-  "protected-source-revision": receipt.subject.source.revision,
-  "protected-source-type": "aih",
-  "protected-subject-id": receipt.subject.id,
-  "protected-targets": "claude",
+const fixtureDecisions = receiptRecords.map(({ receipt, receiptSha256, sequence }) => ({
+  format: "aih-governance-decision",
+  version: 2,
+  id: `decision-profile-default-${sequence}`,
+  disposition: "approved",
+  qualificationBasis: receipt.qualificationBasis,
+  subject: receipt.subject,
+  targets: ["claude"],
+  allowedEffects: ["use"],
+  policy: { id: "public-profile-custody", version: "2026.09", digest: policyDigest },
+  control: { id: "catalog-custody", digest: controlDigest },
+  evidence: { id: `receipt-seq-${sequence}`, digest: receiptSha256, attestor: "catalog-attestation" },
+  issuer: "catalog-custody",
+  actor: "custody-owner@example.invalid",
+  reason: "Custody only for the exact publicly attested profile receipt.",
+  issuedAt,
+  notBefore: issuedAt,
+  expiresAt,
+  acceptedFindings: [],
+  acceptedGaps: [],
+  conditions: [],
 }));
-const helper = await import(pathToFileURL(resolve(root, "tools", "lib", "author-protected-policy-via-workbench.mjs")).href);
+const { buildProtectedPolicyFixture } = await import(pathToFileURL(resolve(root, "tools", "lib", "build-protected-policy-fixture.mjs")).href);
 const policyPath = resolve(admin, "aih-policy-bundle.json");
-const policyBundle = await helper.authorProtectedPolicyViaPackedWorkbench({
-  authorityFields: {
-    "protected-bundle-version": "2026.09.09-public-custody",
-    "protected-expires-at": expiresAt,
-    "protected-issued-at": issuedAt,
-    "protected-issuer": "catalog-custody",
-    "protected-issuer-repository": "example.invalid/public-profile-custody",
+const policyBundle = buildProtectedPolicyFixture({
+  core: packedCore,
+  basePolicy: {
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "2026.09",
+      catalog: { reviewed: [], custom: [] },
+      supportedClis: ["claude"],
+    },
   },
-  decisions: decisionFields,
-  htmlPath: workbenchPath,
   outputPath: policyPath,
+  bundleVersion: "2026.09.09-public-custody",
+  issuer: "catalog-custody",
+  authorityReceipt: {
+    format: "aih-policy-authority-receipt",
+    version: 3,
+    issuerRepository: "example.invalid/public-profile-custody",
+    issuedAt,
+    expiresAt,
+    trustedIssuers: [{ id: "catalog-custody", githubRepository: "example.invalid/public-profile-custody" }],
+    targets: ["claude"],
+    decisions: fixtureDecisions,
+    decisionRevocations: [],
+  },
 });
 if (!packedCore.parsePolicyBundle(JSON.parse(readFileSync(policyPath, "utf8"))).ok)
   throw new Error("packed-policy-bundle-parse");
@@ -263,7 +272,7 @@ const results = [];
 for (const record of receiptRecords) {
   writeReceipt(record);
   const decision = decisionById.get(`decision-profile-default-${record.sequence}`);
-  if (!decision) throw new Error(`missing-generated-decision:${record.sequence}`);
+  if (!decision) throw new Error(`missing-fixture-decision:${record.sequence}`);
   const decisionDigest = packedCore.governanceDecisionDigestV2(decision);
   const args = ["policy", "supported", "accept", "--root", target, "--decision", decision.id, "--decision-digest", decisionDigest, "--target", "claude"];
   const targetCustodyRoot = resolve(target, ".aih", "supported-qualification", "v2");

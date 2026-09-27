@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { z } from "zod";
 import { canonicalStrictJsonSha256V1 } from "../../../contract/strict-json-v1.js";
 import { findOnPath } from "../../../live/runner.js";
 import { parseAihSupportedQualificationReceiptV2Bytes } from "../../supported-qualification-receipt-v2.js";
@@ -20,13 +19,10 @@ import {
   inspectCatalogQualificationArtifactV1,
 } from "./catalog-qualification-v1.js";
 
-export const SourceDataQualificationProofV1Schema = z
-  .object({
-    packageInput: z.unknown(),
-    receiptAttestation: z.string().min(1).max(512_000),
-    receiptSetAttestation: z.string().min(1).max(512_000),
-  })
-  .strict();
+import { SourceDataQualificationProofV1Schema } from "./source-data-qualification-contract.js";
+
+export { SourceDataQualificationProofV1Schema } from "./source-data-qualification-contract.js";
+
 const verified = new Set<string>();
 function fail(): never {
   throw new TypeError(

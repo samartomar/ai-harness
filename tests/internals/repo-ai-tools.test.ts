@@ -412,9 +412,9 @@ describe("ai-harness repo AI tooling", () => {
           securityOverrides: ["python-multipart==0.0.32", "starlette==1.3.1"],
         },
         tokenOptimizer: {
-          tag: "v5.13.14",
-          commit: "37a9546b9fecba2c4e9a02ef4e90855d449bf08f",
-          tree: "b86bba7e8f3caea3a32d41ad134d81c3fea3e9e6",
+          tag: "v5.13.21",
+          commit: "e3c0fa6223b1a936bfc32485651f2f03add5c52b",
+          tree: "e954dfc0f4d521149fc47abd01d4b26a1e38175b",
           license: "PolyForm-Noncommercial-1.0.0",
         },
         tokenSavior: { package: "token-savior-recall[mcp]==4.21.0", license: "MIT" },
@@ -423,7 +423,7 @@ describe("ai-harness repo AI tooling", () => {
           license: "MIT",
           source: "https://github.com/tirth8205/code-review-graph",
         },
-        codebaseMemory: { package: "codebase-memory-mcp==0.10.5", license: "MIT" },
+        codebaseMemory: { package: "codebase-memory-mcp==0.11.0", license: "MIT" },
       },
       runtime: {
         serena: {
@@ -567,7 +567,7 @@ describe("ai-harness repo AI tooling", () => {
 
       writeFileSync(
         scriptA,
-        source.replace("codebase-memory-mcp==0.10.5", "codebase-memory-mcp==0.10.6"),
+        source.replace("codebase-memory-mcp==0.11.0", "codebase-memory-mcp==0.11.1"),
       );
       expect(memoryRuntime(scriptA)).not.toEqual(baseline);
       expect(memoryRuntime(scriptB)).not.toEqual(baseline);
@@ -683,7 +683,7 @@ describe("ai-harness repo AI tooling", () => {
     expect(childArguments).toEqual([
       ["config", "set", "auto_watch", "false"],
       ["config", "set", "auto_index", "false"],
-      ["cli", "list_projects"],
+      ["cli", "list_projects", "--format", "json", "--detail", "stats"],
     ]);
     expect(childEnvironments).toHaveLength(childArguments.length);
     for (const environment of childEnvironments) {

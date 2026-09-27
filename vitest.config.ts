@@ -1,4 +1,5 @@
 import { availableParallelism } from "node:os";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export function testTimeoutForPlatform(platform: NodeJS.Platform): number {
@@ -25,6 +26,15 @@ export function testRuntimeForPlatform(platform: NodeJS.Platform, parallelism: n
 const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 
 export default defineConfig({
+  resolve: {
+    // Framework plugin packages (packages/*) import Core only as
+    // `@aihq/core/framework-host`; tests resolve it to this tree's source.
+    alias: {
+      "@aihq/core/framework-host": fileURLToPath(
+        new URL("./src/framework-host/index.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
     globals: false,
     environment: "node",
@@ -38,7 +48,7 @@ export default defineConfig({
     // derived default while capping high-core dev machines, whose uncapped
     // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
     ...testRuntime,
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reportsDirectory: "coverage",
@@ -47,7 +57,7 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       // Executable-only entry wrappers are exercised by published-bin checks; unit tests target
       // their imported builders/runtimes without executing process-global argv handling.
-      exclude: ["src/**/command.ts", "src/cli.ts", "src/ecc-runtime.ts", "**/*.d.ts", "src/org-policy/workbench/ui/**"],
+      exclude: ["src/**/command.ts", "src/cli.ts", "src/ecc-runtime.ts", "**/*.d.ts"],
       // Enforced floor: set just below the current achieved levels so coverage can
       // only ratchet UP — CI/release fail on regression. Branches are at ~79%; the
       // remaining gap to the 80% bar is concentrated in doctor.ts (verification
@@ -60,7 +70,8 @@ export default defineConfig({
       // they lower the global statements aggregate to ~91.0% (from the pre-W5 level).
       // The global `statements` floor is set to 90.5 to track that genuine level, and
       // per-file floors below lock these files in so they can only ratchet up as the
-      // dedicated closure/typography path tests land.
+      // dedicated closure/typography path tests land. The typography reclassifier now
+      // runs in @aihq/scan, so only the closure classifier keeps a floor here.
       thresholds: {
         statements: 90.5,
         branches: 78,
@@ -95,12 +106,6 @@ export default defineConfig({
           branches: 49,
           functions: 94,
           lines: 69,
-        },
-        "src/binding/visible-typography.ts": {
-          statements: 84,
-          branches: 78,
-          functions: 92,
-          lines: 84,
         },
         // W7 §C scan cache tiers — branch-dense derived-cache + deep-scanner
         // machinery (canonical keys, read-time tuple guard, SARIF mapping). Locked

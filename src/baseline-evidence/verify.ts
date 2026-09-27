@@ -26,11 +26,11 @@ export interface BaselineAuthorization {
   tier: "vendor" | "org";
   issuer: string;
   evidenceSha256: string;
-  /** Effective disposition. Absent/"pass" = signed vet pass. "accepted-with-conditions"
-   * = the raw vet verdict is BLOCKED (preserved untouched in the lock) and an exact
-   * signed acceptance decision admitted this component (W4 ruling (e)). */
-  effective?: "pass" | "accepted-with-conditions";
-  /** Present iff `effective` is "accepted-with-conditions": the signed decision. */
+  /**
+   * Present when an exact signed organization decision records acceptance of the
+   * findings this evidence carries: the organization's own record, shown next to
+   * the findings. It admits nothing; the evidence alone authorizes the bytes.
+   */
   acceptance?: {
     decisionId: string;
     recordSha256: string;
@@ -38,6 +38,25 @@ export interface BaselineAuthorization {
   };
 }
 
+/** A finding or evidence-problem code and how many occurrences the evidence reports. */
+export interface BaselineLabelCount {
+  code: string;
+  count: number;
+}
+
+/**
+ * What the signed evidence says about one authorized component: information for
+ * the consumer, never a gate. Findings and evidence problems stay apart.
+ */
+export interface BaselineComponentLabels {
+  componentId: string;
+  tier: "vendor" | "org";
+  verdict: BaselineComponentEvidence["verdict"];
+  findings: BaselineLabelCount[];
+  evidenceProblems: BaselineLabelCount[];
+}
+
+/** A component no signed evidence covers or matches: the bytes are not the evidenced bytes. */
 export interface BaselineHeldComponent {
   componentId: string;
   routeCode: CheckCode;
@@ -58,15 +77,17 @@ export interface VerifyBaselineComponentsInput {
    */
   expectedSourceTreeSha256?: string;
   orgEvidence?: OrgBaselineEvidence;
-  /** Signed accepted-with-conditions decisions; defaults to the shipped artifact. */
+  /** Signed organization decisions about findings; defaults to the shipped artifact. */
   acceptanceDecisions?: readonly AcceptanceDecision[];
-  /** When set, only decisions matching this exact profile/host/adapter tuple apply. */
+  /** When set, decisions matching this exact profile/host/adapter tuple are attached. */
   acceptanceTuple?: AcceptanceTuple;
 }
 
 export interface BaselineVerificationResult {
   checks: Check[];
   authorizations: BaselineAuthorization[];
+  /** One entry per authorization, in the same order. */
+  labels: BaselineComponentLabels[];
   held: BaselineHeldComponent[];
 }
 
@@ -113,14 +134,40 @@ function exactComponent(
     : undefined;
 }
 
-function blockedCheck(name: string, evidence: BaselineComponentEvidence): Check {
-  const codes = [...new Set(evidence.findings.map((finding) => finding.code))].join(", ");
+function labelCounts(entries: BaselineComponentEvidence["findings"]): BaselineLabelCount[] {
+  const counts = new Map<string, number>();
+  for (const entry of entries)
+    counts.set(entry.code, (counts.get(entry.code) ?? 0) + (entry.count ?? 1));
+  return [...counts].map(([code, count]) => ({ code, count }));
+}
+
+export function baselineComponentLabels(
+  evidence: BaselineComponentEvidence,
+  tier: "vendor" | "org",
+): BaselineComponentLabels {
   return {
-    name,
-    verdict: "fail",
-    code: "baseline.evidence-blocked",
-    detail: `${evidence.id} is blocked by signed evidence (${codes || "trust finding"}); fix and vet a new pin — org evidence cannot waive this verdict`,
+    componentId: evidence.id,
+    tier,
+    verdict: evidence.verdict,
+    findings: labelCounts(evidence.findings),
+    evidenceProblems: labelCounts(evidence.evidenceProblems),
   };
+}
+
+function labelDetail(labels: BaselineComponentLabels): string {
+  const parts: string[] = [];
+  const total = labels.findings.reduce((sum, entry) => sum + entry.count, 0);
+  if (total > 0) {
+    parts.push(
+      `carries ${total} finding${total === 1 ? "" : "s"}: ${labels.findings.map((entry) => entry.code).join(", ")}`,
+    );
+  }
+  if (labels.evidenceProblems.length > 0) {
+    parts.push(
+      `evidence problems: ${labels.evidenceProblems.map((entry) => entry.code).join(", ")}`,
+    );
+  }
+  return parts.map((part) => `; ${part}`).join("");
 }
 
 function authorization(
@@ -139,6 +186,45 @@ function authorization(
     evidenceSha256:
       tier === "vendor" ? input.vendorLockSha256 : (input.orgEvidence?.evidenceSha256 ?? ""),
   };
+}
+
+/**
+ * The organization's signed decision about exactly these findings on exactly these
+ * bytes, when one exists. Every bound field must match so a decision about other
+ * bytes is never shown as being about these; the decision itself admits nothing.
+ */
+function organizationDecision(
+  input: VerifyBaselineComponentsInput,
+  evidence: BaselineComponentEvidence,
+  actual: string,
+  sourceTreeDigest: string,
+): BaselineAuthorization["acceptance"] {
+  if (input.acceptanceTuple === undefined || evidence.findings.length === 0) return undefined;
+  const fingerprintCoverage = evidence.findings.every(
+    (finding) => finding.fingerprints !== undefined || finding.fingerprint !== undefined,
+  );
+  if (!fingerprintCoverage) return undefined;
+  return matchCorrectedComponentAcceptance(input.acceptanceDecisions ?? readAcceptanceDecisions(), {
+    framework: input.catalog.id,
+    repository: `${input.catalog.owner}/${input.catalog.repo}`,
+    commitSha: input.catalog.pinnedSha,
+    componentId: evidence.id,
+    componentTreeSha256: actual,
+    findingCodes: [...new Set(evidence.findings.map((finding) => finding.code))],
+    policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+    trustPolicyVersion: TRUST_POLICY_VERSION,
+    profile: input.acceptanceTuple.profile,
+    host: input.acceptanceTuple.host,
+    adapter: input.acceptanceTuple.adapter,
+    sourceTreeDigest,
+    occurrenceFingerprints: evidence.findings.flatMap(
+      (finding) =>
+        finding.fingerprints ?? (finding.fingerprint === undefined ? [] : [finding.fingerprint]),
+    ),
+    analyzerVersions: evidence.analyzers
+      .map((receipt) => `${receipt.name}@${receipt.version}`)
+      .sort((left, right) => left.localeCompare(right)),
+  });
 }
 
 export function verifyBaselineComponents(
@@ -163,6 +249,7 @@ export function verifyBaselineComponents(
   const checks: Check[] = [];
   const authorizations: BaselineAuthorization[] = [];
   const held: BaselineHeldComponent[] = [];
+  const labelled: BaselineComponentLabels[] = [];
 
   if (
     input.expectedSourceTreeSha256 !== undefined &&
@@ -185,7 +272,7 @@ export function verifyBaselineComponents(
         details: [detail],
       });
     }
-    return { checks, authorizations, held };
+    return { checks, authorizations, labels: labelled, held };
   }
 
   const hold = (
@@ -210,100 +297,42 @@ export function verifyBaselineComponents(
     ).treeSha256;
     const vendorEntry = vendorSource?.components.find((candidate) => candidate.id === component.id);
     const exactVendor = exactComponent(vendorSource, component.id, component.paths, actual);
-    if (exactVendor?.verdict === "blocked") {
-      // Accepted-with-conditions join (W4 ruling (e)): the raw verdict stays
-      // blocked; an EXACT signed acceptance (same repo/pin/component/digest,
-      // every finding code accepted, none unwaivable, unexpired) may admit the
-      // component. The check names BOTH facts — the raw block is never
-      // reported as a vet pass.
-      const rawCodes = [...new Set(exactVendor.findings.map((finding) => finding.code))];
-      const fingerprints = exactVendor.findings.flatMap(
-        (finding) =>
-          finding.fingerprints ?? (finding.fingerprint === undefined ? [] : [finding.fingerprint]),
-      );
-      const fingerprintCoverage = exactVendor.findings.every(
-        (finding) => finding.fingerprints !== undefined || finding.fingerprint !== undefined,
-      );
-      const acceptance =
-        input.acceptanceTuple === undefined || !fingerprintCoverage
-          ? undefined
-          : matchCorrectedComponentAcceptance(
-              input.acceptanceDecisions ?? readAcceptanceDecisions(),
-              {
-                framework: input.catalog.id,
-                repository: sourceName,
-                commitSha: input.catalog.pinnedSha,
-                componentId: component.id,
-                componentTreeSha256: actual,
-                findingCodes: rawCodes,
-                policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
-                trustPolicyVersion: TRUST_POLICY_VERSION,
-                profile: input.acceptanceTuple.profile,
-                host: input.acceptanceTuple.host,
-                adapter: input.acceptanceTuple.adapter,
-                sourceTreeDigest,
-                occurrenceFingerprints: fingerprints,
-                analyzerVersions: exactVendor.analyzers
-                  .map((receipt) => `${receipt.name}@${receipt.version}`)
-                  .sort((left, right) => left.localeCompare(right)),
-              },
-            );
-      if (acceptance !== undefined) {
-        checks.push({
-          name,
-          verdict: "pass",
-          detail:
-            `${component.id} raw vet verdict is BLOCKED (${rawCodes.join(", ") || "trust finding"}); ` +
-            `admitted by signed acceptance ${acceptance.decisionId} (accepted-with-conditions; ` +
-            `raw findings preserved in the vendor lock)`,
-        });
-        authorizations.push({
-          ...authorization(input, component.id, actual, "vendor"),
-          effective: "accepted-with-conditions",
-          acceptance,
-        });
-        continue;
-      }
-      const check = blockedCheck(name, exactVendor);
-      checks.push(check);
-      hold(
-        component.id,
-        check,
-        "baseline.evidence-blocked",
-        exactVendor.findings.map((finding) => finding.code),
-      );
-      continue;
-    }
-    if (exactVendor?.verdict === "pass") {
+    // Exact signed evidence authorizes these bytes whatever it found. Findings and
+    // evidence problems travel as labels for the consumer; nothing is held for them.
+    if (exactVendor !== undefined) {
+      const labels = baselineComponentLabels(exactVendor, "vendor");
+      const acceptance = organizationDecision(input, exactVendor, actual, sourceTreeDigest);
       checks.push({
         name,
         verdict: "pass",
-        detail: `${component.id} matches signed vendor evidence; user-side analyzer runtime not required`,
+        detail:
+          `${component.id} matches signed vendor evidence; user-side analyzer runtime not required` +
+          labelDetail(labels) +
+          (acceptance === undefined
+            ? ""
+            : `; organization decision ${acceptance.decisionId} records acceptance of ${acceptance.acceptedFindingCodes.join(", ")}`),
       });
-      authorizations.push(authorization(input, component.id, actual, "vendor"));
+      authorizations.push({
+        ...authorization(input, component.id, actual, "vendor"),
+        ...(acceptance === undefined ? {} : { acceptance }),
+      });
+      labelled.push(labels);
       continue;
     }
 
     const orgEntry = orgSource?.components.find((candidate) => candidate.id === component.id);
     const exactOrg = exactComponent(orgSource, component.id, component.paths, actual);
-    if (exactOrg?.verdict === "blocked") {
-      const check = blockedCheck(name, exactOrg);
-      checks.push(check);
-      hold(
-        component.id,
-        check,
-        "baseline.evidence-blocked",
-        exactOrg.findings.map((finding) => finding.code),
-      );
-      continue;
-    }
-    if (exactOrg?.verdict === "pass") {
+    if (exactOrg !== undefined) {
+      const labels = baselineComponentLabels(exactOrg, "org");
       checks.push({
         name,
         verdict: "pass",
-        detail: `${component.id} matches signed org evidence from ${input.orgEvidence?.issuer}; user-side analyzer runtime not required`,
+        detail:
+          `${component.id} matches signed org evidence from ${input.orgEvidence?.issuer}; user-side analyzer runtime not required` +
+          labelDetail(labels),
       });
       authorizations.push(authorization(input, component.id, actual, "org"));
+      labelled.push(labels);
       continue;
     }
 
@@ -321,5 +350,5 @@ export function verifyBaselineComponents(
     hold(component.id, check, code);
   }
 
-  return { checks, authorizations, held };
+  return { checks, authorizations, labels: labelled, held };
 }

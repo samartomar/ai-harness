@@ -8,20 +8,20 @@ import {
   acceptanceRecordSha256,
   acceptanceResolutionMismatches,
   CORRECTED_ACCEPTANCE_POLICY_VERSION,
-  matchComponentAcceptance,
   matchCorrectedComponentAcceptance,
   readAcceptanceDecisions,
 } from "../../src/baseline-evidence/acceptance.js";
 import artifactJson from "../../src/baseline-evidence/acceptance-decisions.json";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
-import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import { hashComponentTree, hashSourceTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { verifyBaselineComponents } from "../../src/baseline-evidence/verify.js";
 import { TRUST_POLICY_VERSION } from "../../src/trust/evidence.js";
 
-// W4 maintainer ruling (e): the accepted-with-conditions policy join. Raw vet
-// verdicts are never rewritten; a blocked component is admitted only through
-// an exact signed acceptance; everything else stays held.
+// D50: an organization's accepted-with-conditions decision is a record shown next to
+// the findings it names. Raw vet verdicts are never rewritten, nothing is held for
+// findings, and a decision is attached only when every bound field matches exactly,
+// so a decision about other bytes is never shown as being about these.
 
 let root: string;
 
@@ -54,7 +54,7 @@ function catalog() {
 
 function blockedLock(hash = subtreeHash()) {
   return parseBaselineEvidenceLock({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sources: [
       {
         id: "ecc",
@@ -66,7 +66,7 @@ function blockedLock(hash = subtreeHash()) {
             id: "skill:risky",
             paths: ["skills/risky"],
             treeSha256: hash,
-            verdict: "blocked",
+            verdict: "has-findings",
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings: CODES.map((code) => ({
               code,
@@ -74,6 +74,7 @@ function blockedLock(hash = subtreeHash()) {
               fingerprint: `finding:${code}`,
               fingerprints: [`finding:${code}`],
             })),
+            evidenceProblems: [],
           },
         ],
       },
@@ -129,10 +130,38 @@ function verify(decisions: AcceptanceDecision[], lock = blockedLock()) {
   });
 }
 
-describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
+/** A corrected (policy v2) decision bound to the exact occurrences in `blockedLock`. */
+function correctedDecision(
+  over: Partial<AcceptanceDecision> = {},
+  codes: readonly string[] = CODES,
+): AcceptanceDecision {
+  return signedDecision({
+    policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+    treeDigest: hashSourceTree(root).treeSha256,
+    components: [
+      {
+        evidenceComponentId: "skill:risky",
+        treeSha256: subtreeHash(),
+        acceptedFindingCodes: [...codes],
+        acceptedOccurrenceFingerprints: codes.map((code) => `finding:${code}`),
+        analyzerVersions: ["aih-native@2.7.0"],
+      },
+    ],
+    ...over,
+  });
+}
+
+function expectNotAttached(result: ReturnType<typeof verify>): void {
+  expect(result.authorizations).toHaveLength(1);
+  expect(result.authorizations[0]?.acceptance).toBeUndefined();
+  expect(result.held).toHaveLength(0);
+  expect(result.checks[0]?.detail).not.toContain("organization decision");
+}
+
+describe("organization decisions attached to baseline evidence (D50)", () => {
   it("keeps a signed vet pass installable with no acceptance involved", () => {
     const lock = parseBaselineEvidenceLock({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: [
         {
           id: "ecc",
@@ -144,9 +173,10 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
               id: "skill:risky",
               paths: ["skills/risky"],
               treeSha256: subtreeHash(),
-              verdict: "pass",
+              verdict: "no-findings",
               analyzers: [{ name: "aih-native", version: "2.7.0" }],
               findings: [],
+              evidenceProblems: [],
             },
           ],
         },
@@ -154,137 +184,118 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
     });
     const result = verify([], lock);
     expect(result.authorizations).toHaveLength(1);
-    expect(result.authorizations[0]?.effective).toBeUndefined();
+    expect(result.authorizations[0]?.acceptance).toBeUndefined();
     expect(result.held).toHaveLength(0);
   });
 
-  it("holds a blocked component when no acceptance is shipped", () => {
+  it("authorizes a component with findings and labels them when no decision is shipped", () => {
     const result = verify([]);
-    expect(result.authorizations).toHaveLength(0);
-    expect(result.held.map((entry) => entry.componentId)).toEqual(["skill:risky"]);
+    expect(result.authorizations).toHaveLength(1);
+    expect(result.authorizations[0]?.acceptance).toBeUndefined();
+    expect(result.held).toHaveLength(0);
+    expect(result.labels[0]).toMatchObject({
+      verdict: "has-findings",
+      findings: CODES.map((code) => ({ code, count: 1 })),
+    });
   });
 
-  it("does not let a legacy code-only acceptance authorize corrected-policy evidence", () => {
-    const result = verify([signedDecision()]);
-    expect(result.authorizations).toHaveLength(0);
-    expect(result.held.map((entry) => entry.componentId)).toEqual(["skill:risky"]);
+  it("attaches an exact corrected decision as the organization's record next to the findings", () => {
+    const result = verify([correctedDecision()]);
+    expect(result.authorizations).toHaveLength(1);
+    expect(result.authorizations[0]?.acceptance).toMatchObject({
+      decisionId: "test-decision-1",
+      acceptedFindingCodes: CODES,
+    });
     const check = result.checks.find((entry) => entry.name.includes("skill:risky"));
-    expect(check?.verdict).toBe("fail");
+    expect(check).toMatchObject({ verdict: "pass" });
+    expect(check?.detail).toContain(
+      "carries 2 findings: trust.external-egress, trust.permission-risk",
+    );
+    expect(check?.detail).toContain("organization decision test-decision-1 records acceptance");
   });
 
-  it("holds on a commit/pin mismatch", () => {
-    const result = verify([signedDecision({ commitSha: "f".repeat(40) })]);
-    expect(result.authorizations).toHaveLength(0);
+  it("does not attach a legacy code-only decision to corrected-policy evidence", () => {
+    const result = verify([signedDecision()]);
+    expect(result.authorizations).toHaveLength(1);
+    expect(result.authorizations[0]?.acceptance).toBeUndefined();
+    expect(result.held).toHaveLength(0);
+    const check = result.checks.find((entry) => entry.name.includes("skill:risky"));
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).not.toContain("organization decision");
   });
 
-  it("holds on a repository mismatch", () => {
-    const result = verify([signedDecision({ repository: "someone-else/ECC" })]);
-    expect(result.authorizations).toHaveLength(0);
+  it("does not attach a decision on a commit/pin mismatch", () => {
+    expectNotAttached(verify([correctedDecision({ commitSha: "f".repeat(40) })]));
   });
 
-  it("holds on a component tree-digest mismatch (content-pinned)", () => {
-    const decision = signedDecision();
+  it("does not attach a decision on a repository mismatch", () => {
+    expectNotAttached(verify([correctedDecision({ repository: "someone-else/ECC" })]));
+  });
+
+  it("does not attach a decision on a component tree-digest mismatch (content-pinned)", () => {
+    const decision = correctedDecision();
     const [component] = decision.components;
     if (component === undefined) throw new Error("expected an acceptance component");
     const tampered = {
       ...decision,
       components: [{ ...component, treeSha256: "d".repeat(64) }],
     };
-    const result = verify([{ ...tampered, recordSha256: acceptanceRecordSha256(tampered) }]);
-    expect(result.authorizations).toHaveLength(0);
+    expectNotAttached(verify([{ ...tampered, recordSha256: acceptanceRecordSha256(tampered) }]));
   });
 
-  it("holds when the component is missing from the acceptance", () => {
-    const decision = signedDecision();
+  it("does not attach a decision that does not name the component", () => {
+    const decision = correctedDecision();
     const [component] = decision.components;
     if (component === undefined) throw new Error("expected an acceptance component");
     const other = {
       ...decision,
       components: [{ ...component, evidenceComponentId: "skill:other" }],
     };
-    const result = verify([{ ...other, recordSha256: acceptanceRecordSha256(other) }]);
-    expect(result.authorizations).toHaveLength(0);
+    expectNotAttached(verify([{ ...other, recordSha256: acceptanceRecordSha256(other) }]));
   });
 
-  it("holds when the evidence carries a finding code the acceptance does not list", () => {
-    const decision = signedDecision();
+  it("does not attach a decision that does not list every finding code the evidence carries", () => {
+    const decision = correctedDecision();
     const [component] = decision.components;
     if (component === undefined) throw new Error("expected an acceptance component");
     const narrower = {
       ...decision,
       components: [{ ...component, acceptedFindingCodes: ["trust.hidden-unicode"] }],
     };
-    const result = verify([{ ...narrower, recordSha256: acceptanceRecordSha256(narrower) }]);
-    expect(result.authorizations).toHaveLength(0);
+    expectNotAttached(verify([{ ...narrower, recordSha256: acceptanceRecordSha256(narrower) }]));
   });
 
   it("ignores an unsigned decision (record digest mismatch)", () => {
-    const unsigned = { ...signedDecision(), recordSha256: "9".repeat(64) };
-    const result = verify([unsigned]);
-    expect(result.authorizations).toHaveLength(0);
+    expectNotAttached(verify([{ ...correctedDecision(), recordSha256: "9".repeat(64) }]));
   });
 
-  it("holds when the decision is expired", () => {
-    const decision = signedDecision({ expiresAt: "2020-01-01T00:00:00.000Z" });
-    const result = verify([decision]);
-    expect(result.authorizations).toHaveLength(0);
+  it("does not attach an expired decision", () => {
+    expectNotAttached(verify([correctedDecision({ expiresAt: "2020-01-01T00:00:00.000Z" })]));
   });
 
   it.each([
     "trust.auto-exec-hook",
+    "trust.malicious-code",
+    "trust.prompt-injection",
+    "trust.hidden-unicode",
     "trust.unpinned-dependency",
-    "trust.source-drift",
-    "trust.unsigned-source",
-    "trust.detector-unavailable",
-    "trust.sandbox-smoke-unavailable",
-    "trust.sandbox-smoke-failed",
-  ])("never admits unwaivable finding code %s, even when listed", (unwaivableCode) => {
-    const match = matchComponentAcceptance(
-      [
-        (() => {
-          const decision = signedDecision();
-          const [component] = decision.components;
-          if (component === undefined) throw new Error("expected an acceptance component");
-          const widened = {
-            ...decision,
-            components: [
-              {
-                ...component,
-                acceptedFindingCodes: [...CODES, unwaivableCode],
-              },
-            ],
-          };
-          return { ...widened, recordSha256: acceptanceRecordSha256(widened) };
-        })(),
-      ],
-      {
-        framework: "ecc",
-        repository: "affaan-m/ECC",
-        commitSha: PIN,
-        componentId: "skill:risky",
-        componentTreeSha256: subtreeHash(),
-        findingCodes: [...CODES, unwaivableCode],
-      },
-    );
-    expect(match).toBeUndefined();
+  ])("attaches a decision that records acceptance of finding code %s", (code) => {
+    const lock = blockedLock();
+    const component = lock.sources[0]?.components[0];
+    if (component === undefined) throw new Error("expected a component");
+    component.findings.push({
+      code,
+      detail: `${code} present`,
+      fingerprint: `finding:${code}`,
+      fingerprints: [`finding:${code}`],
+    });
+    const decision = correctedDecision({}, [...CODES, code]);
+    const result = verify([decision], lock);
+    expect(result.authorizations[0]?.acceptance?.acceptedFindingCodes).toEqual([...CODES, code]);
   });
 
-  it("never lets a decision for another profile authorize this tuple", () => {
-    const fullProfile = signedDecision({ profile: "ecc-full-v1" });
-    const match = matchComponentAcceptance(
-      [fullProfile],
-      {
-        framework: "ecc",
-        repository: "affaan-m/ECC",
-        commitSha: PIN,
-        componentId: "skill:risky",
-        componentTreeSha256: subtreeHash(),
-        findingCodes: CODES,
-      },
-      new Date(),
-      { framework: "ecc", profile: "ecc-lean-v1", host: "claude", adapter: "ecc-lean" },
-    );
-    expect(match).toBeUndefined();
+  it("never attaches a decision for another profile to this tuple", () => {
+    expectNotAttached(verify([correctedDecision({ profile: "ecc-full-v1" })]));
   });
 });
 
@@ -389,42 +400,6 @@ describe("corrected occurrence-bound acceptance", () => {
         policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
         trustPolicyVersion: TRUST_POLICY_VERSION,
       }),
-    ).toBeUndefined();
-  });
-
-  it("does not admit a corrected decision through the legacy code-only join", () => {
-    const decision = signedDecision({
-      policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
-      components: [
-        {
-          evidenceComponentId: "skill:risky",
-          treeSha256: subtreeHash(),
-          acceptedFindingCodes: [...CODES],
-          acceptedOccurrenceFingerprints: ["trust-raw:a"],
-          analyzerVersions: ["aih-native@3.1.0"],
-        },
-      ],
-    });
-
-    expect(
-      matchComponentAcceptance(
-        [decision],
-        {
-          framework: "ecc",
-          repository: "affaan-m/ECC",
-          commitSha: PIN,
-          componentId: "skill:risky",
-          componentTreeSha256: subtreeHash(),
-          findingCodes: CODES,
-        },
-        new Date(),
-        {
-          framework: "ecc",
-          profile: "ecc-lean-v1",
-          host: "claude",
-          adapter: "ecc-lean",
-        },
-      ),
     ).toBeUndefined();
   });
 });

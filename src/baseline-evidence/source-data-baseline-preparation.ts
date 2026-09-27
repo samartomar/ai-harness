@@ -1,12 +1,15 @@
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import {
   assertStrictJsonValueV1,
   canonicalStrictJsonSha256V1,
+  cloneJsonValueStructureV1,
+  STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
 import { POLICY_AUTHORING_ASSET_KINDS } from "../org-policy/catalog-provider-types.js";
-import { compilePinnedBaselineV1 } from "../org-policy/workbench/compilers/pinned-baseline.js";
+import { packagedPreparedWorkbenchCatalogV1 } from "../org-policy/workbench/prepared-catalog.js";
 import { defineBaselineCatalog } from "./catalog.js";
 import { hashComponentTree, hashSourceTree } from "./hash.js";
 import { componentIdentityPaths } from "./license.js";
@@ -73,7 +76,13 @@ function closurePaths(paths: readonly string[]) {
 }
 
 /** Bind existing baseline compiler declarations to actual bytes, never to claimed verdicts. */
-export function prepareSourceDataBaselineCoverageV1(sourceRoot: string, input: unknown) {
+export function prepareSourceDataBaselineCoverageV1(sourceRoot: string, supplied: unknown) {
+  // A copy read through descriptors, so schema parsing never invokes a caller's getter.
+  const input = cloneJsonValueStructureV1(
+    supplied,
+    "Baseline source data",
+    STRICT_JSON_MAX_DEPTH_V1,
+  );
   assertStrictJsonValueV1(input, "Baseline source data");
   const parsed = SourceDataBaselineInputV1Schema.parse(input);
   const framework = parsed.framework;
@@ -123,18 +132,66 @@ export function prepareSourceDataBaselineCoverageV1(sourceRoot: string, input: u
     );
   }
   const sourceTreeSha256 = hashSourceTree(sourceRoot).treeSha256;
-  const compiled = compilePinnedBaselineV1(
-    framework,
-    {
-      id: framework.id,
-      owner,
-      repo,
-      pinnedSha: framework.commit,
-      sourceTreeSha256,
-      components: [],
+  const admittedFramework = loadFrameworkDescriptorSectionV1<{ framework: unknown }>(
+    framework.id,
+    "componentDefinitions",
+  ).framework;
+  if (canonicalStrictJsonSha256V1(framework) !== canonicalStrictJsonSha256V1(admittedFramework)) {
+    throw new TypeError("Baseline source data: framework differs from admitted Catalog authority");
+  }
+  const prepared = packagedPreparedWorkbenchCatalogV1();
+  const source = prepared.bundle.sources[`source:${framework.id}`];
+  if (
+    source === undefined ||
+    source.revision.id !== framework.commit ||
+    source.inputFormat !== "pinned-baseline/v1"
+  ) {
+    throw new TypeError("Baseline source data: admitted compiler source mismatch");
+  }
+  const compiled = {
+    source: {
+      id: source.id,
+      revisionId: source.revision.id,
+      contentDigest: source.revision.contentDigest,
+      repository: framework.repository,
+      inputFormat: "pinned-baseline/v1" as const,
     },
-    identities,
-  );
+    declarations: Object.values(prepared.bundle.assets)
+      .filter((asset) => asset.sourceId === source.id)
+      .map((asset) => {
+        const { authoring: _authoring, ...declaration } = asset;
+        // Only upstream declarations carry material; derived ones stay unmapped below.
+        const componentId = declaration.id.slice(`${framework.id}/`.length);
+        if (declaration.derivation === "upstream" && !identities.has(componentId))
+          throw new TypeError(`Baseline source data: missing identity ${componentId}`);
+        return { declaration, inputFormat: "pinned-baseline/v1" as const };
+      }),
+    relations: prepared.bundle.relations.filter(
+      (relation) =>
+        relation.fromAssetId.startsWith(`${framework.id}/`) &&
+        relation.toAssetId.startsWith(`${framework.id}/`),
+    ),
+    groups: Object.fromEntries(
+      Object.entries(prepared.bundle.groups).filter(([groupId]) =>
+        groupId.startsWith(`${framework.id}/`),
+      ),
+    ),
+    evidence: Object.fromEntries(
+      Object.entries(prepared.bundle.evidence).filter(([, evidence]) =>
+        evidence.subjects.some((subject) => subject.assetId.startsWith(`${framework.id}/`)),
+      ),
+    ),
+    detailBytes: Object.fromEntries(
+      Object.values(prepared.bundle.assets)
+        .filter((asset) => asset.sourceId === source.id)
+        .map((asset) => {
+          const chunk = prepared.bundle.detailChunks[asset.detailChunkId];
+          if (chunk === undefined)
+            throw new TypeError(`Baseline source data: missing detail ${asset.id}`);
+          return [asset.detailChunkId, chunk.bytes];
+        }),
+    ),
+  };
   const catalog = defineBaselineCatalog({
     id: framework.id,
     owner,

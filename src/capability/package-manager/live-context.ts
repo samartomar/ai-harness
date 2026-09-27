@@ -4,24 +4,20 @@ import { isAbsolute, join } from "node:path";
 import { isProxy } from "node:util/types";
 import { baselineCatalogById } from "../../baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../baseline-evidence/vendor.js";
-import { ECC_MATERIALIZATION_RECEIPT_PATH } from "../../ecc/materialization-receipt.js";
-import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../../ecc/mcp-explicit-add-receipt.js";
 import { inspectContainedRelativePath } from "../../internals/contained-path.js";
 import { readBoundedFileDescriptor } from "../../internals/fsxn.js";
 import { AIH_ORG_POLICY_FILE } from "../../org-policy/constants.js";
 import { resolveEffectiveOrgPolicy } from "../../org-policy/effective.js";
 import { parseOrgPolicy } from "../../org-policy/schema.js";
 import { AIH_PACKS_FILE, PacksFileSchema } from "../../pack/manifest.js";
-import { SkillCardSchema } from "../../skill/card.js";
+import { type SkillCard, StrictSkillCardSchema } from "../../skill/card.js";
 import { readSkillsLockExact } from "../../skill/lockfile.js";
 import { readTrustLockExact } from "../../trust/lock.js";
 import { projectBaselinePackageGraphAuthority } from "../package-graph/adapters/baseline.js";
 import {
   projectEccCapabilityPackageAuthority,
   projectEccMcpCapabilityPackageAuthority,
-  projectEccMcpReceiptAuthority,
 } from "../package-graph/adapters/ecc-domains.js";
-import { projectEccMaterializationAuthority } from "../package-graph/adapters/ecc-materialization.js";
 import { adaptSkillPackageGraph } from "../package-graph/adapters/skills.js";
 import {
   buildPackageGraphIndex,
@@ -88,6 +84,12 @@ export interface CapabilityPackageView {
   requested: boolean;
   owned: boolean;
   lifecycle: "add" | "update" | "remove" | "unchanged" | "available";
+  management?: "developer-managed";
+  nextRoute?: "run aih ecc for the exact ECC commands";
+}
+
+export function isEccCapabilityPackage(id: string): boolean {
+  return /^package:ecc-(?:agent|rule|mcp)\//.test(id);
 }
 
 export interface CapabilityPackagePreview {
@@ -374,9 +376,9 @@ function exactEvidence(
     const cardSource = readCapabilityPackageExactFile(root, entry.card);
     if (cardSource === undefined)
       return { state: "malformed", reason: "missing-or-unsafe-skill-card" };
-    let card: ReturnType<typeof SkillCardSchema.parse>;
+    let card: SkillCard;
     try {
-      card = SkillCardSchema.strict().parse(fatalJson(cardSource.bytes));
+      card = StrictSkillCardSchema.parse(fatalJson(cardSource.bytes));
     } catch {
       return { state: "malformed", reason: "invalid-skill-card" };
     }
@@ -526,37 +528,6 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
     return refusal(report, "package-graph", "invalid-baseline-authority");
   }
 
-  const materialization = readCapabilityPackageExactFile(
-    snapshot.root,
-    ECC_MATERIALIZATION_RECEIPT_PATH,
-  );
-  if (materialization !== undefined) {
-    const outcome = projectEccMaterializationAuthority({
-      authorityId: "receipt:ecc-materialization",
-      receiptBytes: materialization.bytes,
-      baseline: eccPackages,
-    });
-    if (outcome.state === "ready") documents.push(outcome.document);
-    else if (requestedFamily.some((id) => /^package:ecc-(?:agent|rule)\//.test(id))) {
-      return refusal(report, "domain", outcome.code);
-    }
-  }
-  const explicitMcp = readCapabilityPackageExactFile(
-    snapshot.root,
-    ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
-  );
-  if (explicitMcp !== undefined) {
-    const outcome = projectEccMcpReceiptAuthority({
-      authorityId: "receipt:ecc-mcp",
-      receiptBytes: explicitMcp.bytes,
-      catalog: mcpPackages,
-    });
-    if (outcome.state === "ready") documents.push(outcome.document);
-    else if (requestedFamily.some((id) => id.startsWith("package:ecc-mcp/"))) {
-      return refusal(report, "domain", outcome.code);
-    }
-  }
-
   let index: PackageGraphIndex;
   try {
     index = buildPackageGraphIndex(documents);
@@ -596,6 +567,37 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
   }
   if (packageId !== undefined && !available.has(packageId)) {
     return refusal(report, "operation", "unknown-package-id");
+  }
+  const eccCatalogPackages = availableClaims
+    .filter((claim) => isEccCapabilityPackage(claim.id))
+    .map((claim) => ({
+      id: claim.id,
+      authority: claim.authorityId,
+      members: [...claim.entity.members].sort(codeUnitCompare),
+      requested: selection.roots.includes(claim.id),
+      owned: false,
+      lifecycle: "available" as const,
+      management: "developer-managed" as const,
+      nextRoute: "run aih ecc for the exact ECC commands" as const,
+    }));
+  if (
+    packageId !== undefined &&
+    isEccCapabilityPackage(packageId) &&
+    (snapshot.operation === "show" || snapshot.operation === "status")
+  ) {
+    report.packages = eccCatalogPackages.filter(({ id }) => id === packageId);
+    report.healthy = true;
+    return freeze(report);
+  }
+  report.packages = eccCatalogPackages;
+  if (
+    packageId !== undefined &&
+    isEccCapabilityPackage(packageId) &&
+    (snapshot.operation === "add" ||
+      snapshot.operation === "update" ||
+      snapshot.operation === "remove")
+  ) {
+    return refusal(report, "domain", "developer-managed: run aih ecc for the exact ECC commands");
   }
 
   const desiredRoots = new Set(selection.roots);
@@ -643,7 +645,7 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
 
   let lifecycle: ReturnType<typeof planCapabilityPackageLifecycle> | undefined;
   let intentBytes: Buffer | undefined;
-  const roots = [...desiredRoots].sort(codeUnitCompare);
+  const roots = [...desiredRoots].filter((id) => !isEccCapabilityPackage(id)).sort(codeUnitCompare);
   if (roots.length > 0) {
     let manifest: CapabilityPackageManifest;
     try {
@@ -679,8 +681,14 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
     authority: claim.authorityId,
     members: [...claim.entity.members].sort(codeUnitCompare),
     requested: selection.roots.includes(claim.id),
-    owned: ownedIds.has(claim.id),
-    lifecycle: changeFor(lifecycle, claim.id),
+    owned: !isEccCapabilityPackage(claim.id) && ownedIds.has(claim.id),
+    lifecycle: isEccCapabilityPackage(claim.id) ? "available" : changeFor(lifecycle, claim.id),
+    ...(isEccCapabilityPackage(claim.id)
+      ? {
+          management: "developer-managed" as const,
+          nextRoute: "run aih ecc for the exact ECC commands" as const,
+        }
+      : {}),
   }));
   if (
     packageId !== undefined &&

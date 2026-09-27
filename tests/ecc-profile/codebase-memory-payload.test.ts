@@ -21,7 +21,7 @@ const fixturePin = {
 };
 
 vi.mock("../../src/ecc-profile/codebase-memory-native-pins.js", () => ({
-  CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION: "0.10.8",
+  CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION: "0.11.0",
   CODEBASE_MEMORY_NATIVE_PAYLOAD_PINS: Object.freeze({
     [`${process.platform}-${process.arch}`]: Object.freeze({
       sha256: "9f9f5111f7b27a781f1f1ddde5ebc2dd2b796bfc7365c9c28b548e564176929f",
@@ -69,35 +69,35 @@ describe("Codebase Memory native payload authentication", () => {
     const actual = await vi.importActual<
       typeof import("../../src/ecc-profile/codebase-memory-native-pins.js")
     >("../../src/ecc-profile/codebase-memory-native-pins.js");
-    expect(actual.CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION).toBe("0.10.8");
+    expect(actual.CODEBASE_MEMORY_NATIVE_PAYLOAD_VERSION).toBe("0.11.0");
     expect(Object.isFrozen(actual.CODEBASE_MEMORY_NATIVE_PAYLOAD_PINS)).toBe(true);
     expect(Object.values(actual.CODEBASE_MEMORY_NATIVE_PAYLOAD_PINS).every(Object.isFrozen)).toBe(
       true,
     );
     expect(actual.CODEBASE_MEMORY_NATIVE_PAYLOAD_PINS).toEqual({
       "darwin-x64": {
-        sha256: "1d5b79257d91973809ee70482781db3d1a78f62fc1cd5d18a5ab0608451d16d4",
-        size: 296_064_592,
+        sha256: "69ca71b4b62fe233677851bdf54953e2a6660cf5d687b4d64226b2591b14ed39",
+        size: 301_399_520,
       },
       "darwin-arm64": {
-        sha256: "2412e017268bef8f847f38d1b0f79f63185b38c27fe6fba637067bfc87c0eedf",
-        size: 297_185_328,
+        sha256: "a67b7ccead5d2ca852051f8619458ab96af41393257b56fb36e523a110265d48",
+        size: 302_755_632,
       },
       "linux-x64": {
-        sha256: "1175645cb30560e7e47d78611cd1bcb509478eaf6d4e51f72fe18327ee9c1351",
-        size: 293_213_352,
+        sha256: "ce11c141431aeadd788506c3a7e6942db8fd438dec369d0707a39ec9fd8c6510",
+        size: 299_891_744,
       },
       "linux-arm64": {
-        sha256: "0bf1b3cf3659f6dcdb01bb6313a93dcbcb53e2cd1a52820f024df7a0cf48f44e",
-        size: 293_797_736,
+        sha256: "403d0fab6204e712916701936a3229dd472bad05080c757ea5177318a80fdbfe",
+        size: 299_227_216,
       },
       "win32-x64": {
-        sha256: "b4b403b1d7c4def3785f148b93f345ce8427858f4f5489ce28580c4387a336a6",
-        size: 296_140_288,
+        sha256: "7edcd3807ebcfd85ec1968985964080f2589748da2fc3c7ce9261eebab31ff04",
+        size: 301_530_624,
       },
       "win32-arm64": {
-        sha256: "67b0341ee62f07f850d3954e4f387855f90ea8c6c4b7ed41b8a62d61344373a4",
-        size: 296_138_752,
+        sha256: "5615aa31e3cdbe6155e7096c43d07e62e335fe34d28e489b4cc3ce113e81b4e6",
+        size: 301_693_952,
       },
     });
   });
@@ -109,7 +109,7 @@ describe("Codebase Memory native payload authentication", () => {
       path: await realpath(path),
       sha256: fixturePin.sha256,
       size: fixturePin.size,
-      version: "0.10.8",
+      version: "0.11.0",
     });
   });
 

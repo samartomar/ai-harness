@@ -17,10 +17,11 @@ describe("packed AIH-managed usage proof contract", () => {
     expect(proof).toContain("cold-managed-usage-refusal-wrote-output");
     expect(proof).toContain("cold-managed-usage-malformed-authority-accepted");
     expect(proof).toContain("cold-managed-usage-revocation-left-recorder");
-    expect(proof).toContain("authorProtectedPolicyViaPackedWorkbench");
-    expect(proof).toContain('"policy",\n    "generate"');
-    expect(proof).toContain("Workbench-generated PolicyBundle V2");
-    expect(proof).toContain("delete env.AIH_POLICY_AUTHORITY_REPOSITORY");
+    expect(proof).toContain("buildProtectedPolicyFixture");
+    expect(proof).toContain("headless validated PolicyBundle V2 fixture");
+    expect(proof).toContain("if (/^AIH_/iu.test(key)) delete childEnvironment[key]");
+    expect(proof).toContain('APPDATA: resolve(home, "AppData", "Roaming")');
+    expect(proof).toContain('LOCALAPPDATA: resolve(home, "AppData", "Local")');
     expect(proof).toContain("AIH_ORG_POLICY: policyPath");
     expect(proof).not.toMatch(/writeFileSync\([^\n]+(?:gh|attestation)/i);
   });

@@ -504,6 +504,7 @@ describe("Check.code — invariants", () => {
       "mcp.server-startup-error": true,
       "mcp.pin-stale": true,
       "mcp.projection-stale": true,
+      "mcp.telemetry-opt-out-missing": true,
       "cli.not-detected": true,
       "cli.config-only": true,
       "cli.binary-broken": true,
@@ -592,7 +593,6 @@ describe("Check.code — invariants", () => {
       "baseline.evidence-missing": true,
       "baseline.org-evidence-required": true,
       "baseline.evidence-mismatch": true,
-      "baseline.evidence-blocked": true,
       "baseline.evidence-schema-unsupported": true,
       "trust.fetch-blocked": true,
       "trust.fetch-metadata-missing": true,
@@ -605,6 +605,7 @@ describe("Check.code — invariants", () => {
       "trust.sandbox-smoke-unavailable": true,
       "trust.sandbox-smoke-failed": true,
       "trust.cisco-finding": true,
+      "trust.unreviewed-analyzer-rule": true,
       "trust.skill-metadata-license": true,
       "trust.hidden-unicode": true,
       "trust.visible-unicode": true,
@@ -644,6 +645,8 @@ describe("Check.code — invariants", () => {
       "binding.settings-drift": true,
       "binding.mcp-inventory": true,
       "ecc.install-drift": true,
+      "framework-plugin.unavailable": true,
+      "framework-plugin.incompatible": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

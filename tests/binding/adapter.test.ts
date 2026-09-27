@@ -12,7 +12,7 @@ import {
 import { parseBindingLock } from "../../src/binding/lock.js";
 import {
   BindingScanError,
-  type DimensionInspector,
+  type DimensionReport,
   type FastScanPolicy,
   type ResolvedGitSource,
   type ResolvedSource,
@@ -28,6 +28,7 @@ import {
 import { defaultRunner } from "../../src/internals/proc.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
 import { createFakeAdapter } from "./fake-adapter.js";
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 const DUMMY_RESOLVED: ResolvedSource = {
   kind: "git",
@@ -37,23 +38,19 @@ const DUMMY_RESOLVED: ResolvedSource = {
   treePath: "/does/not/matter",
 };
 
-const producedClean: DimensionInspector = {
-  dimension: "c",
-  run: () => ({ dimension: "c", status: "produced", findings: [] }),
+const producedClean: DimensionReport = { dimension: "structure", status: "produced", findings: [] };
+const producedCritical: DimensionReport = {
+  dimension: "suspicious-execution",
+  status: "produced",
+  findings: [
+    { code: "trust.malicious-code", severity: "critical", detail: "boom", coverage: "complete" },
+  ],
 };
-const producedCritical: DimensionInspector = {
-  dimension: "x",
-  run: () => ({
-    dimension: "x",
-    status: "produced",
-    findings: [
-      { code: "trust.malicious-code", severity: "critical", detail: "boom", coverage: "complete" },
-    ],
-  }),
-};
-const missingDim: DimensionInspector = {
-  dimension: "m",
-  run: () => ({ dimension: "m", status: "missing", reason: "deferred", findings: [] }),
+const missingDim: DimensionReport = {
+  dimension: "telemetry",
+  status: "missing",
+  reason: "deferred",
+  findings: [],
 };
 
 function eccDeclaration(): BindingDeclaration {
@@ -97,7 +94,7 @@ async function resolveFixture(): Promise<ResolvedGitSource> {
 }
 
 async function makeDisposition(
-  inspectors: DimensionInspector[],
+  reports: DimensionReport[],
   policy: FastScanPolicy,
 ): Promise<ScanDisposition> {
   const home = mkdtempSync(join(tmpdir(), "aih-adapter-scan-"));
@@ -106,7 +103,10 @@ async function makeDisposition(
     { repository: repoDir, ref: "HEAD" },
     { runner: defaultRunner, cacheHome: home },
   );
-  return runFastScanGate(scannableFromGit(resolved), policy, { cacheHome: home, inspectors });
+  return runFastScanGate(scannableFromGit(resolved), policy, {
+    cacheHome: home,
+    scanExecution: fakeBindingGateScan(reports),
+  });
 }
 
 beforeEach(() => {
@@ -232,7 +232,7 @@ describe("adapter contract — provision authorization (D12 code path)", () => {
     await expect(adapter.provision(request, disposition)).rejects.toBeInstanceOf(BindingScanError);
   });
 
-  it("rejects a block-verdict disposition", async () => {
+  it("provisions a block-labelled disposition", async () => {
     const adapter = createFakeAdapter({
       framework: "ecc",
       adapterType: "host-plugin",
@@ -244,10 +244,11 @@ describe("adapter contract — provision authorization (D12 code path)", () => {
       allowIncompleteAtVibe: true,
     });
     const request: ProvisionRequest = { context: { declaration: eccDeclaration() }, resolved };
-    await expect(adapter.provision(request, blocked)).rejects.toBeInstanceOf(BindingScanError);
+    expect(blocked.verdict).toBe("block");
+    await expect(adapter.provision(request, blocked)).resolves.toBeDefined();
   });
 
-  it("handles incomplete coverage per posture", async () => {
+  it("labels incomplete coverage per posture and provisions either way", async () => {
     const adapter = createFakeAdapter({
       framework: "ecc",
       adapterType: "host-plugin",
@@ -262,12 +263,14 @@ describe("adapter contract — provision authorization (D12 code path)", () => {
     });
     await expect(adapter.provision(request, vibeAllows)).resolves.toBeDefined();
 
-    const enterpriseBlocks = await makeDisposition([producedClean, missingDim], {
+    const enterpriseLabels = await makeDisposition([producedClean, missingDim], {
       posture: "enterprise",
     });
-    await expect(adapter.provision(request, enterpriseBlocks)).rejects.toBeInstanceOf(
-      BindingScanError,
+    expect(enterpriseLabels.selectedProfileGate).toBe("BLOCK");
+    expect(enterpriseLabels.findings.some((finding) => finding.coverage === "incomplete")).toBe(
+      true,
     );
+    await expect(adapter.provision(request, enterpriseLabels)).resolves.toBeDefined();
   });
 });
 

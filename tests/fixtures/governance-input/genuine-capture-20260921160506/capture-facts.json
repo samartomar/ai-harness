@@ -1,0 +1,155 @@
+{
+  "authority": "diagnostic-record-not-evidence",
+  "note": "A recorded reading of one preserved capture, committed so the assessment-to-material binding proof can be exercised against genuine records. It is not evidence, not a qualification, not an approval, and no detector result: the facts below were read from the recorded scan candidate, not verified here.",
+  "recordedFrom": {
+    "captureRun": "source-closure-capture-20260921160506",
+    "captureCommit": "3b0780d6b79d449fc0ee674fd1df9b19fedfde13",
+    "catalogCommit": "3ae325f85a341fa374ff5389325750cf995c2ce6",
+    "catalogPackage": {
+      "name": "@aihq/catalog",
+      "version": "0.2.0",
+      "tarballSha256": "c6af69d283c4b20eff4d1e5d697d4612ca061120b73137bbf311ec34402e9942"
+    },
+    "scanPackage": {
+      "name": "@aihq/scan",
+      "version": "0.4.0",
+      "tarballSha256": "f27364436f6604ffda7a27aabe350e4be91f68586a3d9c8bff4f92433dcb60cc"
+    },
+    "candidateSha256": "a9c1ccea061b37a8cfc8735d5c3b6ed56ab6da51593c778e24e64ab8680b9763"
+  },
+  "catalog": {
+    "entryId": "agent.aih.governance-quality.core-0-6-2",
+    "subject": {
+      "kind": "agent",
+      "id": "governance-quality",
+      "source": {
+        "type": "aih",
+        "release": "0.6.2",
+        "revision": "sha256:893b4d0b57a2ea240cfd40e4ca222e32fd907c2b100e44b0ba672d0be835c879"
+      }
+    },
+    "artifactPath": "defaults/workbench/aih-core-0.6.2/agent.aih.governance-quality.core-0-6-2/artifacts/profile.json"
+  },
+  "facts": {
+    "subject": {
+      "digest": {
+        "sha256": "a7a98fc5ffdc4faf807037c9e63ee1dbf564ff0347e6596c9c4464ee0f23a6b5"
+      },
+      "name": "source-tree"
+    },
+    "coverage": {
+      "complete": true,
+      "kind": "selected-closure",
+      "sha256": "061b88e1b63a8b12cd8883a1a8c9f901ded8d05bbcaadf8b5b23defba2ec1c50"
+    },
+    "scan": {
+      "outcome": "succeeded"
+    },
+    "sourceSeals": {
+      "after": {
+        "algorithm": "code-unit-canonical-json-v1",
+        "entries": [
+          {
+            "byteLength": 598,
+            "kind": "file",
+            "path": "LICENSE",
+            "sha256": "c7963d5f486ca7f94b9141d20a08f0f2ec6f44447ceab499d8adc6ca516cf71e"
+          },
+          {
+            "byteLength": 787,
+            "kind": "file",
+            "path": "SKILL.md",
+            "sha256": "c67ab49713c49abdc53d4d20b97e42c998040dc67e7a2d4db7423efa81cb21b6"
+          },
+          {
+            "byteLength": 1126,
+            "kind": "file",
+            "path": "profile.json",
+            "sha256": "2c467d7689fe043f5eda45da8ef947bb5ccda64255f430ef4d05ffecdcbe8e5b"
+          }
+        ],
+        "protocol": "SourceSealV2",
+        "sealedSnapshotSha256": "39b83ae0acbed547f6f4a874a7a046c661ff0bd6924e8efe12f1f8583be17431",
+        "selectedClosurePaths": [
+          "LICENSE",
+          "SKILL.md",
+          "profile.json"
+        ],
+        "selectedClosureSha256": "061b88e1b63a8b12cd8883a1a8c9f901ded8d05bbcaadf8b5b23defba2ec1c50",
+        "selectedFiles": [
+          {
+            "byteLength": 598,
+            "kind": "file",
+            "path": "LICENSE",
+            "sha256": "c7963d5f486ca7f94b9141d20a08f0f2ec6f44447ceab499d8adc6ca516cf71e"
+          },
+          {
+            "byteLength": 787,
+            "kind": "file",
+            "path": "SKILL.md",
+            "sha256": "c67ab49713c49abdc53d4d20b97e42c998040dc67e7a2d4db7423efa81cb21b6"
+          },
+          {
+            "byteLength": 1126,
+            "kind": "file",
+            "path": "profile.json",
+            "sha256": "2c467d7689fe043f5eda45da8ef947bb5ccda64255f430ef4d05ffecdcbe8e5b"
+          }
+        ],
+        "sourceTreeSha256": "a7a98fc5ffdc4faf807037c9e63ee1dbf564ff0347e6596c9c4464ee0f23a6b5"
+      },
+      "before": {
+        "algorithm": "code-unit-canonical-json-v1",
+        "entries": [
+          {
+            "byteLength": 598,
+            "kind": "file",
+            "path": "LICENSE",
+            "sha256": "c7963d5f486ca7f94b9141d20a08f0f2ec6f44447ceab499d8adc6ca516cf71e"
+          },
+          {
+            "byteLength": 787,
+            "kind": "file",
+            "path": "SKILL.md",
+            "sha256": "c67ab49713c49abdc53d4d20b97e42c998040dc67e7a2d4db7423efa81cb21b6"
+          },
+          {
+            "byteLength": 1126,
+            "kind": "file",
+            "path": "profile.json",
+            "sha256": "2c467d7689fe043f5eda45da8ef947bb5ccda64255f430ef4d05ffecdcbe8e5b"
+          }
+        ],
+        "protocol": "SourceSealV2",
+        "sealedSnapshotSha256": "39b83ae0acbed547f6f4a874a7a046c661ff0bd6924e8efe12f1f8583be17431",
+        "selectedClosurePaths": [
+          "LICENSE",
+          "SKILL.md",
+          "profile.json"
+        ],
+        "selectedClosureSha256": "061b88e1b63a8b12cd8883a1a8c9f901ded8d05bbcaadf8b5b23defba2ec1c50",
+        "selectedFiles": [
+          {
+            "byteLength": 598,
+            "kind": "file",
+            "path": "LICENSE",
+            "sha256": "c7963d5f486ca7f94b9141d20a08f0f2ec6f44447ceab499d8adc6ca516cf71e"
+          },
+          {
+            "byteLength": 787,
+            "kind": "file",
+            "path": "SKILL.md",
+            "sha256": "c67ab49713c49abdc53d4d20b97e42c998040dc67e7a2d4db7423efa81cb21b6"
+          },
+          {
+            "byteLength": 1126,
+            "kind": "file",
+            "path": "profile.json",
+            "sha256": "2c467d7689fe043f5eda45da8ef947bb5ccda64255f430ef4d05ffecdcbe8e5b"
+          }
+        ],
+        "sourceTreeSha256": "a7a98fc5ffdc4faf807037c9e63ee1dbf564ff0347e6596c9c4464ee0f23a6b5"
+      }
+    }
+  }
+}

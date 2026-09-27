@@ -7,10 +7,8 @@ import {
   buildEccMcpProfileProjection,
   buildSerena161ReceiptProjection,
   CONTEXT7_SUBJECT_SHA256,
-  evaluateEccMcpHealth,
   filterSerenaToolsList,
   guardSerenaToolCall,
-  mergeEccMcpServers,
   SERENA_ALLOWED_TOOLS,
   SERENA_REQUIRED_TOOLS,
   SERENA_RUNTIME_PIN,
@@ -272,50 +270,5 @@ describe("ECC MCP profile projection", () => {
         params: { name: "find_symbol" },
       }),
     ).toThrow(/request id/i);
-  });
-
-  it("merge-preserves unrelated operator servers and rejects selected-name conflicts", () => {
-    const projection = buildEccMcpProfileProjection(input());
-    const operator = {
-      "operator-owned": {
-        type: "http" as const,
-        url: "https://operator.example/mcp",
-        description: "operator",
-        classification: "third-party-hosted" as const,
-        egress: "third-party" as const,
-        credentials: "oauth" as const,
-        supplyChain: "hosted-remote" as const,
-      },
-    };
-
-    expect(Object.keys(mergeEccMcpServers(operator, projection.servers))).toEqual([
-      "operator-owned",
-      "code-review-graph",
-      "codebase-memory-mcp",
-      "context7",
-      "serena",
-    ]);
-    expect(() =>
-      mergeEccMcpServers({ ...operator, serena: operator["operator-owned"] }, projection.servers),
-    ).toThrow(/conflict/i);
-  });
-
-  it("keeps ordinary startup advisory while setup acceptance fails closed", () => {
-    const partial = {
-      "code-review-graph": true,
-      "codebase-memory-mcp": true,
-      context7: false,
-      serena: false,
-    };
-    expect(evaluateEccMcpHealth("ordinary", partial)).toEqual({
-      mode: "ordinary",
-      status: "advisory",
-      failedServers: ["context7", "serena"],
-    });
-    expect(evaluateEccMcpHealth("setup-acceptance", partial)).toEqual({
-      mode: "setup-acceptance",
-      status: "blocked",
-      failedServers: ["context7", "serena"],
-    });
   });
 });

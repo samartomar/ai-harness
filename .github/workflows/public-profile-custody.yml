@@ -7,6 +7,7 @@ on:
       - .github/workflows/public-profile-custody.yml
       - .github/scripts/verify-public-profile-custody.mjs
       - .github/fixtures/public-profile-custody/**
+      - tools/lib/build-protected-policy-fixture.mjs
 
 # This checks the actual published receipt chain at its original signed dates.
 # It is a release acceptance fixture, not a timeless replacement for synthetic
@@ -31,8 +32,6 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npm run build
-      - name: Install pinned Chromium for the packed Policy Workbench
-        run: npx --no-install playwright install --with-deps chromium
       - name: Create an isolated Enterprise custody base
         run: |
           set -euo pipefail

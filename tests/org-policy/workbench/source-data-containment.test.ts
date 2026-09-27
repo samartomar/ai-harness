@@ -32,6 +32,85 @@ describe("authenticated component containment joins", () => {
     expect(result.map((item) => item.publishedComponentIds)).toEqual([[request.id], [request.id]]);
     expect(JSON.stringify(request)).toBe(original);
   });
+  it("accepts overlapping published owners with the compiler file digest in compiler-catalog mode", () => {
+    const { root, request, components } = fixture();
+    const duplicate = { ...request, id: "runtime:duplicate" };
+    const published = [request, duplicate];
+    expect(
+      verifyScannerComponentContainmentV1(root, components, published, "compiler-catalog").map(
+        (item) => item.publishedComponentIds,
+      ),
+    ).toEqual(components.map(() => [duplicate.id, request.id]));
+  });
+  it("refuses a conflicting published owner's tree digest", () => {
+    const { root, request, components } = fixture();
+    const published = [
+      request,
+      { ...request, id: "runtime:duplicate", treeSha256: "0".repeat(64) },
+    ];
+    expect(() =>
+      verifyScannerComponentContainmentV1(root, components, published, "compiler-catalog"),
+    ).toThrow(/containment/);
+  });
+  it("refuses overlap on a file outside the declared compiler input", () => {
+    const { root, request, components } = fixture();
+    const published = [request, { ...request, id: "runtime:duplicate" }];
+    expect(() =>
+      verifyScannerComponentContainmentV1(
+        root,
+        components.slice(0, 1),
+        published,
+        "compiler-catalog",
+      ),
+    ).toThrow(/containment/);
+  });
+  it("refuses overlap when the declared compiler digest differs from both published owners", () => {
+    const { root, request, components } = fixture();
+    const published = [request, { ...request, id: "runtime:duplicate" }];
+    const file = components[0]?.files[0];
+    if (!file) throw new Error("fixture");
+    file.digest = `sha256:${"0".repeat(64)}`;
+    expect(() =>
+      verifyScannerComponentContainmentV1(root, components, published, "compiler-catalog"),
+    ).toThrow(/containment/);
+  });
+  it("refuses a declared file with no published owner in compiler-catalog mode", () => {
+    const { root, request, components } = fixture();
+    const published = [
+      {
+        ...request,
+        paths: ["shared/one.md"],
+        treeSha256: hashComponentTree(root, ["shared/one.md"]).treeSha256,
+      },
+    ];
+    expect(() =>
+      verifyScannerComponentContainmentV1(root, components, published, "compiler-catalog"),
+    ).toThrow(/containment/);
+  });
+  it("allows an extra published component with separate files", () => {
+    const { root, request, components } = fixture();
+    writeFileSync(join(root, "extra.md"), "extra");
+    const extra = hashComponentTree(root, ["extra.md"]);
+    const published = [
+      request,
+      { id: "runtime:extra", paths: ["extra.md"], treeSha256: extra.treeSha256 },
+    ];
+    expect(
+      verifyScannerComponentContainmentV1(root, components, published, "compiler-catalog").map(
+        (item) => item.publishedComponentIds,
+      ),
+    ).toEqual(components.map(() => [request.id]));
+  });
+  it("keeps disjoint overlap refusal as the default and explicit mode", () => {
+    const { root, request, components } = fixture();
+    const published = [request, { ...request, id: "runtime:duplicate" }];
+    expect(() => verifyScannerComponentContainmentV1(root, components, published)).toThrow(
+      /containment/,
+    );
+    expect(() =>
+      verifyScannerComponentContainmentV1(root, components, published, "disjoint"),
+    ).toThrow(/containment/);
+  });
   it("rejects source bytes changed after the authenticated request tree was formed", () => {
     const { root, request, components } = fixture();
     writeFileSync(join(root, "shared", "one.md"), "changed after scan request");

@@ -1,0 +1,311 @@
+{
+  "case": "unicode",
+  "producer": {
+    "engine": "runTrustLintV1",
+    "scanCheckout": "sep/scan-detectors",
+    "scanCommit": "28718a7515829c64b0b1410d98bfd1c48d29069b"
+  },
+  "request": {
+    "selectedClosurePaths": [
+      "docs/guide.md",
+      "notes.md",
+      "SKILL.md",
+      "tool.py"
+    ],
+    "detectorOptions": {
+      "internalScopes": [],
+      "mcpConfigPaths": []
+    }
+  },
+  "sarif": {
+    "version": "2.1.0",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "aih-trust-lint",
+            "version": "1.0.0"
+          }
+        },
+        "properties": {
+          "aih-trust/v1": {
+            "format": "aih-trust-lint-facts",
+            "version": 1,
+            "trustDocumentCount": 3,
+            "repositoryLicenseFile": null
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": "docs/guide.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": false,
+                "unicodeRisk": {
+                  "category": "visible-typography",
+                  "code": "trust.visible-unicode",
+                  "reason": "ordinary visible Unicode in documentation"
+                },
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "notes.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": false,
+                "unicodeRisk": {
+                  "category": "visible-typography",
+                  "code": "trust.visible-unicode",
+                  "reason": "ordinary visible Unicode in documentation"
+                },
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": {
+                  "category": "zero-width",
+                  "code": "trust.hidden-unicode",
+                  "reason": "invisible/control Unicode can smuggle model-readable instructions"
+                },
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "tool.py"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": {
+                  "category": "homoglyph-confusable",
+                  "code": "trust.hidden-unicode",
+                  "reason": "Unicode confusable appears inside an ASCII-like token"
+                },
+                "lintLines": []
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "ruleId": "trust.visible-unicode",
+            "level": "error",
+            "message": {
+              "text": "docs/guide.md:3 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "docs/guide.md"
+                  },
+                  "region": {
+                    "startLine": 3
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-visible-unicode:docs/guide.md:f0f6311351488d8e007e2d7d4f11a6106283a00ee99a904ae9cbec148ca3cd85"
+            }
+          },
+          {
+            "ruleId": "trust.visible-unicode",
+            "level": "error",
+            "message": {
+              "text": "notes.md:3 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "notes.md"
+                  },
+                  "region": {
+                    "startLine": 3
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-visible-unicode:notes.md:9b985ec642a19d071c96d9882e5f7f428ebf22021774f61e50855be82e29e4bb"
+            }
+          },
+          {
+            "ruleId": "trust.hidden-unicode",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:7 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+200B"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 7
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-hidden-unicode:SKILL.md:bd81616a29df7ae5c439d98e1b5d93a9dff70472817b6ac7bba3ce58ffd6a833"
+            }
+          },
+          {
+            "ruleId": "trust.hidden-unicode",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:8 — trust.hidden-unicode: character category: bidi-control; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+202E"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 8
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-hidden-unicode:SKILL.md:6758f2d7761fd826be1df3735df0570a5489faa433350132050d3e4f46f45a29"
+            }
+          },
+          {
+            "ruleId": "trust.hidden-unicode",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:8 — trust.hidden-unicode: character category: bidi-control; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+202C"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 8
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-hidden-unicode:SKILL.md:ff265ab31258a12450ec64fe0d1bc20dc323dc8181cbc8b1953b084284293be1"
+            }
+          },
+          {
+            "ruleId": "trust.hidden-unicode",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:9 — trust.hidden-unicode: character category: tag-character; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+E0041"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 9
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-hidden-unicode:SKILL.md:cafbabce13f430d5706356f78d99a7ce5ac3e0baf457b1760291e1e1ae600531"
+            }
+          },
+          {
+            "ruleId": "trust.hidden-unicode",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:9 — trust.hidden-unicode: character category: tag-character; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+E0042"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 9
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-hidden-unicode:SKILL.md:664052fa8a92a3044b21b90cc7c6e807f57041aad0158a6e7f1141592f103819"
+            }
+          },
+          {
+            "ruleId": "trust.hidden-unicode",
+            "level": "error",
+            "message": {
+              "text": "tool.py:1 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+435"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "tool.py"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-hidden-unicode:tool.py:dad573ece64f3b0753596feda546c2a3dcfe95a0d9ee61cea1e0e50d7aaf76c3"
+            }
+          },
+          {
+            "ruleId": "trust.hidden-unicode",
+            "level": "error",
+            "message": {
+              "text": "tool.py:2 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+435"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "tool.py"
+                  },
+                  "region": {
+                    "startLine": 2
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-hidden-unicode:tool.py:a69a0c17be34a4727243eb9534195caba9334967f1c5b9d29d1ece33d907ecd8"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

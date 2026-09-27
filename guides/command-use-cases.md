@@ -183,6 +183,8 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 
 `aih skill vet` evaluates the source and never installs it. For multi-skill sources, `aih skill vet --name <skill> --apply` writes per-skill evidence, and `aih skill approve --name <skill>` records which reviewed skill is approved.
 
+`aih trust scan` and `aih skill vet` report findings and evidence problems as labels and exit 0 for them. A CI step that should fail on them adds `--fail-on findings`, `--fail-on evidence-problems`, or both. Integrity and execution failures, codes aih cannot classify, and the organization's own configured requirements still exit 1.
+
 The 2026-07-29 candidates `anthropics/skills@b29e7cf65e5cb78a5ac33d582270551bc74a14eb`
 and `nextlevelbuilder/ui-ux-pro-max-skill@4857a2c5ef989794751a0f66b8545a4a49566286`
 remain quarantined after RED, degraded enterprise scans. Do not substitute

@@ -23,12 +23,19 @@
     "sourceMap": true,
     "outDir": "dist",
     "skipLibCheck": true,
+    "paths": {
+      "@aihq/core/framework-host": ["./src/framework-host/index.ts"]
+    },
     "forceConsistentCasingInFileNames": true
   },
   "include": [
     "src",
     "tests",
-    "*.config.ts"
+    "*.config.ts",
+    "packages/*/src",
+    "packages/*/tests",
+    "packages/*/scripts",
+    "packages/*/*.config.ts"
   ],
   "exclude": [
     "dist",

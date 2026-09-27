@@ -75,8 +75,7 @@ export function isGitExecutable(command: string): boolean {
 
 /**
  * The same guard as one line of JavaScript source, for the standalone scripts
- * aih GENERATES and installs (the ECC install-manifest recorder, the usage
- * recorder). Those run in their own node process — often as a git hook, which is
+ * aih generates and installs, such as the usage recorder. Those run in their own node process — often as a git hook, which is
  * precisely when GIT_DIR is exported — so they cannot import the helper above
  * and must carry the scrub inline. Defines a `gitEnv` const for the spawns to
  * pass as `env`.

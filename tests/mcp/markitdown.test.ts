@@ -36,7 +36,7 @@ describe("optional MarkItDown MCP", () => {
     if (server.type !== "stdio") throw new Error("expected stdio");
     expect(mcpResolverPinState(server.command, server.args)).toBe("pinned");
     expect(uvxPrimaryPin(server.args)?.version).toBe("0.0.1a7");
-    expect(server.args).toContain("markitdown[all]==0.1.7");
+    expect(server.args).toContain("markitdown[all]==0.1.8");
     expect(server.args).not.toContain("--http");
     expect(server.egress).toBe("third-party");
   });

@@ -12,13 +12,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { authorProtectedPolicyViaPackedWorkbench } from "./lib/author-protected-policy-via-workbench.mjs";
+import { buildProtectedPolicyFixture } from "./lib/build-protected-policy-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = process.env.npm_execpath;
 if (typeof npmCli !== "string" || !isAbsolute(npmCli) || !existsSync(npmCli))
   throw new Error("npm-cli-unavailable");
 const CHILD_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
+let childEnvironment;
 
 function requireCompleted(result, context) {
   if (result.error !== undefined)
@@ -43,6 +44,7 @@ function runNode(cwd, args) {
   const result = spawnSync(process.execPath, args, {
     cwd,
     encoding: "utf8",
+    env: childEnvironment,
     maxBuffer: 16 * 1024 * 1024,
     timeout: CHILD_PROCESS_TIMEOUT_MS,
   });
@@ -53,10 +55,7 @@ function runNode(cwd, args) {
 }
 
 function runInstalledCli(cwd, cli, bin, args, allowFailure = false, extraEnv = {}) {
-  const env = { ...process.env };
-  delete env.AIH_POLICY_AUTHORITY_REPOSITORY;
-  delete env.AIH_POLICY_AUTHORITY_WORKFLOW;
-  delete env.AIH_ORG_POLICY;
+  const env = { ...childEnvironment };
   Object.assign(env, extraEnv);
   const result = spawnSync(
     process.platform === "win32" ? process.execPath : bin,
@@ -80,6 +79,25 @@ function runInstalledCli(cwd, cli, bin, args, allowFailure = false, extraEnv = {
 const tempBase = realpathSync(resolve(tmpdir()));
 const temp = realpathSync(mkdtempSync(join(tempBase, "aih-managed-usage-cold-")));
 try {
+  const home = resolve(temp, "home");
+  childEnvironment = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: resolve(home, "AppData", "Roaming"),
+    LOCALAPPDATA: resolve(home, "AppData", "Local"),
+    XDG_CONFIG_HOME: resolve(home, ".config"),
+    XDG_CACHE_HOME: resolve(home, ".cache"),
+    XDG_DATA_HOME: resolve(home, ".local", "share"),
+    XDG_STATE_HOME: resolve(home, ".local", "state"),
+    XDG_RUNTIME_DIR: resolve(home, ".runtime"),
+  };
+  if (process.platform === "win32") {
+    childEnvironment.HOMEDRIVE = home.slice(0, 2);
+    childEnvironment.HOMEPATH = home.slice(2);
+  }
+  for (const key of Object.keys(childEnvironment))
+    if (/^AIH_/iu.test(key)) delete childEnvironment[key];
   const packed = runNode(root, [npmCli, "pack", "--json", "--pack-destination", temp]);
   const packManifest = JSON.parse(packed.stdout);
   if (
@@ -109,15 +127,6 @@ try {
   if (!existsSync(cli) || !existsSync(bin)) throw new Error("cold-managed-usage-install");
   const admin = resolve(temp, "admin");
   mkdirSync(admin);
-  const workbenchPath = resolve(admin, "aih-policy-workbench.html");
-  runInstalledCli(admin, cli, bin, [
-    "policy",
-    "generate",
-    "--apply",
-    "--out",
-    workbenchPath,
-  ]);
-  if (!existsSync(workbenchPath)) throw new Error("cold-managed-usage-workbench-generation");
 
   const described = runInstalledCli(consumer, cli, bin, [
     "policy",
@@ -265,43 +274,47 @@ try {
   };
   const decisionDigest = packedCore.governanceDecisionDigestV2(decision);
   const policyPath = resolve(admin, "policy-bundle.json");
-  const workbenchDecision = {
-    "protected-actor": decision.actor,
-    "protected-attestor": decision.evidence.attestor,
-    "protected-control-digest": decision.control.digest,
-    "protected-control-id": decision.control.id,
-    "protected-decision-id": decision.id,
-    "protected-effects": decision.allowedEffects.join(","),
-    "protected-evidence-digest": decision.evidence.digest,
-    "protected-evidence-id": decision.evidence.id,
-    "protected-kind": decision.subject.kind,
-    "protected-policy-digest": decision.policy.digest,
-    "protected-policy-id": decision.policy.id,
-    "protected-policy-version": decision.policy.version,
-    "protected-reason": decision.reason,
-    "protected-source-release": decision.subject.source.release,
-    "protected-source-revision": decision.subject.source.revision,
-    "protected-source-type": "aih",
-    "protected-subject-id": decision.subject.id,
-    "protected-targets": decision.targets.join(","),
+  const basePolicy = {
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "2026.08",
+      catalog: { reviewed: [], custom: [] },
+      supportedClis: ["claude", "codex"],
+    },
   };
-  const writePolicy = async (bundleVersion, revoked = false) =>
-    authorProtectedPolicyViaPackedWorkbench({
-      authorityFields: {
-        "protected-bundle-version": bundleVersion,
-        "protected-expires-at": expiresAt,
-        "protected-issued-at": issuedAt,
-        "protected-issuer": decision.issuer,
-        "protected-issuer-repository": "example.invalid/cold-admin",
-      },
-      decisions: [workbenchDecision],
-      htmlPath: workbenchPath,
+  const writePolicy = (bundleVersion, revoked = false) =>
+    buildProtectedPolicyFixture({
+      core: packedCore,
+      basePolicy,
       outputPath: policyPath,
-      revokeDecisionIndexes: revoked ? [0] : [],
+      bundleVersion,
+      issuer: decision.issuer,
+      authorityReceipt: {
+        format: "aih-policy-authority-receipt",
+        version: 3,
+        issuerRepository: "example.invalid/cold-admin",
+        issuedAt,
+        expiresAt,
+        trustedIssuers: [{ id: decision.issuer, githubRepository: "example.invalid/cold-admin" }],
+        targets: ["claude", "codex"],
+        decisions: [decision],
+        decisionRevocations: revoked
+          ? [{
+              format: "aih-governance-decision-revocation",
+              version: 2,
+              decisionDigest,
+              issuer: decision.issuer,
+              revokedAt: issuedAt,
+              reason: "Disposable fixture withdraws exact configure authority.",
+            }]
+          : [],
+      },
     });
   const authored = await writePolicy("2026.08.1");
   if (packedCore.governanceDecisionDigestV2(authored.authorityReceipt.decisions[0]) !== decisionDigest)
-    throw new Error("cold-managed-usage-workbench-decision-mismatch");
+    throw new Error("cold-managed-usage-fixture-decision-mismatch");
   if (!packedCore.parsePolicyBundle(JSON.parse(readFileSync(policyPath, "utf8"))).ok)
     throw new Error("cold-managed-usage-public-policy-bundle-parser");
   const authorityEnv = { AIH_ORG_POLICY: policyPath };
@@ -385,7 +398,7 @@ try {
     throw new Error("cold-managed-usage-revocation-left-recorder");
 
   process.stdout.write(
-    "Cold packed AIH-managed usage-metering proof PASS (packed CLI and Workbench-generated PolicyBundle V2; missing and malformed authority refused; configured, inspected, and revoked without fabricated GitHub authority; host ACL is outside this proof)\n",
+    "Cold packed AIH-managed usage-metering proof PASS (packed CLI and headless validated PolicyBundle V2 fixture; missing and malformed authority refused; configured, inspected, and revoked without fabricated GitHub authority; host ACL is outside this proof)\n",
   );
 } finally {
   const resolvedTemp = resolve(temp);

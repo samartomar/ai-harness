@@ -82,7 +82,7 @@ async function npmCheck(ctx: PlanContext, nodeOk: boolean): Promise<Check> {
  *   L0 npm works               → no fix
  *   L1 npm broken, registry OK → emit the Node-https reinstall script
  *   L2 npm broken, registry NO → emit the offline reinstall guidance
- *   L3 node missing            → emit "install Node >= 20"
+ *   L3 node missing            → emit "install Node >= 20.6"
  */
 async function planNpmHeal(ctx: PlanContext, shared: HealShared): Promise<Action[]> {
   const node = await nodeCheck(ctx);

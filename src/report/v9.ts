@@ -1,4 +1,3 @@
-import type { EccLanguagePack } from "../ecc/select.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import type { DigestAction } from "../internals/plan.js";
 import { redactText } from "../support/redact.js";
@@ -748,7 +747,8 @@ const COMMON_DORMANT_SKILLS = new Set([
   "verification-loop",
 ]);
 
-const PACK_DORMANT_KEYWORDS: Record<EccLanguagePack, string[]> = {
+/** Dormant-skill keywords per ECC language pack id (the ids the ECC plugin reports). */
+const PACK_DORMANT_KEYWORDS: Record<string, string[]> = {
   angular: ["angular"],
   arkts: ["arkts"],
   golang: ["go-", "golang"],
@@ -780,7 +780,7 @@ function stackRelevantDormantSkills(skillNames: string[], packs: readonly string
 
 function dormantKeywordsForPack(pack: string): string[] | undefined {
   if (!Object.hasOwn(PACK_DORMANT_KEYWORDS, pack)) return undefined;
-  return PACK_DORMANT_KEYWORDS[pack as EccLanguagePack];
+  return PACK_DORMANT_KEYWORDS[pack];
 }
 
 /** §2 cross-CLI coherence (from the v9-only "Coherence" digest), else undefined. */
@@ -908,7 +908,13 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
       : undefined;
   const approvalVerdicts =
     approvals !== undefined
-      ? { GREEN: numOr(approvals.GREEN, 0), YELLOW: numOr(approvals.YELLOW, 0) }
+      ? {
+          GREEN: numOr(approvals.GREEN, 0),
+          YELLOW: numOr(approvals.YELLOW, 0),
+          ...(approvals.RED === undefined && approvals.UNKNOWN === undefined
+            ? {}
+            : { RED: numOr(approvals.RED, 0), UNKNOWN: numOr(approvals.UNKNOWN, 0) }),
+        }
       : undefined;
   // Pack rollup — present only when the digest carried tags (pack-free stays absent).
   // `quarantined` rides through only when the digest emitted it (non-zero), so a

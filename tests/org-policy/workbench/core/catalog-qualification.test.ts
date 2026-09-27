@@ -281,21 +281,20 @@ describe("Core Catalog qualification preparation", () => {
     const records = packagedCatalogQualificationRecordsV1();
     const bindings = packagedCatalogQualificationBindingsV1();
     const projections = packagedCatalogQualificationProjectionsV1();
-    expect(records).toHaveLength(436);
-    expect(bindings).toHaveLength(436);
+    expect(records).toHaveLength(429);
+    expect(bindings).toHaveLength(429);
     expect(projections).toHaveLength(1);
     const summaries = CatalogQualificationSummariesV1Schema.parse(projections[0]?.summary);
     const summaryValues = Object.values(summaries);
     const sourceCounts = new Map<string, number>();
     for (const summary of summaryValues)
       sourceCounts.set(summary.sourceId, (sourceCounts.get(summary.sourceId) ?? 0) + 1);
-    expect(summaryValues).toHaveLength(436);
+    expect(summaryValues).toHaveLength(429);
     expect(Object.fromEntries(sourceCounts)).toEqual({
       "source:aih-core": 9,
       "source:anthropics-skills": 14,
       "source:ecc": 367,
       "source:mattpocock": 25,
-      "source:ponytail": 7,
       "source:superpowers": 14,
     });
     expect(new Set(summaryValues.map((summary) => summary.state))).toEqual(new Set(["qualified"]));
@@ -308,7 +307,7 @@ describe("Core Catalog qualification preparation", () => {
       records.filter(
         (record) => record.publisher.commit === "b019b4e9d6260915a49d177bcc22b58518305dd4",
       ),
-    ).toHaveLength(427);
+    ).toHaveLength(420);
     expect(
       records.filter(
         (record) => record.publisher.commit === "36f269266208661430fc37f167c86e534dabf893",
@@ -421,10 +420,7 @@ describe("Core Catalog qualification preparation", () => {
   });
   it("uses the merged Catalog publisher for preparation metadata and retains the historical publisher", () => {
     const current = "36f269266208661430fc37f167c86e534dabf893";
-    const priorCore061 = "98d95263aa0901504c9d480628f6c06c4a1fe453";
-    const priorCore = "0ce02656d5e281262af2177571033449f277dc46";
     const previous = "b019b4e9d6260915a49d177bcc22b58518305dd4";
-    const historical = "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a";
     expect(CATALOG_QUALIFICATION_RELEASE_POLICY_V1).toMatchObject({
       catalogCommit: current,
       publisher: { commit: current },
@@ -432,7 +428,7 @@ describe("Core Catalog qualification preparation", () => {
     });
     expect(catalogQualificationReleasePolicyMetadataV1.catalogCommit).toBe(current);
     expect(CATALOG_QUALIFICATION_RELEASE_POLICIES_V1.map((policy) => policy.catalogCommit)).toEqual(
-      [current, priorCore061, priorCore, previous, historical],
+      [current, previous],
     );
   });
 

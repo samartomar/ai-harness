@@ -37,6 +37,7 @@ import {
   capabilityPackageManifestBytes,
   capabilityPackageManifestFor,
   inspectCapabilityPackageContext,
+  isEccCapabilityPackage,
   readCapabilityPackageExactFile,
 } from "../live-context.js";
 import { planCapabilityPackageOwnedFiles } from "../owned-files.js";
@@ -230,7 +231,7 @@ function assemble(input: Input): Assembled {
       report,
       index,
       diagnostics: adapted.diagnostics,
-      roots: [...report.requestedRoots],
+      roots: report.requestedRoots.filter((id) => !isEccCapabilityPackage(id)),
     };
   } catch {
     return { report } as const;
@@ -639,10 +640,19 @@ export function reconcileSkillPackCapabilityPackage(
           throw new Error("capability package authority changed during commit");
         }
         if (readyLifecycle.desiredReceipt !== undefined) {
+          const verificationInput: CapabilityPackageLifecycleInput =
+            snapshot.operation === "remove" && readyLifecycle.desiredIntent !== undefined
+              ? {
+                  intentBytes: Buffer.from(readyLifecycle.desiredIntent.bytes),
+                  index: assembled.index,
+                  currentReceipt: readyLifecycle.desiredReceipt.receipt,
+                  diagnostics: assembled.diagnostics,
+                }
+              : lifecycleInput;
           const verified = planSkillPackCustody({
             root: snapshot.root,
             contextDir: snapshot.contextDir,
-            lifecycleInput,
+            lifecycleInput: verificationInput,
           });
           if (verified.status !== "verified-existing") {
             throw new Error("capability package custody verification failed after commit");

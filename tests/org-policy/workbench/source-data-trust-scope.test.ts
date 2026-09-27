@@ -43,7 +43,7 @@ it("keeps unrelated trust additions local but rejects changed or revoked applica
     };
   };
   const signer = authority(["source:mattpocock"]);
-  const unrelated = authority(["source:ponytail"]);
+  const unrelated = authority(["source:superpowers"]);
   const trust = { version: 1, authorities: [signer.policy] };
   const writeTrust = (value: unknown) =>
     writeFileSync(join(store, "trust.json"), JSON.stringify(value));

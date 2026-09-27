@@ -1,7 +1,7 @@
 # Baseline Component Evidence
 
-> Status: shipped security model for `aih ecc`, `aih superpowers`, and
-> `aih evidence vet-baseline`.
+> Status: evidence diagnostics and historical baseline records. `aih ecc` now gives
+> developer-managed guidance and status; it does not install ECC.
 
 aih does not treat a repository name, marketplace entry, or successful download
 as permission to execute baseline content. ECC and Superpowers are split into
@@ -19,19 +19,19 @@ These are separate records and must not be read as synonyms:
    duplicate raw rows without deleting them;
 3. a **policy disposition** assigns `BLOCK`, `REVIEW`, `WARN`, `INFORMATIONAL`, or
    `SUPPRESSED` to one normalized finding;
-4. an **active-profile verdict** is calculated only over explicitly selected
-   component closure.
+4. an **active-profile verdict** (`no-findings` or `has-findings`, a label) is
+   calculated only over explicitly selected component closure.
 
 `aih evidence vet-baseline` keeps the concise component lock and writes a separate
 occurrence sidecar. Its primary output reports source integrity, active profile,
-selected components, pass/review/block counts, genuine reasons with source line
-and value, the policy decision, and runtime restrictions.
+selected components, no-findings/has-findings component counts, genuine reasons
+with source line and value, the policy decision, and runtime restrictions.
 
-ECC Lean is `ecc-lean-v1`: the installer plus the exact nine-component Lean
-allowlist. Superpowers standard is `superpowers-standard-v1`: its plugin runtime
+The historical ECC Lean evidence profile is `ecc-lean-v1`: the installer
+and its nine-component Lean allowlist. It is not a current install profile. Superpowers standard is `superpowers-standard-v1`: its plugin runtime
 and 14 shipped skills. Every other catalog component remains disclosed as
-`DISCOVERED / NOT SELECTED / NOT AUTHORIZED / NOT INSTALLED`; its findings cannot
-hold or block the active profile.
+`DISCOVERED / NOT SELECTED / NOT INSTALLED`; its findings do not label the
+active profile.
 
 ## Two evidence tiers
 
@@ -92,36 +92,33 @@ and requires separate authorization for the exact SHA.
 
 ### Administrator fetch and cache boundary
 
-`aih policy generate <admin-root> --apply` resolves baseline evidence before it
-renders the administrator Workbench. Enterprise accepts only the fixed
-OS/admin-managed bootstrap root; Vibe accepts only the canonical bootstrap
-under the supplied administrator root. That strict canonical record owns the
+The retained internal baseline-evidence operations accept a fixed
+OS/admin-managed bootstrap root for Enterprise or a canonical bootstrap under
+the supplied administrator root for Vibe; there is no public `policy generate`
+or Workbench render route. The strict canonical bootstrap record owns the
 credential-free HTTPS artifact and attestation locators, exact publisher
 repository/workflow/issuer/ref/environment identity, the two supported source
 pins, schema range, and cache-age policy. Repository-local policy cannot choose
 or widen this channel.
 
-The route attempts a complete fresh artifact first, then a reverified
+The internal resolver attempts a complete fresh artifact first, then a reverified
 last-downloaded record, then the packaged lock. Only the exact unavailable
 sentinel advances to another tier: it is emitted only when the first artifact
 request receives HTTP 404 or 410. DNS, TLS, connection, request, or timeout
 failures, every redirect, and every non-200 status other than 404 or 410 are
 terminal; they cannot force a downgrade to cached or packaged evidence. The
-applied administrator route therefore requires the baseline origin to answer
-before its downstream catalog stage can run. Partial, malformed, oversized,
+fresh resolution therefore requires the baseline origin to answer before
+downstream catalog preparation can run. Partial, malformed, oversized,
 stale, wrong-source, wrong-pin, wrong-schema, untrusted, or cache-commit
 outcomes also stop the run.
 Fresh and cached artifacts repeat the complete local artifact check and exact
 GitHub attestation verification; a prior verification result is never cache
 authority. Fresh bytes enter one bootstrap-derived, contained owner-only cache
-slot only after verification and before the Workbench uses them.
-
-Omitting `<admin-root>` preserves portable generation without acquisition or
-cache authority. Supplying it without `--apply` fails before HTTPS, process,
-cache, or Workbench effects. The rendered administrator artifact receives only
-bounded tier, source ids, schema version, digest, download age, and resolution
-time. Locators, local paths, credentials, signatures, attestation bytes, signer
-roots, and machine details are not representable in that provenance.
+slot only after verification. These internal cache contracts do not create an
+organization approval, public fetch command, or authoring route. Their bounded
+provenance contains tier, source ids, schema version, digest, download age, and
+resolution time, not locators, local paths, credentials, signatures, attestation
+bytes, signer roots, or machine details.
 
 ### Enterprise org-evidence boundary
 
@@ -162,29 +159,35 @@ the release vet records exact analyzer receipts before the lock is written:
   detector change always moves the identity even between release version bumps
   (see `src/baseline-evidence/native-identity.ts`) — and pinned SkillSpector
   through Docker are required for every declared component;
-- `semgrep==1.173.0` through its committed uv project is required for every
+- `semgrep==1.178.0` through its committed uv project is required for every
   declared component;
-- `cisco-ai-skill-scanner==2.0.14` through its committed uv project is additionally required
+- `cisco-ai-skill-scanner==2.1.0` through its committed uv project is additionally required
   for every component whose declared bytes contain a regular `SKILL.md` file;
 - SkillSpector is bound to source revision
-  `2d198ab910add401cad658d1087e7c7ba24fd640` and controlled image digest
-  `sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800`.
+  `c7958a3268d9498644b22edb75d0f051bbc8cbfc` (v2.12.0) and controlled image digest
+  `sha256:efe47bd7e073064426541381c8cb284162086950748424d1b4633788a2275bc6`.
 
 Supplemental locked detectors are not part of the minimum release floor and do
 not enlarge the deterministic component-receipt closure. When one completes,
-aih still resolves its execution-time identity from the exact committed uv-lock
-digest and rejects an unattributed analyzer. Component receipts retain only the
+aih still names its execution-time identity from the exact uv-lock digest
+aih pins for it and rejects an unattributed analyzer. Component receipts retain only the
 required analyzer set so optional local availability cannot make the vendor
 lock nondeterministic.
 
 Analyzer provisioning may fetch those exact inputs. Analyzer execution is
-no-egress: SkillSpector runs with Docker `--network none`, a read-only source
-mount and root filesystem, and `--no-llm`; Cisco runs with `uv run --project
-tools/cisco-skill-scanner --locked --isolated --python 3.12 --offline
---no-python-downloads --no-env-file` through the committed scanner project and
-lock; Semgrep uses the equivalent locked, isolated, offline invocation through
-`tools/trust-scanners/semgrep`, disables repository-controlled Semgrep and Git
-ignore files, and includes unknown extensions. The explicit Python minor keeps offline cache
+no-egress, and every analyzer runs in the installed `@aihq/scan`, never in aih:
+SkillSpector runs with Docker `--network none`, a read-only source mount and
+root filesystem, and `--no-llm`, from a locally loaded image Scan never pulls;
+Cisco and Semgrep run through Scan's committed uv projects with a locked,
+isolated, offline `uv run` under the host-process profile (or the Linux
+namespace profile when policy selects it); Semgrep disables repository-controlled
+Semgrep and Git ignore files, and includes unknown extensions. A fresh vet names
+each uv analyzer by the version and uv.lock digest aih accepts for the profile it
+runs under (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1` in
+`src/trust/scan-analyzer-identity.ts`), never by what Scan declares; Scan must
+declare and run exactly that identity, or the analyzer is refused. Both uv
+profiles install one Cisco lock (`1e98c5679994`), so the Cisco identity is the
+same under either profile. The explicit Python minor keeps offline cache
 selection stable when a newer interpreter is installed for an unrelated helper.
 The component scanner uses a path-preserving projection, includes one regular
 top-level repository license file for license inheritance, and does not follow
@@ -253,48 +256,19 @@ closed rather than launching several complete scans on one host. Joined SARIF is
 then filtered to each component's declared paths and evaluated in that
 component's native context; raw scanner evidence is retained.
 
-## Install-time gate
+## Current ECC guidance
 
-For a mutating baseline command, aih:
+`aih ecc` prints exact developer-managed installation guidance and
+`aih ecc --status` reports presence of ECC's own install-state files only.
+It does not execute ECC installers, materialize components, register MCPs,
+or remove ECC content. Catalog evidence remains useful for provenance and
+inventory. Scan findings inform selection and never block third-party inventory.
 
-1. resolves the selected components and an exact 40-character source pin;
-2. downloads a GitHub tarball into an owner-only quarantine without executing it;
-3. validates fetch metadata and rejects links, hard links, path escapes, and
-   unsupported tree entries;
-4. authorizes each selected component from exact vendor or attributed org evidence;
-5. re-hashes the same quarantined tree immediately before constructing install actions;
-6. runs only actions that consume that verified checkout, then removes quarantine.
+## Historical installer posture behavior
 
-If the tree changes after clearance, the second hash check fails and install
-actions are not constructed. ECC dependency preparation uses
-`npm ci --omit=dev --ignore-scripts` only after the installer runtime and selected
-components clear the gate. Scoped ECC targets construct ECC's manifest plan from the verified
-checkout, filter both operations and state preview to the selected component union, and reject
-unknown operation kinds. Codex keeps its add-only shared-config merge path and copies only selected
-skills/agents; scoped Kiro remains guidance-only because its native installer cannot enforce this
-component boundary.
-
-Selected validated MCP configuration is generated from aih's pinned catalog, not ECC's mutable
-defaults. Project-local config receives the current project's selection; global config receives the
-registered machine union. Context7, Exa, and other egress-bearing servers are never defaulted by
-this path. The component ledger, including evidence tier/issuer/hash provenance, is atomically
-committed only after all install steps succeed.
-
-Prune consumes that provenance-bearing ledger as a primary machine store but never treats the
-ledger alone as permission to delete a path. A shrinking home target must also have strict ECC
-install state, and every mutation is limited to a state-recorded managed operation or an exact aih
-Codex managed block. Planning hashes the ledger, state, destinations, and shared config; apply
-revalidates those bytes and rejects links, path escapes, malformed ownership markers, and drift.
-Target state commits before the ledger, with rollback restoring all prior bytes if any step fails.
-
-Superpowers marketplace and plugin-picker flows cannot currently prove that the
-installed bytes came from a verified local checkout. aih therefore runs no
-mutable Antigravity, Copilot, marketplace, or TUI install. It emits guidance that
-names the reviewed pin and explicitly says the marketplace selection is not
-evidence-covered. The Kiro methodology steering bridge is generated by aih and
-is labeled first-party rather than Superpowers vendor evidence.
-
-## Posture behavior
+This table records the former aih-managed ECC installer gate. Current
+developer-managed ECC installation does not use these verdicts as authority;
+scan findings remain information on selectable third-party inventory.
 
 | Evidence result | vibe | enterprise |
 | --- | --- | --- |
@@ -303,16 +277,16 @@ is labeled first-party rather than Superpowers vendor evidence.
 | Exact `blocked` verdict | deny | deny |
 | Invalid configured org bundle/signature | deny | deny |
 
-Danger-class findings remain a floor at every posture. In particular, unpinned
+For that former gate, danger-class findings remained a floor at every posture. In particular, unpinned
 executable dependencies, destructive automatic execution, genuine credential
 extraction, actual hidden/control Unicode, source drift, and unavailable
-mandatory coverage are not made installable by selecting `vibe` or adding org
-evidence for the same blocked bytes. Review-required findings may be accepted
+mandatory coverage were not made installable by selecting `vibe` or adding org
+evidence for the same blocked bytes. Review-required findings could be accepted
 only by exact occurrence fingerprints against the reviewed source commit,
 component tree, analyzer versions, policy version, and profile. Any drift voids
 the decision. Legacy code-only acceptance does not match the corrected policy,
-and acceptance is never used to hide a detector bug. Visible Unicode and other
-warning findings remain disclosed without blocking.
+and acceptance was never used to hide a detector bug. Visible Unicode and other
+warning findings remain disclosed.
 
 ## Vet and sign an org override
 
@@ -436,19 +410,18 @@ source and verifies Scanner custody and analyzer identities before interpreting
 the annexes. Neither this workflow nor the consumer provisions or executes an
 analyzer.
 
-After both source publications verify, Core assembles the candidate lock and ECC
-install preview and compares them byte-for-byte with the committed artifacts.
+After both source publications verify, Core assembles the candidate evidence lock
+and compares it byte-for-byte with the committed artifact.
 The workflow uploads the candidate evidence and authority-free publication
 provenance for review; it does not commit, push, publish an npm package, or modify
-the protected branch. A verified `blocked` result is not a successful install
-baseline.
+the protected branch. A finding label is not an ECC installation verdict.
 
 ### Candidate inventories before a baseline update
 
 Core's repository-only `tools/prepare-candidate-baseline-requests.mjs` authors
 requests from a `CandidateBaselineInventoryV1` under
-`.github/baseline-candidates/`. The six reviewed inventories cover Core,
-Anthropic skills, ECC, Matt Pocock skills, Ponytail, and Superpowers. Each binds
+`.github/baseline-candidates/`. The five reviewed inventories cover Core,
+Anthropic skills, ECC, Matt Pocock skills, and Superpowers. Each binds
 an exact repository, commit, source tree digest, component paths, and explicit
 source symlink exclusions. Preparation rejects source drift and requires every
 regular source file to belong to exactly one component before writing canonical
@@ -470,8 +443,8 @@ follow, and both are load-bearing:
 
 1. **Vet what you ship, at its exact named source.** The ECC product source is
    canonical upstream
-   `affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`, alongside
-   `obra/Superpowers@b36e0829…`, in `src/internals/baseline-sources.ts` and
+   `affaan-m/ECC@5064474d4d762dc9640234a41617cccb79185cec` (v2.2.1), alongside
+   `obra/Superpowers@5bf4e780…` (v6.4.1), in `src/internals/baseline-sources.ts` and
    recorded with their acceptance disposition in
    `src/internals/external-pin-ledger.json`. Any working checkout used to
    reproduce a baseline — a local clone, a personal fork, a CI runner tree —

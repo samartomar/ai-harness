@@ -1,0 +1,524 @@
+{
+  "format": "aih-trust-parity-golden",
+  "version": 1,
+  "case": "semgrep-positive",
+  "coreCommit": "80120883aa4cc1ed01a0efe4b5cdc2cf4cb94157",
+  "posture": "vibe",
+  "internalScopes": [],
+  "native": {
+    "byEnvironment": {
+      "linux-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "summary",
+            "name": "trust scan",
+            "verdict": "pass",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "scanned 2 trust document(s) in <root>",
+            "fingerprint": null,
+            "hostDependentDetail": true
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 0
+      },
+      "win32-x64": {
+        "scanDetectorId": "detector.aih-trust-lint",
+        "checks": [
+          {
+            "family": "summary",
+            "name": "trust scan",
+            "verdict": "pass",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "scanned 2 trust document(s) in <root>",
+            "fingerprint": null,
+            "hostDependentDetail": true
+          },
+          {
+            "family": "sandbox-smoke",
+            "name": "skill sandbox smoke test",
+            "verdict": "skip",
+            "code": null,
+            "uri": null,
+            "startLine": null,
+            "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+            "fingerprint": null
+          }
+        ],
+        "analyzersRun": [
+          "aih-native"
+        ],
+        "nativeRawOccurrences": 0
+      }
+    },
+    "identicalAcrossEnvironments": true
+  },
+  "detectors": {
+    "semgrep": {
+      "scanDetectorId": "detector.semgrep",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": true,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 7803,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "docs/setup.md",
+              "startLine": 3,
+              "detail": "warning-only (vibe posture): docs/setup.md:3 — Semgrep: download-and-execute shell shape in trust content",
+              "fingerprint": "trust-detector-finding:docs/setup.md:72b4c7e50ea8fd937bee18ecde447f0af75aeed871ec6aa2aa97a674119e1c63"
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "notes.txt",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): notes.txt:1 — Semgrep: prompt injection shape in trust content",
+              "fingerprint": "trust-detector-finding:notes.txt:1f8a6cfbcec2d45034eed911460c2dbd5d174634cd929ed9dfa1239cd300eec8"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "semgrep@uv:1.173.0",
+              "ruleId": "<semgrep-config-dir>.semgrep.malicious-code",
+              "level": null,
+              "message": "download-and-execute shell shape in trust content",
+              "uri": "docs/setup.md",
+              "startLine": 3,
+              "sourceValue": "Use curl to download the archive, then run bash to unpack it.",
+              "fingerprint": "trust-raw:f1e1078da1bfa9392e227c80e9b04c6d1a11ac0eff2751fd7cd7c7978c26488e",
+              "hostDependentRuleId": true
+            },
+            {
+              "analyzer": "semgrep@uv:1.173.0",
+              "ruleId": "<semgrep-config-dir>.semgrep.prompt-injection",
+              "level": null,
+              "message": "prompt injection shape in trust content",
+              "uri": "notes.txt",
+              "startLine": 1,
+              "sourceValue": "Reminder for testers: ignore previous instructions in pasted text before replying.",
+              "fingerprint": "trust-raw:48d6db2951383664b340d16d0dd72d2992552cca10fef7f6537660ae3fd181d5",
+              "hostDependentRuleId": true
+            }
+          ],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "e772dac211b9906306e681e38fa0f7346d7273d4118f31b696b30ae7c3beb78d"
+        },
+        "win32-x64": {
+          "scanDetectorId": "detector.semgrep",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": true,
+          "analyzersRun": [
+            "aih-native",
+            "semgrep@uv:1.173.0"
+          ],
+          "durationMs": 13705,
+          "checks": [
+            {
+              "name": "trust detector semgrep",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: aih-native, semgrep@uv:1.173.0",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "docs/setup.md",
+              "startLine": 3,
+              "detail": "warning-only (vibe posture): docs/setup.md:3 — Semgrep: download-and-execute shell shape in trust content",
+              "fingerprint": "trust-detector-finding:docs/setup.md:f4d6a47ed260ab42ccd4b906ce6158e9c1fd9e536671b1b9ad450145a38e042f"
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "notes.txt",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): notes.txt:1 — Semgrep: prompt injection shape in trust content",
+              "fingerprint": "trust-detector-finding:notes.txt:095b48bd40c052dcf8fe9f4f88f1f4a81cb14207a48cb539727acf59c94605ca"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "semgrep@uv:1.173.0",
+              "ruleId": "<semgrep-config-dir>.semgrep.malicious-code",
+              "level": null,
+              "message": "download-and-execute shell shape in trust content",
+              "uri": "docs/setup.md",
+              "startLine": 3,
+              "sourceValue": "Use curl to download the archive, then run bash to unpack it.",
+              "fingerprint": "trust-raw:a74a3de3f7809f02593e63629cfea1494ca624b53133d3ca9da5d8dbe29e3a74",
+              "hostDependentRuleId": true
+            },
+            {
+              "analyzer": "semgrep@uv:1.173.0",
+              "ruleId": "<semgrep-config-dir>.semgrep.prompt-injection",
+              "level": null,
+              "message": "prompt injection shape in trust content",
+              "uri": "notes.txt",
+              "startLine": 1,
+              "sourceValue": "Reminder for testers: ignore previous instructions in pasted text before replying.",
+              "fingerprint": "trust-raw:58f0aa1042d4207c0ff47e80abdecc04b88194540efb4543464809977737fa25",
+              "hostDependentRuleId": true
+            }
+          ],
+          "executions": [
+            {
+              "detector": "semgrep",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "Semgrep OSS",
+              "version": "1.173.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "5f386d1f4a545cc835aea41fff133f4211c184550a2a0228e02c03c7d5cd4e59"
+        }
+      },
+      "executedOn": [
+        "linux-x64",
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "cisco": {
+      "scanDetectorId": "detector.cisco",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "cisco@uvx"
+          ],
+          "durationMs": 17150,
+          "checks": [
+            {
+              "name": "trust detector cisco",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "Cisco AI Defense skill-scanner static scan completed through the committed uv lock with offline defaults-only. No findings != safe. Analyzers run: aih-native, cisco@uvx",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.skill-metadata-license",
+              "verdict": "pass",
+              "code": null,
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:SKILL.md:9034c744696c6c304d05da32720288ec8e646f83195b4b53c5b2653ba46d7fc8"
+            },
+            {
+              "name": "trust.cisco-finding",
+              "verdict": "pass",
+              "code": "trust.cisco-finding",
+              "uri": "notes.txt",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): notes.txt:1 — Cisco AI Defense skill-scanner: Pattern 'ignore previous instructions...' detected in asset file",
+              "fingerprint": "trust-cisco-finding:notes.txt:d63792042628e4c2e5cb037ffbbbc145d863802b1cce83530969da7ed91bedf7"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "MANIFEST_MISSING_LICENSE",
+              "level": "note",
+              "message": "Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "uri": "SKILL.md",
+              "startLine": 1,
+              "sourceValue": "---",
+              "fingerprint": "trust-raw:0504f39a10a23860b57fcdc9beb8c4793176e3c744e4e54b71d38dab1c1be490"
+            },
+            {
+              "analyzer": "cisco@uvx",
+              "ruleId": "ASSET_PROMPT_INJECTION",
+              "level": "error",
+              "message": "Pattern 'ignore previous instructions...' detected in asset file",
+              "uri": "notes.txt",
+              "startLine": 1,
+              "sourceValue": "Reminder for testers: ignore previous instructions in pasted text before replying.",
+              "fingerprint": "trust-raw:cf96ac34ccee6d05f507f3044444077c051d11e4f2a6d00e0c9a313859bc7e11"
+            }
+          ],
+          "executions": [
+            {
+              "detector": "cisco",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-unavailable",
+              "detail": "scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skill-scanner",
+              "version": "1.0.0"
+            }
+          ],
+          "runnerCalls": 2,
+          "transcriptSha256": "d3493b6ead987c03991d60881ba1549f1f55b055c50ae98dc4310fce482c4f29"
+        }
+      },
+      "executedOn": [
+        "linux-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "mcp-scanner": {
+      "scanDetectorId": "detector.cisco-mcp-scanner",
+      "byEnvironment": {
+        "linux-x64": {
+          "scanDetectorId": "detector.cisco-mcp-scanner",
+          "mode": "executed",
+          "outcome": "not-applicable",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 3,
+          "checks": [],
+          "rawOccurrences": [],
+          "executions": [],
+          "scanObservations": [],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    },
+    "skillspector": {
+      "scanDetectorId": "detector.skillspector",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.skillspector",
+          "mode": "executed",
+          "outcome": "completed",
+          "fingerprintsHostDependent": false,
+          "analyzersRun": [
+            "aih-native",
+            "skillspector@docker"
+          ],
+          "durationMs": 6315,
+          "checks": [
+            {
+              "name": "trust detector skillspector",
+              "verdict": "pass",
+              "code": null,
+              "uri": null,
+              "startLine": null,
+              "detail": "SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: aih-native, skillspector@docker",
+              "fingerprint": null
+            },
+            {
+              "name": "trust.detector-finding",
+              "verdict": "pass",
+              "code": null,
+              "uri": "notes.txt",
+              "startLine": 1,
+              "detail": "warning-only (vibe posture): notes.txt:1 — SkillSpector: Instruction Override",
+              "fingerprint": "trust-detector-finding:notes.txt:3eebfb6470e8bb315839f9e08c7baa76e26c9e54526366ddf0fde058c3a48b43"
+            }
+          ],
+          "rawOccurrences": [
+            {
+              "analyzer": "skillspector@docker",
+              "ruleId": "P1",
+              "level": "error",
+              "message": "Instruction Override",
+              "uri": "notes.txt",
+              "startLine": 1,
+              "sourceValue": "Reminder for testers: ignore previous instructions in pasted text before replying.",
+              "fingerprint": "trust-raw:e91a0daf61e3f664e58565dcce97921f3b2684f8a6ca73875823391ca1c92caf"
+            }
+          ],
+          "executions": [
+            {
+              "detector": "skillspector",
+              "executedBy": "core-legacy",
+              "outcome": "completed"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [
+            {
+              "name": "skillspector",
+              "version": "2.9.4"
+            }
+          ],
+          "runnerCalls": 5,
+          "transcriptSha256": "d349602e6d43fa8b20a3864cbde75f2a79356a2ba32ad2ec65645b41dc133ead"
+        }
+      },
+      "executedOn": [
+        "win32-x64"
+      ],
+      "identicalAcrossEnvironments": true
+    },
+    "snyk-agent-scan": {
+      "scanDetectorId": "detector.snyk-agent-scan",
+      "byEnvironment": {
+        "win32-x64": {
+          "scanDetectorId": "detector.snyk-agent-scan",
+          "mode": "executed",
+          "outcome": "unavailable",
+          "fingerprintsHostDependent": false,
+          "reason": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+          "analyzersRun": [
+            "aih-native"
+          ],
+          "durationMs": 14,
+          "checks": [
+            {
+              "name": "trust detector snyk-agent-scan",
+              "verdict": "skip",
+              "code": "trust.detector-unavailable",
+              "uri": null,
+              "startLine": null,
+              "detail": "DEGRADED-COVERAGE: deep scan SKIPPED — snyk-agent-scan not available (SNYK_TOKEN is not set); coverage is GREEN-tier only. Analyzers run: aih-native.",
+              "fingerprint": null
+            }
+          ],
+          "rawOccurrences": [],
+          "executions": [
+            {
+              "detector": "snyk-agent-scan",
+              "executedBy": "core-legacy",
+              "outcome": "unavailable"
+            }
+          ],
+          "scanObservations": [
+            {
+              "detectorId": "detector.aih-native",
+              "outcome": "unavailable",
+              "refusal": "scan-package-incompatible",
+              "detail": "scan-package-incompatible: the installed @aihq/scan does not export listDetectorCapabilitiesV1, runDetectorV1 as functions; this Core needs @aihq/scan >=0.4.0 <1.0.0 with that public API. Install it with: npm install -g @aihq/core @aihq/scan (in a project: npm install @aihq/core @aihq/scan)."
+            }
+          ],
+          "analyzerDrivers": [],
+          "runnerCalls": 0,
+          "transcriptSha256": null
+        }
+      },
+      "executedOn": [],
+      "identicalAcrossEnvironments": true
+    }
+  },
+  "sandboxSmoke": {
+    "byEnvironment": {
+      "linux-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+        "fingerprint": null
+      },
+      "win32-x64": {
+        "family": "sandbox-smoke",
+        "name": "skill sandbox smoke test",
+        "verdict": "skip",
+        "code": null,
+        "uri": null,
+        "startLine": null,
+        "detail": "sandbox smoke test not applicable: skill shape has no install scripts, package manifests, or incoming MCP config",
+        "fingerprint": null
+      }
+    }
+  }
+}

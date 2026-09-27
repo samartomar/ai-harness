@@ -1,0 +1,127 @@
+{
+  "case": "prompt-injection",
+  "producer": {
+    "engine": "runTrustLintV1",
+    "scanCheckout": "sep/scan-detectors",
+    "scanCommit": "28718a7515829c64b0b1410d98bfd1c48d29069b"
+  },
+  "request": {
+    "selectedClosurePaths": [
+      "docs/api.md",
+      "SKILL.md"
+    ],
+    "detectorOptions": {
+      "internalScopes": [],
+      "mcpConfigPaths": []
+    }
+  },
+  "sarif": {
+    "version": "2.1.0",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "aih-trust-lint",
+            "version": "1.0.0"
+          }
+        },
+        "properties": {
+          "aih-trust/v1": {
+            "format": "aih-trust-lint-facts",
+            "version": 1,
+            "trustDocumentCount": 2,
+            "repositoryLicenseFile": null
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": "docs/api.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": [
+                  {
+                    "line": 4,
+                    "codes": [
+                      "trust.external-egress"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": [
+                  {
+                    "line": 7,
+                    "codes": [
+                      "trust.prompt-injection"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "ruleId": "trust.external-egress",
+            "level": "error",
+            "message": {
+              "text": "docs/api.md:4 — external-egress.authenticated-request: authenticated external request uses an environment-provided credential; requires reviewed egress"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "docs/api.md"
+                  },
+                  "region": {
+                    "startLine": 4
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-external-egress:docs/api.md:2b7bbe6e1a23e350ee826670c49468baff7c4c6bdc245c24a8251752c9eb5856"
+            }
+          },
+          {
+            "ruleId": "trust.prompt-injection",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:7 — prompt-injection.ignore-instructions: attempts to override prior/system instructions"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 7
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-prompt-injection:SKILL.md:93e6e7bf63660a7b73a65779b221674b9e41415a14c3d89e23e4f4e7fb6ba13a"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

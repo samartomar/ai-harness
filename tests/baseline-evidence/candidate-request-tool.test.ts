@@ -60,15 +60,14 @@ function run(args: readonly string[]) {
 }
 
 describe("candidate request preparation tool", () => {
-  it("ships the six reviewed candidate inventories outside package runtime", () => {
+  it("ships the five reviewed candidate inventories outside package runtime", () => {
     const directory = resolve(".github/baseline-candidates");
     const expected = new Map([
       ["aih-core.inventory.json", ["aih-core", 16]],
       ["anthropics-skills.inventory.json", ["anthropics-skills", 23]],
       ["ecc.inventory.json", ["ecc", 942]],
       ["mattpocock-skills.inventory.json", ["mattpocock-skills", 46]],
-      ["ponytail.inventory.json", ["ponytail", 36]],
-      ["superpowers.inventory.json", ["superpowers", 30]],
+      ["superpowers.inventory.json", ["superpowers", 32]],
     ] as const);
 
     expect(readdirSync(directory).sort()).toEqual([...expected.keys()].sort());
