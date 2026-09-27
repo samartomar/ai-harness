@@ -11,22 +11,57 @@ const INSTALL_TARGETS = new Set([
   "opencode",
   "zed",
   "antigravity",
+  "kimi",
 ]);
 const HOME_TARGETS = new Set(["claude", "codex", "opencode"]);
+/**
+ * CLIs the harness can target that ECC's own installer has no adapter for
+ * (E: scripts/lib/install-targets/registry.js, install-manifests.js).
+ */
+const NO_INSTALLER_TARGETS = new Set(["copilot", "windsurf"]);
+/**
+ * ECC's Cursor target materializes `.cursor/hooks` and `.cursor/hooks.json` from
+ * `platform-configs` even under `--profile minimal`
+ * (E: manifests/install-profiles.json, install-modules.json,
+ * scripts/lib/install-targets/cursor-project.js), and ECC refuses to apply a
+ * plan that materializes hooks without an explicit decision
+ * (E: scripts/lib/install/hook-consent.js:46-66,177-190). The guidance
+ * therefore prints a decision rather than an ambiguous command.
+ */
+const HOOK_DECISION_TARGETS = new Set(["cursor"]);
 
 export function eccGuidance(targets: readonly Cli[], platform: string): string {
-  const selected = [...new Set(targets)].filter((target) => INSTALL_TARGETS.has(target));
+  const selected = [...new Set(targets)].filter(
+    (target) => INSTALL_TARGETS.has(target) || NO_INSTALLER_TARGETS.has(target),
+  );
+  const noInstaller = selected.filter((target) => NO_INSTALLER_TARGETS.has(target));
+  const installable = selected.filter((target) => INSTALL_TARGETS.has(target));
   const installer = platform === "win32" ? "./install.ps1" : "./install.sh";
-  const homeTargets = selected.filter((target) => HOME_TARGETS.has(target));
-  const projectTargets = selected.filter((target) => !HOME_TARGETS.has(target));
+  const homeTargets = installable.filter((target) => HOME_TARGETS.has(target));
+  const projectTargets = installable.filter((target) => !HOME_TARGETS.has(target));
   const projectInstaller =
     platform === "win32" ? "pwsh /path/to/ECC/install.ps1" : "bash /path/to/ECC/install.sh";
+  const installCommand = (target: string): string =>
+    `${projectInstaller} --profile minimal --target ${target}${
+      HOOK_DECISION_TARGETS.has(target) ? " --no-hooks" : ""
+    }`;
   const lines = [
     `ECC ${UPSTREAM.repository}@${UPSTREAM.commit} — developer-managed installation`,
     "Clone the reviewed source, then run these commands from the ECC checkout:",
     "git clone https://github.com/affaan-m/ECC.git",
     `git -C ECC checkout ${UPSTREAM.commit}`,
     "cd ECC",
+    ...noInstaller.map(
+      (target) =>
+        `ECC has no installer for ${target}: ECC's install-target registry has no ${target} adapter, so nothing here installs it.`,
+    ),
+    ...(homeTargets.includes("opencode")
+      ? [
+          "OpenCode installs the compiled plugin payload under .opencode/dist; build it once here before installing:",
+          "npm install",
+          "npm run build:opencode",
+        ]
+      : []),
     `Home-scoped targets: ${homeTargets.join(", ") || "none"} (install into the current user's home).`,
     ...homeTargets.map((target) => `${installer} --profile minimal --target ${target}`),
     `Project-scoped targets: ${projectTargets.join(", ") || "none"} (install into the current project).`,
@@ -35,12 +70,15 @@ export function eccGuidance(targets: readonly Cli[], platform: string): string {
       : [
           "Enter the project receiving ECC before running a project-scoped target:",
           "cd /path/to/project",
-          ...projectTargets.map(
-            (target) => `${projectInstaller} --profile minimal --target ${target}`,
-          ),
+          ...projectTargets.map(installCommand),
         ]),
+    ...(projectTargets.some((target) => HOOK_DECISION_TARGETS.has(target))
+      ? [
+          "Cursor installs ECC's Cursor hooks; the command above passes --no-hooks, and --enable-hooks turns ECC's hooks on.",
+        ]
+      : []),
     "On Windows use ./install.ps1; on Unix use ./install.sh.",
-    "Kiro: bash .kiro/install.sh <project> (standalone script; no managed uninstall).",
+    "Kiro: bash /path/to/ECC/.kiro/install.sh /path/to/project (standalone script; requires bash (on Windows use Git Bash or WSL); ECC's Kiro script has no uninstall).",
     "From the ECC checkout, preview home-scoped removals:",
     ...homeTargets.flatMap((target) => [
       `node scripts/uninstall.js --target ${target} --dry-run`,
@@ -79,9 +117,10 @@ export function eccStatus(root: string, home: string): string {
   if (!isAbsolute(root) || !isAbsolute(home)) throw new Error("ECC status roots must be absolute");
   const project = [
     ".cursor/ecc-install-state.json",
-    ".agent/ecc-install-state.json",
+    ".agents/ecc-install-state.json",
     ".gemini/ecc-install-state.json",
     ".zed/ecc-install-state.json",
+    ".kimi-code/ecc-install-state.json",
   ];
   const user = [
     ".claude/ecc/install-state.json",

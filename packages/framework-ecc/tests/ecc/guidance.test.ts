@@ -45,17 +45,21 @@ afterEach(() => {
 describe("ECC basic guidance", () => {
   it("runs project targets from the project and names home target scope", () => {
     const text = eccGuidance(
-      ["claude", "codex", "opencode", "cursor", "gemini", "zed", "antigravity"],
+      ["claude", "codex", "opencode", "cursor", "gemini", "zed", "antigravity", "kimi"],
       "linux",
     );
     expect(text).toContain("Home-scoped targets: claude, codex, opencode");
-    expect(text).toContain("Project-scoped targets: cursor, gemini, zed, antigravity");
+    expect(text).toContain("Project-scoped targets: cursor, gemini, zed, antigravity, kimi");
     expect(text).toContain("cd /path/to/project");
-    expect(text).toContain("bash /path/to/ECC/install.sh --profile minimal --target cursor");
+    expect(text).toContain(
+      "bash /path/to/ECC/install.sh --profile minimal --target cursor --no-hooks",
+    );
     expect(text).toContain("node /path/to/ECC/scripts/uninstall.js --target cursor --dry-run");
     expect(text).not.toContain("cd ECC\n./install.sh --profile minimal --target cursor");
     const windows = eccGuidance(["cursor"], "win32");
-    expect(windows).toContain("pwsh /path/to/ECC/install.ps1 --profile minimal --target cursor");
+    expect(windows).toContain(
+      "pwsh /path/to/ECC/install.ps1 --profile minimal --target cursor --no-hooks",
+    );
   });
   it("gives the reviewed exact-source commands and labels marketplace routes mutable", () => {
     const text = eccGuidance(["claude", "codex"], "linux");
@@ -64,9 +68,76 @@ describe("ECC basic guidance", () => {
     expect(text).toContain("./install.sh --profile minimal --target claude");
     expect(text).toContain("./install.sh --profile minimal --target codex");
     expect(text).toContain("node scripts/uninstall.js --target claude --dry-run");
-    expect(text).toContain("bash .kiro/install.sh <project>");
+    expect(text).toContain("bash /path/to/ECC/.kiro/install.sh /path/to/project");
+    expect(text).toContain("requires bash (on Windows use Git Bash or WSL)");
+    expect(text).toContain("ECC's Kiro script has no uninstall");
+    expect(text).not.toContain("bash .kiro/install.sh <project>");
     expect(text).toMatch(/marketplace.*mutable.*do not prove the reviewed pin/is);
     expect(text).toMatch(/MCP.*no exact reviewed command/is);
+  });
+
+  // ECC's opencode target validates compiled artefacts under .opencode/dist
+  // (scripts/lib/install-targets/opencode-home.js:11-16,52-78) and a fresh clone
+  // does not carry them, so the build must precede the opencode install.
+  it("builds the OpenCode payload in the ECC checkout before the OpenCode install", () => {
+    const text = eccGuidance(["opencode"], "linux");
+    const install = text.indexOf("./install.sh --profile minimal --target opencode");
+    expect(install).toBeGreaterThan(-1);
+    expect(text).toContain("npm install");
+    expect(text).toContain("npm run build:opencode");
+    expect(text.indexOf("npm install")).toBeLessThan(text.indexOf("npm run build:opencode"));
+    expect(text.indexOf("npm run build:opencode")).toBeLessThan(install);
+    expect(eccGuidance(["claude"], "linux")).not.toContain("build:opencode");
+  });
+
+  // Kimi's adapter is id 'kimi-project', target 'kimi'
+  // (scripts/lib/install-targets/kimi-project.js:47-53); the installer and the
+  // uninstaller both accept the target value 'kimi'
+  // (scripts/lib/install-manifests.js:8).
+  it("installs Kimi as a project-scoped target at its registry target value", () => {
+    const text = eccGuidance(["kimi"], "linux");
+    expect(text).toContain("Project-scoped targets: kimi");
+    expect(text).toContain("cd /path/to/project");
+    expect(text).toContain("bash /path/to/ECC/install.sh --profile minimal --target kimi");
+    expect(text).toContain("node /path/to/ECC/scripts/uninstall.js --target kimi --dry-run");
+    expect(text).toContain("node /path/to/ECC/scripts/uninstall.js --target kimi");
+    expect(text).not.toContain("kimi-project");
+    expect(text).not.toContain("./install.sh --profile minimal --target kimi");
+  });
+
+  // ECC's registry has no copilot or windsurf adapter
+  // (scripts/lib/install-targets/registry.js:18-34, install-manifests.js:8).
+  it("names CLIs ECC has no installer for instead of printing empty target lists", () => {
+    const both = eccGuidance(["copilot", "windsurf"], "linux");
+    expect(both).toContain("ECC has no installer for copilot");
+    expect(both).toContain("ECC has no installer for windsurf");
+    expect(both).toContain("git clone https://github.com/affaan-m/ECC.git");
+
+    const only = eccGuidance(["copilot"], "linux");
+    expect(only).toContain("ECC has no installer for copilot");
+    expect(only).toContain("git -C ECC checkout 5064474d4d762dc9640234a41617cccb79185cec");
+
+    const mixed = eccGuidance(["claude", "copilot"], "linux");
+    expect(mixed).toContain("Home-scoped targets: claude");
+    expect(mixed).toContain("ECC has no installer for copilot");
+  });
+
+  // --profile minimal --target cursor still plans .cursor/hooks and
+  // .cursor/hooks.json through platform-configs
+  // (manifests/install-profiles.json:4-13, manifests/install-modules.json:110-151,
+  // scripts/lib/install-targets/cursor-project.js:164-193), which
+  // scripts/lib/install/hook-consent.js:46-66,177-190 treats as hook-runtime
+  // materialization, so ECC's installer demands an explicit decision.
+  it("carries an explicit hook decision on the Cursor project install", () => {
+    const text = eccGuidance(["cursor"], "linux");
+    expect(text).toContain(
+      "bash /path/to/ECC/install.sh --profile minimal --target cursor --no-hooks",
+    );
+    expect(text).toMatch(/--enable-hooks turns ECC's hooks on/);
+    const gemini = eccGuidance(["gemini"], "linux");
+    expect(gemini).toContain("bash /path/to/ECC/install.sh --profile minimal --target gemini");
+    expect(gemini).not.toContain("--no-hooks");
+    expect(gemini).not.toContain("--enable-hooks");
   });
 
   it("reports file presence without reading secret values or writing files", () => {
@@ -85,6 +156,28 @@ describe("ECC basic guidance", () => {
     expect(text).not.toContain("SECRET_SENTINEL");
     expect(text).toContain("Not inspected:");
     expect(readFileSync(receipt, "utf8")).toBe(before);
+  });
+
+  // Antigravity's adapter writes .agents/ecc-install-state.json
+  // (scripts/lib/install-targets/antigravity-project.js:20-25) and Kimi's writes
+  // .kimi-code/ecc-install-state.json
+  // (scripts/lib/install-targets/kimi-project.js:47-53).
+  it("reports the pinned Antigravity and Kimi state paths presence-only", () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-ecc-status-"));
+    roots.push(root);
+    const home = join(root, "home");
+    mkdirSync(join(root, ".agents"), { recursive: true });
+    mkdirSync(join(root, ".kimi-code"), { recursive: true });
+    writeFileSync(join(root, ".agents", "ecc-install-state.json"), "SECRET_SENTINEL");
+    writeFileSync(join(root, ".kimi-code", "ecc-install-state.json"), "SECRET_SENTINEL");
+    const text = eccStatus(root, home);
+    expect(text).toContain("project .agents/ecc-install-state.json: present");
+    expect(text).toContain("project .kimi-code/ecc-install-state.json: present");
+    expect(text).not.toContain(".agent/ecc-install-state.json");
+    expect(text).not.toContain("SECRET_SENTINEL");
+    expect(readFileSync(join(root, ".agents", "ecc-install-state.json"), "utf8")).toBe(
+      "SECRET_SENTINEL",
+    );
   });
 
   it.each([
