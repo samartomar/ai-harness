@@ -33,12 +33,14 @@ describe("headless installed Core CI ownership", () => {
   });
 
   it("executes a selected backend policy test instead of filtering it into a removed browser lane", () => {
+    const childEnv = { ...process.env, NO_COLOR: "1" };
+    delete childEnv.FORCE_COLOR;
     const result = spawnSync(process.execPath, [selectedRunner], {
       cwd: root,
       encoding: "utf8",
       timeout: 60_000,
       env: {
-        ...process.env,
+        ...childEnv,
         FULL_SUITE: "false",
         TEST_LANE: "workbench",
         SELECTED_TESTS_JSON: JSON.stringify([
