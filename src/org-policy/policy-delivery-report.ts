@@ -1,4 +1,4 @@
-import { readAihConfig, readPolicyBinding } from "../config/marker.js";
+import { readPolicyBinding } from "../config/marker.js";
 import type {
   FrameworkGovernedSelectionV1,
   FrameworkPolicyDeliveryInspectorV1,
@@ -15,10 +15,6 @@ import {
   hasCommandPermissionOwnership,
   inspectCommandPermissions,
 } from "./command-permissions.js";
-import {
-  inspectPolicyRequiredGuidance,
-  type PolicyRequiredGuidanceInspection,
-} from "./required-guidance.js";
 import { resolveRuntimeOrgPolicy } from "./runtime.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy, readOrgPolicy } from "./schema.js";
 
@@ -53,7 +49,6 @@ export interface PolicyDeliveryReport {
   detail: string;
   nextStep: string;
   binding?: { state: "unbound" | "current" | "blocked"; projectId?: string; detail: string };
-  startupGuidance?: Pick<PolicyRequiredGuidanceInspection, "state" | "path" | "detail">;
   commandPermissions?: CommandPermissionInspection;
   selection?: FrameworkGovernedSelectionV1;
   /** Present when the delivery needed ECC's knowledge and the ECC plugin could not supply it. */
@@ -67,7 +62,9 @@ function hasEccSelection(policy: OrgPolicy | undefined): boolean {
   return (
     policy !== undefined &&
     governanceOwnsAihSurfaces(policy) &&
-    policy.governance.externalSelections.some((selection) => selection.framework === "ecc")
+    policy.governance.externalSelections.some(
+      (selection) => selection.framework === "ecc" && selection.items.length > 0,
+    )
   );
 }
 
@@ -132,7 +129,7 @@ export function summarizePolicyDelivery(
   policy: OrgPolicy | undefined,
   policyBlocked: boolean,
   env: NodeJS.ProcessEnv = {},
-  contextDir = "ai-coding",
+  _contextDir = "ai-coding",
   ecc?: PolicyDeliveryEccV1,
 ): PolicyDeliveryReport {
   const binding = inspectBinding(root, targets, env);
@@ -168,7 +165,6 @@ export function summarizePolicyDelivery(
     requested.length === 0 || inspector === undefined
       ? []
       : targets.filter((target) => !governedTargets.includes(target)).sort();
-  const startupGuidance = inspectPolicyRequiredGuidance(root, contextDir);
   const commandPermissions = inspectCommandPermissions(root, policy, targets);
   const blocking =
     policyBlocked ||
@@ -179,7 +175,6 @@ export function summarizePolicyDelivery(
     blocking,
     policyBlocked,
     binding,
-    startupGuidance,
     commandPermissions,
     ...(eccNotRun === undefined
       ? {}
@@ -215,9 +210,12 @@ export function summarizePolicyDelivery(
       components.length > 0 || commandPermissions.state !== "not-requested"
         ? "unverified"
         : "not-requested",
-    detail:
-      "ECC Catalog selections are developer-managed. aih does not install or verify ECC files.",
-    nextStep: "run aih ecc for the exact ECC commands",
+    detail: hasEccSelection(policy)
+      ? "ECC Catalog selections are developer-managed. aih does not install or verify ECC files."
+      : "Policy delivery reflects the selected governance state.",
+    nextStep: hasEccSelection(policy)
+      ? "run aih ecc for the exact ECC commands"
+      : "aih policy evaluate --json",
   };
 }
 
@@ -227,14 +225,7 @@ export async function inspectPolicyDelivery(
 ): Promise<PolicyDeliveryReport | undefined> {
   try {
     const policy = readOrgPolicy(ctx.root, ctx.env);
-    const contextDir = readAihConfig(ctx.root)?.contextDir ?? ctx.contextDir;
-    const guidance = inspectPolicyRequiredGuidance(ctx.root, contextDir);
-    if (
-      !policy &&
-      guidance.state === "absent" &&
-      !readPolicyBinding(ctx.root) &&
-      !hasCommandPermissionOwnership(ctx.root)
-    )
+    if (!policy && !readPolicyBinding(ctx.root) && !hasCommandPermissionOwnership(ctx.root))
       return undefined;
     const effective = policy ? (await resolveRuntimeOrgPolicy(ctx, policy)).effective : undefined;
     const targets = ctx.targets ?? ["claude"];
@@ -244,7 +235,7 @@ export async function inspectPolicyDelivery(
       policy,
       effective?.blocking ?? false,
       ctx.env,
-      contextDir,
+      ctx.contextDir,
       await loadPolicyDeliveryEccV1(ctx, targets, policy),
     );
   } catch {
@@ -269,11 +260,6 @@ export function renderPolicyDelivery(report: PolicyDeliveryReport): string {
   return [
     `Policy delivery: ${report.blocking ? "blocked" : "no delivery blocker observed"}; policy=${report.policyVersion ?? "unspecified"}; receipt=${report.receipt}; native loading=${report.nativeLoading}`,
     report.detail,
-    ...(report.startupGuidance
-      ? [
-          `  Startup guidance: ${report.startupGuidance.state}; ${report.startupGuidance.path}${report.startupGuidance.detail ? `; ${report.startupGuidance.detail}` : ""}`,
-        ]
-      : []),
     ...(report.commandPermissions
       ? [
           `  Command permissions: ${report.commandPermissions.state}; native enforcement=${report.commandPermissions.nativeEnforcement}; advisory targets=${report.commandPermissions.advisoryTargets.join(", ") || "none"}. ${report.commandPermissions.detail}`,

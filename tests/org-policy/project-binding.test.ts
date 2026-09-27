@@ -331,13 +331,13 @@ describe("durable project policy binding", () => {
     expect(readFileSync(join(root, ".aih-config.json"), "utf8")).toBe(markerBefore);
   });
 
-  it("refuses a public material mutation when ownership remains but its binding is missing", () => {
-    mkdirSync(join(root, "ai-coding"));
-    writeFileSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"), "{}\n");
+  it("refuses a public material mutation when command ownership is malformed", () => {
+    mkdirSync(join(root, ".aih", "org-policy"), { recursive: true });
+    writeFileSync(join(root, ".aih", "org-policy", "command-permissions-v1.json"), "{}\n");
 
     expect(assertPolicyBindingCurrent(root, {})).toBeUndefined();
     expect(() => assertPolicyBindingCurrent(root, {}, undefined, { requireIfOwned: true })).toThrow(
-      /binding is missing/,
+      /invalid command-policy ownership receipt/,
     );
   });
 });

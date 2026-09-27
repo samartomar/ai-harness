@@ -15,7 +15,7 @@ import {
   readHookRegistrarReceipt,
 } from "../../src/org-policy/hook-registrar.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { aihDispatcher, eccStopRegistrations } from "./hook-registrar-fixtures.js";
+import { aihDispatcher, nonEccStopRegistrations } from "./hook-registrar-fixtures.js";
 
 let dir: string;
 
@@ -54,7 +54,7 @@ function seedThirdPartyEntries(extra: Record<string, unknown> = {}): string {
     hooks: {
       Stop: [
         {
-          hooks: eccStopRegistrations().map((registration) => ({
+          hooks: nonEccStopRegistrations().map((registration) => ({
             type: "command",
             command: registration.command,
           })),
@@ -83,7 +83,7 @@ async function run(actions: ReturnType<typeof hookRegistrarProjectionActions>): 
 describe("H6 — revocation is mandatory", () => {
   it("records the prior bytes of a destination the third party already wrote", async () => {
     const prior = seedThirdPartyEntries({ permissions: { allow: ["Bash(ls:*)"] } });
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const receipt = readHookRegistrarReceipt(dir);
     expect(receipt?.prior.state).toBe("present");
     if (receipt?.prior.state !== "present") throw new Error("expected recorded prior bytes");
@@ -92,7 +92,7 @@ describe("H6 — revocation is mandatory", () => {
 
   it("removes third-party entries the third party ships no uninstall path for", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     expect(readDestination()).toContain("run-with-flags.js");
 
     await run(hookRegistrarRevocationActions(ctx(false)));
@@ -106,7 +106,7 @@ describe("H6 — revocation is mandatory", () => {
   // — that is what restoring the prior destination means for this projector.
   it("restores every operator-owned byte and reinstates no adopted entry", async () => {
     seedThirdPartyEntries({ permissions: { allow: ["Bash(ls:*)"] } });
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     await run(hookRegistrarRevocationActions(ctx(false)));
     const after = JSON.parse(readDestination() ?? "{}");
     expect(after.permissions).toEqual({ allow: ["Bash(ls:*)"] });
@@ -122,7 +122,7 @@ describe("H6 — revocation is mandatory", () => {
 
   it("needs no hand editing: revocation is a planned action set", () => {
     seedThirdPartyEntries();
-    const actions = hookRegistrarProjectionActions(ctx(false), eccStopRegistrations());
+    const actions = hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations());
     expect(actions.length).toBeGreaterThan(0);
     for (const action of actions) {
       expect(["write", "remove"]).toContain(action.kind);
@@ -131,7 +131,7 @@ describe("H6 — revocation is mandatory", () => {
 
   it("refuses to revoke a destination that drifted since projection", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     writeFileSync(
       join(dir, HOOK_REGISTRAR_DESTINATION),
       `${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`,
@@ -144,7 +144,7 @@ describe("H6 — revocation is mandatory", () => {
     expect(hookRegistrarState(dir).state).toBe("absent");
     seedThirdPartyEntries();
     expect(hookRegistrarState(dir).state).toBe("unowned");
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     expect(hookRegistrarState(dir).state).toBe("active");
   });
 
@@ -176,7 +176,7 @@ describe("H6 — revocation is mandatory", () => {
   // silently deleting one is worse.
   it("refuses to silently delete entries a third party wrote after the receipt", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
 
     const reinstalled = JSON.parse(readDestination() ?? "{}");
     reinstalled.hooks.PreToolUse = [
@@ -189,9 +189,9 @@ describe("H6 — revocation is mandatory", () => {
       "utf8",
     );
 
-    expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
-      /did not emit|PreToolUse/,
-    );
+    expect(() =>
+      hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()),
+    ).toThrowError(/did not emit|PreToolUse/);
   });
 
   // H1: repair lists the unowned entries by owner and event, and offers
@@ -211,7 +211,7 @@ describe("H6 — revocation is mandatory", () => {
 
   it("reports no unowned entry once AIH owns the destination", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const report = hookRegistrarReport(dir);
     expect(report.state).toBe("active");
     expect(report.unowned).toEqual([]);
@@ -219,16 +219,16 @@ describe("H6 — revocation is mandatory", () => {
 
   it("writes a receipt pinning every entry's owner and provenance", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const receipt = readHookRegistrarReceipt(dir);
     expect(receipt?.destination).toBe(HOOK_REGISTRAR_DESTINATION);
     expect(receipt?.entries).toHaveLength(6);
     for (const entry of receipt?.entries ?? []) {
       expect(entry.owner).toBe("third-party");
-      expect(entry.ownerId).toBe("ecc");
+      expect(entry.ownerId).toBe("fixture");
       expect(entry.event).toBe("Stop");
       expect(entry.commandSha256).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(entry.pin?.repository).toBe("affaan-m/ECC");
+      expect(entry.pin?.repository).toBe("fixture/hooks");
       expect(entry.pin?.commit).toMatch(/^[0-9a-f]{40}$/);
       expect(entry.pin?.runtimeVersion).toBeTruthy();
     }
@@ -297,7 +297,7 @@ function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string 
 describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
   it("reads cohabited when an operator group joins a different event", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP];
     });
@@ -309,7 +309,7 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
 
   it("reads cohabited when an operator group joins the same event", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       (hooks.Stop as unknown[]).push(OPERATOR_GROUP);
     });
@@ -318,13 +318,13 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
 
   it("keeps `active` for an exact match, so the two states never blur", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     expect(hookRegistrarState(dir).state).toBe("active");
   });
 
   it("subtracts exactly the owned groups and leaves the operator's groups value-exact", async () => {
     seedThirdPartyEntries({ permissions: { allow: ["Bash(ls:*)"] } });
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       (hooks.Stop as unknown[]).push(OPERATOR_GROUP);
       hooks.PreToolUse = [OPERATOR_GROUP];
@@ -344,7 +344,7 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
 
   it("drops the `hooks` key only when subtraction leaves it empty", async () => {
     seedThirdPartyEntries({ permissions: { allow: ["Bash(ls:*)"] } });
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     await run(hookRegistrarRevocationActions(ctx(false)));
     expect(JSON.parse(readDestination() ?? "{}").hooks).toBeUndefined();
   });
@@ -382,7 +382,7 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
    */
   it("names preserved operator configuration without a count when it holds no entry", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [{ matcher: "Edit|Write", hooks: [] }];
     });
@@ -395,7 +395,7 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
 
   it("keeps the numbered form when the count means something", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP, OPERATOR_GROUP];
     });
@@ -405,7 +405,7 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
 
   it("claims no preserved content when subtraction leaves nothing foreign", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     // Only the ORDER of groups AIH itself wrote changed: provable, but no
     // longer the exact rendering, and nothing foreign is being kept.
     rewriteHooks((hooks) => {
@@ -421,7 +421,7 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
 
   it("reports the cohabited state with each foreign entry by owner and event", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP];
     });
@@ -452,7 +452,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
    */
   it("subtracts a cohabited destination whose comment sits outside the hooks span", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP];
     });
@@ -468,7 +468,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
   /** Inside the span the key is replaced whole, so the refusal stands. */
   it("refuses to subtract a cohabited destination commented inside the hooks span", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP];
     });
@@ -488,7 +488,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
    */
   it("subtracts an exact-match destination whose comment sits outside the hooks span", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     addOperatorComment();
 
     expect(hookRegistrarState(dir).state).toBe("active");
@@ -498,7 +498,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
   /** Inside the span, the exact-match path fails closed too rather than strip it. */
   it("refuses an exact-match destination commented inside the hooks span", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const commented = addCommentInsideHooks();
 
     expect(hookRegistrarState(dir).state).toBe("drifted");
@@ -508,7 +508,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
 
   it("refuses when an operator entry is inserted inside a group AIH owns", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const tampered = rewriteHooks((hooks) => {
       const stop = hooks.Stop as { hooks: unknown[] }[];
       stop[0]?.hooks.push({ type: "command", command: "node ./tools/operator-guard.mjs" });
@@ -521,7 +521,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
 
   it("refuses when an owned entry's command was modified", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const tampered = rewriteHooks((hooks) => {
       const stop = hooks.Stop as { hooks: { command: string }[] }[];
       const hook = stop[0]?.hooks[0];
@@ -535,7 +535,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
 
   it("refuses when one owned group went missing", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const tampered = rewriteHooks((hooks) => {
       (hooks.Stop as unknown[]).splice(0, 1);
     });
@@ -547,7 +547,7 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
 
   it("refuses when the group AIH owns lost a scoping field it never authored", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     rewriteHooks((hooks) => {
       const stop = hooks.Stop as Record<string, unknown>[];
       if (stop[0] !== undefined) stop[0].matcher = "Edit|Write";
@@ -569,7 +569,7 @@ describe("H6 — an operator-controlled event name never reaches the prototype c
   for (const event of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
     it(`answers for an operator group under a "${event}" event`, async () => {
       seedThirdPartyEntries();
-      await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+      await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
       rewriteHooks((hooks) => {
         hooks[event] = [OPERATOR_GROUP];
       });
@@ -589,7 +589,7 @@ describe("H6 — an operator-controlled event name never reaches the prototype c
 
   it("still fails closed on an unprovable owned group beside such an event", async () => {
     seedThirdPartyEntries();
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const tampered = rewriteHooks((hooks) => {
       hooks[PROTOTYPE_EVENT] = [OPERATOR_GROUP];
       const stop = hooks.Stop as { hooks: unknown[] }[];

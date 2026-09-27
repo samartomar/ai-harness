@@ -104,6 +104,25 @@ export function eccStopRegistrations(): HookRegistration[] {
   ];
 }
 
+/** Same launcher bytes under a non-ECC owner for generic registrar lifecycle tests. */
+export function nonEccStopRegistrations(): HookRegistration[] {
+  return eccStopRegistrations().map((registration) => ({
+    ...registration,
+    owner: {
+      kind: "third-party",
+      framework: "fixture",
+      declaredControls: [],
+      pin: {
+        repository: "fixture/hooks",
+        commit: ECC_COMMIT,
+        path: `scripts/hooks/${registration.id}.js`,
+        launcherSha256: sha256(registration.command),
+        runtimeVersion: ECC_RUNTIME_VERSION,
+      },
+    },
+  }));
+}
+
 /**
  * The three overlaps that already existed on the workstation, unseen by either
  * owner because neither could read the other's entries.

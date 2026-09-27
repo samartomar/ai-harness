@@ -648,7 +648,10 @@ export function hookRegistrarProjectionActions(
     destinationRead?: GuardedRead;
   } = {},
 ): Action[] {
-  const parsed = assertHookRegistrations(registrations);
+  const parsed = assertHookRegistrations(registrations).filter(
+    (registration) =>
+      registration.owner.kind !== "third-party" || registration.owner.framework !== "ecc",
+  );
   if (parsed.length === 0) {
     return hookRegistrarRevocationActions(ctx, {
       envPatch: options.envPatch,

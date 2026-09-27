@@ -13,7 +13,7 @@ import {
 } from "../../src/org-policy/hook-registrar.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { eccStopRegistrations, sha256 } from "./hook-registrar-fixtures.js";
+import { nonEccStopRegistrations, sha256 } from "./hook-registrar-fixtures.js";
 
 let dir: string;
 
@@ -162,9 +162,14 @@ describe("A1 — adoption captures the destination's own bytes and emits the pol
   });
 
   it("refuses to adopt an entry the receipt already owns", async () => {
-    seedDestination({ Stop: eccStopRegistrations().map((registration) => registration.command) });
+    seedDestination({
+      Stop: nonEccStopRegistrations().map((registration) => registration.command),
+    });
     await executePlan(
-      plan("hook registrar", ...hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())),
+      plan(
+        "hook registrar",
+        ...hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()),
+      ),
       ctx(true),
       { skipWorktreeGate: true },
     );
@@ -187,7 +192,7 @@ describe("A3 — refusal beats absorption, unowned entries named by owner and ev
     // The selected registration pins the ECC launcher on Stop; the destination
     // carries the same launcher on PreToolUse (attributable to ecc by its pin
     // hash) plus a rogue entry nothing attributes (unknown).
-    const [selected] = eccStopRegistrations();
+    const [selected] = nonEccStopRegistrations();
     if (selected === undefined) throw new Error("expected a registration");
     seedDestination({
       Stop: [selected.command],
@@ -201,7 +206,7 @@ describe("A3 — refusal beats absorption, unowned entries named by owner and ev
       message = (error as Error).message;
     }
     expect(message).toContain("did not emit");
-    expect(message).toContain("ecc/PreToolUse");
+    expect(message).toContain("fixture/PreToolUse");
     expect(message).toContain("unknown/SessionStart");
     expect(message).toContain("adopt or remove them before projecting");
   });

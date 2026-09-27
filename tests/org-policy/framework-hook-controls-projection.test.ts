@@ -26,7 +26,7 @@ import {
   hookRegistrarProjectionActions,
 } from "../../src/org-policy/hook-registrar.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
+import { nonEccStopRegistrations } from "./hook-registrar-fixtures.js";
 
 let root: string;
 
@@ -235,7 +235,7 @@ describe("receipt-owned framework hook controls", () => {
 
     const raced = `${JSON.stringify({ env: { OPERATOR: "after", SUPERPOWERS_HOOK_PROFILE: "strict" } }, null, 2)}\n`;
     writeFileSync(join(root, HOOK_REGISTRAR_DESTINATION), raced);
-    const registrar = hookRegistrarProjectionActions(ctx(), eccStopRegistrations(), {
+    const registrar = hookRegistrarProjectionActions(ctx(), nonEccStopRegistrations(), {
       policyVersion: "2026-08-09.1",
       envPatch: controls.envPatch,
       destinationRead: controls.destinationRead,

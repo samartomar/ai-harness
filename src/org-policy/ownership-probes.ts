@@ -1,6 +1,4 @@
-import { readAihConfig } from "../config/marker.js";
 import { hasCommandPermissionOwnership } from "./command-permissions.js";
-import { inspectPolicyRequiredGuidance } from "./required-guidance.js";
 
 /** One kind of governed state aih writes at a project root, and whether it is present. */
 export interface GovernedOwnershipProbe {
@@ -15,12 +13,6 @@ export interface GovernedOwnershipProbe {
  * closed instead of treating damaged state as absent.
  */
 export const GOVERNED_OWNERSHIP_PROBES: readonly GovernedOwnershipProbe[] = Object.freeze([
-  {
-    id: "policy-required-guidance",
-    owned: (root: string) =>
-      inspectPolicyRequiredGuidance(root, readAihConfig(root)?.contextDir ?? "ai-coding").state !==
-      "absent",
-  },
   { id: "command-permissions", owned: hasCommandPermissionOwnership },
 ]);
 

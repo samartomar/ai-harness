@@ -255,11 +255,6 @@ const ALLOWED_PHRASES: readonly Allowed[] = [
     why: "altered disposition (integrity)",
   },
   {
-    path: "src/bootstrap-ai/canon.ts",
-    contains: "do not install broad defaults to fill it",
-    why: "agent guidance about delivery gaps, not a finding",
-  },
-  {
     path: "src/governance-doctor/repair-custody-v1.ts",
     contains: "repair mutation grant is not authorized",
     why: "repair grant authority (integrity)",

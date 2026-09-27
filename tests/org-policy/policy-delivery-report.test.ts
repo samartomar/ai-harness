@@ -72,3 +72,30 @@ it("reports selected ECC Catalog items as developer-managed without an aih recei
   expect(report.selection?.components[0]?.owner).toBe("developer-managed");
   expect(renderPolicyDelivery(report)).toContain("run aih ecc for the exact ECC commands");
 });
+
+it("does not recommend ECC when the policy has no ECC selection", () => {
+  const root = mkdtempSync(join(tmpdir(), "aih-policy-no-ecc-view-"));
+  roots.push(root);
+  const report = summarizePolicyDelivery(root, ["claude"], undefined, false);
+  expect(report.nextStep).not.toContain("aih ecc");
+  expect(report.detail).not.toContain("ECC Catalog");
+});
+
+it("does not recommend ECC for an empty ECC selection", () => {
+  const root = mkdtempSync(join(tmpdir(), "aih-policy-empty-ecc-view-"));
+  roots.push(root);
+  const policy = parseOrgPolicy({
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "test-empty",
+      supportedClis: ["claude"],
+      catalog: { reviewed: [], custom: [] },
+      externalSelections: [{ framework: "ecc", items: [] }],
+    },
+  });
+  expect(summarizePolicyDelivery(root, ["claude"], policy, false).nextStep).not.toContain(
+    "aih ecc",
+  );
+});

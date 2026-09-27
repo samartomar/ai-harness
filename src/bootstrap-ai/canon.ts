@@ -303,10 +303,6 @@ export function sharedCanonicalBlockBody(dir: string): string {
     "stack, and task routing. Load only task-relevant rules, then verify against repo",
     "evidence (PR diff, files, tests, schemas, CI) — never model memory or local notes.",
     "",
-    `If \`${dir}/policy-required-guidance.md\` exists, read it and every required`,
-    "practice it lists before acting. These selections come from this project's",
-    "organization policy; they are instruction guidance, not proof of enforced behavior.",
-    "",
     `Full working discipline: \`${dir}/rules/agent-behavior-core.md\`. Read it before`,
     "any non-trivial change; the essentials are inline below.",
     "",
@@ -433,9 +429,9 @@ function baselineLayerLines(source: BaselineSource, governed: boolean): string[]
   ];
 }
 
-function baselineAlwaysReadLine(source: BaselineSource, dir: string, governed: boolean): string {
+function baselineAlwaysReadLine(source: BaselineSource, _dir: string, governed: boolean): string {
   if (governed) {
-    return `- The selected policy requirements and \`${dir}/policy-required-guidance.md\` when present. Missing expected guidance is a delivery gap: inspect \`aih policy evaluate --json\`; do not substitute a broad baseline.`;
+    return "- The selected organization policy requirements; inspect `aih policy evaluate --json` for the current selection.";
   }
   return source.id === "ecc"
     ? "- The ECC `common` rules (Layer 1) before any non-trivial change"
@@ -454,7 +450,7 @@ function baselineImplementationLines(
       canon === "compact"
         ? `Load \`${dir}/project.md\` for the commands, scale, and constraints.`
         : `Load \`${dir}/conventions.md\` + \`${dir}/architecture.md\` for the project contract.`,
-      `Read every required practice named by \`${dir}/policy-required-guidance.md\` before acting.`,
+      "Inspect the selected organization policy requirements before acting.",
       "Optional discovery is separate from required loading. State the goal and the smallest viable change first.",
     ];
   }
@@ -769,9 +765,8 @@ export function adapterNote(
       "",
       `- Entry: ${m.entry}`,
       `- Rule loading: ${m.loads}`,
-      `- Selected guidance: \`${dir}/policy-required-guidance.md\` names the admitted project practice files; read each required practice before acting.`,
-      "- Native skill discovery lists available metadata; complete required-content loading needs a native read. Global/plugin content is separately owned and may remain visible.",
-      "- Missing expected guidance is a delivery gap. Inspect `aih policy evaluate --json`; do not install broad defaults to fill it.",
+      "- Inspect `aih policy evaluate --json` for selected organization policy requirements.",
+      "- Native skill discovery lists available metadata; complete content loading needs a native read. Global/plugin content is separately owned and may remain visible.",
       `- Repo canon and contract: \`${dir}/RULE_ROUTER.md\`; boundaries: § External action boundary.`,
     );
   }

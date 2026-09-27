@@ -546,7 +546,7 @@ not guess which names are private to your organization.
 ### Baseline component evidence
 
 `aih ecc` shows the reviewed ECC source pin and developer-managed installation guidance;
-`aih ecc --status` reports observed ownership and external or unknown state. Neither
+`aih ecc --status` reports only the presence of ECC's own install-state files. Neither
 command installs ECC. `aih evidence vet-baseline` remains an evidence diagnostic;
 findings inform selection rather than block third-party inventory. See
 [Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md).

@@ -11,6 +11,7 @@ import type { FileAssertion, PlanContext } from "../internals/plan.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import {
   FRAMEWORK_PLUGIN_PACKAGE_NAMES,
+  type FrameworkCleanupContextV1,
   type FrameworkCommandPathV1,
   type FrameworkHostServicesV1,
   type FrameworkIdV1,
@@ -147,6 +148,27 @@ export function selfContainedFrameworkContextV1(
     { policy, options: {}, host: selfContainedFrameworkHostV1(ctx, operation) },
     deps,
   );
+}
+
+/** Descriptor-free context for the bundled cleanup hooks. */
+export function frameworkCleanupContextV1(
+  loaded: LoadedFrameworkPluginV1,
+  ctx: PlanContext,
+  operation: string,
+): FrameworkCleanupContextV1 {
+  return Object.freeze({
+    frameworkId: loaded.frameworkId,
+    root: ctx.root,
+    targets: Object.freeze([...(ctx.targets ?? [])]),
+    mode: Object.freeze({ apply: ctx.apply, verify: ctx.verify }),
+    policy: Object.freeze({
+      posture: postureFromContext(ctx),
+      hookControls: frameworkHookControlRequestV1(loaded.frameworkId, undefined, ctx.root),
+    }),
+    options: Object.freeze({}),
+    env: environmentFor(loaded.description.environment, ctx.env),
+    host: selfContainedFrameworkHostV1(ctx, operation),
+  });
 }
 
 interface OpenFrameworkInvocationV1 {

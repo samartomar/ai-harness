@@ -12,7 +12,7 @@ import {
 } from "../../src/org-policy/hook-registrar.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as uninstallCommand } from "../../src/uninstall/index.js";
-import { eccStopRegistrations } from "../org-policy/hook-registrar-fixtures.js";
+import { nonEccStopRegistrations } from "../org-policy/hook-registrar-fixtures.js";
 
 let root: string;
 
@@ -72,7 +72,7 @@ function seedThirdPartyDestination(): void {
         hooks: {
           Stop: [
             {
-              hooks: eccStopRegistrations().map((registration) => ({
+              hooks: nonEccStopRegistrations().map((registration) => ({
                 type: "command",
                 command: registration.command,
               })),
@@ -90,7 +90,7 @@ async function projectOwnership(): Promise<void> {
   await executePlan(
     plan(
       "hook registrar",
-      ...hookRegistrarProjectionActions(context(false), eccStopRegistrations()),
+      ...hookRegistrarProjectionActions(context(false), nonEccStopRegistrations()),
     ),
     context(true),
     { skipWorktreeGate: true },
@@ -103,6 +103,24 @@ async function uninstall(): Promise<Awaited<ReturnType<typeof executePlan>>> {
 }
 
 describe("A2 — uninstall subtracts receipt-owned hook registrations, never replays", () => {
+  it("leaves an ECC-attributed registrar receipt and its hook bytes untouched", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    const receipt = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH), "utf8"));
+    receipt.entries = receipt.entries.map((entry: { ownerId: string }) => ({
+      ...entry,
+      ownerId: "ecc",
+    }));
+    put(HOOK_REGISTRAR_RECEIPT_PATH, `${JSON.stringify(receipt, null, 2)}\n`);
+    const receiptBefore = readFileSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH));
+    const settingsBefore = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION));
+
+    await uninstall();
+
+    expect(readFileSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toEqual(receiptBefore);
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION))).toEqual(settingsBefore);
+  });
+
   it("removes third-party entries the third party cannot remove, operator content intact", async () => {
     seedThirdPartyDestination();
     await projectOwnership();

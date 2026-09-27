@@ -1967,7 +1967,11 @@ function projectionActionsFromRuntime(
       // policy declaring registrations gets the registrar's projection; one
       // declaring none gets its revocation (a no-op without a receipt).
       const controls = planFrameworkHookControlsProjection(ctx, hookEnvironment);
-      const registrar = hookRegistrarProjectionActions(ctx, policy.governance.hookRegistrations, {
+      const registrarRegistrations = policy.governance.hookRegistrations.filter(
+        (registration) =>
+          registration.owner.kind !== "third-party" || registration.owner.framework !== "ecc",
+      );
+      const registrar = hookRegistrarProjectionActions(ctx, registrarRegistrations, {
         policyVersion: policy.governance.policyVersion,
         envPatch: controls.envPatch,
         destinationRead: controls.destinationRead,

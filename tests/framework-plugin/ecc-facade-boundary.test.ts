@@ -132,21 +132,11 @@ const W1_CATALOG_PRODUCERS = new Set([
 ]);
 
 /**
- * `src/ecc` modules that stay in Core: the state aih itself writes — the
- * materialization receipt, the explicit MCP add receipt and the machine
- * registration ledger — with the receipt's filesystem guards and the install
- * manifest (uninstall, prune and receipts read them without the plugin, so Core
- * can refuse by name when ECC state exists), the runtime descriptor Core
- * evaluates, and Catalog producer tooling. The
- * framework-host library re-exports them to the plugin, so they are not ECC
- * framework code.
+ * `src/ecc` modules that stay in Core: the runtime descriptor Core evaluates
+ * and its Catalog producer tooling. These are read-only ECC data boundaries,
+ * not old-install cleanup state.
  */
 const KEEP_IN_CORE = new Set([
-  "src/ecc/install-manifest.ts",
-  "src/ecc/materialization-fs.ts",
-  "src/ecc/materialization-receipt.ts",
-  "src/ecc/mcp-explicit-add-receipt.ts",
-  "src/ecc/registration.ts",
   "src/ecc/runtime-descriptor.ts",
   "src/ecc/runtime-descriptor-evaluation.ts",
 ]);

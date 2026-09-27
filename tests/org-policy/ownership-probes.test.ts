@@ -17,10 +17,7 @@ afterEach(() => {
 
 describe("governed ownership probes", () => {
   it("names each kind of governed state aih can own at a project root", () => {
-    expect(GOVERNED_OWNERSHIP_PROBES.map((probe) => probe.id)).toEqual([
-      "policy-required-guidance",
-      "command-permissions",
-    ]);
+    expect(GOVERNED_OWNERSHIP_PROBES.map((probe) => probe.id)).toEqual(["command-permissions"]);
   });
 
   it("finds nothing at an empty root", () => {

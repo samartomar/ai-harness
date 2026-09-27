@@ -299,10 +299,6 @@ export {
   readFrameworkHookControlsReceipt,
 } from "../org-policy/framework-hook-controls-projection.js";
 export {
-  type PolicyRequiredGuidancePlan,
-  planPolicyRequiredGuidance,
-} from "../org-policy/required-guidance.js";
-export {
   governanceOwnsAihSurfaces,
   type OrgPolicy,
   parseOrgPolicy,

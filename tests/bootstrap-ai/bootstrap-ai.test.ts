@@ -120,12 +120,12 @@ describe("bootstrap-ai — canon files", () => {
       const second = writesByPath((await command.plan(ctx)).actions);
       const router = first.get(".ai-context/RULE_ROUTER.md")?.contents;
       const adapter = first.get(".ai-context/adapters/codex.md")?.contents;
-      expect(router).toContain("policy-required-guidance.md");
-      expect(router).toContain("Missing expected guidance is a delivery gap");
+      expect(router).not.toContain("policy-required-guidance.md");
+      expect(router).toContain("selected organization policy requirements");
       expect(router).not.toContain("The ECC `common` rules");
       expect(router).not.toContain("follow the ECC");
       expect(router).not.toContain("ECC (affaan-m/ECC) + Superpowers");
-      expect(adapter).toContain("policy-required-guidance.md");
+      expect(adapter).not.toContain("policy-required-guidance.md");
       expect(adapter).toContain("separately owned");
       expect(adapter).not.toContain("~/.codex/");
       const summary = initialPlan.actions.find(
@@ -133,7 +133,7 @@ describe("bootstrap-ai — canon files", () => {
       );
       expect(summary).toMatchObject({
         kind: "doc",
-        text: expect.stringContaining("policy-required-guidance.md"),
+        text: expect.not.stringContaining("policy-required-guidance.md"),
       });
       expect(summary).toMatchObject({
         kind: "doc",

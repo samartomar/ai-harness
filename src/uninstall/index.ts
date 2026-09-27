@@ -54,11 +54,8 @@ import {
   HOOK_REGISTRAR_DESTINATION,
   hookRegistrarRevocationActions,
   hookRegistrarState,
+  readHookRegistrarReceipt,
 } from "../org-policy/hook-registrar.js";
-import {
-  inspectPolicyRequiredGuidance,
-  planPolicyRequiredGuidance,
-} from "../org-policy/required-guidance.js";
 import { parseOrgPolicy } from "../org-policy/schema.js";
 import { projectPromotedSkillArtifacts } from "../skill/promoted-artifacts.js";
 import { parseTrustLockSource, TRUST_LOCK_FILE } from "../trust/lock.js";
@@ -637,7 +634,16 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   const registrarUnderRemovedTree = removedTrees(artifacts).some((tree) =>
     isUnderTree(ctx, HOOK_REGISTRAR_DESTINATION, tree),
   );
-  if (!registrarUnderRemovedTree) {
+  let hasEccRegistrarEntry = false;
+  try {
+    hasEccRegistrarEntry =
+      readHookRegistrarReceipt(ctx.root)?.entries.some(
+        (entry) => entry.owner === "third-party" && entry.ownerId === "ecc",
+      ) ?? false;
+  } catch {
+    // The existing invalid-receipt advisory below still handles this state.
+  }
+  if (!registrarUnderRemovedTree && !hasEccRegistrarEntry) {
     const registrar = hookRegistrarState(ctx.root);
     // BOTH provable states subtract. `cohabited` is a destination that holds
     // every projected entry beside content aih did not emit — the measured
@@ -761,29 +767,19 @@ function body(set: UninstallSet): string {
 function uninstallPlan(ctx: PlanContext): Plan {
   const planned = coreUninstallSet(ctx);
   const binding = readPolicyBinding(ctx.root);
-  const governanceContextDir = readAihConfig(ctx.root)?.contextDir ?? ctx.contextDir;
-  const guidance = inspectPolicyRequiredGuidance(ctx.root, governanceContextDir);
-  const preservesGuidance =
-    guidance.state === "drifted" ||
-    guidance.state === "malformed" ||
-    (guidance.state === "missing" && exists(ctx, guidance.path));
   // A receipt may survive subtraction because its destination was edited. Never
   // erase the remaining ownership record through the enclosing cache cleanup.
-  const retainsGovernanceState =
-    binding !== undefined || exists(ctx, COMMAND_PERMISSION_RECEIPT) || guidance.state !== "absent";
+  const retainsGovernanceState = binding !== undefined || exists(ctx, COMMAND_PERMISSION_RECEIPT);
   for (const artifact of planned.artifacts) {
     if (
       (artifact.kind === "marker" && binding !== undefined) ||
-      (artifact.path === ".aih" && retainsGovernanceState) ||
-      (artifact.kind === "context-dir" && preservesGuidance)
+      (artifact.path === ".aih" && retainsGovernanceState)
     ) {
       artifact.disposition = "advisory";
       artifact.reason =
         artifact.kind === "marker"
           ? "project policy binding is retained as revoked; reviewed policy rebind is required before setup"
-          : artifact.kind === "context-dir"
-            ? "required guidance ownership is unprovable or edited; guidance and its receipt are preserved in place"
-            : "remaining governance receipts and unrelated project state are preserved in place";
+          : "remaining governance receipts and unrelated project state are preserved in place";
     }
   }
   const actions: Action[] = [];
@@ -832,9 +828,6 @@ function uninstallPlan(ctx: PlanContext): Plan {
       actions,
     );
     actions.splice(0, actions.length, ...withdrawal);
-  }
-  if (!preservesGuidance && guidance.state !== "absent") {
-    actions.push(...planPolicyRequiredGuidance(ctx.root, governanceContextDir, []).actions);
   }
   if (binding !== undefined) {
     const markerBytes = readRegularFile(join(ctx.root, AIH_CONFIG_FILE));

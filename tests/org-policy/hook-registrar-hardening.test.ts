@@ -31,7 +31,7 @@ import {
 } from "../../src/org-policy/hook-registrar.js";
 import { composeProjectedHooks } from "../../src/org-policy/hook-registrar-native.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { eccStopRegistrations, sha256 } from "./hook-registrar-fixtures.js";
+import { nonEccStopRegistrations, sha256 } from "./hook-registrar-fixtures.js";
 
 /**
  * Hardening pins for the hook registrar's read path: what it transports, what
@@ -91,7 +91,7 @@ async function run(actions: ReturnType<typeof hookRegistrarProjectionActions>): 
 }
 
 function selectedCommand(): string {
-  const [selected] = eccStopRegistrations();
+  const [selected] = nonEccStopRegistrations();
   if (selected === undefined) throw new Error("expected a registration");
   return selected.command;
 }
@@ -101,7 +101,7 @@ function refusalFor(destination: unknown): string {
   const before = readDestination();
   let message = "";
   try {
-    hookRegistrarProjectionActions(ctx(false), eccStopRegistrations());
+    hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations());
   } catch (error) {
     message = (error as Error).message;
   }
@@ -124,16 +124,16 @@ describe("A4 — recorded prior evidence is always readable back", () => {
     })}\n`;
     writeDestination(oversized);
 
-    expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
-      /receipt/i,
-    );
+    expect(() =>
+      hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()),
+    ).toThrowError(/receipt/i);
     // Refusal is fail-closed: nothing was written, nothing was recorded.
     expect(readDestination()).toBe(oversized);
     expect(readHookRegistrarReceipt(dir)).toBeUndefined();
 
     // Trimmed back under the cap, the whole lifecycle works again.
     writeDestination(`${JSON.stringify({ note: "z" })}\n`);
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const receipt = readHookRegistrarReceipt(dir);
     expect(receipt?.prior.state).toBe("present");
     await run(hookRegistrarRevocationActions(ctx(false)));
@@ -217,10 +217,10 @@ describe("H1/H2 — richer native content is transported, never destroyed or fla
   });
 
   it("keeps an entry AIH itself authored round-tripping through its own projection", async () => {
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     expect(hookRegistrarState(dir).state).toBe("active");
     // Projecting the same selection twice is deterministic and reports no drift.
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     expect(hookRegistrarReport(dir).unowned).toEqual([]);
   });
 
@@ -235,12 +235,12 @@ describe("H1/H2 — richer native content is transported, never destroyed or fla
     const scoped = { matcher: "*", id: "third-party-empty", description: "kept", hooks: [] };
     seed({ hooks: { Stop: [], SessionStart: [scoped] } });
 
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
 
     const hooks = destinationHooks();
     // Survived, byte-identical, alongside what AIH projected.
     expect(hooks.SessionStart).toEqual([scoped]);
-    expect(hooks.Stop).toHaveLength(eccStopRegistrations().length);
+    expect(hooks.Stop).toHaveLength(nonEccStopRegistrations().length);
     // And AIH's ownership verdict accounts for what it carried.
     expect(hookRegistrarState(dir).state).toBe("active");
   });
@@ -249,7 +249,7 @@ describe("H1/H2 — richer native content is transported, never destroyed or fla
     const scoped = { matcher: "Write", id: "third-party-empty", hooks: [] };
     seed({ hooks: { Stop: [scoped] } });
 
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     await run(hookRegistrarRevocationActions(ctx(false)));
 
     // AIH's own entries are gone; the group it never owned is still there.
@@ -400,9 +400,9 @@ describe("H1 — structure that cannot be interpreted at all still refuses", () 
   ])("refuses a __proto__ member with %s", (_label, value) => {
     writeDestination(`{"hooks":{"__proto__":${value},"Stop":[]}}\n`);
 
-    expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
-      /__proto__/,
-    );
+    expect(() =>
+      hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()),
+    ).toThrowError(/__proto__/);
     const state = hookRegistrarState(dir);
     expect(state.state).toBe("invalid");
     expect(state.detail).toMatch(/__proto__/);
@@ -420,7 +420,7 @@ describe("H1 — structure that cannot be interpreted at all still refuses", () 
 
 describe("H1 — duplicate copies of an owned entry are counted, not collapsed", () => {
   it("reports the extra copy as unowned instead of deleting it unreported", async () => {
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const hooks = destinationHooks() as Record<string, unknown[]>;
     const [firstGroup] = hooks.Stop ?? [];
     if (firstGroup === undefined) throw new Error("expected a projected group");
@@ -430,9 +430,9 @@ describe("H1 — duplicate copies of an owned entry are counted, not collapsed",
 
     const report = hookRegistrarReport(dir);
     expect(report.unowned).toHaveLength(1);
-    expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
-      /did not emit/,
-    );
+    expect(() =>
+      hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()),
+    ).toThrowError(/did not emit/);
   });
 });
 
@@ -449,7 +449,7 @@ describe("H2 — a receipt that contradicts itself is refused at parse", () => {
 
   async function projectThenTamper(mutate: (receipt: TamperableReceipt) => void): Promise<void> {
     writeDestination(`${JSON.stringify({ note: "operator" })}\n`);
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const path = join(dir, HOOK_REGISTRAR_RECEIPT_PATH);
     const receipt = JSON.parse(readFileSync(path, "utf8")) as TamperableReceipt;
     mutate(receipt);
@@ -573,7 +573,7 @@ describe("H6 (receipt side) — a receipt naming a prototype event is refused at
    */
   async function projectThenRenameEvents(event: string): Promise<void> {
     writeDestination(`${JSON.stringify({ note: "operator" }, null, 2)}\n`);
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const path = join(dir, HOOK_REGISTRAR_RECEIPT_PATH);
     const receipt = JSON.parse(readFileSync(path, "utf8")) as {
       entries: { event: string }[];
@@ -663,7 +663,7 @@ describe("destination text is bounded and control-free before it is reported", (
 
     let message = "";
     try {
-      hookRegistrarProjectionActions(ctx(false), eccStopRegistrations());
+      hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations());
     } catch (error) {
       message = (error as Error).message;
     }
@@ -682,9 +682,9 @@ describe("fail closed on ambiguity — unreadable is not absent", () => {
   it("refuses a destination path occupied by a directory", () => {
     mkdirSync(join(dir, HOOK_REGISTRAR_DESTINATION), { recursive: true });
 
-    expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
-      /regular file/i,
-    );
+    expect(() =>
+      hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()),
+    ).toThrowError(/regular file/i);
     const state = hookRegistrarState(dir);
     expect(state.state).toBe("invalid");
     expect(state.detail).toMatch(/regular file/i);
@@ -701,7 +701,7 @@ describe("a shadowed receipt path is refused, never read as no receipt", () => {
    */
   async function projectThenShadowTheReceipt(): Promise<void> {
     writeDestination(`${JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } }, null, 2)}\n`);
-    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()));
     const receiptPath = join(dir, HOOK_REGISTRAR_RECEIPT_PATH);
     rmSync(receiptPath);
     mkdirSync(receiptPath, { recursive: true });
@@ -757,9 +757,9 @@ describe("symlinked parents are refused, not followed off-root", () => {
       const state = hookRegistrarState(dir);
       expect(state.state).toBe("invalid");
       expect(state.detail).toMatch(/symlink/i);
-      expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
-        /symlink/i,
-      );
+      expect(() =>
+        hookRegistrarProjectionActions(ctx(false), nonEccStopRegistrations()),
+      ).toThrowError(/symlink/i);
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }

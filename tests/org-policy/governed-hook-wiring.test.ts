@@ -22,7 +22,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { usageRecorderScript } from "../../src/usage/capture.js";
 import { usageRecorderCheck } from "../../src/usage/hook-health.js";
 import { claudeUsageHookCommand } from "../../src/usage/hooks.js";
-import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
+import { eccStopRegistrations, repositoryStopHook } from "./hook-registrar-fixtures.js";
 
 // Framework hook controls reach the ECC plugin through Core's loader; serve the
 // plugin from this repository's package source and Catalog's exact ECC bytes.
@@ -121,7 +121,7 @@ function adoptedUsageRegistration(): HookRegistration {
 }
 
 function usageAndRegistrationsPolicy(
-  registrations: readonly HookRegistration[] = eccStopRegistrations(),
+  registrations: readonly HookRegistration[] = [repositoryStopHook()],
   usageState: "active" | "disabled" = "active",
 ) {
   const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
@@ -162,7 +162,7 @@ async function project(policy: ReturnType<typeof governedPolicy>): Promise<void>
 
 describe("G4 — the registrar is reachable end to end through the verified projector", () => {
   it("emits the registrar's actions for a policy that declares registrations", async () => {
-    const registrations = eccStopRegistrations();
+    const registrations = [repositoryStopHook()];
     const actions = await verifiedOrgPolicyProjectionActions(ctx(), governedPolicy(registrations));
     const paths = actions.map((action) => ("path" in action ? action.path : undefined));
     expect(paths).toContain(HOOK_REGISTRAR_DESTINATION);
@@ -184,14 +184,14 @@ describe("G4 — the registrar is reachable end to end through the verified proj
   });
 
   it("emits revocation actions for a policy that declares none", async () => {
-    await project(governedPolicy(eccStopRegistrations()));
+    await project(governedPolicy([repositoryStopHook()]));
     expect(existsSync(join(dir, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
 
     await project(governedPolicy(undefined));
     const destination = existsSync(join(dir, HOOK_REGISTRAR_DESTINATION))
       ? readFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), "utf8")
       : "";
-    expect(destination).not.toContain("run-with-flags.js");
+    expect(destination).not.toContain(repositoryStopHook().command);
     expect(existsSync(join(dir, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
   });
 
@@ -374,7 +374,25 @@ describe("registrar-owned PostToolUse vs the usage projector's legacy scan (6.0.
 });
 
 describe("framework hook controls through the verified projector", () => {
-  it("keeps ECC hook controls advisory while projecting registrations", async () => {
+  it("writes no hook settings or registrar receipt for ECC-only registrations", async () => {
+    const actions = await verifiedOrgPolicyProjectionActions(
+      ctx(),
+      governedPolicy(eccStopRegistrations()),
+    );
+    expect(
+      actions.some((action) => "path" in action && action.path === HOOK_REGISTRAR_DESTINATION),
+    ).toBe(false);
+    expect(
+      actions.some((action) => "path" in action && action.path === HOOK_REGISTRAR_RECEIPT_PATH),
+    ).toBe(false);
+    await executePlan(plan("policy project", ...actions), ctx({ apply: true }), {
+      skipWorktreeGate: true,
+    });
+    expect(existsSync(join(dir, HOOK_REGISTRAR_DESTINATION))).toBe(false);
+    expect(existsSync(join(dir, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+  });
+
+  it("keeps ECC registrations read-only while projecting unrelated hooks", async () => {
     const policy = parseOrgPolicy({
       schemaVersion: 3,
       minimumCoreVersion: "0.7.0",
@@ -391,7 +409,7 @@ describe("framework hook controls through the verified projector", () => {
         policyVersion: "2026-09-24.1",
         supportedClis: ["claude"],
         catalog: { reviewed: [], custom: [] },
-        hookRegistrations: eccStopRegistrations(),
+        hookRegistrations: [...eccStopRegistrations(), repositoryStopHook()],
         frameworkHookControls: {
           ecc: { profile: "strict", disabledHookIds: ["pre:bash:tmux-reminder"] },
         },
@@ -404,9 +422,18 @@ describe("framework hook controls through the verified projector", () => {
     await executePlan(plan("policy project", ...actions), ctx({ apply: true }), {
       skipWorktreeGate: true,
     });
-    const settings = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
+    const settingsBytes = readFileSync(join(dir, ".claude", "settings.json"), "utf8");
+    const settings = JSON.parse(settingsBytes);
     expect(settings.env).toBeUndefined();
-    expect(JSON.stringify(settings)).toContain("run-with-flags.js");
+    expect(settings.hooks.Stop).toEqual([
+      { hooks: [{ type: "command", command: repositoryStopHook().command }] },
+    ]);
+    expect(settingsBytes).not.toContain("run-with-flags.js");
+    const receipt = readHookRegistrarReceipt(dir);
+    expect(receipt?.entries.map((entry) => entry.id)).toEqual([repositoryStopHook().id]);
+    expect(readFileSync(join(dir, HOOK_REGISTRAR_RECEIPT_PATH), "utf8")).not.toContain(
+      "run-with-flags.js",
+    );
     expect(existsSync(join(dir, ".aih", "org-policy-framework-hook-controls-receipt.json"))).toBe(
       false,
     );

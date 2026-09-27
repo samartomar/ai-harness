@@ -407,6 +407,9 @@ export interface FrameworkOperationContextV1 {
   readonly host: FrameworkHostServicesV1;
 }
 
+/** Core cleanup needs no Catalog descriptor; cleanup hooks cannot consume one. */
+export type FrameworkCleanupContextV1 = Omit<FrameworkOperationContextV1, "descriptor">;
+
 export interface FrameworkCommandV1 {
   execute(ctx: FrameworkOperationContextV1): Promise<PlanResult>;
 }
@@ -429,7 +432,7 @@ export interface FrameworkUninstallOutcomeV1 {
  * succeeded, and the plugin removes exactly what the receipt proves.
  */
 export interface FrameworkUninstallHookV1 {
-  remove(ctx: FrameworkOperationContextV1): Promise<FrameworkUninstallOutcomeV1>;
+  remove(ctx: FrameworkCleanupContextV1): Promise<FrameworkUninstallOutcomeV1>;
 }
 
 /** A framework's share of an `aih prune` plan. */
@@ -442,7 +445,7 @@ export interface FrameworkPrunePlanV1 {
 /** Framework reconciliation for targets `aih prune` drops; Core executes the actions in its prune plan. */
 export interface FrameworkPruneHookV1 {
   plan(
-    ctx: FrameworkOperationContextV1,
+    ctx: FrameworkCleanupContextV1,
     dropped: readonly Cli[],
     kept?: readonly Cli[],
   ): Promise<FrameworkPrunePlanV1>;
