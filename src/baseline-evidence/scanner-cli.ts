@@ -100,10 +100,12 @@ function discoveryPublisher(bytes: Buffer): ScannerBaselinePublicationPublisherV
 function definitionOverlap(
   args: readonly string[],
   definitionPath: string | undefined,
+  flagName = "--definition-overlap",
 ): ScannerDefinitionOverlapModeV1 | undefined {
-  const overlap = optionalFlag(args, "--definition-overlap");
+  const overlap = optionalFlag(args, flagName);
   if (overlap === undefined) return undefined;
-  if (definitionPath === undefined) fail("--definition-overlap requires --definition");
+  if (definitionPath === undefined)
+    fail(flagName === "--definition-overlap" ? "--definition-overlap requires --definition" : `${flagName} requires --superpowers-definition`);
   if (overlap !== "disjoint" && overlap !== "compiler-catalog")
     fail("--definition-overlap must be disjoint|compiler-catalog");
   return overlap;
@@ -127,9 +129,15 @@ function isFrameworkCatalogIdV1(id: string): boolean {
  * (snapshot bytes, coverage, coverage output), and so does any subject at a pin the installed
  * Catalog does not carry; the registered route applies whenever no definition is supplied.
  */
-function assertCheckout(root: string, catalogId: string, args: readonly string[]) {
-  const definitionPath = optionalFlag(args, "--definition");
-  const overlap = definitionOverlap(args, definitionPath);
+function assertCheckout(
+  root: string,
+  catalogId: string,
+  args: readonly string[],
+  definitionFlag = "--definition",
+  overlapFlag = "--definition-overlap",
+) {
+  const definitionPath = optionalFlag(args, definitionFlag);
+  const overlap = definitionOverlap(args, definitionPath, overlapFlag);
   if (definitionPath !== undefined) {
     const resolved = resolveScannerDefinitionV1({
       sourceRoot: root,
@@ -336,8 +344,16 @@ function assemble(args: readonly string[]): void {
   const ecc = sourceEvidence(flag(args, "--ecc-evidence"));
   const superpowers = sourceEvidence(flag(args, "--superpowers-evidence"));
   const lock = parseBaselineEvidenceLock({ schemaVersion: 2, sources: [ecc, superpowers] });
+  const superpowersDefinition = optionalFlag(args, "--superpowers-definition");
+  const superpowersRoot = optionalFlag(args, "--superpowers-root");
+  if ((superpowersDefinition === undefined) !== (superpowersRoot === undefined))
+    fail("--superpowers-definition and --superpowers-root must be supplied together");
+  const superpowersCatalog = superpowersRoot === undefined
+    ? baselineCatalogById("superpowers")
+    : assertCheckout(superpowersRoot, "superpowers", args, "--superpowers-definition", "--superpowers-definition-overlap").catalog;
   assertAssembledInventoryV1(lock, (sourceId) => {
     if (sourceId === "ecc") return eccCatalog;
+    if (sourceId === "superpowers") return superpowersCatalog;
     return isFrameworkCatalogIdV1(sourceId) ? baselineCatalogById(sourceId) : undefined;
   });
   writeJson(flag(args, "--out"), lock);
