@@ -25,7 +25,7 @@
  *     - the same TypeScript file plus Catalog's public runtime-descriptor reader
  *       compiles with skipLibCheck false;
  *     - the same ECC route reads the ECC framework descriptor from the INSTALLED
- *       node_modules/@aihq/catalog (module resolve trace);
+ *       node_modules/@aihq/catalog (file-read trace);
  *     - the sealed-descriptor route, taken for any pin other than the current
  *       one, reads the INSTALLED Catalog's runtime descriptors and refuses a
  *       SYNTHETIC historical pin by name (`catalog-descriptor-absent`): the
@@ -593,7 +593,15 @@ try {
     trace,
     [
       'import { appendFileSync } from "node:fs";',
-      'import { registerHooks } from "node:module";',
+      'import fs from "node:fs";',
+      'import { registerHooks, syncBuiltinESMExports } from "node:module";',
+      'import { pathToFileURL } from "node:url";',
+      "const originalReadFileSync = fs.readFileSync;",
+      "fs.readFileSync = function(path, ...args) {",
+      `  if (typeof path === "string" && path.includes("catalog-framework-ecc-v1.json")) appendFileSync(${JSON.stringify(traceLog)}, "read:" + pathToFileURL(path).href + "\\n");`,
+      "  return originalReadFileSync.call(this, path, ...args);",
+      "};",
+      "syncBuiltinESMExports();",
       "registerHooks({",
       "  resolve(specifier, context, nextResolve) {",
       "    const resolved = nextResolve(specifier, context);",
@@ -613,10 +621,14 @@ try {
     loaded.join(" ") || "<nothing traced>",
   );
   const fullProvenance = provenanceOf(fullRoute);
+  const installedFrameworkRead = `read:${installedRoot}/${FRAMEWORK_DESCRIPTOR_PATH}`;
+  const guidanceProvenance = `ECC ${ECC_REPOSITORY}@${ECC_COMMIT} — developer-managed installation`;
   check(
     "Core+Scan+Catalog: the ECC route read the ECC framework descriptor from the INSTALLED @aihq/catalog",
-    loaded.some((url) => url.toLowerCase() === `${installedRoot}/${FRAMEWORK_DESCRIPTOR_PATH}`),
-    loaded.join(" ") || "<nothing traced>",
+    fullRoute.status === 0 &&
+      loaded.some((url) => url.toLowerCase() === installedFrameworkRead) &&
+      output(fullRoute).includes(guidanceProvenance),
+    `read: ${loaded.filter((url) => url.startsWith("read:")).join(" ") || "<nothing traced>"}; guidance: ${output(fullRoute).includes(guidanceProvenance)}`,
   );
   // Guidance still authenticates the framework descriptor for a policy with a
   // historical source selection; runtime descriptor custody is exercised by
@@ -628,10 +640,10 @@ try {
   check(
     "Core+Scan+Catalog: ECC guidance authenticates the installed framework descriptor with a historical selection",
     historicalRoute.status === 0 &&
-      historicalLoaded.some((url) => url.toLowerCase() === `${installedRoot}/${FRAMEWORK_DESCRIPTOR_PATH}`) &&
-      historical.includes("developer-managed installation") &&
+      historicalLoaded.some((url) => url.toLowerCase() === installedFrameworkRead) &&
+      historical.includes(guidanceProvenance) &&
       !historical.includes("core-embedded"),
-    `exit ${historicalRoute.status}; refusal: ${refusalLine(historicalRoute).slice(0, 400)}; loaded: ${historicalLoaded.join(" ") || "<nothing traced>"}`,
+    `exit ${historicalRoute.status}; refusal: ${refusalLine(historicalRoute).slice(0, 400)}; read: ${historicalLoaded.filter((url) => url.startsWith("read:")).join(" ") || "<nothing traced>"}; guidance: ${historical.includes(guidanceProvenance)}`,
   );
   check("Core+Scan+Catalog: sealed-descriptor refusal carries no stack trace", noStack(historicalRoute));
   check("Core+Scan+Catalog: ECC route output carries no stack trace", noStack(fullRoute), `exit ${fullRoute.status}; refusal: ${refusalLine(fullRoute).slice(0, 300)}`);
