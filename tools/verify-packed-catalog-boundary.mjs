@@ -38,7 +38,7 @@
  * so this tool records that refusal and never asserts a full ECC lifecycle success.
  *
  * usage:
- *   node tools/verify-packed-catalog-boundary.mjs --scan <aihq-scan.tgz> --catalog <aihq-catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <aihq-core.tgz> | --stage-from <core-repo> [--core-version 0.7.0]) [--work <dir>] [--keep]
+ *   node tools/verify-packed-catalog-boundary.mjs --scan <aihq-scan.tgz> --catalog <aihq-catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <aihq-core.tgz> | --stage-from <core-repo> [--core-version <candidate>]) [--work <dir>] [--keep]
  *
  * `--stage-from` builds the given Core checkout's dist with its own tsup config
  * and declaration emit, and both framework plugins with theirs, into a staging
@@ -47,8 +47,12 @@
  * plugin's, which ships inside @aihq/core (D71) and reaches the Catalog only
  * through Core, so every consumer has it with Core itself. The staged Core (a
  * copy; the checkout's manifest is never edited) is versioned
- * `<--core-version, default 0.7.0>+<checkout short sha>`, naming the checkout it
- * was built from. No install bypasses peer validation. The one deliberately
+ * `<--core-version, default RELEASE_CANDIDATE_CORE_VERSION>+<checkout short
+ * sha>`, naming the checkout it was built from; the release-candidate checks
+ * below then assert that identity on the PACKED manifest and record the version
+ * the packed CLI reports from its own `src/version.ts` constant, so a checkout
+ * whose code is not yet the candidate is tested honestly. No install bypasses
+ * peer validation. The one deliberately
  * out-of-range package, `--incompatible-catalog`, is first shown to be refused
  * by npm itself, then added on its own (the only `--legacy-peer-deps`) to a
  * consumer whose Core was installed peer-validated, so Core's runtime refusal
@@ -75,6 +79,16 @@ import { gunzipSync } from "node:zlib";
 import { globalNodeModules } from "./lib/packed-consumer.mjs";
 
 const toolRepo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+/**
+ * The release candidate these packed checks exercise. Catalog's aih rows, the
+ * bundled framework plugins and their identity records name this Core minor, and
+ * `--stage-from` labels the staged copy `<candidate>+<checkout short sha>`. The
+ * checkout's own manifest version is deliberately not consulted: a code-only
+ * checkout (0.6.2 before its release PR bumps the version fields) is staged and
+ * tested honestly as this candidate, and the PACKED manifest — never the
+ * checkout — must carry it.
+ */
+const RELEASE_CANDIDATE_CORE_VERSION = "0.7.0";
 const ECC_REPOSITORY = "affaan-m/ECC";
 const ECC_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
 /** SYNTHETIC: not an ECC commit; any pin other than the current one takes the sealed-descriptor route. */
@@ -171,10 +185,10 @@ const catalogTarball = option("--catalog");
 const incompatibleCatalogTarball = option("--incompatible-catalog");
 const coreTarballArg = option("--core");
 const stageFrom = option("--stage-from");
-const coreVersionBase = option("--core-version") ?? "0.7.0";
+const coreVersionBase = option("--core-version") ?? RELEASE_CANDIDATE_CORE_VERSION;
 if (!scanTarball || !catalogTarball || (!coreTarballArg) === !stageFrom) {
   process.stderr.write(
-    "usage: verify-packed-catalog-boundary.mjs --scan <scan.tgz> --catalog <catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <core.tgz> | --stage-from <core-repo> [--core-version 0.7.0]) [--work <dir>] [--keep]\n",
+    `usage: verify-packed-catalog-boundary.mjs --scan <scan.tgz> --catalog <catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <core.tgz> | --stage-from <core-repo> [--core-version ${RELEASE_CANDIDATE_CORE_VERSION}]) [--work <dir>] [--keep]\n`,
   );
   process.exit(2);
 }
@@ -439,6 +453,16 @@ try {
   writeFileSync(join(coreOnly, "package.json"), JSON.stringify({ name: "core-only-consumer", private: true, type: "module" }));
   must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball], coreOnly), "Core-only install");
   const installedCoreVersion = JSON.parse(readFileSync(join(coreOnly, "node_modules", "@aihq", "core", "package.json"), "utf8")).version;
+  // Release-candidate identity, stated explicitly: the packed manifest must carry
+  // the candidate label the consumers were staged against. `--stage-from` labels
+  // it `<candidate>+<checkout short sha>`; `--core` must at least stay
+  // self-consistent between its packed and installed manifests.
+  const expectedCoreVersion = stagedCoreVersion ?? manifest.version;
+  check(
+    "release candidate: the packed Core manifest carries the staged candidate version",
+    manifest.version === expectedCoreVersion && installedCoreVersion === expectedCoreVersion,
+    `candidate ${RELEASE_CANDIDATE_CORE_VERSION}; staged ${stagedCoreVersion ?? "from --core"}; packed ${manifest.version}; installed ${installedCoreVersion}`,
+  );
   check(
     "Core-only: the ECC plugin ships inside the installed Core, not beside it",
     existsSync(join(coreOnly, "node_modules", "@aihq", "core", "packages", "framework-ecc", "dist", "index.js")) &&
@@ -459,6 +483,21 @@ try {
   check("Core-only: @aihq/core index.js loads and exports runSessionGuardrails", coreOnlyLibrary.status === 0, coreOnlyLibrary.stderr.trim().slice(0, 300));
   const coreOnlyVersion = run(process.execPath, [cli(coreOnly), "--version"], coreOnly);
   check("Core-only: aih --version", coreOnlyVersion.status === 0, coreOnlyVersion.stdout.trim());
+  // The CLI reports its own compiled `src/version.ts` constant, which is
+  // deliberately independent of the staging label: a code-only checkout reports
+  // its released version here (0.6.2 before its release PR) and is still tested,
+  // honestly, as the candidate above. Record it and, when staging, hold the
+  // packed CLI to the checkout it was built from rather than to the candidate.
+  const reportedCoreVersion = coreOnlyVersion.stdout.trim();
+  if (stageFrom !== undefined) {
+    const checkoutVersionSource = readFileSync(join(resolve(stageFrom), "src", "version.ts"), "utf8");
+    const checkoutVersion = /export const VERSION = "([^"]+)"/.exec(checkoutVersionSource)?.[1];
+    check(
+      "release candidate: the packed CLI reports the checkout's own VERSION",
+      checkoutVersion !== undefined && reportedCoreVersion === checkoutVersion,
+      `checkout ${checkoutVersion ?? "<unreadable>"}; aih --version ${reportedCoreVersion}; staging label ${stagedCoreVersion}`,
+    );
+  }
   const coreOnlyHelp = run(process.execPath, [cli(coreOnly), "--help"], coreOnly);
   check("Core-only: aih --help", coreOnlyHelp.status === 0 && coreOnlyHelp.stdout.includes("trust"), `exit ${coreOnlyHelp.status}`);
   writeFileSync(join(coreOnly, "consumer.ts"), coreTs);
@@ -701,6 +740,8 @@ try {
       coreSha256,
       stagedCoreVersion,
       installedCoreVersion,
+      coreVersionCandidate: RELEASE_CANDIDATE_CORE_VERSION,
+      reportedCoreVersion,
       peerBypass: incompatibleCatalogTarball === undefined ? "none" : "only the deliberately incompatible Catalog",
       scanTarball: resolve(scanTarball),
       scanSha256: sha256(resolve(scanTarball)),

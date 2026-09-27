@@ -22,6 +22,25 @@ const testFiles = [
   "tests/workspace/manifest.test.ts",
 ];
 
+/**
+ * D106: Core #1025 carries code only, so its three version fields hold main's
+ * 0.6.2 again. A three-dot diff against the base (`git diff --name-only
+ * <base>...<head>`) then reduces `src/version.ts` to a no-op and drops it from
+ * the changed paths, and `release/enterprise-change.json` stays out of the PR:
+ * neither release-preparation signal path is present, so ci.yml's
+ * release_prep_guard job is skipped. The package and lock edits remain in the
+ * diff as global inputs, which is why the lane is signalled by path and never by
+ * a package, lock, or branch name.
+ */
+const codeOnlyChangedPaths = [
+  "package.json",
+  "package-lock.json",
+  "src/capability/package-manager/lifecycle.ts",
+  "src/org-policy/developer-tool-policy.ts",
+  "tests/tools/developer-tools-command.test.ts",
+  "tools/verify-packed-catalog-boundary.mjs",
+];
+
 function repositoryTests(root = "tests"): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const path = `${root}/${entry.name}`;
@@ -145,6 +164,50 @@ describe("CI impact classifier", () => {
     });
 
     expect(receipt.releasePreparation).toBe(false);
+  });
+
+  it("keeps the code-only branch out of release preparation once its version fields match the base", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-ci-impact-code-only-"));
+    const receiptPath = join(root, "receipt.json");
+    const githubOutput = join(root, "github-output.txt");
+    const stdout: string[] = [];
+    const run = fakeRunner((argv, options) => {
+      expect(options?.cwd).toBe(root);
+      if (argv[1] === "diff") return { stdout: `${codeOnlyChangedPaths.join("\0")}\0` };
+      if (argv[1] === "ls-files") return { stdout: `${testFiles.join("\0")}\0` };
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+
+    try {
+      const receipt = await runCiImpactCommand(
+        ["--base", baseSha, "--head", headSha, "--output", receiptPath],
+        {
+          cwd: root,
+          githubOutput,
+          run,
+          writeStdout: (value) => stdout.push(value),
+        },
+      );
+
+      expect(receipt.releasePreparation).toBe(false);
+      expect(receipt.fallbackReasons).toContain("global-input:package.json");
+      expect(receipt.fallbackReasons).toContain("global-input:package-lock.json");
+      expect(stdout.join("")).toContain('"releasePreparation": false');
+      expect(readFileSync(githubOutput, "utf8")).toContain("release_preparation=false\n");
+      expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
+
+      // The same code diff while `src/version.ts` still carried the 0.7.0 bump is
+      // what forced the guard lane; the version files are the only difference.
+      const preRevert = classifyCiImpact({
+        baseSha,
+        headSha,
+        changedPaths: [...codeOnlyChangedPaths, "src/version.ts"],
+        testFiles,
+      });
+      expect(preRevert.releasePreparation).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it.each(["release/enterprise-change.json", "src/internals/release-preflight.ts"])(
