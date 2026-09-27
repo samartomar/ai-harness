@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { realpathSync, rmSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
@@ -173,11 +173,13 @@ describe("golden parity: native findings through detector.aih-trust-lint", () =>
 
     // Core's request is exactly the one Scan's engine was recorded answering:
     // the same selected closure and the same detector options.
+    const canonicalRoot = realpathSync.native(root);
+    expect(realpathSync.native(canonicalRoot)).toBe(canonicalRoot);
     expect(fake.requests).toHaveLength(1);
     expect(fake.requests[0]).toMatchObject({
       detectorId: "detector.aih-trust-lint",
       executionProfileId: "in-process-trust-lint-v1",
-      subject: { kind: "source-tree", sourceRoot: root },
+      subject: { kind: "source-tree", sourceRoot: canonicalRoot },
     });
     const subject = fake.requests[0]?.subject as { selectedClosurePaths: string[] };
     expect(subject.selectedClosurePaths).toEqual(recorded.request.selectedClosurePaths);
