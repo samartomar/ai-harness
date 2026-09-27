@@ -23,6 +23,20 @@ const verification = vi.hoisted(() => ({
   bindingCalls: [] as unknown[][],
 }));
 
+const candidateWrites = vi.hoisted(() => ({ count: 0 }));
+vi.mock("../../src/catalog-package/candidate-catalog.js", () => ({
+  openCandidateCatalogV1: () => ({ version: "0.3.0", sha256: "a".repeat(64), digestOf: "archive" }),
+  activateCandidateCatalogV1: () => undefined,
+  candidateCatalogUsePathV1: (output: string) => `${output}.candidate-catalog.json`,
+  writeCandidateCatalogUseV1: (_command: string, output: string) => {
+    candidateWrites.count++;
+    if (candidateWrites.count === 2) throw new Error("candidate provenance write failed");
+    const path = `${output}.candidate-catalog.json`;
+    writeFileSync(path, "fixture", { flag: "wx" });
+    return path;
+  },
+}));
+
 vi.mock("../../src/org-policy/workbench/prepared-catalog.js", () => ({
   defaultPreparedWorkbenchCatalog: () => ({ bundle: { fixture: "installed authoring bundle" } }),
 }));
@@ -68,6 +82,7 @@ beforeEach(() => {
   verification.calls.length = 0;
   verification.bindingCalls.length = 0;
   verification.mode = "";
+  candidateWrites.count = 0;
 });
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -166,6 +181,18 @@ describe("prepare-workbench-catalog-qualification batch mode", () => {
       prepareWorkbenchCatalogQualificationCommandV1(batch(source, artifacts, output)),
     ).rejects.toThrow(/failed verification/u);
     expect(verification.calls.map((call) => call.records)).toHaveLength(2);
+    expect(existsSync(output)).toBe(false);
+  });
+
+  it("removes the batch when a candidate provenance write fails", async () => {
+    const { work, artifacts, source, output } = layout();
+    await expect(
+      prepareWorkbenchCatalogQualificationCommandV1([
+        ...batch(source, artifacts, output),
+        "--candidate-catalog", join(work, "catalog.tgz"),
+        "--candidate-catalog-sha256", "a".repeat(64),
+      ]),
+    ).rejects.toThrow("candidate provenance write failed");
     expect(existsSync(output)).toBe(false);
   });
 

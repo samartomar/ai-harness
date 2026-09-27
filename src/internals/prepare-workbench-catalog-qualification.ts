@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
@@ -245,8 +245,13 @@ export async function writeOperationalCatalogQualificationDraftsV1(
     source: catalogQualificationDraftSourceV1(one),
   }));
   mkdirSync(outputDir, { mode: 0o700 });
-  for (const { output, source } of sources)
-    writeFileSync(output, source, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  try {
+    for (const { output, source } of sources)
+      writeFileSync(output, source, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  } catch (error) {
+    rmSync(outputDir, { recursive: true, force: true });
+    throw error;
+  }
   return sources.map(({ entryId, output }) => ({ entryId, output }));
 }
 
@@ -293,9 +298,15 @@ async function prepareWorkbenchCatalogQualificationBatchCommandV1(
     artifactsRoot: resolve(args[5] as string),
     outputDir,
   });
-  if (candidate !== undefined)
-    for (const { output } of written)
-      writeCandidateCatalogUseV1("prepare-workbench-catalog-qualification", output);
+  if (candidate !== undefined) {
+    try {
+      for (const { output } of written)
+        writeCandidateCatalogUseV1("prepare-workbench-catalog-qualification", output);
+    } catch (error) {
+      rmSync(outputDir, { recursive: true, force: true });
+      throw error;
+    }
+  }
   const used =
     candidate === undefined
       ? ""
