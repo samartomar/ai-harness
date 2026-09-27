@@ -79,11 +79,15 @@ export function eccGuidance(targets: readonly Cli[], platform: string): string {
       : []),
     "On Windows use ./install.ps1; on Unix use ./install.sh.",
     "Kiro: bash /path/to/ECC/.kiro/install.sh /path/to/project (standalone script; requires bash (on Windows use Git Bash or WSL); ECC's Kiro script has no uninstall).",
-    "From the ECC checkout, preview home-scoped removals:",
-    ...homeTargets.flatMap((target) => [
-      `node scripts/uninstall.js --target ${target} --dry-run`,
-      `node scripts/uninstall.js --target ${target}`,
-    ]),
+    ...(homeTargets.length === 0
+      ? []
+      : [
+          "From the ECC checkout, preview home-scoped removals:",
+          ...homeTargets.flatMap((target) => [
+            `node scripts/uninstall.js --target ${target} --dry-run`,
+            `node scripts/uninstall.js --target ${target}`,
+          ]),
+        ]),
     ...(projectTargets.length === 0
       ? []
       : [
