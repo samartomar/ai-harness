@@ -120,7 +120,7 @@ const TRUST_CODE_CLASSES_V1: Readonly<Record<string, TrustCodeClassV1>> = {
 };
 
 /**
- * Where an observation goes in component evidence (D62): a failed EVIDENCE-PROBLEM
+ * Where an observation goes in component evidence (D62): an unavailable EVIDENCE-PROBLEM
  * code is an evidence problem whatever its disposition level (a detector that did
  * not run is not a finding about the component); any other code is a finding when
  * its level is a finding level. Every reporter of component evidence uses this, so
@@ -132,9 +132,9 @@ export function componentLabelSlotV1(
   level: TrustPolicyLevel,
 ): "finding" | "evidence-problem" | undefined {
   if (trustCodeClassV1(code) === "evidence-problem") {
-    return checkVerdict === "fail" ? "evidence-problem" : undefined;
+    return checkVerdict === "fail" || checkVerdict === "skip" ? "evidence-problem" : undefined;
   }
-  return isFindingLevelV1(level) ? "finding" : undefined;
+  return checkVerdict === "skip" ? undefined : isFindingLevelV1(level) ? "finding" : undefined;
 }
 
 /**

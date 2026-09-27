@@ -158,6 +158,25 @@ describe("vetBaselineCatalog", () => {
     });
   });
 
+  it("retains a skipped unavailable detector as an evidence problem", async () => {
+    const unavailable: Check = {
+      name: "trust detector skillspector",
+      verdict: "skip",
+      code: "trust.detector-unavailable",
+      detail: "detector skillspector unavailable",
+    };
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: [unavailable] }),
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+    expect(evidence.components[0]).toMatchObject({
+      verdict: "no-findings",
+      findings: [],
+      evidenceProblems: [{ code: "trust.detector-unavailable" }],
+    });
+  });
+
   it("refuses to emit evidence when a component scan reports an integrity failure", async () => {
     const drift: Check = {
       name: "trust upstream drift",

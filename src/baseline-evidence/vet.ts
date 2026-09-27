@@ -547,7 +547,7 @@ function checkLabels(componentId: string, checks: readonly Check[]): ComponentLa
   const labels: ComponentLabels = { findings: [], evidenceProblems: [] };
   const groups = new Map<string, Check[]>();
   for (const check of checks) {
-    if (check.verdict !== "fail") continue;
+    if (check.verdict !== "fail" && check.verdict !== "skip") continue;
     const code = check.code ?? "trust.detector-finding";
     const detail = check.detail?.trim() || check.name;
     assertLabelable(componentId, check.code, detail);
@@ -600,7 +600,7 @@ function componentLabels(componentId: string, scan: TrustScanResult): ComponentL
     }>
   >();
   for (const finding of scan.normalizedFindings) {
-    if (finding.checkVerdict === "pass" || finding.checkVerdict === "skip") continue;
+    if (finding.checkVerdict === "pass") continue;
     assertLabelable(componentId, finding.code, finding.detail);
   }
   for (const disposition of scan.policyDispositions) {
